@@ -12,6 +12,7 @@ vi.mock('./loopback', async (importOriginal) => {
 import { get } from 'node:http'
 import { app, shell } from 'electron'
 import { startLoopbackListener } from './loopback'
+import { SignInFailure } from './signInFailure'
 import type * as LoopbackModule from './loopback'
 import { getShellOpenExternalCalls, resetShellOpenExternalCalls } from '../lib/e2eOverrides'
 import { openAuthorizePage, refresh, signIn } from './oauth'
@@ -197,13 +198,15 @@ describe('oauth.signIn', () => {
     expect(status.signedIn).toBe(true)
   })
 
-  it('ends the browser wait as cancelled when the app cancels the sign-in', async () => {
+  it('ends the browser wait with the reason the app gave when it restarts the sign-in', async () => {
     const abort = new AbortController()
-    vi.mocked(shell.openExternal).mockImplementation(async () => abort.abort())
+    vi.mocked(shell.openExternal).mockImplementation(async () =>
+      abort.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
+    )
 
     await expect(signIn({ ...opts, timeoutMs: 5000, signal: abort.signal })).rejects.toMatchObject({
       name: 'SignInFailure',
-      reason: 'cancelled'
+      reason: 'restarted'
     })
   })
 

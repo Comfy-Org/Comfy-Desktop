@@ -9,7 +9,7 @@ import {
   workspaceIdOf
 } from './claims'
 import { CLOUD_CONFIG } from './config'
-import { openAuthorizePage, refresh, signIn } from './oauth'
+import { refresh, signIn } from './oauth'
 import type { OAuthOptions } from './oauth'
 import { Revocations } from './revocation'
 import { SignInFailure, signInFailureReport } from './signInFailure'
@@ -121,6 +121,15 @@ function reportSignIn(purpose: SignInPurpose, result: mainTelemetry.TelemetryCon
   mainTelemetry.emit(SESSION_SIGN_IN_EVENT, { purpose, ...result })
 }
 
+function isDroppedSignIn(
+  error: unknown
+): error is SignInFailure & { reason: 'restarted' | 'superseded' } {
+  return (
+    error instanceof SignInFailure &&
+    (error.reason === 'restarted' || error.reason === 'superseded')
+  )
+}
+
 async function reportedSignIn(
   purpose: SignInPurpose,
   options: OAuthOptions
@@ -128,7 +137,12 @@ async function reportedSignIn(
   try {
     return await signIn(options)
   } catch (error) {
-    reportSignIn(purpose, { outcome: 'failed', ...signInFailureReport(error) })
+    reportSignIn(
+      purpose,
+      isDroppedSignIn(error)
+        ? { outcome: error.reason }
+        : { outcome: 'failed', ...signInFailureReport(error) }
+    )
     throw error
   }
 }
@@ -141,7 +155,6 @@ export class CloudSession {
   private switchIntent: WorkspaceSwitchIntent = 'chosen'
   private mintBlockedUntil = 0
   private loginInFlight: Promise<AuthStatus> | null = null
-  private loginAuthorizeUrl: string | null = null
   private loginAbort: AbortController | null = null
   private viewConsentOpen = false
   private returnedToAnchorHandler: (() => void) | null = null
@@ -161,11 +174,9 @@ export class CloudSession {
     this.returnedToAnchorHandler = handler
   }
 
-  login(options: { restart?: boolean } = {}): Promise<AuthStatus> {
+  login(): Promise<AuthStatus> {
     if (this.loginInFlight) {
-      if (options.restart) this.restartPendingLogin()
-      else if (this.loginAuthorizeUrl)
-        void openAuthorizePage(this.loginAuthorizeUrl).catch(() => {})
+      this.restartPendingLogin()
       return this.loginInFlight
     }
     this.switching = null
@@ -191,17 +202,11 @@ export class CloudSession {
   }
 
   private restartPendingLogin(): void {
-    this.loginAuthorizeUrl = null
     this.loginAbort?.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
   }
 
   private async signInAtGeneration(generation: number, signal: AbortSignal): Promise<AuthStatus> {
-    const { tokens, status } = await reportedSignIn('sign_in', {
-      signal,
-      onAuthorizeUrl: (url) => {
-        if (generation === this.authGeneration) this.loginAuthorizeUrl = url
-      }
-    })
+    const { tokens, status } = await reportedSignIn('sign_in', { signal })
     if (generation !== this.authGeneration) {
       this.revokeUnstored(tokens.refreshToken)
       reportSignIn('sign_in', { outcome: 'superseded' })
@@ -233,7 +238,6 @@ export class CloudSession {
 
   private clearPendingLogin(): void {
     this.loginInFlight = null
-    this.loginAuthorizeUrl = null
     this.loginAbort = null
   }
 
@@ -243,6 +247,7 @@ export class CloudSession {
     this.authGeneration += 1
     this.switching = null
     this.mintBlockedUntil = 0
+    this.loginAbort?.abort(new SignInFailure('Signed out while signing in', 'superseded'))
     this.clearPendingLogin()
     this.retireGrant(grant?.refreshToken, origin)
     const removed = clearTokens()

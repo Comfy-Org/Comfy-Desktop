@@ -691,6 +691,12 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
 
 const signingInForManaged = ref(false)
 const waitingForManagedSignIn = computed(() => signingInForManaged.value && authStore.signInPending)
+let managedSignInPick = 0
+
+function abandonManagedSignIn(): void {
+  managedSignInPick++
+  signingInForManaged.value = false
+}
 
 async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
@@ -701,6 +707,8 @@ async function selectManagedInstallMode(): Promise<void> {
       return
     }
     const session = changeSetupSession
+    const pick = ++managedSignInPick
+    const stillWanted = (): boolean => session === changeSetupSession && pick === managedSignInPick
     signingInForManaged.value = true
     try {
       const status = await authStore.joinSignIn()
@@ -709,9 +717,9 @@ async function selectManagedInstallMode(): Promise<void> {
     } catch {
       return
     } finally {
-      if (session === changeSetupSession) signingInForManaged.value = false
+      if (stillWanted()) signingInForManaged.value = false
     }
-    if (session !== changeSetupSession) return
+    if (!stillWanted()) return
     if (workspaceId.value === PERSONAL_WORKSPACE_ID) {
       authorizingWorkspace.value = true
       try {
@@ -754,6 +762,7 @@ async function loadSources(): Promise<void> {
 }
 
 async function selectSourceCard(source: Source): Promise<void> {
+  abandonManagedSignIn()
   if (managedBuildMode.value) {
     workspaceInstallMode.value = 'public'
     resetSourceState(null)
@@ -1399,7 +1408,7 @@ async function discardChangeSetup(): Promise<void> {
   buildImportChoice.value = null
   setupBeforeServer = null
   authorizingWorkspace.value = false
-  signingInForManaged.value = false
+  abandonManagedSignIn()
   if (!draft) return
   instName.value = draft.instName
   await restoreNewInstallSetup(draft)
@@ -1557,6 +1566,7 @@ const existingCards = computed<SetupOptionCard[]>(() => {
 const selectedExistingCard = computed(() => buildImportChoice.value ?? selectedSourceCard.value)
 
 function chooseBuildImport(flow: BuildImportFlow): void {
+  abandonManagedSignIn()
   if (buildImportChoice.value === flow) return
   buildImportChoice.value = flow
   emitTelemetryAction('comfy.desktop.install.flow.opened', {
@@ -1766,8 +1776,7 @@ defineExpose({ open })
     </div>
     <div
       v-else-if="waitingForManagedSignIn"
-      class="mt-4 w-full text-[13px] leading-[1.4] text-neutral-200"
-      :class="spinnerClass"
+      class="mt-4 w-full text-[13px] leading-[1.4] text-subtle-foreground"
       role="status"
       data-testid="managed-signin-status"
     >

@@ -173,15 +173,7 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       timeoutMs
     )
     function cancel(): void {
-      fail(
-        signal?.reason instanceof SignInFailure
-          ? signal.reason
-          : new SignInFailure('Sign-in was cancelled in Comfy Desktop', 'cancelled')
-      )
-    }
-    if (signal?.aborted) {
-      cancel()
-      return
+      fail(signal?.reason)
     }
     signal?.addEventListener('abort', cancel, { once: true })
 

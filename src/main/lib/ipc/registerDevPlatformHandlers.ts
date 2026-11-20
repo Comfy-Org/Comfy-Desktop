@@ -101,7 +101,7 @@ export function broadcastAuthChanged(status: AuthStatus): void {
 export async function signInToCloud(): Promise<AuthStatus> {
   const session = getCloudSession()
   clearVersionCache()
-  const login = session.login({ restart: true })
+  const login = session.login()
   const generation = session.currentAuthGeneration()
   const status = await login
   clearVersionCache()

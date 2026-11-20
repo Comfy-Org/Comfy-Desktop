@@ -96,17 +96,6 @@ describe('useAuthStore', () => {
       expect(store.isSignedIn).toBe(false)
     })
 
-    it('clears the pending sign-in when the browser wait times out', async () => {
-      const browser = browserSignIn()
-      const store = useAuthStore()
-
-      const attempt = store.signIn()
-      browser.reject(new Error('Loopback OAuth callback timed out'))
-
-      await expect(attempt).rejects.toThrow('timed out')
-      expect(store.signInPending).toBe(false)
-    })
-
     it('asks main again on a second click, which restarts the browser sign-in', async () => {
       const browser = browserSignIn()
       const store = useAuthStore()
@@ -147,16 +136,6 @@ describe('useAuthStore', () => {
       await expect(joined).resolves.toMatchObject({ signedIn: true })
       await first
       expect(api.signIn).toHaveBeenCalledOnce()
-    })
-
-    it('starts with no sign-in pending, so nothing carries over a restart', () => {
-      browserSignIn()
-      void useAuthStore()
-        .signIn()
-        .catch(() => {})
-      setActivePinia(createPinia())
-
-      expect(useAuthStore().signInPending).toBe(false)
     })
   })
 

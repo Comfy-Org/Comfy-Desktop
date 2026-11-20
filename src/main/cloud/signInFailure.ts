@@ -1,6 +1,7 @@
 export type SignInFailureReason =
   | 'cancelled'
   | 'restarted'
+  | 'superseded'
   | 'timeout'
   | 'idp_error'
   | 'server_error'

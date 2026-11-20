@@ -2450,6 +2450,31 @@ describe('InstallWizardModal Change setup', () => {
     expect(sourceChecked(wrapper, 'workspace-install-source-managed')).toBe('true')
   })
 
+  it('keeps the source picked during the browser sign-in when that sign-in finishes', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      releaseSource,
+      { id: 'git', label: 'Git', fields: [] }
+    ])
+    mockReleaseOptions()
+    let finishSignIn: (status: unknown) => void = () => {}
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishSignIn = resolve
+      })
+    )
+    const wrapper = await openChangeSetup()
+    await pickSource(wrapper, 'workspace-install-source-managed')
+    await pickSource(wrapper, 'install-source-git')
+    expect(wrapper.find('[data-testid="managed-signin-status"]').exists()).toBe(false)
+
+    finishSignIn({ signedIn: true, workspaceId: 'personal-server-id', workspaceType: 'personal' })
+    await flushPromises()
+
+    expect(sourceChecked(wrapper, 'install-source-git')).toBe('true')
+    expect(sourceChecked(wrapper, 'workspace-install-source-managed')).toBe('false')
+    expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+  })
+
   it('lists the sources and the hardware in dropdowns with their icons, without signing in', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {

@@ -91,6 +91,11 @@ beforeEach(() => {
   document.body.innerHTML = ''
 })
 
+function clickTwice(element: Element): void {
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+}
+
 describe('SidebarAccount', () => {
   it('offers to log in when signed out', async () => {
     const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
@@ -146,6 +151,19 @@ describe('SidebarAccount', () => {
     await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
 
     expect(comfybuilder.signIn).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens one sign-in for a double click, on the card and on the collapsed icon', async () => {
+    for (const collapsed of [false, true]) {
+      const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT, collapsed)
+      waitForBrowser(comfybuilder)
+      const signIn = wrapper.get('[data-testid="devplatform-account-signin"]')
+
+      clickTwice(signIn.element)
+
+      expect(comfybuilder.signIn).toHaveBeenCalledOnce()
+      wrapper.unmount()
+    }
   })
 
   it('drops the hint when the sign-in fails or times out', async () => {

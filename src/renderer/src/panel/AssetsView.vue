@@ -858,6 +858,11 @@ async function signIn(): Promise<void> {
   await authStore.signIn().catch(() => {})
 }
 
+function runEmptyAction(event: MouseEvent): void {
+  if (event.detail > 1) return
+  emptyState.value.action?.run()
+}
+
 async function download(asset: GalleryAsset): Promise<void> {
   const key = cardKey(asset)
   if (downloading.value.has(key)) return
@@ -1394,7 +1399,7 @@ function extensionOf(name: string): string {
           size="md"
           class="mt-6 px-4 text-[13px]/5"
           data-testid="assets-empty-action"
-          @click="emptyState.action.run"
+          @click="runEmptyAction"
         >
           {{ emptyState.action.label }}
         </Button>

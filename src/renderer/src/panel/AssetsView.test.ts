@@ -298,6 +298,11 @@ beforeEach(() => {
 
 afterEach(() => page.remove())
 
+function clickTwice(element: Element): void {
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+}
+
 describe('AssetsView', () => {
   it('shows each file name and its details under the card by default', async () => {
     const wrapper = await mountAssets([asset('a', 'forest.png', 'image', { sizeBytes: 2048 })])
@@ -987,6 +992,18 @@ describe('AssetsView', () => {
     signIn.mockReturnValueOnce(new Promise(() => {}))
     await action.trigger('click')
     expect(signIn).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens one sign-in for a double click on Log in', async () => {
+    signIn.mockReturnValue(new Promise(() => {}))
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await openBuildPicker(wrapper)
+    await pickBuild('cloud')
+    const action = wrapper.get('[data-testid="assets-empty-action"]')
+
+    clickTwice(action.element)
+
+    expect(signIn).toHaveBeenCalledOnce()
   })
 
   it('tells a signed-in user with no assets where they come from', async () => {

@@ -17,7 +17,8 @@ const store = useAuthStore()
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
-async function onSignIn(): Promise<void> {
+async function onSignIn(event: MouseEvent): Promise<void> {
+  if (event.detail > 1) return
   await store.signIn().catch(() => {})
 }
 </script>

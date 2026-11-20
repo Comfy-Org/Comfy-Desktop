@@ -93,7 +93,7 @@ describe('loopback listener', () => {
       reason: 'timeout'
     })
   })
-  it('stops listening and reports cancelled when the sign-in is cancelled in the app', async () => {
+  it('stops listening with the reason the app gave for ending the wait', async () => {
     const abort = new AbortController()
     listener = await startLoopbackListener({
       expectedState: 'st',
@@ -102,34 +102,9 @@ describe('loopback listener', () => {
     })
     const redirectUri = listener.redirectUri
 
-    abort.abort()
-
-    await expect(listener.waitForCode()).rejects.toMatchObject({
-      name: 'SignInFailure',
-      reason: 'cancelled'
-    })
-    await expect(get(`${redirectUri}?state=st&code=late`)).rejects.toThrow()
-  })
-
-  it('reports the reason the app gave for ending the wait', async () => {
-    const abort = new AbortController()
-    listener = await startLoopbackListener({
-      expectedState: 'st',
-      timeoutMs: 5000,
-      signal: abort.signal
-    })
-
     abort.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
 
     await expect(listener.waitForCode()).rejects.toMatchObject({ reason: 'restarted' })
-  })
-
-  it('refuses to start when the sign-in was cancelled before it began', async () => {
-    const abort = new AbortController()
-    abort.abort()
-
-    await expect(
-      startLoopbackListener({ expectedState: 'st', timeoutMs: 5000, signal: abort.signal })
-    ).rejects.toMatchObject({ name: 'SignInFailure', reason: 'cancelled' })
+    await expect(get(`${redirectUri}?state=st&code=late`)).rejects.toThrow()
   })
 })
