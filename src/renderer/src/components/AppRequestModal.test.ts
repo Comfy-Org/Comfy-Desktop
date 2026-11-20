@@ -262,6 +262,14 @@ describe('AppRequestModal', () => {
     expect(input().placeholder).toBe('Say what it should make, from what')
   })
 
+  it('blurs the apps behind it, so the close button outside the card reads against a calm backdrop', async () => {
+    await mountRequest()
+
+    const overlay = document.querySelector<HTMLElement>('.base-modal-overlay')!
+    expect(getComputedStyle(overlay).backdropFilter).toContain('blur(8px)')
+    expect(document.querySelector('[data-testid="base-modal-close"]')).not.toBeNull()
+  })
+
   it('starts empty each time it opens', async () => {
     const wrapper = await mountRequest()
     await type('An app that colors line art')
