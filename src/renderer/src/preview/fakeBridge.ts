@@ -427,7 +427,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
 
   const cloud: CloudApi = {
     signIn: async () => auth,
-    cancelSignIn: async () => {},
     signOut: async () => {
       emitAuthChanged(SIGNED_OUT)
       return SIGNED_OUT

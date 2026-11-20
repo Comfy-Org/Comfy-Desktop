@@ -973,7 +973,7 @@ describe('AssetsView', () => {
     ).toBeUndefined()
   })
 
-  it('waits on the same sign-in as the sidebar and turns Log in back on when the user returns', async () => {
+  it('keeps Log in clickable during an open sign-in and restarts it on a second click', async () => {
     signIn.mockReturnValueOnce(new Promise(() => {}))
     const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
     await openBuildPicker(wrapper)
@@ -982,11 +982,11 @@ describe('AssetsView', () => {
     void useAuthStore().signIn()
     await flushPromises()
     const action = wrapper.get('[data-testid="assets-empty-action"]')
-    expect(action.attributes('disabled')).toBeDefined()
-
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
     expect(action.attributes('disabled')).toBeUndefined()
+
+    signIn.mockReturnValueOnce(new Promise(() => {}))
+    await action.trigger('click')
+    expect(signIn).toHaveBeenCalledTimes(2)
   })
 
   it('tells a signed-in user with no assets where they come from', async () => {

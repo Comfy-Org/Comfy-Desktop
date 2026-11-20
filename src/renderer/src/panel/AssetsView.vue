@@ -1393,8 +1393,6 @@ function extensionOf(name: string): string {
           variant="inverted"
           size="md"
           class="mt-6 px-4 text-[13px]/5"
-          :disabled="authStore.waitingForBrowser"
-          :loading="authStore.waitingForBrowser"
           data-testid="assets-empty-action"
           @click="emptyState.action.run"
         >

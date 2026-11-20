@@ -557,30 +557,49 @@ describe('CloudSession browser sign-in', () => {
     expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
-  it('cancels the browser wait so a fresh login can start right away', async () => {
-    mocked(signIn).mockImplementation(
-      (options) =>
-        new Promise((_resolve, reject) => {
-          options?.signal?.addEventListener('abort', () =>
-            reject(new SignInFailure('Sign-in was cancelled in Comfy Desktop', 'cancelled'))
-          )
-        })
-    )
+  it('restarts the browser sign-in on request and answers every caller with the new one', async () => {
+    let attempt = 0
+    mocked(signIn).mockImplementation((options) => {
+      attempt += 1
+      if (attempt === 2) return Promise.resolve(signedInResult(grantOn('w1')))
+      options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason))
+      })
+    })
     const session = new CloudSession()
 
     const first = session.login()
     await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
-    session.cancelLogin()
+    const second = session.login({ restart: true })
 
-    await expect(first).rejects.toMatchObject({ reason: 'cancelled' })
-    browserSignInReturns(signedInResult(grantOn('w1')))
-    await expect(session.login()).resolves.toMatchObject({ signedIn: true })
+    await expect(first).resolves.toMatchObject({ signedIn: true, workspaceId: 'w1' })
+    await expect(second).resolves.toMatchObject({ signedIn: true, workspaceId: 'w1' })
     expect(signIn).toHaveBeenCalledTimes(2)
     expect(openAuthorizePage).not.toHaveBeenCalled()
+    expect(session.isSignedIn()).toBe(true)
   })
 
-  it('ignores a cancel when no login is waiting', () => {
-    expect(() => new CloudSession().cancelLogin()).not.toThrow()
+  it('tags the dropped browser wait with the reason restarted', async () => {
+    let attempt = 0
+    mocked(signIn).mockImplementation((options) => {
+      attempt += 1
+      if (attempt === 2) return Promise.resolve(signedInResult(grantOn('w1')))
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason))
+      })
+    })
+    const session = new CloudSession()
+
+    const first = session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    void session.login({ restart: true })
+    await first
+
+    expect(mainTelemetry.emit).toHaveBeenCalledWith(
+      SESSION_SIGN_IN_EVENT,
+      expect.objectContaining({ outcome: 'failed', reason: 'restarted' })
+    )
   })
 
   it('does not persist browser auth that finishes after logout', async () => {

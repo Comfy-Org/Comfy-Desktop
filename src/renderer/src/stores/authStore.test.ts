@@ -3,11 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 
 import { stubWindowApi } from '../lib/stubWindowApi'
-import { SIGN_IN_RETRY_AFTER_MS, useAuthStore } from './authStore'
+import { useAuthStore } from './authStore'
 
 const api = {
   signIn: vi.fn(),
-  cancelSignIn: vi.fn(),
   signOut: vi.fn(),
   getAuthStatus: vi.fn(),
   onAuthChanged: vi.fn(() => () => {}),
@@ -65,37 +64,27 @@ describe('useAuthStore', () => {
     expect(store.status).toMatchObject({ signedIn: true, workspaceId: 'w1' })
   })
 
-  describe('sign-in waiting state', () => {
-    afterEach(() => {
-      vi.useRealTimers()
-    })
-
+  describe('shared sign-in state', () => {
     function browserSignIn() {
       const browser = deferred<{ signedIn: boolean; workspaceId?: string }>()
       api.signIn.mockReturnValue(browser.promise)
-      api.cancelSignIn.mockImplementation(async () => {
-        browser.reject(new Error('Sign-in was cancelled in Comfy Desktop'))
-      })
       return browser
     }
 
-    it('waits for the browser after a click, then clears on cancel', async () => {
-      browserSignIn()
+    it('marks a sign-in as pending until the browser answers', async () => {
+      const browser = browserSignIn()
       const store = useAuthStore()
 
       const attempt = store.signIn()
       expect(store.signInPending).toBe(true)
-      expect(store.waitingForBrowser).toBe(true)
+      browser.resolve({ signedIn: true, workspaceId: 'w1' })
+      await attempt
 
-      await store.cancelSignIn()
-      await expect(attempt).rejects.toThrow('cancelled')
-      expect(api.cancelSignIn).toHaveBeenCalledOnce()
       expect(store.signInPending).toBe(false)
-      expect(store.waitingForBrowser).toBe(false)
-      expect(store.isSignedIn).toBe(false)
+      expect(store.isSignedIn).toBe(true)
     })
 
-    it('clears the wait when sign-in fails', async () => {
+    it('clears the pending sign-in when it fails', async () => {
       const browser = browserSignIn()
       const store = useAuthStore()
 
@@ -107,7 +96,7 @@ describe('useAuthStore', () => {
       expect(store.isSignedIn).toBe(false)
     })
 
-    it('clears the wait when the browser sign-in times out', async () => {
+    it('clears the pending sign-in when the browser wait times out', async () => {
       const browser = browserSignIn()
       const store = useAuthStore()
 
@@ -116,42 +105,14 @@ describe('useAuthStore', () => {
 
       await expect(attempt).rejects.toThrow('timed out')
       expect(store.signInPending).toBe(false)
-      expect(store.waitingForBrowser).toBe(false)
     })
 
-    it('lets the user try again when they come back to the window without finishing', async () => {
-      browserSignIn()
-      const store = useAuthStore()
-
-      void store.signIn().catch(() => {})
-      window.dispatchEvent(new Event('focus'))
-
-      expect(store.signInPending).toBe(true)
-      expect(store.waitingForBrowser).toBe(false)
-    })
-
-    it('lets the user try again when the browser never takes the focus', async () => {
-      vi.useFakeTimers()
-      browserSignIn()
-      const store = useAuthStore()
-
-      void store.signIn().catch(() => {})
-      vi.advanceTimersByTime(SIGN_IN_RETRY_AFTER_MS - 1)
-      expect(store.waitingForBrowser).toBe(true)
-      vi.advanceTimersByTime(1)
-
-      expect(store.signInPending).toBe(true)
-      expect(store.waitingForBrowser).toBe(false)
-    })
-
-    it('opens the browser again on a second click and finishes with the one sign-in', async () => {
+    it('asks main again on a second click, which restarts the browser sign-in', async () => {
       const browser = browserSignIn()
       const store = useAuthStore()
 
       const first = store.signIn()
-      window.dispatchEvent(new Event('focus'))
       const second = store.signIn()
-      expect(store.waitingForBrowser).toBe(true)
       browser.resolve({ signedIn: true, workspaceId: 'w1' })
 
       await expect(second).resolves.toMatchObject({ signedIn: true })
@@ -161,12 +122,12 @@ describe('useAuthStore', () => {
       expect(store.signInPending).toBe(false)
     })
 
-    it('signs in on a new attempt after a cancelled one', async () => {
-      browserSignIn()
+    it('signs in on a new attempt after a failed one', async () => {
+      const browser = browserSignIn()
       const store = useAuthStore()
-      const cancelled = store.signIn()
-      await store.cancelSignIn()
-      await expect(cancelled).rejects.toThrow()
+      const failed = store.signIn()
+      browser.reject(new Error('cancelled'))
+      await expect(failed).rejects.toThrow()
 
       api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
       await store.signIn()
@@ -175,7 +136,7 @@ describe('useAuthStore', () => {
       expect(store.signInPending).toBe(false)
     })
 
-    it('joins the open sign-in instead of opening the browser again', async () => {
+    it('joins the open sign-in instead of asking main again', async () => {
       const browser = browserSignIn()
       const store = useAuthStore()
 
@@ -188,25 +149,14 @@ describe('useAuthStore', () => {
       expect(api.signIn).toHaveBeenCalledOnce()
     })
 
-    it('does not ask main to cancel when nothing is waiting', async () => {
-      const store = useAuthStore()
-
-      await store.cancelSignIn()
-
-      expect(api.cancelSignIn).not.toHaveBeenCalled()
-    })
-
-    it('starts with no sign-in waiting, so a restart never keeps the button off', () => {
+    it('starts with no sign-in pending, so nothing carries over a restart', () => {
       browserSignIn()
       void useAuthStore()
         .signIn()
         .catch(() => {})
       setActivePinia(createPinia())
 
-      const restarted = useAuthStore()
-
-      expect(restarted.signInPending).toBe(false)
-      expect(restarted.waitingForBrowser).toBe(false)
+      expect(useAuthStore().signInPending).toBe(false)
     })
   })
 

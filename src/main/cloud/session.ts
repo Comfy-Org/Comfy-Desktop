@@ -161,24 +161,38 @@ export class CloudSession {
     this.returnedToAnchorHandler = handler
   }
 
-  login(): Promise<AuthStatus> {
+  login(options: { restart?: boolean } = {}): Promise<AuthStatus> {
     if (this.loginInFlight) {
-      if (this.loginAuthorizeUrl) void openAuthorizePage(this.loginAuthorizeUrl).catch(() => {})
+      if (options.restart) this.restartPendingLogin()
+      else if (this.loginAuthorizeUrl)
+        void openAuthorizePage(this.loginAuthorizeUrl).catch(() => {})
       return this.loginInFlight
     }
     this.switching = null
     const generation = ++this.authGeneration
-    const abort = new AbortController()
-    const login = this.signInAtGeneration(generation, abort.signal).finally(() => {
+    const login = this.signInUntilSettled(generation).finally(() => {
       if (this.loginInFlight === login) this.clearPendingLogin()
     })
     this.loginInFlight = login
-    this.loginAbort = abort
     return login
   }
 
-  cancelLogin(): void {
-    this.loginAbort?.abort()
+  private async signInUntilSettled(generation: number): Promise<AuthStatus> {
+    for (;;) {
+      const abort = new AbortController()
+      this.loginAbort = abort
+      try {
+        return await this.signInAtGeneration(generation, abort.signal)
+      } catch (error) {
+        const restarted = abort.signal.aborted && generation === this.authGeneration
+        if (!restarted) throw error
+      }
+    }
+  }
+
+  private restartPendingLogin(): void {
+    this.loginAuthorizeUrl = null
+    this.loginAbort?.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
   }
 
   private async signInAtGeneration(generation: number, signal: AbortSignal): Promise<AuthStatus> {

@@ -48,7 +48,6 @@ function installApi(status: AuthStatus, options: ApiOptions = {}) {
     getAuthStatus: vi.fn().mockResolvedValue(status),
     onAuthChanged: vi.fn((_callback: (status: AuthStatus) => void) => () => {}),
     signIn: vi.fn().mockResolvedValue({ signedIn: true }),
-    cancelSignIn: vi.fn().mockResolvedValue(undefined),
     signOut: vi.fn().mockResolvedValue({ signedIn: false }),
     listWorkspaces: vi.fn(options.listWorkspaces ?? (() => Promise.resolve(WORKSPACES))),
     switchWorkspace: vi.fn(),
@@ -120,59 +119,50 @@ describe('SidebarAccount', () => {
         fail = reject
       })
     )
-    comfybuilder.cancelSignIn.mockImplementation(async () => fail(new Error('cancelled')))
+    return (error: Error) => fail(error)
   }
 
-  it('says it is waiting for the browser, with Cancel, after the first click', async () => {
+  it('keeps Log in clickable while the browser sign-in is open, with a quiet hint', async () => {
     const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
     waitForBrowser(comfybuilder)
 
     await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="sidebar-signin-body"]').text()).toBe(
-      'Waiting for sign-in in your browser…'
-    )
-    expect(
-      wrapper.get('[data-testid="devplatform-account-signin"]').attributes('disabled')
-    ).toBeDefined()
-    expect(wrapper.get('[data-testid="devplatform-account-signin-cancel"]').text()).toBe('Cancel')
-  })
-
-  it('turns Log in back on when the sign-in is cancelled', async () => {
-    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
-    waitForBrowser(comfybuilder)
-    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
-    await flushPromises()
-
-    await wrapper.get('[data-testid="devplatform-account-signin-cancel"]').trigger('click')
-    await flushPromises()
-
-    expect(comfybuilder.cancelSignIn).toHaveBeenCalledOnce()
     const signIn = wrapper.get('[data-testid="devplatform-account-signin"]')
     expect(signIn.text()).toBe('Log in')
     expect(signIn.attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('[data-testid="devplatform-account-signin-cancel"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="sidebar-signin-body"]').text()).toBe(
-      'Sync and run on Comfy Cloud'
+      'Finish signing in in your browser'
     )
   })
 
-  it('offers Try again when the user comes back without finishing, and opens the browser again', async () => {
+  it('restarts the sign-in when Log in is clicked again before it finishes', async () => {
     const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
     waitForBrowser(comfybuilder)
     await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
     await flushPromises()
 
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
-    const retry = wrapper.get('[data-testid="devplatform-account-signin"]')
-    expect(retry.text()).toBe('Try again')
-    expect(retry.attributes('disabled')).toBeUndefined()
-
-    await retry.trigger('click')
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
 
     expect(comfybuilder.signIn).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops the hint when the sign-in fails or times out', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
+    const fail = waitForBrowser(comfybuilder)
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
+    await flushPromises()
+
+    fail(new Error('Loopback OAuth callback timed out'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="sidebar-signin-body"]').text()).toBe(
+      'Sync and run on Comfy Cloud'
+    )
+    expect(
+      wrapper.get('[data-testid="devplatform-account-signin"]').attributes('disabled')
+    ).toBeUndefined()
   })
 
   it('signs in when the second attempt finishes', async () => {
@@ -188,7 +178,7 @@ describe('SidebarAccount', () => {
     expect(wrapper.find('[data-testid="workspace-switcher-trigger"]').exists()).toBe(true)
   })
 
-  it('shows a sign-in started on another page as the same wait', async () => {
+  it('keeps the collapsed icon clickable during a sign-in started on another page', async () => {
     const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT, true)
     waitForBrowser(comfybuilder)
 
@@ -198,13 +188,19 @@ describe('SidebarAccount', () => {
     await flushPromises()
 
     const icon = wrapper.get('[data-testid="devplatform-account-signin"]')
-    expect(icon.attributes('disabled')).toBeDefined()
-    expect(icon.attributes('title')).toBe('Waiting for sign-in in your browser…')
-
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
     expect(icon.attributes('disabled')).toBeUndefined()
-    expect(icon.attributes('title')).toBe('Try again')
+    expect(icon.attributes('title')).toBe('Log in')
+    expect(useAuthStore().signInPending).toBe(true)
+  })
+
+  it('shows the account once a sign-in started on another page finishes', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
+    comfybuilder.signIn.mockResolvedValueOnce(SIGNED_IN)
+
+    await useAuthStore().signIn()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workspace-switcher-trigger"]').exists()).toBe(true)
   })
 
   it('shrinks to a named icon on the collapsed sidebar, with the log-in card folded away and out of reach', async () => {

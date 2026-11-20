@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startLoopbackListener, type LoopbackListener } from './loopback'
+import { SignInFailure } from './signInFailure'
 
 function get(url: string): Promise<{ status: number; body: string; contentType?: string }> {
   return new Promise((resolve, reject) => {
@@ -108,6 +109,19 @@ describe('loopback listener', () => {
       reason: 'cancelled'
     })
     await expect(get(`${redirectUri}?state=st&code=late`)).rejects.toThrow()
+  })
+
+  it('reports the reason the app gave for ending the wait', async () => {
+    const abort = new AbortController()
+    listener = await startLoopbackListener({
+      expectedState: 'st',
+      timeoutMs: 5000,
+      signal: abort.signal
+    })
+
+    abort.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
+
+    await expect(listener.waitForCode()).rejects.toMatchObject({ reason: 'restarted' })
   })
 
   it('refuses to start when the sign-in was cancelled before it began', async () => {

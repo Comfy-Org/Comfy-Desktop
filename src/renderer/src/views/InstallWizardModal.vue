@@ -692,10 +692,6 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
 const signingInForManaged = ref(false)
 const waitingForManagedSignIn = computed(() => signingInForManaged.value && authStore.signInPending)
 
-async function cancelManagedSignIn(): Promise<void> {
-  await authStore.cancelSignIn().catch(() => {})
-}
-
 async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
   let authenticatedNow = false
@@ -1519,12 +1515,7 @@ const startFrom = computed<StartFrom>(() =>
   buildImportChoice.value || usesExistingServer.value ? 'existing' : 'new'
 )
 
-const choiceLocked = computed(
-  () =>
-    authorizingWorkspace.value ||
-    (signingInForManaged.value && authStore.waitingForBrowser) ||
-    submittingExisting.value
-)
+const choiceLocked = computed(() => authorizingWorkspace.value || submittingExisting.value)
 const startFromLocked = computed(() => choiceLocked.value || !setupPicked.value)
 const showsHardwareWarning = computed(() => !!hardwareWarning.value && startFrom.value === 'new')
 
@@ -1775,21 +1766,12 @@ defineExpose({ open })
     </div>
     <div
       v-else-if="waitingForManagedSignIn"
-      class="mt-4 flex w-full items-center justify-between gap-3 text-[13px] leading-[1.4] text-neutral-200"
+      class="mt-4 w-full text-[13px] leading-[1.4] text-neutral-200"
+      :class="spinnerClass"
       role="status"
       data-testid="managed-signin-status"
     >
-      <span :class="spinnerClass">{{ $t('devPlatform.signIn.waiting') }}</span>
-      <Button
-        size="sm"
-        variant="secondary"
-        type="button"
-        class="flex-none rounded-lg px-3"
-        data-testid="managed-signin-cancel"
-        @click="cancelManagedSignIn"
-      >
-        {{ $t('devPlatform.signIn.cancel') }}
-      </Button>
+      {{ $t('devPlatform.signIn.waiting') }}
     </div>
     <div
       v-if="sourceError && !buildImportChoice"

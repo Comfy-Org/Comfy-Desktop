@@ -1405,7 +1405,6 @@ export interface ElectronApi {
 
   comfybuilder: {
     signIn(): Promise<AuthStatus>
-    cancelSignIn(): Promise<void>
     signOut(): Promise<AuthStatus>
     getAuthStatus(): Promise<AuthStatus>
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe

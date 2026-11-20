@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LogIn } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -18,19 +17,8 @@ const store = useAuthStore()
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
-const signInLabel = computed(() =>
-  store.signInPending ? t('devPlatform.signIn.tryAgain') : t('devPlatform.signIn.cta')
-)
-const signInIconLabel = computed(() =>
-  store.waitingForBrowser ? t('devPlatform.signIn.waiting') : signInLabel.value
-)
-
 async function onSignIn(): Promise<void> {
   await store.signIn().catch(() => {})
-}
-
-async function onCancelSignIn(): Promise<void> {
-  await store.cancelSignIn().catch(() => {})
 }
 </script>
 
@@ -82,20 +70,8 @@ async function onCancelSignIn(): Promise<void> {
               size="md"
               class="w-full"
               :data-testid="collapsed ? undefined : 'devplatform-account-signin'"
-              :disabled="store.waitingForBrowser"
-              :loading="store.waitingForBrowser"
               @click="onSignIn"
-              >{{ signInLabel }}</Button
-            >
-            <Button
-              v-if="store.signInPending"
-              type="button"
-              variant="muted-textonly"
-              size="md"
-              class="mt-1 w-full"
-              data-testid="devplatform-account-signin-cancel"
-              @click="onCancelSignIn"
-              >{{ t('devPlatform.signIn.cancel') }}</Button
+              >{{ t('devPlatform.signIn.cta') }}</Button
             >
           </div>
         </div>
@@ -115,10 +91,8 @@ async function onCancelSignIn(): Promise<void> {
             size="unset"
             class="size-10 rounded-xl p-0 hover:bg-secondary hover:text-foreground"
             :data-testid="collapsed ? 'devplatform-account-signin' : undefined"
-            :aria-label="signInIconLabel"
-            :title="signInIconLabel"
-            :disabled="store.waitingForBrowser"
-            :loading="store.waitingForBrowser"
+            :aria-label="t('devPlatform.signIn.cta')"
+            :title="t('devPlatform.signIn.cta')"
             @click="onSignIn"
           >
             <LogIn :size="16" aria-hidden="true" />

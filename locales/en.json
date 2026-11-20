@@ -1632,9 +1632,7 @@
   "devPlatform": {
     "signIn": {
       "cta": "Log in",
-      "waiting": "Waiting for sign-in in your browser…",
-      "tryAgain": "Try again",
-      "cancel": "Cancel"
+      "waiting": "Finish signing in in your browser"
     },
     "account": {
       "installationInProgressTitle": "Installation in progress",

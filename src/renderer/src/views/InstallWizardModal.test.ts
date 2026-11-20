@@ -253,7 +253,6 @@ beforeEach(() => {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {}),
       signIn: vi.fn(),
-      cancelSignIn: vi.fn(),
       signOut: vi.fn(),
       listWorkspaces: vi.fn().mockResolvedValue([]),
       switchWorkspace: vi.fn(),
@@ -2422,31 +2421,33 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain('Ready Build')
   })
 
-  it('waits for the browser sign-in with a Cancel that leaves Managed unpicked', async () => {
+  it('hints at the browser sign-in and restarts it when Managed is picked again', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
     mockReleaseOptions()
-    let failSignIn: (error: Error) => void = () => {}
+    let finishSignIn: (status: unknown) => void = () => {}
     ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockReturnValue(
-      new Promise((_resolve, reject) => {
-        failSignIn = reject
+      new Promise((resolve) => {
+        finishSignIn = resolve
       })
     )
-    ;(window.api.comfybuilder.cancelSignIn as ReturnType<typeof vi.fn>).mockImplementation(
-      async () => failSignIn(new Error('cancelled'))
-    )
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'ready', name: 'Ready Build', state: 'installable' }
+    ])
     const wrapper = await openChangeSetup()
     await pickSource(wrapper, 'workspace-install-source-managed')
 
-    expect(wrapper.get('[data-testid="managed-signin-status"]').text()).toContain(
-      'Waiting for sign-in in your browser…'
+    expect(wrapper.get('[data-testid="managed-signin-status"]').text()).toBe(
+      'Finish signing in in your browser'
     )
-    await wrapper.get('[data-testid="managed-signin-cancel"]').trigger('click')
+    expect(sourceOption(wrapper, 'workspace-install-source-managed').disabled).toBe(false)
+    await pickSource(wrapper, 'workspace-install-source-managed')
+    expect(window.api.comfybuilder.signIn).toHaveBeenCalledTimes(2)
+
+    finishSignIn({ signedIn: true, workspaceId: 'personal-server-id', workspaceType: 'personal' })
     await flushPromises()
 
-    expect(window.api.comfybuilder.cancelSignIn).toHaveBeenCalledOnce()
     expect(wrapper.find('[data-testid="managed-signin-status"]').exists()).toBe(false)
-    expect(sourceChecked(wrapper, 'workspace-install-source-managed')).toBe('false')
-    expect(sourceOption(wrapper, 'workspace-install-source-managed').disabled).toBe(false)
+    expect(sourceChecked(wrapper, 'workspace-install-source-managed')).toBe('true')
   })
 
   it('lists the sources and the hardware in dropdowns with their icons, without signing in', async () => {
