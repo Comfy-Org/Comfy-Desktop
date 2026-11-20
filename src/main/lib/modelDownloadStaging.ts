@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
+import type { DownloadUrlPolicyName } from './downloadUrlPolicy'
 
 export const STAGING_SUFFIX = '.part'
 export const STAGING_META_SUFFIX = '.part.dl-meta'
@@ -19,6 +20,7 @@ export interface StagedDownloadMeta {
   filename: string
   installationId?: string | null
   sha256?: string
+  urlPolicy?: DownloadUrlPolicyName
 }
 
 export function stagingPathFor(finalPath: string): string {
@@ -258,8 +260,15 @@ export function ensureStagedPlaceholder(finalPath: string, meta: StagedDownloadM
   const stagingPath = stagingPathFor(finalPath)
   const existing = readStagedMeta(metaPath)
   if (existing !== null) {
-    if (meta.sha256 && existing.sha256 !== meta.sha256) {
-      if (!writeStagedMeta(metaPath, { ...existing, sha256: meta.sha256 })) return false
+    const sha256Changed = !!meta.sha256 && existing.sha256 !== meta.sha256
+    const policyChanged = !!meta.urlPolicy && existing.urlPolicy !== meta.urlPolicy
+    if (sha256Changed || policyChanged) {
+      const updated = {
+        ...existing,
+        ...(sha256Changed ? { sha256: meta.sha256 } : {}),
+        ...(policyChanged ? { urlPolicy: meta.urlPolicy } : {})
+      }
+      if (!writeStagedMeta(metaPath, updated)) return false
     }
     if (fs.existsSync(stagingPath)) return true
     try {

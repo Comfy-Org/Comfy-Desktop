@@ -49,6 +49,7 @@ vi.mock('electron', () => ({
 }))
 
 import { startModelTransfer, type ModelTransferOptions } from './modelDownloadTransport'
+import { isSecurePublicDownloadUrl } from './downloadUrlPolicy'
 
 interface FakeResponse extends EventEmitter {
   statusCode: number
@@ -736,6 +737,25 @@ describe('redirects', () => {
 })
 
 describe('URL policy', () => {
+  it('records a named policy in the staging metadata so a restart keeps it', async () => {
+    const handle = startModelTransfer(baseOpts({ validateUrl: isSecurePublicDownloadUrl }))
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.urlPolicy).toBe('secure-public')
+    const res = makeResponse(200, { 'content-length': '10', etag: '"e"' })
+    requests[0]!.emit('response', res)
+    res.emit('data', Buffer.from('01234'))
+    await flush()
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.urlPolicy).toBe('secure-public')
+    handle.pause()
+    await handle.done
+  })
+
+  it('records no policy for the baseline', async () => {
+    const handle = startModelTransfer(baseOpts())
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.urlPolicy).toBeUndefined()
+    handle.cancel()
+    await handle.done
+  })
+
   it('refuses a disallowed first URL without issuing a request', async () => {
     const handle = startModelTransfer(baseOpts({ url: 'file:///etc/passwd' }))
     const outcome = await handle.done
