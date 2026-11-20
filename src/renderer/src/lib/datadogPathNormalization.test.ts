@@ -31,6 +31,19 @@ describe('normalizeDatadogBundlePaths', () => {
 })
 
 describe('scrubRumText', () => {
+  it.each([
+    [
+      'Traceback\\n\\Users\\http://h/view?user=alice',
+      'Traceback\\n\\Users\\http://h/view?[REDACTED]'
+    ],
+    ['Traceback\\n\\Users\\data:image/png;base64,QUFBQUFB', 'Traceback\\n\\Users\\data:[REDACTED]']
+  ])(
+    'still hides a URL query or data URI that sits where a username could be: %s',
+    (input, expected) => {
+      expect(scrubRumText(input)).toBe(expected)
+    }
+  )
+
   it('scrubs a user path with the shared scrubber', () => {
     expect(scrubRumText('C:\\Users\\JohnDoe\\AppData\\Local\\foo')).toBe(
       'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'
