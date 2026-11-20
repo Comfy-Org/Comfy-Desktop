@@ -1,5 +1,7 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ bad?: boolean; os?: string }>(), { bad: false, os: 'darwin' })
+import type { LocalDeviceKind } from '../composables/useLocalDeviceKind'
+
+defineProps<{ bad?: boolean; kind: LocalDeviceKind }>()
 </script>
 
 <template>
@@ -58,7 +60,7 @@ withDefaults(defineProps<{ bad?: boolean; os?: string }>(), { bad: false, os: 'd
         <rect x="15.5" y="6.5" width="129" height="68" rx="2" />
       </clipPath>
     </defs>
-    <template v-if="os === 'win32'">
+    <template v-if="kind === 'pc-laptop'">
       <ellipse cx="80" cy="97" rx="76" ry="6" fill="url(#setup-machine-shadow)" />
       <rect x="18" y="4" width="124" height="83" rx="4.5" fill="url(#setup-machine-edge-pc)" />
       <rect x="19" y="5" width="122" height="82" rx="3.5" fill="#09090b" />
@@ -100,7 +102,7 @@ withDefaults(defineProps<{ bad?: boolean; os?: string }>(), { bad: false, os: 'd
       <rect x="5" y="87" width="150" height="0.9" fill="#fff" fill-opacity="0.28" />
       <rect x="60" y="87.9" width="40" height="1.4" rx="0.7" fill="#141416" />
     </template>
-    <template v-else-if="os === 'linux'">
+    <template v-else-if="kind === 'monitor'">
       <ellipse cx="80" cy="98" rx="52" ry="5" fill="url(#setup-machine-shadow)" />
       <path d="M72 80h16l2 13H70z" fill="url(#setup-machine-base-pc)" />
       <rect x="54" y="92" width="52" height="3.5" rx="1.75" fill="url(#setup-machine-base-pc)" />

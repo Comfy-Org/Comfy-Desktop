@@ -1417,6 +1417,7 @@ export interface ElectronApi {
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
   getSystemInfo(): Promise<SystemInfo>
+  getChassisType(): Promise<string | null>
   getInstallationDdContext(installationId: string): Promise<InstallationDdContext | null>
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
