@@ -17,6 +17,7 @@ export type PreviewPlatform = 'darwin' | 'win32' | 'linux'
 export interface PreviewMachine {
   platform: PreviewPlatform
   systemInfo: SystemInfo
+  chassisType: string
   gpu: GPUInfo
   installRoot: string
   diskFreeBytes: number
@@ -58,6 +59,7 @@ function variantOption(
 const MACHINES: Record<PreviewPlatform, PreviewMachine> = {
   darwin: {
     platform: 'darwin',
+    chassisType: 'Notebook',
     systemInfo: {
       ...SHARED_SYSTEM_INFO,
       gpu_vendor: 'apple',
@@ -92,6 +94,7 @@ const MACHINES: Record<PreviewPlatform, PreviewMachine> = {
   },
   win32: {
     platform: 'win32',
+    chassisType: 'Desktop',
     systemInfo: {
       ...SHARED_SYSTEM_INFO,
       gpu_vendor: 'nvidia',
@@ -128,6 +131,7 @@ const MACHINES: Record<PreviewPlatform, PreviewMachine> = {
   },
   linux: {
     platform: 'linux',
+    chassisType: 'Desktop',
     systemInfo: {
       ...SHARED_SYSTEM_INFO,
       gpu_vendor: 'nvidia',

@@ -22,6 +22,7 @@ import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
 import { useTheme } from '../composables/useTheme'
+import { provideLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -66,6 +67,7 @@ const urlFirstUseCompleted = params.get('firstUseCompleted') === 'true'
 const urlFirstUsePending = params.get('firstUseCompleted') === 'false'
 
 const sessionStore = useSessionStore()
+provideLocalDeviceKind()
 const installationStore = useInstallationStore()
 const launcherPrefs = useLauncherPrefs()
 void launcherPrefs.loadPrefs()

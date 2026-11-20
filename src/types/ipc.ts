@@ -1,4 +1,5 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 import type { GpuTier } from '../shared/gpuTier'
 import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
@@ -1272,6 +1273,13 @@ export interface ElectronApi {
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
+  hasAssetWorkflow(source: string, assetId: string): Promise<boolean | null>
+  openAssetWorkflow(
+    source: string,
+    assetId: string,
+    name: string,
+    build?: string
+  ): Promise<ComfyDesktopOpenInComfy>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
@@ -1399,6 +1407,7 @@ export interface ElectronApi {
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
   getSystemInfo(): Promise<SystemInfo>
+  getChassisType(): Promise<string | null>
   getInstallationDdContext(installationId: string): Promise<InstallationDdContext | null>
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>

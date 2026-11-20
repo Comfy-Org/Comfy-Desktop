@@ -162,6 +162,9 @@
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
       "openWorkflow": "打开工作流",
+      "openWorkflowFailed": "无法打开工作流",
+      "openWorkflowNoReason": "ComfyUI 未能打开工作流。请重试。",
+      "openWorkflowIn": "打开方式",
       "savedIn": "保存位置",
       "cloudAssets": "Comfy Cloud 资产",
       "modelView": "{name} 的 3D 视图。拖动可旋转，滚动可缩放。",
@@ -661,7 +664,7 @@
     "sizeLabel": "磁盘占用",
     "sizeValue": "{size}",
     "sizeUnavailable": "未知",
-    "estimatedRequired": "约需 {size}"
+    "insufficientForInstall": "仅剩 {free} 可用，安装约需 {required}"
   },
   "pathValidation": {
     "insideAppBundleTitle": "不安全的安装位置",
@@ -995,13 +998,9 @@
     "checking": "正在检查…",
     "noGpu": "无 GPU 加速",
     "unsupported": "不受支持",
-    "free": "可用 {free}",
-    "freeRequired": "可用 {free} · 需要约 {required}",
-    "notEnoughSpace": "仅剩 {free} · 需要约 {required}",
-    "versionValue": "ComfyUI {version} · {channel}",
-    "versionChannel": "ComfyUI · {channel}",
+    "versionValue": "ComfyUI {version}",
     "download": "下载 {size}",
-    "downloadRequired": "下载 {download} · 需要约 {required}",
+    "installSpaceTip": "下载大小为 {download}，解压和安装需要约 {required} 的可用磁盘空间。",
     "unavailable": "无法连接 ComfyUI 下载服务器。请检查网络连接，或通过“更改”选择版本。",
     "retry": "重试",
     "agreeToInstall": "同意后才能安装。",
@@ -1631,7 +1630,8 @@
   },
   "devPlatform": {
     "signIn": {
-      "cta": "登录"
+      "cta": "登录",
+      "waiting": "请在浏览器中继续"
     },
     "account": {
       "installationInProgressTitle": "安装正在进行中",

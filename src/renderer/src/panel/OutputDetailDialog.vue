@@ -25,6 +25,7 @@ import InfoTooltip from '../components/InfoTooltip.vue'
 import OutputDetailThumb from './OutputDetailThumb.vue'
 import { formatBytes } from '../lib/downloadFormatters'
 import { revealInFolderKey } from '../composables/usePlatform'
+import type { MenuItem } from '@comfyorg/design-system/lib/menu/types'
 import type { AssetKind } from '../types/ipc'
 
 const ModelViewer = defineAsyncComponent(() => import('./ModelViewer.vue'))
@@ -41,6 +42,8 @@ export interface OutputDetailItem {
   savedIn?: string | null
   inCloud?: boolean
   workflow?: boolean
+  workflowBuilds?: { id: string; name: string }[]
+  workflowSlot?: boolean
   mainAction: 'download' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
@@ -59,7 +62,7 @@ const emit = defineEmits<{
   close: []
   download: [index: number]
   'show-in-folder': [index: number]
-  'open-workflow': [index: number]
+  'open-workflow': [index: number, build?: string]
   'view-in-assets': [index: number]
 }>()
 
@@ -71,6 +74,15 @@ const natural = ref<{ width: number; height: number } | null>(null)
 const zoom = ref<Zoom>('fit')
 
 const item = computed(() => items[index.value] ?? items[0]!)
+const workflowChoices = computed<MenuItem[]>(() => {
+  const builds = item.value.workflowBuilds ?? []
+  if (builds.length < 2) return []
+  return builds.map((build) => ({
+    key: build.id,
+    label: build.name,
+    command: () => emit('open-workflow', index.value, build.id)
+  }))
+})
 const reducedMotion = computed(() => preferredMotion.value === 'reduce')
 const extension = computed(() => {
   const dot = item.value.name.lastIndexOf('.')
@@ -352,14 +364,40 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           <ScanSearch :size="15" aria-hidden="true" />
           {{ t(revealKey) }}
         </Button>
+        <Menu
+          v-if="item.workflow && workflowChoices.length > 0"
+          :items="workflowChoices"
+          :modal="false"
+          align="start"
+          class="z-70"
+          :label="t('assets.detail.openWorkflowIn')"
+        >
+          <template #trigger>
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              class="w-full gap-1.5 text-[13px]/5"
+              data-testid="output-detail-workflow"
+            >
+              <Workflow :size="15" aria-hidden="true" />
+              {{ t('assets.detail.openWorkflow') }}
+              <ChevronDown :size="15" aria-hidden="true" />
+            </Button>
+          </template>
+        </Menu>
         <Button
-          v-if="item.workflow"
+          v-else-if="item.workflow || item.workflowSlot"
           type="button"
           variant="secondary"
           size="md"
           class="gap-1.5 text-[13px]/5"
+          :class="{ invisible: !item.workflow }"
+          :aria-hidden="item.workflow ? undefined : 'true'"
+          :tabindex="item.workflow ? undefined : -1"
+          :disabled="!item.workflow"
           data-testid="output-detail-workflow"
-          @click="emit('open-workflow', index)"
+          @click="emit('open-workflow', index, item.workflowBuilds?.[0]?.id)"
         >
           <Workflow :size="15" aria-hidden="true" />
           {{ t('assets.detail.openWorkflow') }}

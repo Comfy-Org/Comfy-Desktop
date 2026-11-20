@@ -118,6 +118,10 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
     readAssetModel: (source, assetId) => ipcRenderer.invoke('assets:read-model', source, assetId),
+    hasAssetWorkflow: (source, assetId) =>
+      ipcRenderer.invoke('assets:has-workflow', source, assetId),
+    openAssetWorkflow: (source, assetId, name, build) =>
+      ipcRenderer.invoke('assets:open-workflow', source, assetId, name, build),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
@@ -277,6 +281,7 @@ export function buildElectronApi(): ElectronApi {
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
     resetZoom: () => ipcRenderer.invoke('reset-zoom'),
     getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+    getChassisType: () => ipcRenderer.invoke('get-chassis-type'),
     getInstallationDdContext: (installationId: string) =>
       ipcRenderer.invoke('get-installation-dd-context', installationId),
     getInstallsInventory: () => ipcRenderer.invoke('get-installs-inventory'),
