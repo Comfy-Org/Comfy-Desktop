@@ -519,9 +519,9 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.get('.config-machine-kicker').text()).toBe('Detected')
     const rows = wrapper.findAll('.config-summary-row').map((row) => row.text())
     expect(wrapper.get('.config-name-card #inst-name-standalone').exists()).toBe(true)
-    expect(rows[0]).toContain('Apple Silicon (MPS)')
-    expect(rows[0]).toContain('773 MB')
+    expect(rows[0]).toBe('HardwareApple Silicon (MPS)Detected')
     expect(rows[1]).toContain('/home/user/ComfyUI')
+    expect(wrapper.get('[data-testid="config-summary"]').text()).not.toContain('773 MB')
     expect(wrapper.find('#source-fields').exists()).toBe(false)
     expect(wrapper.get('.config-continue').text()).toBe('Install')
 
@@ -533,6 +533,63 @@ describe('InstallWizardModal heading', () => {
 
     await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
+  })
+
+  it('sums up a standalone build like first run: Hardware, Location, Version with the release as its note', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [
+          { id: 'release', label: 'Release', type: 'select' },
+          { id: 'comfyVersion', label: 'Version', type: 'select' },
+          { id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }
+        ]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_source: string, fieldId: string) => {
+        if (fieldId === 'release') {
+          return [
+            {
+              value: 'stable',
+              label: 'Stable',
+              description: 'Tested releases, recommended for most users',
+              recommended: true
+            }
+          ]
+        }
+        if (fieldId === 'comfyVersion') {
+          return [
+            { value: 'v0.46.1', label: 'v0.46.1', description: 'Latest stable', recommended: true }
+          ]
+        }
+        return [
+          {
+            value: 'amd',
+            label: 'AMD',
+            description: 'ComfyUI 0.46.1 · Python 3.13.12 · 8655 MB',
+            recommended: true
+          }
+        ]
+      }
+    )
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    const rows = wrapper.findAll('.config-summary-row')
+    expect(rows.map((row) => row.get('span').text())).toEqual(['Hardware', 'Location', 'Version'])
+    expect(rows[0].text()).toBe('HardwareAMDDetected')
+    expect(rows[2].text()).toBe('VersionComfyUI v0.46.1Stable')
+    const summary = wrapper.get('[data-testid="config-summary"]').text()
+    for (const description of [
+      'Tested releases, recommended for most users',
+      'Latest stable',
+      'ComfyUI 0.46.1 · Python 3.13.12 · 8655 MB'
+    ]) {
+      expect(summary).not.toContain(description)
+    }
   })
 
   it('browses for a new location straight from the summary', async () => {

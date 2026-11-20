@@ -20,6 +20,7 @@ import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import {
   displayPath,
   installLocation,
+  hardwareNoteKey,
   isCpuVariant,
   machineName,
   planVersion,
@@ -123,6 +124,13 @@ const hardwareDetected = computed(
     !!variant.value &&
     !workspaceBuild.value &&
     (!props.savedPlan || variant.value.recommended === true)
+)
+const hardwareNote = computed(() =>
+  hardwareNoteKey({
+    unsupported: !!unsupportedReason.value,
+    cpuOnly: cpuOnly.value,
+    detected: hardwareDetected.value
+  })
 )
 const machine = computed(() => machineName(systemInfo.value, cpuOnly.value))
 const memoryGb = computed(() =>
@@ -526,15 +534,7 @@ defineExpose({ open, resetContinue })
                 ]"
                 :title="unsupportedReason || hardwareWarning || undefined"
               >
-                {{
-                  unsupportedReason
-                    ? t('setup.unsupported')
-                    : cpuOnly
-                      ? t('setup.noGpu')
-                      : hardwareDetected
-                        ? t('setup.detected')
-                        : ''
-                }}
+                {{ hardwareNote ? t(hardwareNote) : '' }}
               </span>
             </SetupSummaryRow>
             <SetupSummaryRow

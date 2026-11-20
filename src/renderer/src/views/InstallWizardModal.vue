@@ -47,8 +47,10 @@ import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import {
   INSTALL_SPACE_FACTOR,
   downloadBytesOf,
+  hardwareNoteKey,
   isCpuVariant,
   machineName,
+  selectedVersion,
   type ChangeSetupDraft,
   type NewInstallSetup,
   type SavedSetup,
@@ -81,13 +83,7 @@ import {
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
-import TruncatedText from '../components/TruncatedText.vue'
-import {
-  SUMMARY_BOX_CLASS,
-  SUMMARY_GRID_CLASS,
-  SUMMARY_META_CLASS,
-  SUMMARY_NOTE_GRID_CLASS
-} from '../lib/setupSummary'
+import { SUMMARY_BOX_CLASS, SUMMARY_GRID_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
@@ -1647,7 +1643,11 @@ interface SummaryRow {
   label: string
   value: string
   meta?: string
+  metaTitle?: string
+  metaWarning?: boolean
 }
+
+const LOCATION_ROW_KEY = 'location'
 
 function fieldSummaryValue(field: SourceField): string {
   if (field.type === 'text') return textFieldValues.value.get(field.id) ?? ''
@@ -1655,7 +1655,44 @@ function fieldSummaryValue(field: SourceField): string {
   return selections.value[field.id]?.label ?? getSelectPlaceholder(field)
 }
 
-const summaryRows = computed<SummaryRow[]>(() => {
+function standaloneHardwareRow(): SummaryRow {
+  const variant = selections.value.variant
+  const note = hardwareNoteKey({
+    unsupported: !!unsupportedReason.value,
+    cpuOnly: isCpuVariant(variant),
+    detected: variant?.recommended === true
+  })
+  const caution = unsupportedReason.value || hardwareWarning.value
+  return {
+    key: 'standalone-hardware',
+    icon: Zap,
+    label: t('setup.hardware'),
+    value: fieldLoading.value.get('variant')
+      ? t('newInstall.loading')
+      : (variant?.label ?? t('setup.checking')),
+    meta: note ? t(note) : undefined,
+    metaTitle: caution || undefined,
+    metaWarning: !!caution
+  }
+}
+
+function standaloneVersionRow(): SummaryRow {
+  const loading = fieldLoading.value.get('release') || fieldLoading.value.get('comfyVersion')
+  const tag = selectedVersion(selections.value)
+  return {
+    key: 'standalone-version',
+    icon: Package,
+    label: t('setup.version'),
+    value: loading
+      ? t('newInstall.loading')
+      : tag
+        ? t('setup.versionValue', { version: tag })
+        : t('standalone.comfyui'),
+    meta: selections.value.release?.label
+  }
+}
+
+const fieldSummaryRows = computed<SummaryRow[]>(() => {
   if (managedBuildMode.value) {
     const rows: SummaryRow[] = [
       {
@@ -1682,6 +1719,7 @@ const summaryRows = computed<SummaryRow[]>(() => {
   }
   const source = currentSource.value
   if (!source) return []
+  if (source.id === 'standalone') return [standaloneHardwareRow(), standaloneVersionRow()]
   return source.fields
     .filter((field) => !isHiddenWhenEmpty(field))
     .map((field) => ({
@@ -1694,6 +1732,14 @@ const summaryRows = computed<SummaryRow[]>(() => {
 })
 
 const showLocation = computed(() => !currentSource.value?.skipInstall)
+
+const summaryRows = computed<SummaryRow[]>(() => {
+  const rows = fieldSummaryRows.value
+  if (!showLocation.value) return rows
+  const location: SummaryRow = { key: LOCATION_ROW_KEY, icon: HardDrive, label: '', value: '' }
+  const at = currentSource.value?.id === 'standalone' && !managedBuildMode.value ? 1 : rows.length
+  return [...rows.slice(0, at), location, ...rows.slice(at)]
+})
 
 const trackFormRef = ref<InstanceType<typeof TrackBuildForm> | null>(null)
 const snapshotFormRef = ref<InstanceType<typeof LoadSnapshotForm> | null>(null)
@@ -1899,60 +1945,67 @@ defineExpose({ open })
         :class="SUMMARY_BOX_CLASS"
         :aria-label="$t('newInstall.installSummary')"
       >
-        <SetupSummaryRow
-          v-for="row in summaryRows"
-          :key="row.key"
-          class="config-summary-row"
-          :icon="row.icon"
-          :label="row.label"
-          :grid="row.meta ? SUMMARY_NOTE_GRID_CLASS : SUMMARY_GRID_CLASS"
-        >
-          <span class="truncate text-foreground">{{ row.value }}</span>
-          <span :class="[SUMMARY_META_CLASS, 'flex min-w-0 justify-end text-subtle-foreground']">
-            <TruncatedText :text="row.meta ?? ''" class="min-w-0" />
-          </span>
-        </SetupSummaryRow>
-        <SetupSummaryRow
-          v-if="showLocation"
-          class="config-summary-row config-summary-location"
-          :icon="HardDrive"
-          :label="$t('common.location')"
-        >
-          <span class="flex min-w-0" data-testid="config-summary-path">
-            <PathOpenButton
-              v-if="instPath"
-              class="leading-4"
-              :path="instPath"
-              @open="handleOpenInstPath"
-            />
-          </span>
-          <span
-            class="flex min-w-0 items-center justify-end gap-3"
-            :class="[
-              SUMMARY_META_CLASS,
-              diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
-            ]"
+        <template v-for="row in summaryRows" :key="row.key">
+          <SetupSummaryRow
+            v-if="row.key === LOCATION_ROW_KEY"
+            class="config-summary-row config-summary-location"
+            :icon="HardDrive"
+            :label="$t('common.location')"
           >
+            <span class="flex min-w-0" data-testid="config-summary-path">
+              <PathOpenButton
+                v-if="instPath"
+                class="leading-4"
+                :path="instPath"
+                @open="handleOpenInstPath"
+              />
+            </span>
             <span
-              class="min-w-0 truncate"
-              :class="{ 'config-path-required': diskShortLabel }"
-              :title="locationMeta || undefined"
-              >{{ locationMeta }}</span
+              class="flex min-w-0 items-center justify-end gap-3"
+              :class="[
+                SUMMARY_META_CLASS,
+                diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
+              ]"
             >
-            <Button
-              size="sm"
-              variant="secondary"
-              type="button"
-              class="config-path-browse -my-1 flex-none rounded-lg px-3"
-              data-testid="config-summary-browse"
-              @click="handleBrowse"
+              <span
+                class="min-w-0 truncate"
+                :class="{ 'config-path-required': diskShortLabel }"
+                :title="locationMeta || undefined"
+                >{{ locationMeta }}</span
+              >
+              <Button
+                size="sm"
+                variant="secondary"
+                type="button"
+                class="config-path-browse -my-1 flex-none rounded-lg px-3"
+                data-testid="config-summary-browse"
+                @click="handleBrowse"
+              >
+                {{ $t('common.browse') }}
+              </Button>
+            </span>
+          </SetupSummaryRow>
+          <SetupSummaryRow
+            v-else
+            class="config-summary-row"
+            :data-testid="`config-summary-${row.key}`"
+            :icon="row.icon"
+            :label="row.label"
+          >
+            <span class="truncate text-foreground">{{ row.value }}</span>
+            <span
+              :class="[
+                SUMMARY_META_CLASS,
+                'max-w-[220px] min-w-0 truncate',
+                row.metaWarning ? 'text-[#f0b135]' : 'text-subtle-foreground'
+              ]"
+              :title="row.metaTitle ?? row.meta"
+              >{{ row.meta }}</span
             >
-              {{ $t('common.browse') }}
-            </Button>
-          </span>
-        </SetupSummaryRow>
+          </SetupSummaryRow>
+        </template>
         <div
-          v-if="initializing && summaryRows.length === 0"
+          v-if="initializing && fieldSummaryRows.length === 0"
           class="config-loading h-4 text-[13px]/4 text-subtle-foreground"
           :class="spinnerClass"
         >

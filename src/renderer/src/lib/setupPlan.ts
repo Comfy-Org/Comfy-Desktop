@@ -100,11 +100,27 @@ export function isCpuVariant(variant: FieldOption | undefined): boolean {
   return /(^|-)cpu($|-)/.test(id)
 }
 
-export function planVersion(plan: SetupPlan): string {
-  const picked = plan.selections.comfyVersion?.value
+export function selectedVersion(selections: Record<string, FieldOption | undefined>): string {
+  const picked = selections.comfyVersion?.value
   if (picked) return picked
-  const tag = plan.selections.release?.data?.latestStableTag
+  const tag = selections.release?.data?.latestStableTag
   return typeof tag === 'string' ? tag : ''
+}
+
+export function planVersion(plan: SetupPlan): string {
+  return selectedVersion(plan.selections)
+}
+
+export type HardwareNoteKey = 'setup.unsupported' | 'setup.noGpu' | 'setup.detected'
+
+export function hardwareNoteKey(state: {
+  unsupported: boolean
+  cpuOnly: boolean
+  detected: boolean
+}): HardwareNoteKey | null {
+  if (state.unsupported) return 'setup.unsupported'
+  if (state.cpuOnly) return 'setup.noGpu'
+  return state.detected ? 'setup.detected' : null
 }
 
 export type SetupPlatform = 'mac' | 'pc' | 'computer'

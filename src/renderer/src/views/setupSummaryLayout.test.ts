@@ -175,26 +175,8 @@ async function newBuildSummary(): Promise<{ metrics: SummaryMetrics; box: HTMLEl
   await settle()
   const box = document.querySelector<HTMLElement>('.config-summary-list')!
   const rows = [...box.querySelectorAll<HTMLElement>('.config-summary-row')]
-  expect(rows).toHaveLength(4)
+  expect(rows).toHaveLength(3)
   return { metrics: measure(box, rows), box }
-}
-
-function withNotes(notes: Record<string, string>): void {
-  const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
-  const defaultOptions = options.getMockImplementation()!
-  options.mockImplementation(async (source: string, field: string) => {
-    const list = await defaultOptions(source, field)
-    const note = notes[field]
-    return note === undefined ? list : list.map((option) => ({ ...option, description: note }))
-  })
-}
-
-function noteWithText(box: HTMLElement, text: string): HTMLElement {
-  const note = [...box.querySelectorAll<HTMLElement>('.config-summary-row .truncated-text')].find(
-    (candidate) => candidate.textContent === text
-  )
-  expect(note, text).toBeDefined()
-  return note!
 }
 
 const mounted: VueWrapper[] = []
@@ -233,20 +215,6 @@ it('explains install space when the download info icon is hovered or focused', a
   await userEvent.keyboard('{Escape}')
   await expect.poll(bubble).toBeNull()
   await expect.element(browserPage.getByTestId('setup-install')).toBeVisible()
-})
-
-it('gives medium Release and Hardware notes the free width instead of cutting them off', async () => {
-  await browserPage.viewport(1100, 860)
-  const releaseNote = 'Stable channel, tested with the latest ComfyUI frontend'
-  const hardwareNote = 'ComfyUI 0.42.4 with PyTorch nightly for Apple Silicon'
-  withNotes({ release: releaseNote, variant: hardwareNote })
-  const { box } = await newBuildSummary()
-
-  for (const text of [releaseNote, hardwareNote]) {
-    const note = noteWithText(box, text)
-    expect(note.scrollWidth, text).toBeLessThanOrEqual(note.clientWidth)
-    expect(note.getBoundingClientRect().width, text).toBeGreaterThan(220)
-  }
 })
 
 describe.each([
@@ -332,30 +300,33 @@ describe.each([
     expect(browse.borderTopWidth).toBe('0px')
   })
 
-  it('keeps the value readable when a row note is very long, and shows the full note on hover', async () => {
+  it('shows the rows, values and notes of the first-run summary, without long descriptions', async () => {
     await browserPage.viewport(width, height)
     const longNote = 'A very long build description '.repeat(12).trim()
-    withNotes({ variant: longNote })
+    const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
+    const defaultOptions = options.getMockImplementation()!
+    options.mockImplementation(async (source: string, field: string) => {
+      const list = await defaultOptions(source, field)
+      return list.map((option) => ({ ...option, description: longNote }))
+    })
+    const lines = (rows: HTMLElement[]): string[][] =>
+      rows.map((row) => [...row.children].map((cell) => cell.textContent!.trim()))
+    const firstRun = mount(FirstUseTakeover, { attachTo: document.body })
+    mounted.push(firstRun)
+    await flushPromises()
+    await settle()
+    const firstRunLines = lines([
+      ...document.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')
+    ])
+    firstRun.unmount()
     const { box } = await newBuildSummary()
-    const note = noteWithText(box, longNote)
-    const row = note.closest<HTMLElement>('.config-summary-row')!
-    const value = row.children[1] as HTMLElement
-    const cell = row.children[2] as HTMLElement
+    const newBuildLines = lines([...box.querySelectorAll<HTMLElement>('.config-summary-row')])
 
-    expect(value.textContent).toBe('Apple Silicon (MPS)')
-    expect(value.scrollWidth).toBeLessThanOrEqual(value.clientWidth)
-    expect(note.scrollWidth).toBeGreaterThan(note.clientWidth)
-    expect(
-      note.getBoundingClientRect().left - value.getBoundingClientRect().right
-    ).toBeGreaterThanOrEqual(16)
-    expect(Math.round(box.getBoundingClientRect().right - cell.getBoundingClientRect().right)).toBe(
-      parseFloat(getComputedStyle(box).paddingRight)
-    )
-
-    await userEvent.hover(note)
-    await expect
-      .poll(() => document.querySelector('.tooltip-bubble')?.textContent)
-      .toContain(longNote)
+    expect(newBuildLines.map(([label]) => label)).toEqual(['Hardware', 'Location', 'Version'])
+    expect(newBuildLines[0]).toEqual(firstRunLines[0])
+    expect(newBuildLines[2]).toEqual(firstRunLines[2])
+    expect(newBuildLines[2]).toEqual(['Version', 'ComfyUI v0.42.4', 'Stable'])
+    expect(box.textContent).not.toContain(longNote)
   })
 
   it('puts the Location note and Browse on the Location line, right-aligned', async () => {
