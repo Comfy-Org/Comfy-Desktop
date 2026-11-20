@@ -36,13 +36,29 @@ interface ListedProcess {
 
 export class ProcessLookupError extends Error {}
 
+const isZombieState = (state: string): boolean => state.startsWith('Z')
+
+function isUnreapedZombie(pid: number): boolean {
+  const result = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], {
+    encoding: 'utf8',
+    timeout: FORCED_EXIT_DEADLINE_MS
+  })
+  if (result.error || result.status === null) {
+    throw new ProcessLookupError(`[e2e-harness] could not read the state of process ${pid}`)
+  }
+  const state = result.stdout.trim()
+  if (state === '') return true
+  return isZombieState(state)
+}
+
 export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
-    return true
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') return false
   }
+  if (process.platform === 'win32') return true
+  return !isUnreapedZombie(pid)
 }
 
 export function killProcessTrees(pids: number[]): void {
@@ -62,7 +78,7 @@ export function killProcessTrees(pids: number[]): void {
 }
 
 export function listProcesses(): Map<number, ListedProcess> {
-  const listing = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,lstart=,command='], {
+  const listing = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,stat=,lstart=,command='], {
     encoding: 'utf8',
     timeout: FORCED_EXIT_DEADLINE_MS
   })
@@ -71,12 +87,12 @@ export function listProcesses(): Map<number, ListedProcess> {
   }
   const processes = new Map<number, ListedProcess>()
   for (const line of listing.stdout.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.*)$/.exec(line)
-    if (!match) continue
+    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.*)$/.exec(line)
+    if (!match || isZombieState(match[3]!)) continue
     processes.set(Number(match[1]), {
       parentPid: Number(match[2]),
-      startTime: match[3]!,
-      command: match[4]!
+      startTime: match[4]!,
+      command: match[5]!
     })
   }
   return processes
