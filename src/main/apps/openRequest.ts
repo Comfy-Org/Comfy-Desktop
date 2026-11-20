@@ -90,14 +90,27 @@ export const COMFY_STATE_SCRIPT =
   `if(workflows.isBusy===true)return 'starting';` +
   `return workflows.activeWorkflow?'ready':'no-workflow'})()`
 
-export function openWorkflowScript(request: OpenRequest): string {
+function loadScript(call: string, data: Record<string, unknown>, name: string): string {
   return (
-    `(function(promptText,name){` +
+    `(function(dataText,name){` +
     FIND_COMFY_APP +
     `if(!usable)return false;` +
-    `return Promise.resolve(app.loadApiJson(JSON.parse(promptText),name))` +
+    `var data=JSON.parse(dataText);` +
+    `return Promise.resolve(${call})` +
     `.then(function(r){return r!==false},function(){return false});` +
-    `})(${JSON.stringify(JSON.stringify(request.prompt))},${JSON.stringify(request.name)})`
+    `})(${JSON.stringify(JSON.stringify(data))},${JSON.stringify(name)})`
+  )
+}
+
+export function openWorkflowScript(request: OpenRequest): string {
+  return loadScript('app.loadApiJson(data,name)', request.prompt, request.name)
+}
+
+export function openGraphScript(graph: Record<string, unknown>, name: string): string {
+  return loadScript(
+    `typeof app.loadGraphData==='function'?app.loadGraphData(data,true,true,name):false`,
+    graph,
+    name
   )
 }
 

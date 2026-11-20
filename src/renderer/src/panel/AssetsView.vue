@@ -160,6 +160,8 @@ const currentPage = ref(1)
 const assetTotal = ref(0)
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
+const workflowFound = ref(new Map<string, boolean>())
+const workflowChecks = ref(0)
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -814,6 +816,9 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
     mainAction: isLocal(asset) ? null : 'download',
+    workflow: canOpenWorkflow(asset),
+    workflowSlot: mayOpenWorkflow(asset),
+    workflowBuilds: workflowBuildsOf(asset),
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -825,6 +830,87 @@ watch(detailIndex, (index) => {
     lookedUpDetail.value = null
   } else if (index < visibleAssets.value.length) scrollToIndex(index)
 })
+
+const WORKFLOW_KINDS: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
+
+function workflowBuildsOf(asset: GalleryAsset): { id: string; name: string }[] | undefined {
+  if (!isLocal(asset)) return undefined
+  const place = selectedBuild.value
+  const builds =
+    place && !place.computer && !place.cloud
+      ? [place.build]
+      : localBuilds.value.filter(savesToSharedFolder)
+  return builds.map(({ id, name }) => ({ id, name }))
+}
+
+function workflowKey(asset: GalleryAsset): string {
+  const key = cardKey(asset)
+  return isLocal(asset) ? `${key}\n${asset.createdAt}\n${asset.sizeBytes}` : key
+}
+
+function mayOpenWorkflow(asset: GalleryAsset): boolean {
+  if (!WORKFLOW_KINDS.includes(asset.kind)) return false
+  return !isLocal(asset) || (workflowBuildsOf(asset)?.length ?? 0) > 0
+}
+
+function canOpenWorkflow(asset: GalleryAsset): boolean {
+  return workflowFound.value.get(workflowKey(asset)) === true && mayOpenWorkflow(asset)
+}
+
+const shownDetail = computed(() =>
+  detailIndex.value === null ? null : (detailAssets.value[detailIndex.value] ?? null)
+)
+
+async function checkWorkflow(asset: GalleryAsset, checks: number): Promise<void> {
+  const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => null)
+  if (found === null || checks !== workflowChecks.value) return
+  workflowFound.value = new Map(workflowFound.value).set(workflowKey(asset), found)
+}
+
+const WORKFLOW_CHECK_DELAY_MS = 150
+let workflowCheckTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(
+  () => selectedBuild.value?.build.id,
+  () => {
+    workflowFound.value = new Map()
+    workflowChecks.value += 1
+  }
+)
+
+watch(
+  () => {
+    const asset = shownDetail.value
+    if (!asset || !mayOpenWorkflow(asset) || workflowFound.value.has(workflowKey(asset)))
+      return null
+    return `${workflowChecks.value}\n${workflowKey(asset)}`
+  },
+  (pending) => {
+    clearTimeout(workflowCheckTimer)
+    const asset = shownDetail.value
+    if (!pending || !asset) return
+    const checks = workflowChecks.value
+    workflowCheckTimer = setTimeout(
+      () => void checkWorkflow(asset, checks),
+      WORKFLOW_CHECK_DELAY_MS
+    )
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => clearTimeout(workflowCheckTimer))
+
+async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> {
+  await closeDetail()
+  const result = await window.api
+    .openAssetWorkflow(asset.source, asset.id, asset.name, build)
+    .catch(() => ({ opened: false, error: undefined }))
+  if (result.opened) return
+  await modal.alert({
+    title: t('assets.detail.openWorkflowFailed'),
+    message: result.error ?? t('assets.detail.openWorkflowNoReason')
+  })
+}
 
 function openDetail(asset: GalleryAsset): void {
   lookedUpDetail.value = null
@@ -1561,6 +1647,7 @@ function extensionOf(name: string): string {
       @close="closeDetail"
       @download="download(detailAssets[$event]!)"
       @show-in-folder="reveal(detailAssets[$event]!)"
+      @open-workflow="(index, build) => openWorkflow(detailAssets[index]!, build)"
     />
 
     <ContextMenu
