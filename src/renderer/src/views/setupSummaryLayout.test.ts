@@ -188,10 +188,6 @@ async function newBuildSummary(): Promise<{ metrics: SummaryMetrics; box: HTMLEl
 
 const mounted: VueWrapper[] = []
 
-function nameTextLeft(input: Element): number {
-  return input.getBoundingClientRect().left + parseFloat(getComputedStyle(input).paddingLeft)
-}
-
 beforeEach(installApi)
 
 afterEach(async () => {
@@ -287,7 +283,9 @@ describe.each([
     )
     expect(getComputedStyle(rowLabel).color).toBe(getComputedStyle(nameLabel).color)
     expect(new Set(newBuild.valueX)).toEqual(
-      new Set([Math.round(nameTextLeft(nameCard.querySelector('input')!) - nameEdge.left)])
+      new Set([
+        Math.round(nameCard.querySelector('input')!.getBoundingClientRect().left - nameEdge.left)
+      ])
     )
   })
 
@@ -298,7 +296,9 @@ describe.each([
     const newBuildName = document
       .querySelector<HTMLElement>('[data-testid="detected-gpu-field"]')!
       .getBoundingClientRect().left
-    const nameInput = nameTextLeft(document.querySelector<HTMLElement>('.config-name-card input')!)
+    const nameInput = document
+      .querySelector<HTMLElement>('.config-name-card input')!
+      .getBoundingClientRect().left
 
     expect(new Set(firstRun.metrics.valueX)).toEqual(new Set([firstRun.machineX]))
     expect(new Set(newBuild.valueX)).toEqual(
