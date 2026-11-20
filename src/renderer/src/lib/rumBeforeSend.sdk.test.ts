@@ -55,9 +55,11 @@ test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause o
   })
 
   datadogRum.addError(new Error('plain failure at C:\\Users\\bob\\x'))
-  const cause = new Error('inner failure at C:\\Users\\alice\\x with password=hunter2')
+  const cause = new Error(
+    'inner failure at C:\\Users\\alice\\x with password=hunter2 and Authorization: Bearer abcdefghijklmnop'
+  )
   cause.stack = [
-    'Error: inner failure with Authorization: Bearer abcdefghijklmnop',
+    'Error: inner failure',
     '    at loadInner (file:///home/bob/plugins/inner-frame.js:3:4)'
   ].join('\n')
   const wrapped = new Error('wrapped failure', { cause })

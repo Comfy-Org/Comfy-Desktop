@@ -136,6 +136,7 @@ describe('rumBeforeSend', () => {
 
     expect(addError).toHaveBeenCalledTimes(1)
     const [reported, context] = addError.mock.calls[0] ?? []
+    expect((reported as Error).name).toBe('Error')
     expect((reported as Error).message).toBe(
       'wrapped\nCaused by: Error: inner C:\\Users\\[REDACTED]\\x'
     )
@@ -154,14 +155,19 @@ describe('rumBeforeSend', () => {
         source: 'custom',
         handling_stack: [
           'Error',
-          '  at <anonymous> @ file:///C:/Users/alice/AppData/Local/Programs/ComfyUI/resources/app.asar/out/renderer/assets/rendererBootstrap-x.js:1:2'
+          '  at <anonymous> @ file:///C:/Users/alice/AppData/Local/Programs/ComfyUI/resources/app.asar/out/renderer/assets/rendererBootstrap-x.js:1:2',
+          '  at loadPlugin @ file:///home/bob/plugins/y.js:3:4'
         ].join('\n')
       }
     }
 
     expect(send(event)).toBe(true)
     expect(event.error.handling_stack).toBe(
-      'Error\n  at <anonymous> @ app://app/renderer/assets/rendererBootstrap-x.js:1:2'
+      [
+        'Error',
+        '  at <anonymous> @ app://app/renderer/assets/rendererBootstrap-x.js:1:2',
+        '  at loadPlugin @ file:///home/[REDACTED]/plugins/y.js:3:4'
+      ].join('\n')
     )
   })
 
@@ -203,14 +209,18 @@ describe('rumBeforeSend', () => {
     expect(flattened.cause).toBeUndefined()
   })
 
-  it('scrubs and keeps an error event without causes', () => {
+  it('scrubs and keeps an error event without causes, and does not report it again', () => {
+    vi.useFakeTimers()
+    const addError = vi.spyOn(datadogRum, 'addError').mockImplementation(() => undefined)
     const event = {
       type: 'error',
       error: { message: 'open C:\\Users\\alice\\x failed', source: 'custom', causes: [] }
     }
 
     expect(send(event)).toBe(true)
+    vi.runAllTimers()
     expect(event.error.message).toBe('open C:\\Users\\[REDACTED]\\x failed')
+    expect(addError).not.toHaveBeenCalled()
   })
 
   it('keeps other events as they are', () => {
