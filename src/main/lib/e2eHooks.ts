@@ -4,6 +4,9 @@ import {
   type DownloadsTrayState
 } from './comfyDownloadManager'
 import type { BetaArgView } from '../../types/ipc'
+import { isPermittedDownloadUrl, isSecurePublicDownloadUrl } from './downloadUrlPolicy'
+import { resolveRedirects, type ResolveRedirectsResult } from './redirectResolver'
+import { startModelTransfer, type ModelTransferOutcome } from './modelDownloadTransport'
 import { _test_setUpdateState, type AppUpdateState } from './updater'
 import {
   get as _releaseCacheGet,
@@ -47,6 +50,13 @@ export interface RunningSessionSnapshot {
   url: string | undefined
 }
 
+export type E2EDownloadPolicy = 'permitted' | 'secure-public'
+
+const e2ePolicies = {
+  permitted: isPermittedDownloadUrl,
+  'secure-public': isSecurePublicDownloadUrl
+}
+
 interface SetInstallUpdateOpts {
   installationId?: string
   available: boolean
@@ -88,6 +98,16 @@ export interface E2EHelpers {
     buildId: string
     version: string
   }): Promise<{ staged: string[] } | { error: string; kind?: string }>
+  resolveRedirects(opts: {
+    url: string
+    policy: E2EDownloadPolicy
+    headers?: Record<string, string>
+  }): Promise<ResolveRedirectsResult>
+  runModelTransfer(opts: {
+    url: string
+    finalPath: string
+    policy: E2EDownloadPolicy
+  }): Promise<ModelTransferOutcome>
 }
 
 export function registerE2EHooks(): void {
@@ -178,6 +198,18 @@ export function registerE2EHooks(): void {
         const err = e as { message?: string; kind?: string }
         return { error: err.message ?? String(e), ...(err.kind ? { kind: err.kind } : {}) }
       }
+    },
+    resolveRedirects({ url, policy, headers }) {
+      return resolveRedirects({ url, headers, validateUrl: e2ePolicies[policy] })
+    },
+    runModelTransfer({ url, finalPath, policy }) {
+      return startModelTransfer({
+        url,
+        finalPath,
+        directory: 'checkpoints',
+        filename: finalPath.split(/[\\/]/).pop() ?? 'model.safetensors',
+        validateUrl: e2ePolicies[policy]
+      }).done
     }
   }
   ;(globalThis as unknown as { __e2e: E2EHelpers }).__e2e = helpers

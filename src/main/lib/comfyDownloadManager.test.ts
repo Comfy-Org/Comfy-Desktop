@@ -20,6 +20,11 @@ vi.mock('electron', () => ({
   shell: {}
 }))
 
+const resolveRedirectsMock = vi.hoisted(() =>
+  vi.fn(async ({ url }: { url: string }) => ({ ok: true as const, url }))
+)
+vi.mock('./redirectResolver', () => ({ resolveRedirects: resolveRedirectsMock }))
+
 let hasValidExtension: (filename: string) => boolean
 let isPathContained: (filePath: string, baseDir: string) => boolean
 let sanitizeAssetFilename: (filename: string, outputDir: string) => string | null
@@ -1321,5 +1326,188 @@ describe('areModelsPresent', () => {
       { directory: 'vae', filename: 'missing.safetensors' }
     ])
     expect(present).toBe(false)
+  })
+})
+
+describe('download URL policy', () => {
+  function assetHarness() {
+    let willDownload:
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      }),
+      downloadURL: vi.fn()
+    } as unknown as Electron.Session
+    const send = vi.fn()
+    const webContents = {
+      session,
+      send,
+      isDestroyed: () => false
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents
+    } as unknown as Electron.BrowserWindow
+    const progress = () =>
+      send.mock.calls
+        .filter(([channel]) => channel === 'desktop2-download-progress')
+        .map(([, p]) => p as { status: string; error?: string })
+    return { session, win, progress, getWillDownload: () => willDownload }
+  }
+
+  it('does not start an asset download for a disallowed URL', async () => {
+    const { session, win } = assetHarness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    try {
+      await expect(
+        mod.startAssetDownload(win, 'http://169.254.169.254/latest/meta-data/', 'a.png', outputDir)
+      ).resolves.toBe(false)
+      await expect(
+        mod.startAssetDownload(
+          win,
+          'https://a.example/x.png',
+          'a.png',
+          outputDir,
+          undefined,
+          undefined,
+          {
+            validateUrl: () => false
+          }
+        )
+      ).resolves.toBe(false)
+      expect(resolveRedirectsMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'http://169.254.169.254/latest/meta-data/' })
+      )
+      expect(session.downloadURL).not.toHaveBeenCalled()
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('hands Chromium the pre-resolved URL and validates hops with the baseline policy', async () => {
+    const { session, win } = assetHarness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://cloud.comfy.org/api/view?filename=a.png'
+    const signed = 'https://storage.example/bucket/a.png?sig=1'
+    resolveRedirectsMock.mockResolvedValueOnce({ ok: true, url: signed })
+    const validateUrl = vi.fn((u: string) => u.startsWith('https://cloud.comfy.org/'))
+    try {
+      await expect(
+        mod.startAssetDownload(win, url, 'a.png', outputDir, 'tok', undefined, { validateUrl })
+      ).resolves.toBe(true)
+      await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledTimes(1))
+      expect(session.downloadURL).toHaveBeenCalledWith(signed, {
+        headers: { Authorization: 'Bearer tok' }
+      })
+      const resolveCall = resolveRedirectsMock.mock.calls.at(-1)![0] as unknown as {
+        url: string
+        validateUrl: (u: string) => boolean
+        validateHop: (u: string) => boolean
+      }
+      expect(resolveCall.url).toBe(url)
+      expect(resolveCall.validateUrl).toBe(validateUrl)
+      expect(resolveCall.validateHop(signed)).toBe(true)
+      expect(resolveCall.validateHop('http://169.254.169.254/')).toBe(false)
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('reports an error and never calls downloadURL when a redirect hop is refused', async () => {
+    const { session, win, progress } = assetHarness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    resolveRedirectsMock.mockResolvedValueOnce({
+      ok: false,
+      error: 'Download failed: redirected to a URL that is not allowed'
+    } as never)
+    try {
+      await expect(
+        mod.startAssetDownload(
+          win,
+          'http://127.0.0.1:8188/api/view?filename=b.png',
+          'b.png',
+          outputDir
+        )
+      ).resolves.toBe(true)
+      await vi.waitFor(() =>
+        expect(progress().at(-1)).toMatchObject({
+          status: 'error',
+          error: 'Download failed: redirected to a URL that is not allowed'
+        })
+      )
+      expect(session.downloadURL).not.toHaveBeenCalled()
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('cancels the item when the chain Chromium followed contains a disallowed hop', async () => {
+    const { session, win, progress, getWillDownload } = assetHarness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'http://127.0.0.1:8188/api/view?filename=c.png'
+    try {
+      await mod.startAssetDownload(win, url, 'c.png', outputDir)
+      await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledWith(url, undefined))
+      const cancel = vi.fn()
+      const setSavePath = vi.fn()
+      const item = {
+        getURLChain: () => [url, 'http://169.254.169.254/latest/meta-data/'],
+        getURL: () => 'http://169.254.169.254/latest/meta-data/',
+        getContentDisposition: () => null,
+        cancel,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn()
+      } as unknown as Electron.DownloadItem
+      getWillDownload()!({}, item, null)
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(setSavePath).not.toHaveBeenCalled()
+      expect(progress().at(-1)).toMatchObject({
+        status: 'error',
+        error: 'Download failed: redirected to a URL that is not allowed'
+      })
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a model job whose URL fails the policy before touching disk', async () => {
+    const baseDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-models-'))
+    try {
+      const handle = await mod.startManagedModelJob({
+        url: 'http://huggingface.co/m.safetensors',
+        filename: 'm.safetensors',
+        directory: 'checkpoints',
+        destinationBaseDir: baseDir,
+        validateUrl: () => false
+      })
+      await expect(handle.completion).resolves.toMatchObject({
+        status: 'error',
+        error: 'The download URL is not allowed'
+      })
+      expect(fs.existsSync(path.join(baseDir, 'checkpoints'))).toBe(false)
+    } finally {
+      await fs.promises.rm(baseDir, { recursive: true, force: true })
+    }
+  })
+
+  it('applies the baseline policy to model jobs by default', async () => {
+    const baseDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-models-'))
+    try {
+      const handle = await mod.startManagedModelJob({
+        url: 'file:///etc/passwd',
+        filename: 'm.safetensors',
+        directory: 'checkpoints',
+        destinationBaseDir: baseDir
+      })
+      await expect(handle.completion).resolves.toMatchObject({
+        status: 'error',
+        error: 'The download URL is not allowed'
+      })
+    } finally {
+      await fs.promises.rm(baseDir, { recursive: true, force: true })
+    }
   })
 })

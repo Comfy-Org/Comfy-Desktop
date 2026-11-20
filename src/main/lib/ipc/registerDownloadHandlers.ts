@@ -15,6 +15,7 @@ import {
   subscribeToInstallationModelJobs
 } from '../comfyDownloadManager'
 import { getDeviceId, getIdClass } from '../deviceId'
+import { isSecurePublicDownloadUrl } from '../downloadUrlPolicy'
 import { openModelAccessPageWindow } from '../modelAccessPage'
 import { isTrustedCloudUrl } from '../trustedCloudUrl'
 
@@ -70,7 +71,18 @@ export function registerDownloadHandlers(): void {
 
   ipcMain.handle(
     'desktop2-download-model',
-    (event, { url, filename, directory }: { url: string; filename: string; directory: string }) => {
+    (
+      event,
+      { url, filename, directory }: { url: unknown; filename: unknown; directory: unknown }
+    ) => {
+      if (
+        typeof url !== 'string' ||
+        typeof filename !== 'string' ||
+        typeof directory !== 'string'
+      ) {
+        return false
+      }
+      if (!isSecurePublicDownloadUrl(url)) return false
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) return false
       return startModelDownload(win, url, filename, directory, event.sender)

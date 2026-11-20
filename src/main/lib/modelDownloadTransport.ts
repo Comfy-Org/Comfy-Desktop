@@ -16,6 +16,11 @@ import {
   type SegmentedRun
 } from './modelDownloadSegments'
 import {
+  isPermittedDownloadUrl,
+  isPermittedRedirect,
+  type DownloadUrlCheck
+} from './downloadUrlPolicy'
+import {
   installStagedAtFinal,
   quarantineOrphanStagedBytes,
   readStagedMeta,
@@ -51,6 +56,7 @@ export interface ModelTransferOptions {
   sha256?: string
   idleTimeoutMs?: number
   segmentTuning?: Partial<SegmentTuning>
+  validateUrl?: DownloadUrlCheck
   onProgress?: (p: ModelTransferProgress) => void
 }
 
@@ -124,6 +130,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     expectedSize,
     sha256,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+    validateUrl = isPermittedDownloadUrl,
     onProgress
   } = opts
   const tuning: SegmentTuning = { ...DEFAULT_SEGMENT_TUNING, ...opts.segmentTuning }
@@ -248,9 +255,9 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         } catch {}
       }
 
-      const send = (target: string, onPartSession: boolean): void => {
+      const send = (startUrl: string, onPartSession: boolean): void => {
         const request = net.request({
-          url: target,
+          url: startUrl,
           ...(onPartSession
             ? { session: partSessionFor(slot) }
             : session
@@ -263,6 +270,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         request.setHeader('User-Agent', USER_AGENT)
         request.setHeader('Range', range)
         request.setHeader('If-Range', ifRange)
+        let target = startUrl
         request.on('redirect', (_status, _method, redirectUrl) => {
           if (!live()) return
           redirectsLeft--
@@ -272,6 +280,11 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           }
           if (!redirectUrl) {
             handlers.onError(new Error('empty redirect location'))
+            return
+          }
+          if (!isPermittedRedirect(target, redirectUrl, validateUrl)) {
+            drop(request)
+            handlers.onError(new Error('redirected to a URL that is not allowed'))
             return
           }
           const nextOrigin = originOf(redirectUrl)
@@ -286,6 +299,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
             send(redirectUrl, true)
             return
           }
+          target = redirectUrl
           try {
             request.followRedirect()
           } catch (err) {
@@ -342,6 +356,13 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     validator: { kind: 'etag' | 'last-modified'; value: string },
     sourceUrl: string
   ): void => {
+    if (!validateUrl(sourceUrl)) {
+      try {
+        fs.closeSync(fd)
+      } catch {}
+      failRetaining('Download failed: the download URL is not allowed')
+      return
+    }
     const run = startSegmentedRun({
       fd,
       totalBytes: meta.expectedSize,
@@ -484,6 +505,11 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     const gen = ++attemptGen
     const stale = (): boolean => phase !== 'active' || gen !== attemptGen
 
+    if (!validateUrl(attemptUrl)) {
+      failRetaining('Download failed: the download URL is not allowed')
+      return
+    }
+
     let resumeFrom = 0
     let existingMeta: StagedDownloadMeta | null = readStagedMeta(metaPath)
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
@@ -569,6 +595,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     }
 
     let redirectsLeft = MAX_REDIRECTS
+    let currentUrl = attemptUrl
     let request: Electron.ClientRequest
     try {
       request = net.request({
@@ -608,6 +635,11 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           failRetaining('Download failed: empty redirect location')
           return
         }
+        if (!isPermittedRedirect(currentUrl, redirectUrl, validateUrl)) {
+          failRetaining('Download failed: redirected to a URL that is not allowed')
+          return
+        }
+        currentUrl = redirectUrl
         try {
           request.followRedirect()
         } catch (err) {
