@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   findEntryByComfySender: vi.fn(),
+  findInstallationIdByComfySender: vi.fn(),
+  subscribeToInstallationModelJobs: vi.fn(),
   fromWebContents: vi.fn(),
   handle: vi.fn(),
   on: vi.fn(),
@@ -18,7 +20,8 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('../../host/registry', () => ({
-  findEntryByComfySender: mocks.findEntryByComfySender
+  findEntryByComfySender: mocks.findEntryByComfySender,
+  findInstallationIdByComfySender: mocks.findInstallationIdByComfySender
 }))
 
 vi.mock('../comfyDownloadManager', () => ({
@@ -30,7 +33,8 @@ vi.mock('../comfyDownloadManager', () => ({
   pauseModelDownload: vi.fn(),
   resumeModelDownload: vi.fn(),
   retryDownload: vi.fn(),
-  startModelDownload: vi.fn()
+  startModelDownload: vi.fn(),
+  subscribeToInstallationModelJobs: mocks.subscribeToInstallationModelJobs
 }))
 
 vi.mock('../modelAccessPage', () => ({
@@ -71,6 +75,75 @@ describe('registerDownloadHandlers model access bridge', () => {
     )
 
     expect(mocks.openModelAccessPageWindow).toHaveBeenCalledWith(sender, url)
+  })
+})
+
+describe('registerDownloadHandlers model download snapshot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    registerDownloadHandlers()
+  })
+
+  const COMFY_URL = 'http://127.0.0.1:8188/'
+
+  function listModelDownloads({
+    url = COMFY_URL,
+    frame = 'main'
+  }: { url?: string; frame?: 'main' | 'subframe' } = {}): { sender: unknown; result: unknown } {
+    const mainFrame = { processId: 3, routingId: 1, url }
+    const sender = { id: 9, mainFrame }
+    const senderFrame = frame === 'main' ? mainFrame : { processId: 3, routingId: 2, url }
+    const call = mocks.handle.mock.calls.find(([name]) => name === 'desktop2-list-model-downloads')
+    expect(call).toBeDefined()
+    const result = (call![1] as (event: { sender: unknown; senderFrame: unknown }) => unknown)({
+      sender,
+      senderFrame
+    })
+    return { sender, result }
+  }
+
+  it("subscribes the sender to its installation's jobs and returns their snapshot", () => {
+    const snapshot = [{ id: 'job-1', url: 'https://host.example/a', status: 'paused' }]
+    mocks.findEntryByComfySender.mockReturnValue({ comfyUrl: COMFY_URL })
+    mocks.findInstallationIdByComfySender.mockReturnValue('install-a')
+    mocks.subscribeToInstallationModelJobs.mockReturnValue(snapshot)
+
+    const { sender, result } = listModelDownloads({ url: `${COMFY_URL}?workflow=a` })
+
+    expect(result).toBe(snapshot)
+    expect(mocks.subscribeToInstallationModelJobs).toHaveBeenCalledWith('install-a', sender)
+  })
+
+  it.for([null, ''])(
+    'returns no jobs to a sender whose installation resolves to %j',
+    (installationId) => {
+      mocks.findEntryByComfySender.mockReturnValue({ comfyUrl: COMFY_URL })
+      mocks.findInstallationIdByComfySender.mockReturnValue(installationId)
+
+      expect(listModelDownloads().result).toEqual([])
+      expect(mocks.subscribeToInstallationModelJobs).not.toHaveBeenCalled()
+    }
+  )
+
+  it.for([
+    {
+      case: 'a page that navigated to another origin',
+      url: 'https://evil.example/',
+      frame: 'main'
+    },
+    {
+      case: 'a page on another port of the same host',
+      url: 'http://127.0.0.1:9999/',
+      frame: 'main'
+    },
+    { case: 'a subframe of the installation page', url: COMFY_URL, frame: 'subframe' }
+  ] as const)('returns no jobs to $case', ({ url, frame }) => {
+    mocks.findEntryByComfySender.mockReturnValue({ comfyUrl: COMFY_URL })
+    mocks.findInstallationIdByComfySender.mockReturnValue('install-a')
+    mocks.subscribeToInstallationModelJobs.mockReturnValue([{ id: 'job-1' }])
+
+    expect(listModelDownloads({ url, frame }).result).toEqual([])
+    expect(mocks.subscribeToInstallationModelJobs).not.toHaveBeenCalled()
   })
 })
 
