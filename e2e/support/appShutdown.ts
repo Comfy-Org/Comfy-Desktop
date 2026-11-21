@@ -180,6 +180,7 @@ export function createShutdown(
   let appPid = target.appPid !== launcher?.pid ? target.appPid : undefined
   const helpers = new Map<number, string>()
   let shutdownStopBy: number | undefined
+  let lastKnownAlive: number[] = []
 
   const queryTimeoutMs = (): number =>
     shutdownStopBy === undefined ? FORCED_EXIT_DEADLINE_MS : msUntil(shutdownStopBy)
@@ -211,7 +212,10 @@ export function createShutdown(
       .map(([pid]) => pid)
   }
 
-  const livePids = (): number[] => [...rootPids(), ...liveHelpers()]
+  const livePids = (): number[] => {
+    lastKnownAlive = [...rootPids(), ...liveHelpers()]
+    return lastKnownAlive
+  }
 
   const forgetAppIfItsPidWasReused = (): void => {
     if (appPid === undefined || target.appStartTime === undefined) return
@@ -230,22 +234,23 @@ export function createShutdown(
     Math.min(Date.now() + phaseMs, stopBy)
 
   const survivorsAt = async (until: number): Promise<number[]> => {
-    for (;;) {
-      const alive = livePids()
-      if (alive.length === 0 || Date.now() >= until) return alive
+    while (Date.now() < until) {
+      if (livePids().length === 0) return lastKnownAlive
       await wait(Math.min(EXIT_POLL_MS, until - Date.now()))
     }
+    return lastKnownAlive
   }
 
   const survivorsIncludingNewHelpersAt = async (until: number): Promise<number[]> => {
     const alive = await survivorsAt(until)
-    if (alive.length > 0) return alive
+    if (alive.length > 0 || Date.now() >= until) return alive
     trackHelpers()
     return livePids()
   }
 
   const run = async (stopBy: number): Promise<void> => {
     shutdownStopBy = stopBy
+    lastKnownAlive = []
     forgetAppIfItsPidWasReused()
     trackHelpers()
     let quitOnItsOwn = true
@@ -257,14 +262,20 @@ export function createShutdown(
       }
     }
     if (quitOnItsOwn) {
-      const settled = await survivorsIncludingNewHelpersAt(phaseEnd(stopBy, EXIT_SETTLE_MS))
+      const settleBy = phaseEnd(stopBy, EXIT_SETTLE_MS)
+      shutdownStopBy = settleBy
+      const settled = await survivorsIncludingNewHelpersAt(settleBy)
       if (settled.length === 0) return
     }
+    shutdownStopBy = stopBy
     forgetAppIfItsPidWasReused()
     trackHelpers()
+    const doomed = livePids()
     const killedAt = Date.now()
-    forceKill(livePids(), msUntil(stopBy))
-    const survivors = await survivorsIncludingNewHelpersAt(phaseEnd(stopBy, forcedExitMs))
+    const forcedBy = phaseEnd(stopBy, forcedExitMs)
+    shutdownStopBy = forcedBy
+    forceKill(doomed, msUntil(forcedBy))
+    const survivors = await survivorsIncludingNewHelpersAt(forcedBy)
     if (survivors.length === 0) return
     throw new Error(
       `[e2e-harness] app processes ${survivors.join(', ')} still running ${Date.now() - killedAt}ms after a forced kill`

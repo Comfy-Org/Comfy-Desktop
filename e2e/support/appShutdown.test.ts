@@ -157,12 +157,39 @@ describe('app shutdown', () => {
     await expect(shutdown()).rejects.toThrow(String(appPid))
 
     expect(killBudgets).toHaveLength(1)
-    expect(killBudgets[0]!, 'the kill only gets what the graceful close left').toBeLessThanOrEqual(
-      shutdownMs - gracefulCloseMs
+    expect(killBudgets[0]!, 'the kill fits in the forced-exit phase').toBeLessThanOrEqual(
+      forcedExitMs
     )
     expect(Date.now() - startedAt, 'the shutdown ends near its deadline').toBeLessThan(
       shutdownMs + 1_000
     )
+  })
+
+  it('reports the last survivors without querying processes once the deadline has passed', async () => {
+    const { launcher, appPid } = await launchShellAndApp()
+    const path = process.env['PATH']
+    const { shutdown } = createShutdown(
+      { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+      {
+        gracefulCloseMs: 50,
+        forcedExitMs: 200,
+        log: () => {},
+        forceKill: (_pids, timeoutMs) => {
+          blockFor(timeoutMs)
+          process.env['PATH'] = ''
+        }
+      }
+    )
+
+    try {
+      const failure = await shutdown().catch((error: unknown) => error)
+
+      expect(failure).toBeInstanceOf(Error)
+      expect(failure).not.toBeInstanceOf(ProcessLookupError)
+      expect(String(failure)).toContain(String(appPid))
+    } finally {
+      process.env['PATH'] = path
+    }
   })
 
   it('gives a slow process query only what is left of the shutdown deadline', async () => {
