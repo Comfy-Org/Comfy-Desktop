@@ -283,6 +283,24 @@ export function createShutdown(
     return livePids()
   }
 
+  const killLauncherAndFailUnverified = (): never => {
+    if (launcherAlive() && launcher?.pid !== undefined) forceKill([launcher.pid], 0)
+    throw new Error(
+      `[e2e-harness] ran out of recovery time before it could verify processes ${lastKnownAlive.join(', ') || 'none'}, so it did not signal them`
+    )
+  }
+
+  const runOrFailClosed = async (stopBy: number): Promise<void> => {
+    try {
+      await run(stopBy)
+    } catch (error) {
+      if (error instanceof ProcessLookupError && lateRecoveryPassed()) {
+        killLauncherAndFailUnverified()
+      }
+      throw error
+    }
+  }
+
   const run = async (stopBy: number): Promise<void> => {
     shutdownStopBy = stopBy
     recoveryStopBy = stopBy + LATE_RECOVERY_MS
@@ -302,6 +320,7 @@ export function createShutdown(
       const settled = await survivorsIncludingNewHelpersAt(phaseEnd(stopBy, EXIT_SETTLE_MS))
       if (settled.length === 0) return
     }
+    if (lateRecoveryPassed()) killLauncherAndFailUnverified()
     forgetAppIfItsPidWasReused()
     trackHelpers()
     const doomed = livePids()
@@ -320,5 +339,8 @@ export function createShutdown(
   }
 
   let running: Promise<void> | undefined
-  return { shutdown: () => (running ??= run(Date.now() + shutdownMs)), trackHelpers }
+  return {
+    shutdown: () => (running ??= runOrFailClosed(Date.now() + shutdownMs)),
+    trackHelpers
+  }
 }
