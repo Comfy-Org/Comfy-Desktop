@@ -224,6 +224,7 @@ function mockPickedFolder(): Record<string, ReturnType<typeof vi.fn>> {
       { sourceId: 'portable', sourceLabel: 'Portable', installPath: '/home/user/Picked' }
     ])
   api.trackInstallation = vi.fn().mockResolvedValue({ ok: true })
+  api.getUniqueName = vi.fn(async (base: string) => base)
   return api
 }
 
