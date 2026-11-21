@@ -5,13 +5,22 @@ import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
-import { onRunsChanged } from '../../apps/localAppEvents'
-import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
+import { COMFYUI_EXITED, onRunEnded, onRunsChanged } from '../../apps/localAppEvents'
+import {
+  LOCAL_EVENT_CHANNEL,
+  localDownload,
+  localFetch,
+  localState,
+  startLocal
+} from '../../apps/localComfy'
+import { machine } from '../../apps/machine'
 import { localBuilds, localBuildsForEach, openInComfy } from '../../apps/openInComfy'
 import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopLocalComfy,
   ComfyDesktopLocalDownload,
+  ComfyDesktopLocalEvent,
+  ComfyDesktopMachine,
   ComfyDesktopOpenInComfy
 } from '../../../types/comfyDesktopBridge'
 import * as i18n from '../i18n'
@@ -23,8 +32,11 @@ export const APPS_LOCAL_CHANNELS = {
   download: 'apps-local:download',
   openInComfy: 'apps-local:open-in-comfy',
   builds: 'apps-local:builds',
-  buildsChanged: 'apps-local:builds-changed'
+  buildsChanged: 'apps-local:builds-changed',
+  machine: 'apps-local:machine'
 } as const
+
+export const RUN_FAILED_EVENT = 'run_failed'
 
 let latestAnnouncement = 0
 
@@ -62,6 +74,16 @@ async function callerUnchanged(event: IpcMainInvokeEvent): Promise<Caller | null
   if (!(await isFromAppsPage(event))) return null
   if (!isSamePage(loadedAppPage(event.sender), sentFrom)) return null
   return { appId: sentFrom?.appId ?? null }
+}
+
+function tellPagesComfyExited(promptId: string): void {
+  const event: ComfyDesktopLocalEvent = {
+    type: RUN_FAILED_EVENT,
+    data: { prompt_id: promptId, reason: COMFYUI_EXITED }
+  }
+  for (const page of liveAppsPages()) {
+    if (!page.isDestroyed()) page.send(LOCAL_EVENT_CHANNEL, event)
+  }
 }
 
 function notOffered(): ComfyDesktopLocalComfy {
@@ -107,5 +129,13 @@ export function registerAppsLocalHandlers(): void {
     return caller ? localBuilds(caller.appId) : []
   })
 
+  ipcMain.handle(APPS_LOCAL_CHANNELS.machine, async (event): Promise<ComfyDesktopMachine> => {
+    if (!(await isFromAppsPage(event))) throw new Error(i18n.t('apps.local.notRunning'))
+    return machine()
+  })
+
   onRunsChanged(() => void announceBuilds())
+  onRunEnded((promptId, end) => {
+    if (end.errorClass === COMFYUI_EXITED) tellPagesComfyExited(promptId)
+  })
 }

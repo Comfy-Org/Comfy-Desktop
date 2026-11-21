@@ -44,6 +44,7 @@ import {
   finishRun,
   isFollowing,
   noteRunMessage,
+  onRunEnded,
   onRunsChanged,
   RUN_FINISHED_EVENT,
   runAccepted,
@@ -409,6 +410,32 @@ describe('run_finished', () => {
     expect(sent(RUN_FINISHED_EVENT)[0]).not.toHaveProperty('queue_seconds')
     expect(runsOn(BUILD)).toEqual([])
     expect(runsOn('lab')).toEqual([OTHER_RUN])
+  })
+
+  it('tells each run-end watcher which run ended and how, once', () => {
+    const watcher = vi.fn()
+    onRunEnded(watcher)
+    runAccepted(RUN, BUILD, APP, T0)
+
+    failRunsOn(BUILD, COMFYUI_EXITED, T0 + 9_000)
+    finishRun(RUN, { outcome: 'success', at: T0 + 10_000 })
+
+    expect(watcher).toHaveBeenCalledExactlyOnceWith(RUN, {
+      outcome: 'failed',
+      errorClass: COMFYUI_EXITED,
+      at: T0 + 9_000
+    })
+  })
+
+  it('stops telling a run-end watcher once it is removed', () => {
+    const watcher = vi.fn()
+    const stop = onRunEnded(watcher)
+    runAccepted(RUN, BUILD, APP, T0)
+
+    stop()
+    finishRun(RUN, { outcome: 'success', at: T0 + 1_000 })
+
+    expect(watcher).not.toHaveBeenCalled()
   })
 
   it('lists the runs on a build that have not started, for checking a queue that changed', () => {

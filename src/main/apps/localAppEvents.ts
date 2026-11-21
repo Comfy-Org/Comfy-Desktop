@@ -46,6 +46,7 @@ interface EarlyRun {
 const runs = new Map<string, Run>()
 const earlyRuns = new Map<string, EarlyRun>()
 const runWatchers = new Set<() => void>()
+const endWatchers = new Set<(promptId: string, end: RunEnd) => void>()
 
 function runsChanged(): void {
   for (const watcher of runWatchers) watcher()
@@ -54,6 +55,11 @@ function runsChanged(): void {
 export function onRunsChanged(watcher: () => void): () => void {
   runWatchers.add(watcher)
   return () => runWatchers.delete(watcher)
+}
+
+export function onRunEnded(watcher: (promptId: string, end: RunEnd) => void): () => void {
+  endWatchers.add(watcher)
+  return () => endWatchers.delete(watcher)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -128,6 +134,7 @@ export function finishRun(promptId: string, end: RunEnd): void {
   if (!run) return
   runs.delete(promptId)
   sendRunFinished(run, end)
+  for (const watcher of endWatchers) watcher(promptId, end)
   runsChanged()
 }
 
@@ -297,6 +304,7 @@ export function setupStarted(stage: SetupStage, appId: string | null): SetupStep
 
 export function _resetForTest(): void {
   runWatchers.clear()
+  endWatchers.clear()
   runs.clear()
   earlyRuns.clear()
 }
