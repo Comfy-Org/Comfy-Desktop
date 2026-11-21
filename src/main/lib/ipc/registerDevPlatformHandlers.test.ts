@@ -1378,6 +1378,15 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
+  it('installBuild marks a bad install location so the alert can offer Change location', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1', installRoot: 7 })
+
+    expect(result).toEqual({ ok: false, message: 'Invalid install location.', reason: 'location' })
+    expect(mocks.listBuilds).not.toHaveBeenCalled()
+  })
+
   it('installBuild rejects the legacy string request shape', async () => {
     mocks.isSignedIn.mockReturnValue(true)
 
@@ -1419,6 +1428,32 @@ describe('registerDevPlatformHandlers', () => {
     const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
 
     expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
+    expect(mocks.add).not.toHaveBeenCalled()
+  })
+
+  it('installBuild marks a folder another build already uses as a location problem', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-9',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
+    })
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.findDuplicatePath.mockResolvedValueOnce({ name: 'Studio' } as never)
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'That directory is already used by "Studio".',
+      reason: 'location'
+    })
     expect(mocks.add).not.toHaveBeenCalled()
   })
 

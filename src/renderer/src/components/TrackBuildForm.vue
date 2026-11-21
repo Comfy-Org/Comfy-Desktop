@@ -12,6 +12,7 @@ import { BaseSelect, type BaseSelectOption } from './ui'
 
 import type { ProbeResult } from '../types/ipc'
 import { emitTelemetryAction, toCountBucket } from '../lib/telemetry'
+import { alertAddFailure } from '../lib/addFailureAlert'
 
 const emit = defineEmits<{ saved: [] }>()
 
@@ -208,7 +209,13 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
 
   const result = await window.api.trackInstallation(data)
   if (!result.ok) {
-    await alertCannotTrack(result.message || '')
+    await alertAddFailure({
+      modal,
+      t,
+      title: t('track.cannotTrack'),
+      failure: result,
+      onChangeLocation: handleBrowse
+    })
     return
   }
   emitTelemetryAction('comfy.desktop.track_existing.saved', {

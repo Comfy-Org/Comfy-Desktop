@@ -91,6 +91,7 @@ import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
+import { alertAddFailure } from '../lib/addFailureAlert'
 import type { Build, BuildTarget } from '../devplatform/types'
 import { progressTitle } from '../lib/progressTitle'
 
@@ -413,6 +414,7 @@ watch(instPath, (newPath) => {
 let loadGeneration = 0
 let modeGeneration = 0
 let changeSetupSession = 0
+let setupInstallRoot = ''
 
 const nameError = computed(() =>
   instName.value.length > 0 && instName.value.trim().length === 0
@@ -524,6 +526,7 @@ interface OpenOpts {
   entrypoint?: string
   workspaceId?: string
   restore?: ChangeSetupDraft
+  installRoot?: string
 }
 
 const cameFromSetup = ref(false)
@@ -540,6 +543,11 @@ function onConsentToggle(accepted: boolean): void {
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
+  changeSetupSession++
+  setupInstallRoot = opts.installRoot ?? ''
+  folderBrowsedWhileOpening = null
+  const session = changeSetupSession
+  openingSession = session
   const gen = ++modeGeneration
   instName.value = ''
   workspaceId.value = opts.workspaceId?.trim() || PERSONAL_WORKSPACE_ID
@@ -606,26 +614,32 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       workspaceBuilds.value.length === 0
     ) {
       workspaceInstallMode.value = 'public'
-      await initializeInstallMode(gen)
+      await initializeInstallMode(gen, false, undefined, true)
     }
     if (opts.restore && gen === modeGeneration) {
       instName.value = opts.restore.instName
-      await restoreNewInstallSetup(opts.restore)
+      const restoredPath = folderBrowsedWhileOpening || opts.installRoot || opts.restore.instPath
+      await restoreNewInstallSetup({ ...opts.restore, instPath: restoredPath })
+      if (folderBrowsedWhileOpening && session === changeSetupSession) {
+        instPath.value = folderBrowsedWhileOpening
+      }
     }
   } finally {
     if (gen === modeGeneration) initializing.value = false
+    if (openingSession === session) openingSession = null
   }
 }
 
 async function initializeInstallMode(
   gen: number,
   refreshManagedBuilds = false,
-  source?: Source
+  source?: Source,
+  keepPath = false
 ): Promise<void> {
   const installDir = await installDirPromise
   if (gen !== modeGeneration) return
   defaultInstPath.value = installDir ?? ''
-  instPath.value = defaultInstPath.value
+  if (!keepPath || !instPath.value) instPath.value = setupInstallRoot || defaultInstPath.value
 
   if (managedBuildMode.value) {
     await Promise.all([initializeManagedBuilds(gen, refreshManagedBuilds), loadSources()])
@@ -753,7 +767,7 @@ async function selectManagedInstallMode(): Promise<void> {
   const gen = ++modeGeneration
   initializing.value = true
   try {
-    await initializeInstallMode(gen, authenticatedNow)
+    await initializeInstallMode(gen, authenticatedNow, undefined, true)
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }
@@ -778,7 +792,7 @@ async function selectSourceCard(source: Source): Promise<void> {
     const gen = ++modeGeneration
     initializing.value = true
     try {
-      await initializeInstallMode(gen, false, source)
+      await initializeInstallMode(gen, false, source, true)
     } finally {
       if (gen === modeGeneration) initializing.value = false
     }
@@ -994,9 +1008,14 @@ function handleTextAction(field: SourceField): void {
   }
 }
 
+let folderBrowsedWhileOpening: string | null = null
+let openingSession: number | null = null
+
 async function handleBrowse(): Promise<void> {
   const chosen = await window.api.browseFolder(instPath.value)
-  if (chosen) instPath.value = chosen
+  if (!chosen) return
+  instPath.value = chosen
+  if (openingSession === changeSetupSession) folderBrowsedWhileOpening = chosen
 }
 
 function handleOpenInstPath(): void {
@@ -1025,7 +1044,13 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
       reason: 'add_installation_failed',
       error_bucket: toErrorBucket(result.message || '')
     })
-    await modal.alert({ title: failureTitle, message: result.message || '' })
+    await alertAddFailure({
+      modal,
+      t,
+      title: failureTitle,
+      failure: result,
+      onChangeLocation: handleBrowse
+    })
     return
   }
   if (result.entry) {
@@ -1089,7 +1114,7 @@ async function handleWorkspaceBuildSave(): Promise<void> {
       ok: false,
       message: error instanceof Error ? error.message : String(error)
     }))
-  await handOffInstall(result, t('errors.installFailed'))
+  await handOffInstall(result, t('errors.cannotAdd'))
 }
 
 async function confirmNvidiaDriver(source: Source): Promise<boolean> {
@@ -1130,9 +1155,11 @@ async function handleSave(): Promise<void> {
       ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
     })
     if (!result.ok) {
-      await modal.alert({
+      await alertAddFailure({
+        modal,
+        t,
         title: t('errors.cannotAdd'),
-        message: result.message || ''
+        failure: result
       })
       return
     }

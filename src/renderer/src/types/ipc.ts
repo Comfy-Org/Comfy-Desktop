@@ -53,6 +53,7 @@ export type {
   BlockingSession,
   ComfyArgDef,
   PortConflictInfo,
+  AddFailureReason,
   AddResult,
   KillResult,
   QuitActiveItem,

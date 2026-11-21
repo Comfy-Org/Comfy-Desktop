@@ -30,6 +30,8 @@ import {
   type SetupPlan
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
+import { useModal } from '../composables/useModal'
+import { checkInstallLocation } from '../lib/installHelpers'
 
 type Step = 'setup' | 'mirrors'
 type SetupAction = 'install' | 'change' | 'skip'
@@ -39,12 +41,14 @@ const props = defineProps<{ consent?: SetupConsent | null; savedPlan?: SetupPlan
 
 const emit = defineEmits<{
   install: [plan: SetupPlan]
-  change: [consent: SetupConsent]
+  change: [consent: SetupConsent, pickedInstallRoot?: string]
+  'location-change': [installRoot: string]
   'complete-skip': []
   'chain-migrate': [{ express: boolean }]
 }>()
 
 const { t } = useI18n()
+const modal = useModal()
 
 const CONSENT_ROW_CLASS = 'flex w-fit cursor-pointer items-center gap-2.5 text-xs/[15px]'
 const CHECKBOX_CLASS =
@@ -59,6 +63,7 @@ const plan = ref<SetupPlan | null>(null)
 const planState = ref<'loading' | 'ready' | 'unavailable'>('loading')
 const systemInfo = ref<SystemInfo | null>(null)
 const diskFree = ref<number | null>(null)
+const pickedInstallRoot = ref<string | null>(null)
 const unsupportedReason = ref('')
 const hardwareWarning = ref('')
 
@@ -266,7 +271,8 @@ function route(action: SetupAction): void {
   }
   if (action === 'change') {
     emitCompleted('local-configure')
-    emit('change', currentConsent())
+    if (pickedInstallRoot.value) emit('change', currentConsent(), pickedInstallRoot.value)
+    else emit('change', currentConsent())
     return
   }
   if (migrating.value) {
@@ -306,7 +312,9 @@ async function loadPlan(gen: number): Promise<void> {
       void window.api
         .getDiskSpace(next.installRoot)
         .then((space) => {
-          if (gen === openGeneration) diskFree.value = space.free
+          if (gen === openGeneration && plan.value?.installRoot === next.installRoot) {
+            diskFree.value = space.free
+          }
         })
         .catch(() => {})
     }
@@ -322,6 +330,37 @@ function retryPlan(): void {
   void loadPlan(openGeneration)
 }
 
+async function browseInstallLocation(): Promise<void> {
+  const gen = openGeneration
+  const current = plan.value
+  if (!current) return
+  let chosen = await window.api.browseFolder(current.installRoot || undefined)
+  while (chosen) {
+    if (gen !== openGeneration) return
+    const check = await checkInstallLocation(chosen, 'first_use', 'browse', t)
+    if (gen !== openGeneration) return
+    if (check.ok && !check.issue) break
+    const pickAgain = await modal.notice({
+      title: t('errors.cannotUseFolder'),
+      message: check.ok && check.issue ? check.issue : t('errors.locationCheckFailed'),
+      actionLabel: t('errors.changeLocation')
+    })
+    if (!pickAgain || gen !== openGeneration) return
+    chosen = await window.api.browseFolder(chosen)
+  }
+  if (!chosen || gen !== openGeneration || plan.value !== current) return
+  plan.value = { ...current, installRoot: chosen }
+  pickedInstallRoot.value = chosen
+  emit('location-change', chosen)
+  diskFree.value = null
+  void window.api
+    .getDiskSpace(chosen)
+    .then((space) => {
+      if (gen === openGeneration && plan.value?.installRoot === chosen) diskFree.value = space.free
+    })
+    .catch(() => {})
+}
+
 interface OpenOpts {
   skipPick?: boolean
   hasLegacyDesktop?: boolean
@@ -330,6 +369,7 @@ interface OpenOpts {
 async function open(opts: OpenOpts = {}): Promise<void> {
   const gen = ++openGeneration
   step.value = 'setup'
+  pickedInstallRoot.value = null
   skipPick.value = opts.skipPick === true
   hasLegacyDesktop.value = opts.hasLegacyDesktop === true
   migrateExisting.value = true
@@ -413,6 +453,7 @@ watch(
 )
 
 onUnmounted(() => {
+  openGeneration += 1
   if (!completedFired) {
     emitTelemetryAction('comfy.desktop.first_use.abandoned', {
       step: step.value,
@@ -424,7 +465,7 @@ onUnmounted(() => {
   if (!chainHandoff) window.api.setFirstUseMode('none')
 })
 
-defineExpose({ open, resetContinue })
+defineExpose({ open, resetContinue, browseInstallLocation })
 </script>
 
 <template>

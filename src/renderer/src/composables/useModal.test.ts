@@ -37,6 +37,22 @@ describe('useModal', () => {
     })
   })
 
+  describe('notice', () => {
+    it('shows its action button and resolves true when it is pressed', async () => {
+      const promise = modal.notice({ title: 'T', message: 'M', actionLabel: 'Change location' })
+      expect(modal.state.type).toBe('alert')
+      expect(modal.state.buttonLabel).toBe('Change location')
+      modal.close(true)
+      await expect(promise).resolves.toBe(true)
+    })
+
+    it('resolves false when it is dismissed', async () => {
+      const promise = modal.notice({ title: 'T', message: 'M', actionLabel: 'Change location' })
+      modal.dismiss()
+      await expect(promise).resolves.toBe(false)
+    })
+  })
+
   describe('confirm', () => {
     it('resolves true when closed with true', async () => {
       const promise = modal.confirm({ title: 'T', message: 'M' })

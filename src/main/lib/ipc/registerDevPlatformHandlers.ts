@@ -420,7 +420,7 @@ export function registerDevPlatformHandlers(): void {
         return { ok: false, message: 'Invalid instance name.' }
       }
       if (request.installRoot !== undefined && typeof request.installRoot !== 'string') {
-        return { ok: false, message: 'Invalid install location.' }
+        return { ok: false, message: 'Invalid install location.', reason: 'location' }
       }
       const hasArtifactId = request.artifactId !== undefined
       const hasReleaseVersion = request.releaseVersion !== undefined

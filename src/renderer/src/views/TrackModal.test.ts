@@ -422,7 +422,7 @@ describe('TrackModal — build name', () => {
     await flushPromises()
 
     expect(modal.state.visible).toBe(true)
-    expect(modal.state.title).toBe('Cannot add build')
+    expect(modal.state.title).toBe("Couldn't add this build")
     expect(modal.state.message).toBe('Could not read the builds list.')
     expect(api.trackInstallation).not.toHaveBeenCalled()
 

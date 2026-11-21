@@ -50,13 +50,14 @@ const baseAlertButtonLabel = computed(() =>
 )
 
 function onBaseAlertClose(): void {
-  if (state.type === 'alert') close(undefined)
+  if (state.type === 'alert') close(true)
   else if (isChoice.value) close('primary')
   else close(true)
 }
 
 function onBaseAlertCancel(): void {
-  close(isChoice.value ? null : false)
+  if (state.type === 'alert') close(undefined)
+  else close(isChoice.value ? null : false)
 }
 
 function onMigrateCheckboxToggle(id: string, checked: boolean): void {
@@ -152,6 +153,7 @@ watch(
     :title="state.title"
     :message="state.message"
     :show-cancel="isSimpleConfirm || isChoice"
+    :show-close-icon="state.dismissAsCancel"
     :button-label="baseAlertButtonLabel"
     :tone="baseAlertTone"
     :secondary-label="isChoice ? state.secondaryLabel : undefined"

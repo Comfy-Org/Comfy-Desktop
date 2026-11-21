@@ -55,6 +55,7 @@ export interface ModalState {
   items: ModalSelectItem[]
   options: ModalOption[]
   testIds: ModalTestIds
+  dismissAsCancel: boolean
   resolve: ((value: unknown) => void) | null
 }
 
@@ -80,6 +81,7 @@ const state = reactive<ModalState>({
   items: [],
   options: [],
   testIds: {},
+  dismissAsCancel: false,
   resolve: null
 })
 
@@ -105,6 +107,7 @@ function reset(): void {
   state.items = []
   state.options = []
   state.testIds = {}
+  state.dismissAsCancel = false
   state.resolve = null
 }
 
@@ -152,6 +155,19 @@ export function useModal() {
       state.message = opts.message
       state.buttonLabel = opts.buttonLabel ?? i18n.global.t('modal.ok')
       state.resolve = () => resolve()
+    })
+  }
+
+  function notice(opts: { title: string; message: string; actionLabel: string }): Promise<boolean> {
+    return new Promise((resolve) => {
+      reset()
+      state.visible = true
+      state.type = 'alert'
+      state.title = opts.title
+      state.message = opts.message
+      state.buttonLabel = opts.actionLabel
+      state.dismissAsCancel = true
+      state.resolve = (value) => resolve(value === true)
     })
   }
 
@@ -298,6 +314,7 @@ export function useModal() {
   return {
     state: readonly(state) as ModalState,
     alert,
+    notice,
     confirm,
     choose,
     updateConfirm,
