@@ -1321,6 +1321,73 @@ describe('InstallWizardModal workspace Builds', () => {
     again.unmount()
   })
 
+  it('keeps a folder browsed while Change restores another install mode', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    const standalone = [
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ]
+    const getSources = window.api.getSources as ReturnType<typeof vi.fn>
+    getSources.mockResolvedValue(standalone)
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const first = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    await first.vm.open({ cameFromSetup: true, entrypoint: 'first_use', workspaceId: 'w1' })
+    await flushPromises()
+    await pickSource(first, 'install-source-standalone')
+    await flushPromises()
+    await first.get('#inst-name-standalone').setValue('Studio')
+    await first.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    const [saved] = savedSetups(first)
+    first.unmount()
+    if (!saved) throw new Error('Save changes emitted nothing')
+
+    const cpu = [{ value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }]
+    const getFieldOptions = window.api.getFieldOptions as ReturnType<typeof vi.fn>
+    const pendingOptions: (() => void)[] = []
+    getFieldOptions.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pendingOptions.push(() => resolve(cpu))
+        })
+    )
+    const again = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    const opening = again.vm.open({
+      cameFromSetup: true,
+      entrypoint: 'first_use',
+      workspaceId: 'w1',
+      restore: saved.draft,
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    await flushPromises()
+    expect(pendingOptions.length, 'the restore waits for the hardware options').toBeGreaterThan(0)
+    const browse = again.find('.config-path-browse')
+    if (browse.exists()) {
+      await browse.trigger('click')
+      await flushPromises()
+    }
+    getFieldOptions.mockResolvedValue(cpu)
+    while (pendingOptions.length > 0) pendingOptions.shift()!()
+    await opening
+    await flushPromises()
+    expect(browse.exists(), 'Browse is offered while the setup restores').toBe(true)
+    await again.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(savedSetups(again)[0]?.plan).toMatchObject({
+      sourceId: 'standalone',
+      installRoot: '/home/user/Picked'
+    })
+    again.unmount()
+  })
+
   it('keeps the folder of the newest open when an earlier open restores late', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
