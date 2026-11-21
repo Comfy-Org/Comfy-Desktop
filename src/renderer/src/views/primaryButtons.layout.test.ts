@@ -54,6 +54,12 @@ async function track(wrapper: VueWrapper): Promise<void> {
   wrappers.push(wrapper)
   await flushPromises()
   await new Promise((resolve) => requestAnimationFrame(resolve))
+  await Promise.all(
+    document
+      .getAnimations()
+      .filter((animation) => animation instanceof CSSTransition)
+      .map((animation) => animation.finished)
+  )
 }
 
 function look(el: Element): { height: number; radius: string; background: string } {
