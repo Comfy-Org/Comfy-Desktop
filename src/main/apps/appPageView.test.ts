@@ -74,7 +74,7 @@ import {
   APP_PAGE_STATUS_CHANNEL,
   APP_RUNS_CHANNEL,
   MAX_BACKGROUND_RUNS,
-  TITLE_BAR_RUNNING_APPS_CHANNEL,
+  TITLE_BAR_APPS_CHANNEL,
   _resetForTest,
   appSwitchStopsRun,
   captureAppPage,
@@ -84,6 +84,7 @@ import {
   runningAppCount,
   runningApps,
   sendAppOutputAction,
+  titleBarApps,
   showAppOutputs,
   shownOutputFile,
   showAppPage
@@ -865,10 +866,33 @@ describe('keeping apps running in the background', () => {
     ])
     await runInBackground(CUTOUT)
 
-    expect(titleBar.webContents.send).toHaveBeenLastCalledWith(TITLE_BAR_RUNNING_APPS_CHANNEL, [
-      { id: CUTOUT, title: 'Remove Background' }
-    ])
+    expect(titleBar.webContents.send).toHaveBeenLastCalledWith(TITLE_BAR_APPS_CHANNEL, {
+      running: [{ id: CUTOUT, title: 'Remove Background' }],
+      ready: []
+    })
     expect(runningApps(WINDOW_KEY)).toEqual([{ id: CUTOUT, title: 'Remove Background' }])
+  })
+
+  it('tells the title bar which runs ended in the background, until their app is opened', async () => {
+    const titleBar = new FakeView()
+    mocks.windows = new Map([
+      [WINDOW_KEY, { window: hostWindow, panelView: panel, titleBarView: titleBar }]
+    ])
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+
+    reportRun(cutout, false)
+    expect(titleBarApps(WINDOW_KEY)).toEqual({
+      running: [],
+      ready: [{ id: CUTOUT, title: 'Remove Background' }]
+    })
+    expect(titleBar.webContents.send).toHaveBeenLastCalledWith(
+      TITLE_BAR_APPS_CHANNEL,
+      titleBarApps(WINDOW_KEY)
+    )
+
+    await showAppPage(panelContents(), CUTOUT, PLACEMENT)
+    expect(titleBarApps(WINDOW_KEY)).toEqual({ running: [], ready: [] })
   })
 
   it(`keeps at most ${MAX_BACKGROUND_RUNS} running apps, and loads over a further running app`, async () => {

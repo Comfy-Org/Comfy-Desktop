@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { RunningApp } from '../types/ipc'
+import type { RunningApp, TitleBarApps } from '../types/ipc'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
@@ -63,7 +63,7 @@ export interface ComfyTitleBarBridge {
   clickInstallUpdatePill(): void
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void
   clickDownloadsTray(anchor: TitleMenuAnchor): void
-  onAppsRunningChanged(cb: (apps: RunningApp[]) => void): () => void
+  onAppsRunningChanged(cb: (apps: TitleBarApps) => void): () => void
   clickRunningApps(anchor: TitleMenuAnchor): void
   clickFeedback(): void
   openWhatsNewMenu(anchor: TitleMenuAnchor): void
@@ -248,8 +248,12 @@ const bridge: ComfyTitleBarBridge = {
     ipcRenderer.send('comfy-window:click-downloads-tray', { anchor })
   },
   onAppsRunningChanged: (cb) => {
-    const handler = (_event: IpcRendererEvent, apps: unknown): void =>
-      cb(Array.isArray(apps) ? (apps as RunningApp[]) : [])
+    const handler = (_event: IpcRendererEvent, apps: unknown): void => {
+      const given = (apps ?? {}) as Partial<Record<keyof TitleBarApps, unknown>>
+      const listOf = (value: unknown): RunningApp[] =>
+        Array.isArray(value) ? (value as RunningApp[]) : []
+      cb({ running: listOf(given.running), ready: listOf(given.ready) })
+    }
     ipcRenderer.on('comfy-titlebar:apps-running-changed', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:apps-running-changed', handler)
   },

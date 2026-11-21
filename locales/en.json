@@ -390,7 +390,10 @@
     "betaNoticeSettings": "Settings",
     "runningMany": "{count} running",
     "openRunning": "Open {app}",
-    "showRunning": "Show running apps"
+    "showRunning": "Show running apps",
+    "appReady": "{app} is ready",
+    "readyMany": "{count} ready",
+    "showReady": "Show ready apps"
   },
   "comfyUISettings": {
     "title": "Settings",
@@ -2203,10 +2206,10 @@
     "cloudFailedMessage": "Check your connection and try again from Home."
   },
   "appsQuit": {
-    "title": "Apps are still making something",
-    "messageOne": "{app} is still making something. Quitting stops it.",
-    "messageMany": "{count} apps are still making something. Quitting stops them.",
-    "quit": "Quit anyway",
+    "message": "Quit anyway?",
+    "detailOne": "{app} is still making something. Quitting stops it.",
+    "detailMany": "{count} apps are still making something. Quitting stops them.",
+    "quit": "Quit",
     "cancel": "Cancel"
   }
 }

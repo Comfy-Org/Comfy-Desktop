@@ -7,13 +7,14 @@ import {
   captureAppPage,
   hideAppPage,
   noteAppPageRunning,
-  runningApps,
-  showAppPage
+  showAppPage,
+  titleBarApps
 } from '../../apps/appPageView'
 import { listApps } from '../../apps/appsCatalog'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender } from '../../apps/appsPages'
 import { findEntryByTitleBarSender, isPanelSender } from '../../host/registry'
+import * as i18n from '../i18n'
 import { sendSurveyResponse } from '../telemetry'
 
 const APP_REQUEST_SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
@@ -36,16 +37,20 @@ function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): v
   if (!found || found.entry.window.isDestroyed()) return
   const panel = found.entry.panelView?.webContents
   if (!panel || panel.isDestroyed()) return
-  const apps = runningApps(found.id)
+  const { running, ready } = titleBarApps(found.id)
   const open = (appId: string): void => panel.send(OPEN_RUNNING_APP_CHANNEL, appId)
-  const [only, ...others] = apps
+  const items = [
+    ...running.map((app) => ({ id: app.id, label: app.title })),
+    ...ready.map((app) => ({ id: app.id, label: i18n.t('titleBar.appReady', { app: app.title }) }))
+  ]
+  const [only, ...others] = items
   if (!only) return
   if (others.length === 0) {
     open(only.id)
     return
   }
   Menu.buildFromTemplate(
-    apps.map((app) => ({ label: app.title, click: () => open(app.id) }))
+    items.map((item) => ({ label: item.label, click: () => open(item.id) }))
   ).popup({
     window: found.entry.window,
     x: anchorCoordinate(anchor?.x),

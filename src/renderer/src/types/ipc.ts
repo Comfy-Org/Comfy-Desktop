@@ -11,6 +11,7 @@ export type {
   AppRun,
   AppSwitchStop,
   RunningApp,
+  TitleBarApps,
   AssetKind,
   AssetSummary,
   CloudAssetPage,

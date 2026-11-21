@@ -126,6 +126,7 @@ import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignF
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
 import { runningAppCount, runningApps } from './apps/appPageView'
+import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
 import { appsEnabledAtStart } from './apps/appsConfig'
 import { runningPortOf } from './apps/localBuild'
 import {
@@ -1608,29 +1609,25 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   const confirmQuitStopsAppRuns = (): boolean => {
-    const running = runningAppCount()
-    if (running === 0) return true
     const [only] = Array.from(comfyWindows.keys()).flatMap((windowKey) => runningApps(windowKey))
-    const choice = dialog.showMessageBoxSync({
-      type: 'warning',
-      buttons: [i18n.t('appsQuit.quit'), i18n.t('appsQuit.cancel')],
-      defaultId: 1,
-      cancelId: 1,
-      title: i18n.t('appsQuit.title'),
-      message:
-        running === 1 && only
-          ? i18n.t('appsQuit.messageOne', { app: only.title })
-          : i18n.t('appsQuit.messageMany', { count: running })
-    })
-    return choice === 0
+    const prompt = appsQuitPrompt(
+      {
+        running: runningAppCount(),
+        onlyTitle: only?.title ?? null,
+        downloading: hasActiveTemplateDownloads()
+      },
+      i18n.t
+    )
+    return prompt === null || dialog.showMessageBoxSync(prompt) === QUIT_BUTTON
   }
 
   app.on('before-quit', (event) => {
-    if (!isQuitInProgress() && !confirmQuitStopsAppRuns()) {
+    const asksAboutRuns = !isQuitInProgress() && runningAppCount() > 0
+    if (asksAboutRuns && !confirmQuitStopsAppRuns()) {
       event.preventDefault()
       return
     }
-    if (!isQuitInProgress() && hasActiveTemplateDownloads()) {
+    if (!isQuitInProgress() && !asksAboutRuns && hasActiveTemplateDownloads()) {
       const choice = dialog.showMessageBoxSync({
         type: 'warning',
         buttons: [i18n.t('templateQuit.quit'), i18n.t('templateQuit.cancel')],

@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import type { RunningApp } from '../types/ipc'
+import type { TitleBarApps } from '../types/ipc'
 
 interface MenuAnchor {
   x: number
@@ -10,7 +10,7 @@ interface MenuAnchor {
 }
 
 export interface RunningAppsBridge {
-  onAppsRunningChanged?: (cb: (apps: RunningApp[]) => void) => () => void
+  onAppsRunningChanged?: (cb: (apps: TitleBarApps) => void) => () => void
   clickRunningApps?: (anchor: MenuAnchor) => void
 }
 
@@ -19,23 +19,31 @@ export function useRunningApps(
   button: Readonly<Ref<HTMLElement | null>>
 ) {
   const { t } = useI18n()
-  const apps = ref<RunningApp[]>([])
+  const apps = ref<TitleBarApps>({ running: [], ready: [] })
   let stop: (() => void) | undefined
 
+  const isRunning = computed(() => apps.value.running.length > 0)
+  const shown = computed(() => (isRunning.value ? apps.value.running : apps.value.ready))
+  const hasApps = computed(() => shown.value.length > 0)
+
   const label = computed(() => {
-    const [only, ...others] = apps.value
+    const [only, ...others] = shown.value
     if (!only) return ''
-    return others.length === 0
-      ? only.title
-      : t('titleBar.runningMany', { count: apps.value.length })
+    if (others.length > 0) {
+      const count = shown.value.length
+      return isRunning.value
+        ? t('titleBar.runningMany', { count })
+        : t('titleBar.readyMany', { count })
+    }
+    return isRunning.value ? only.title : t('titleBar.appReady', { app: only.title })
   })
 
   const tooltip = computed(() => {
-    const [only, ...others] = apps.value
+    const listed = [...apps.value.running, ...apps.value.ready]
+    const [only, ...others] = listed
     if (!only) return ''
-    return others.length === 0
-      ? t('titleBar.openRunning', { app: only.title })
-      : t('titleBar.showRunning')
+    if (others.length === 0) return t('titleBar.openRunning', { app: only.title })
+    return isRunning.value ? t('titleBar.showRunning') : t('titleBar.showReady')
   })
 
   function openRunning(): void {
@@ -53,5 +61,11 @@ export function useRunningApps(
   })
   onUnmounted(() => stop?.())
 
-  return { runningApps: apps, runningLabel: label, runningTooltip: tooltip, openRunning }
+  return {
+    hasApps,
+    isRunning,
+    runningLabel: label,
+    runningTooltip: tooltip,
+    openRunning
+  }
 }
