@@ -9,6 +9,7 @@ import {
   isPidAlive,
   killProcessTrees,
   listProcesses,
+  MIN_PROCESS_QUERY_MS,
   ProcessLookupError,
   processStartTime
 } from './appShutdown'
@@ -165,7 +166,7 @@ describe('app shutdown', () => {
     )
   })
 
-  it('reports the last survivors without querying processes once the deadline has passed', async () => {
+  it('reports the last survivors when a process query fails after the deadline', async () => {
     const { launcher, appPid } = await launchShellAndApp()
     const path = process.env['PATH']
     const { shutdown } = createShutdown(
@@ -190,6 +191,47 @@ describe('app shutdown', () => {
     } finally {
       process.env['PATH'] = path
     }
+  })
+
+  it('still checks the app and kills it when the deadline ran out before the forced kill', async () => {
+    const { launcher, appPid } = await launchShellAndApp()
+    const lookupBudgets: number[] = []
+    const killBudgets: number[] = []
+    const { shutdown } = createShutdown(
+      {
+        launcher,
+        appPid,
+        appStartTime: 'the start time recorded at launch',
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
+      {
+        gracefulCloseMs: 50,
+        forcedExitMs: 200,
+        log: () => {},
+        readStartTime: (_pid, timeoutMs) => {
+          lookupBudgets.push(timeoutMs)
+          if (lookupBudgets.length === 1) blockFor(timeoutMs + 50)
+          return 'the start time recorded at launch'
+        },
+        forceKill: (pids, timeoutMs) => {
+          killBudgets.push(timeoutMs)
+          killProcessTrees(pids, timeoutMs)
+        }
+      }
+    )
+
+    await shutdown()
+
+    expect(lookupBudgets).toHaveLength(2)
+    expect(lookupBudgets[1]!, 'the late identity check keeps a usable budget').toBe(
+      MIN_PROCESS_QUERY_MS
+    )
+    expect(
+      killBudgets[0]!,
+      'the late kill gets no budget, so it signals at once'
+    ).toBeLessThanOrEqual(0)
+    expect(isPidAlive(appPid)).toBe(false)
   })
 
   it('gives a slow process query only what is left of the shutdown deadline', async () => {

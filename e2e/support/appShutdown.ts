@@ -5,6 +5,7 @@ export const GRACEFUL_CLOSE_DEADLINE_MS = 10_000
 export const FORCED_EXIT_DEADLINE_MS = 10_000
 const EXIT_POLL_MS = 100
 export const EXIT_SETTLE_MS = 2_000
+export const MIN_PROCESS_QUERY_MS = 500
 
 export interface ShutdownTarget {
   launcher: ChildProcess | undefined
@@ -183,7 +184,9 @@ export function createShutdown(
   let lastKnownAlive: number[] = []
 
   const queryTimeoutMs = (): number =>
-    shutdownStopBy === undefined ? FORCED_EXIT_DEADLINE_MS : msUntil(shutdownStopBy)
+    shutdownStopBy === undefined
+      ? FORCED_EXIT_DEADLINE_MS
+      : Math.max(MIN_PROCESS_QUERY_MS, msUntil(shutdownStopBy))
 
   const rootPids = (): number[] => {
     const pids: number[] = []
@@ -240,26 +243,34 @@ export function createShutdown(
   const phaseEnd = (stopBy: number, phaseMs: number): number =>
     Math.min(Date.now() + phaseMs, stopBy)
 
-  const pollLivePids = (until: number): number[] => {
+  const pollLivePids = (lateAfter: number): number[] => {
     try {
       return livePids()
     } catch (error) {
-      if (error instanceof ProcessLookupError && Date.now() >= until) return lastKnownAlive
+      if (
+        error instanceof ProcessLookupError &&
+        (Date.now() >= lateAfter || shutdownDeadlinePassed())
+      ) {
+        return lastKnownAlive
+      }
       throw error
     }
   }
 
-  const survivorsAt = async (until: number): Promise<number[]> => {
+  const survivorsAt = async (until: number, lateAfter = until): Promise<number[]> => {
     while (Date.now() < until) {
-      if (pollLivePids(until).length === 0) return lastKnownAlive
+      if (pollLivePids(lateAfter).length === 0) return lastKnownAlive
       await wait(Math.min(EXIT_POLL_MS, until - Date.now()))
     }
     return lastKnownAlive
   }
 
-  const survivorsIncludingNewHelpersAt = async (until: number): Promise<number[]> => {
-    const alive = await survivorsAt(until)
-    if (alive.length > 0 || Date.now() >= until) return alive
+  const survivorsIncludingNewHelpersAt = async (
+    until: number,
+    lateAfter = until
+  ): Promise<number[]> => {
+    const alive = await survivorsAt(until, lateAfter)
+    if (alive.length > 0 || Date.now() >= lateAfter) return alive
     trackHelpers()
     return livePids()
   }
@@ -287,8 +298,9 @@ export function createShutdown(
     const doomed = livePids()
     const killedAt = Date.now()
     const forcedBy = phaseEnd(stopBy, forcedExitMs)
-    forceKill(doomed, msUntil(forcedBy))
-    const survivors = await survivorsIncludingNewHelpersAt(forcedBy)
+    forceKill(doomed, forcedBy - Date.now())
+    const confirmBy = Math.max(forcedBy, Date.now() + MIN_PROCESS_QUERY_MS)
+    const survivors = await survivorsIncludingNewHelpersAt(confirmBy, forcedBy)
     if (survivors.length === 0) return
     throw new Error(
       `[e2e-harness] app processes ${survivors.join(', ')} still running ${Date.now() - killedAt}ms after a forced kill`
