@@ -95,6 +95,7 @@ async function loadHidden(): Promise<void> {
   const turn = ++latestTurn
   const placement = takePlacement()
   if (!placement) return
+  appPageShown.value = false
   const loading = await window.api.showAppPage(appId, { ...placement, hidden: true })
   if (turn !== latestTurn) return
   status.value = loading

@@ -370,6 +370,26 @@ describe('AppPageHost', () => {
     expect(wrapper.find('[data-testid="app-page-loading"]').exists()).toBe(false)
   })
 
+  it('lets the sidebar know the page is covered when another app starts loading while a hide still waits for its picture', async () => {
+    const wrapper = await mountHost()
+    let giveFrame: (frame: string | null) => void = () => {}
+    captureAppPage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        giveFrame = resolve
+      })
+    )
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(captureAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+
+    await wrapper.setProps({ appId: 'sdr-to-hdr', title: 'SDR to HDR' })
+    await flushPromises()
+    giveFrame(FRAME)
+    await flushPromises()
+
+    expect(appPageShown.value).toBe(false)
+  })
+
   it('starts loading another app picked from the sidebar at once, hidden, with the placeholder showing', async () => {
     const wrapper = await mountHost()
     sidebarHovered.value = true
