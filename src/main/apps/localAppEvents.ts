@@ -233,13 +233,17 @@ export function unstartedRunsOn(buildId: string): string[] {
 }
 
 export function busyAppOn(buildId: string, askingAppId: string | null = null): string | null {
-  const others = [...runs.values()].filter(
-    (run): run is Run & { appId: string } =>
-      run.buildId === buildId && run.appId !== null && run.appId !== askingAppId
+  const onBuild = [...runs.values()].filter(
+    (run): run is Run & { appId: string } => run.buildId === buildId && run.appId !== null
   )
-  const working = others.find((run) => run.startedAt !== undefined)
-  if (working) return working.appId
-  const [firstInQueue] = others.sort((a, b) => a.submittedAt - b.submittedAt)
+  const working = onBuild.find((run) => run.startedAt !== undefined)
+  if (working) return working.appId === askingAppId ? null : working.appId
+  const askingSince = Math.min(
+    ...onBuild.filter((run) => run.appId === askingAppId).map((run) => run.submittedAt)
+  )
+  const [firstInQueue] = onBuild
+    .filter((run) => run.appId !== askingAppId && run.submittedAt < askingSince)
+    .sort((a, b) => a.submittedAt - b.submittedAt)
   return firstInQueue?.appId ?? null
 }
 

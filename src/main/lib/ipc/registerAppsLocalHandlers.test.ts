@@ -220,6 +220,23 @@ describe('telling app pages that a build became busy or free', () => {
     expect(mocks.localBuildsForEach).toHaveBeenCalledExactlyOnceWith(['product-ads'])
   })
 
+  it('tells a page nothing when it switched to another app during the lookup', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    mocks.pages = [page]
+    let answer: (builds: unknown) => void = () => {}
+    mocks.localBuildsForEach.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve))
+    )
+
+    await runsChange()
+    expect(mocks.localBuildsForEach).toHaveBeenCalledExactlyOnceWith(['product-ads'])
+    mocks.loadedApp = 'remove-background'
+    answer([BUILDS])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(page.send).not.toHaveBeenCalled()
+  })
+
   it('tells no page once Apps is turned off', async () => {
     const page = { send: vi.fn(), isDestroyed: () => false }
     mocks.pages = [page]

@@ -800,16 +800,36 @@ describe('which app a build is busy with', () => {
     noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-swap'))
 
     expect(busyAppOn('inst-1', 'remove-background')).toBe('product-swap')
-    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-swap')).toBeNull()
   })
 
-  it('names the oldest queued run of another app when none is working yet', () => {
+  it('names the oldest queued run ahead of the asking app when none is working yet', () => {
     runAccepted('run-ads', 'inst-1', 'product-ads', 1)
     runAccepted('run-swap', 'inst-1', 'product-swap', 2)
     runAccepted('run-cutout', 'inst-1', 'remove-background', 3)
 
-    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-ads')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
     expect(busyAppOn('inst-1', 'remove-background')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'upscale')).toBe('product-ads')
+  })
+
+  it('never names an app queued behind the asking app, even while a run from elsewhere holds the build', () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('remove-background')
+  })
+
+  it('names nothing for the app whose own run the build is working on', () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-cutout'))
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('remove-background')
   })
 
   it('names nothing when the only runs on the build are the asking app own', () => {

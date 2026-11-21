@@ -284,7 +284,8 @@ export interface ComfyDesktopLocalBuild {
   running?: boolean
   /**
    * Another app in Desktop's Apps view whose run this build is working on, or
-   * whose run is first in its queue. Never the app that asks. A build runs one
+   * the first run in its queue ahead of the asking app's own runs. Never the
+   * app that asks, and never an app queued behind it. A build runs one
    * workflow at a time, so a new run waits in its queue until that one ends.
    * `title` is the app's name for the person, such as `Remove Background`. It
    * is absent when Desktop has no name for the app, so the page can say
@@ -344,11 +345,13 @@ export interface ComfyDesktopRunState {
  */
 export interface ComfyDesktopHostedRunsBridge {
   /**
-   * Reports that a run started (`running: true`) or ended (`running: false`),
-   * from the moment the person presses Run, while the run waits in a queue,
-   * until it finishes, fails or is cancelled. Once a page calls this, Desktop
-   * uses only these reports for that page. Pages that never call it are
-   * followed through their run progress toast (`.cs-toasts .cs-toast`).
+   * Reports whether the page has any run going. Send `running: true` when the
+   * person presses Run, and keep it through every queue wait. Send
+   * `running: false` only when the page has no run left: each report replaces
+   * the page's whole state, so with two runs going, report false only after
+   * the last one finishes, fails or is cancelled. Once a page calls this,
+   * Desktop uses only these reports for that page. Pages that never call it
+   * are followed through their run progress toast (`.cs-toasts .cs-toast`).
    */
   reportRun(state: ComfyDesktopRunState): void
 }

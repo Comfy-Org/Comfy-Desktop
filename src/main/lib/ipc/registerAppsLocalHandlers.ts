@@ -32,13 +32,16 @@ async function announceBuilds(): Promise<void> {
   const announcement = ++latestAnnouncement
   if (liveAppsPages().length === 0 || !(await areAppsEnabled())) return
   const pages = liveAppsPages()
-  const lists = await localBuildsForEach(
-    pages.map((page) => loadedAppPage(page)?.appId ?? null)
-  ).catch(() => null)
+  const asked = pages.map((page) => loadedAppPage(page))
+  const lists = await localBuildsForEach(asked.map((loaded) => loaded?.appId ?? null)).catch(
+    () => null
+  )
   if (!lists || announcement !== latestAnnouncement) return
   pages.forEach((page, index) => {
     const builds = lists[index]
-    if (builds && !page.isDestroyed()) page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
+    if (!builds || page.isDestroyed()) return
+    if (!isSamePage(loadedAppPage(page), asked[index] ?? null)) return
+    page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
   })
 }
 
