@@ -1,7 +1,11 @@
 import { app, ipcMain } from 'electron'
 
 import { findEntryByComfySender } from '../../host/registry'
-import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
+import type {
+  ComfyDesktop2AuthState,
+  ComfyDesktop2SignInResult
+} from '../../../types/comfyDesktopBridge'
+import { signInFailureReport } from '../../cloud/signInFailure'
 import {
   billingHandoffForSender,
   EMBEDDED_SESSION_CHANNELS,
@@ -13,6 +17,11 @@ import {
 } from '../embeddedSession'
 import { reportHostSignIn } from '../hostSignInTelemetry'
 import { signInToCloud, signOutOfCloud, switchCloudWorkspace } from './registerDevPlatformHandlers'
+
+const SIGN_IN_ENDINGS_THAT_ARE_NOT_ERRORS: ReadonlySet<string> = new Set([
+  'cancelled',
+  'superseded'
+])
 
 export function registerEmbeddedSessionHandlers(): void {
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getState, (event) => stateForSender(event))
@@ -27,11 +36,18 @@ export function registerEmbeddedSessionHandlers(): void {
 
   ipcMain.handle(
     EMBEDDED_SESSION_CHANNELS.requestSignIn,
-    async (event): Promise<ComfyDesktop2AuthState> => {
-      if ((await stateForSender(event)).status === 'disabled') return { status: 'disabled' }
+    async (event): Promise<ComfyDesktop2SignInResult> => {
+      const state = await stateForSender(event)
+      if (state.status === 'disabled') return state
       return reportHostSignIn(async () => {
         await signInToCloud()
         return stateForSender(event)
+      }).catch(async (error: unknown): Promise<ComfyDesktop2SignInResult> => {
+        const signInFailure = signInFailureReport(error).reason
+        if (SIGN_IN_ENDINGS_THAT_ARE_NOT_ERRORS.has(signInFailure))
+          console.info('Sign-in requested by a ComfyUI page ended:', signInFailure)
+        else console.error('Sign-in requested by a ComfyUI page failed:', error)
+        return { ...(await stateForSender(event)), signInFailure }
       })
     }
   )
