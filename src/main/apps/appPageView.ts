@@ -188,8 +188,9 @@ function announceRuns(windowKey: number): void {
 }
 
 function forgetRun(hosted: HostedPage): void {
-  if (!hosted.running) return
+  if (!hosted.running && !hosted.finished) return
   hosted.running = false
+  hosted.finished = false
   announceRuns(hosted.windowKey)
 }
 
