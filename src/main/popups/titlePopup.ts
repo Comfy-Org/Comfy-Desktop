@@ -60,6 +60,7 @@ import {
   isInstallationInWorkspace
 } from '../../shared/workspaces'
 import type { Category, ViewKind } from '../../shared/viewKind'
+import { lastUsedAt } from '../../shared/lastUsed'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
@@ -81,6 +82,7 @@ export interface InstancePickerInstall {
   version?: string
   statusTag?: { style: string; label: string; detail?: string }
   lastLaunchedAt?: number
+  lastStoppedAt?: number
   installPath?: string
   status?: string
   [key: string]: unknown
@@ -184,8 +186,8 @@ function mostRecentlyLaunchedInstallId(installs: InstancePickerInstall[]): strin
       best = inst
       continue
     }
-    const ts = inst.lastLaunchedAt ?? 0
-    const bestTs = best.lastLaunchedAt ?? 0
+    const ts = lastUsedAt(inst) ?? 0
+    const bestTs = lastUsedAt(best) ?? 0
     if (ts > bestTs) {
       best = inst
     } else if (

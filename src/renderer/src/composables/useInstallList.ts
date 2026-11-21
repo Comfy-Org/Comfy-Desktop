@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { formatRelativeFromMs, lastUsedAt } from '../lib/datetime'
+import { formatRelativeFromMs } from '../lib/datetime'
+import { lastUsedAt } from '../../../shared/lastUsed'
 import { scoreName } from '../utils/fuzzyMatch'
 import type { Installation } from '../types/ipc'
 

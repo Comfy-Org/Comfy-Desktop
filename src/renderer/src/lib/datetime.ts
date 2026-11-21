@@ -81,16 +81,6 @@ export function formatLastUsed(
   }
 }
 
-export function lastUsedAt(build: {
-  lastLaunchedAt?: number
-  lastStoppedAt?: number
-}): number | undefined {
-  const times = [build.lastLaunchedAt, build.lastStoppedAt].filter(
-    (time): time is number => typeof time === 'number' && Number.isFinite(time)
-  )
-  return times.length > 0 ? Math.max(...times) : undefined
-}
-
 export function formatPlaybackTime(seconds: number): string {
   const total = Math.max(0, Math.round(seconds))
   const hours = Math.floor(total / 3600)

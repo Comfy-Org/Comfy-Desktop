@@ -409,6 +409,15 @@ describe('resolvePickerSelectedInstallId', () => {
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('b')
   })
 
+  it('defaults to the build that ran 09:00 to 18:00 over one that ran 12:00 to 12:30', () => {
+    const day = (hour: number, minute = 0) => new Date(2026, 10, 18, hour, minute).getTime()
+    const installs = [
+      makeInstall({ id: 'short-run', lastLaunchedAt: day(12), lastStoppedAt: day(12, 30) }),
+      makeInstall({ id: 'long-run', lastLaunchedAt: day(9), lastStoppedAt: day(18) })
+    ]
+    expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('long-run')
+  })
+
   it('falls back to the first install on an install-less host when none have been launched', () => {
     const installs = [makeInstall({ id: 'a' }), makeInstall({ id: 'b' })]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('a')

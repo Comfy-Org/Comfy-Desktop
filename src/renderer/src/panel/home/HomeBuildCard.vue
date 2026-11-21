@@ -9,7 +9,8 @@ import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
-import { formatLastUsed, lastUsedAt } from '../../lib/datetime'
+import { formatLastUsed } from '../../lib/datetime'
+import { lastUsedAt } from '../../../../shared/lastUsed'
 import {
   HOME_BUILD_TONES,
   isBuildOpenBlocked,

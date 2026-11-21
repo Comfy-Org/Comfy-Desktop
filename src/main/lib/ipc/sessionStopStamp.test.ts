@@ -17,14 +17,19 @@ vi.mock('electron', () => ({
 }))
 
 const update = vi.hoisted(() => vi.fn(async () => null))
+const markLaunched = vi.hoisted(() => vi.fn(async () => null))
 
 vi.mock('../../installations', async (importOriginal) => ({
   ...(await importOriginal<typeof installationsModule>()),
-  update
+  update,
+  markLaunched
 }))
 
 import {
+  _addSession,
   _removeSession,
+  hasPendingStopStamps,
+  settleStopStamps,
   _test_addRunningSession,
   _test_clearRunningSessions,
   stopRunning
@@ -67,6 +72,50 @@ describe('the last-used time of a build', () => {
     _removeSession('build-a')
 
     expect(update).toHaveBeenCalledWith('build-a', { lastStoppedAt: STOPPED_AT })
+  })
+
+  it('is stamped on the build itself when its session runs under another id', async () => {
+    _addSession(
+      'build-a-session',
+      { proc: null, port: 0, url: undefined, mode: 'window', installationName: 'Build A' },
+      undefined,
+      undefined,
+      'build-a'
+    )
+
+    await stopRunning('build-a-session')
+
+    expect(update).toHaveBeenCalledWith('build-a', { lastStoppedAt: STOPPED_AT })
+    expect(update).not.toHaveBeenCalledWith('build-a-session', expect.anything())
+  })
+
+  it('lets Desktop wait for the stamp before it quits', async () => {
+    let finishWrite: () => void = () => {}
+    update.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWrite = () => resolve(null)
+        })
+    )
+    _test_addRunningSession('build-a', 'Build A')
+    await stopRunning()
+    expect(hasPendingStopStamps()).toBe(true)
+
+    const settled = settleStopStamps(10_000)
+    finishWrite()
+    await settled
+
+    expect(hasPendingStopStamps()).toBe(false)
+  })
+
+  it('stops waiting for the stamp after the time limit', async () => {
+    update.mockImplementationOnce(() => new Promise(() => {}))
+    _test_addRunningSession('build-a', 'Build A')
+    await stopRunning()
+
+    await settleStopStamps(10)
+
+    expect(hasPendingStopStamps()).toBe(true)
   })
 
   it('is not stamped for a build that was not running', async () => {

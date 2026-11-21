@@ -1015,12 +1015,29 @@ export function _addSession(
     })
 }
 
+const _pendingStopStamps = new Set<Promise<unknown>>()
+
 function markSessionStopped(installationId: string, session: SessionInfo): void {
-  installations
+  const write = installations
     .update(session.sourceInstallationId ?? installationId, { lastStoppedAt: Date.now() })
     .catch((err) => {
       console.error('Failed to mark installation stopped:', err)
     })
+  _pendingStopStamps.add(write)
+  void write.finally(() => _pendingStopStamps.delete(write))
+}
+
+export function hasPendingStopStamps(): boolean {
+  return _pendingStopStamps.size > 0
+}
+
+export async function settleStopStamps(timeoutMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+  })
+  await Promise.race([Promise.all(_pendingStopStamps), deadline])
+  clearTimeout(timer)
 }
 
 export function _removeSession(installationId: string): void {

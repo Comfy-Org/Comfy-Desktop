@@ -270,6 +270,7 @@ function quitApp(): void {
 }
 
 const STARTUP_INSTALL_QUIT_BACKSTOP_MS = 4_000
+const STOP_STAMP_QUIT_WAIT_MS = 2_000
 
 async function openStartupSurface(): Promise<void> {
   const autoStartBuild = await pinAutoStartToALocalBuild().catch((err: unknown) => {
@@ -1647,12 +1648,16 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     stopAgentPrefetches()
   })
 
-  let modelDownloadsSuspended = false
+  let quitWorkSettled = false
   app.on('will-quit', (event) => {
-    if (modelDownloadsSuspended || !hasActiveModelTransfers()) return
-    modelDownloadsSuspended = true
+    if (quitWorkSettled) return
+    const quitWork: Promise<unknown>[] = []
+    if (hasActiveModelTransfers()) quitWork.push(suspendActiveModelDownloadsForQuit())
+    if (ipc.hasPendingStopStamps()) quitWork.push(ipc.settleStopStamps(STOP_STAMP_QUIT_WAIT_MS))
+    if (quitWork.length === 0) return
+    quitWorkSettled = true
     event.preventDefault()
-    void suspendActiveModelDownloadsForQuit().finally(() => app.quit())
+    void Promise.allSettled(quitWork).finally(() => app.quit())
   })
 
   powerMonitor.on('suspend', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import zh from '@locales/zh.json'
 
-import { formatLastUsed, formatRelativeFromMs, lastUsedAt, relativeTime } from './datetime'
+import { formatLastUsed, formatRelativeFromMs, relativeTime } from './datetime'
 import { appI18nOptions } from './i18nOptions'
 
 const MINUTE_MS = 60_000
@@ -99,27 +99,5 @@ describe('formatRelativeFromMs', () => {
     expect(formatRelativeFromMs(NOW - 5 * MINUTE_MS, english, NOW)).toBe('5m ago')
     expect(formatRelativeFromMs(NOW - 2 * HOUR_MS, english, NOW)).toBe('2h ago')
     expect(formatRelativeFromMs(at(16, 19), english, NOW)).toBe('2d ago')
-  })
-})
-
-describe('lastUsedAt', () => {
-  it('takes the stop time of a build that ran for hours after it started', () => {
-    expect(lastUsedAt({ lastLaunchedAt: NOW - 6 * HOUR_MS, lastStoppedAt: NOW - MINUTE_MS })).toBe(
-      NOW - MINUTE_MS
-    )
-  })
-
-  it('takes the start time of a build that started again after its last stop', () => {
-    expect(lastUsedAt({ lastLaunchedAt: NOW - HOUR_MS, lastStoppedAt: NOW - DAY_MS })).toBe(
-      NOW - HOUR_MS
-    )
-  })
-
-  it('takes the start time when the build has no stop time yet', () => {
-    expect(lastUsedAt({ lastLaunchedAt: NOW - HOUR_MS })).toBe(NOW - HOUR_MS)
-  })
-
-  it('has no time for a build that was never opened', () => {
-    expect(lastUsedAt({})).toBeUndefined()
   })
 })
