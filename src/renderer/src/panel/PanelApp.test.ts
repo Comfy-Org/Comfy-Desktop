@@ -1681,6 +1681,33 @@ describe('PanelApp', () => {
     )
   })
 
+  it('asks before leaving a build view for a running app, and stays on the build view on Stay', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+    await flushPromises()
+    vi.mocked(window.api.appSwitchStopsRun).mockResolvedValue({
+      appTitle: 'Upscale 4x',
+      otherRuns: 3
+    })
+    const dialogButton = (testId: string) =>
+      document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
+    await vi.waitFor(() => expect(dialogButton('base-alert-cancel')).not.toBeNull())
+    expect(wrapper.find('.panel-comfy-lifecycle').exists()).toBe(true)
+    dialogButton('base-alert-cancel')!.click()
+    await flushPromises()
+
+    expect(wrapper.find('.panel-comfy-lifecycle').exists()).toBe(true)
+    expect(window.api.navigatePanel).not.toHaveBeenCalledWith('apps')
+  })
+
   it('opens a running app picked from the title bar while a build view shows', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)

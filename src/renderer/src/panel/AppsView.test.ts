@@ -523,6 +523,22 @@ describe('AppsView', () => {
     expect(showAppPage).not.toHaveBeenCalled()
   })
 
+  it('asks before opening an app when Desktop cannot tell whether that stops a run', async () => {
+    const wrapper = await mountApps()
+    vi.mocked(window.api.appSwitchStopsRun).mockRejectedValueOnce(new Error('no answer'))
+    const dialogs = useDialogs()
+
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
+    expect(dialogs.state.confirm.message).toBe(
+      'Desktop could not check whether an app is still making something. Switching may stop it.'
+    )
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('SDR to HDR')
+  })
+
   it('opens an app from its card in place of the cards', async () => {
     const wrapper = await mountApps()
 
