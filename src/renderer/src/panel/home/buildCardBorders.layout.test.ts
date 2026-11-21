@@ -102,11 +102,15 @@ const CARDS = [
   ['Home New build tile', () => h(HomeNewBuildTile)]
 ] as const
 
-function tokenStyle(css: string): CSSStyleDeclaration {
+type TokenStyle = Pick<CSSStyleDeclaration, 'backgroundColor' | 'backgroundImage' | 'boxShadow'>
+
+function tokenStyle(css: string): TokenStyle {
   const probe = document.createElement('div')
   probe.style.cssText = css
   document.body.append(probe)
-  return getComputedStyle(probe)
+  const { backgroundColor, backgroundImage, boxShadow } = getComputedStyle(probe)
+  probe.remove()
+  return { backgroundColor, backgroundImage, boxShadow }
 }
 
 describe('build cards have a glass surface', () => {
