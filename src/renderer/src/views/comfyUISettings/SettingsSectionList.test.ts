@@ -173,6 +173,30 @@ describe('SettingsSectionList', () => {
     })
   })
 
+  describe('a danger section action', () => {
+    function dangerButton() {
+      const wrapper = mount(SettingsSectionList, {
+        props: {
+          sections: [
+            {
+              title: 'Danger zone',
+              actions: [{ id: 'delete', label: 'Uninstall', style: 'danger' }]
+            }
+          ]
+        }
+      })
+      return wrapper.findAll('button').find((button) => button.text() === 'Uninstall')!
+    }
+
+    it('is red text that only tints on hover, never a filled red button', () => {
+      const classes = dangerButton().classes()
+      expect(classes).toContain('text-danger')
+      expect(classes).toContain('hover:bg-destructive/12')
+      expect(classes.some((name) => /^hover:bg-\[var\(--danger\)\]$/.test(name))).toBe(false)
+      expect(classes.some((name) => name.startsWith('hover:text-'))).toBe(false)
+    })
+  })
+
   describe('version-stats section', () => {
     const vsSection = (enabled: boolean): DetailSection => ({
       fields: [

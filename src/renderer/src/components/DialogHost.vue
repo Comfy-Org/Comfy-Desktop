@@ -55,7 +55,6 @@ const showConfirm = computed(() => state.open && state.kind === 'confirm')
     :title="state.alert.title"
     :message="state.alert.message"
     :button-label="state.alert.buttonLabel"
-    :tone="state.alert.tone"
     :message-details="state.alert.messageDetails"
     @close="acknowledgeAlert"
   />

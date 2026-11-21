@@ -77,6 +77,7 @@ interface ActiveOperation {
 interface Props {
   installation: Installation | null
   initialTab?: ComfyUISettingsTab
+  openEpoch?: number
   autoAction?: string | null
   autoActionNonce?: number
   globalSettingsSnapshot?: StorageSnapshot
@@ -92,6 +93,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   initialTab: 'update',
+  openEpoch: 0,
   showBack: false,
   autoAction: null,
   autoActionNonce: 0,
@@ -327,12 +329,16 @@ const showUpdateBadge = computed(() => {
   return inst?.statusTag?.style === 'update' || inst?.status === 'update-available'
 })
 
-watch([tabs, sectionsFresh], ([next, isFresh]) => {
-  if (!isFresh) return
-  if (next.length === 0) return
-  if (next.some((tab) => tab.key === activeTab.value)) return
-  const requested = next.find((tab) => tab.key === props.initialTab)
-  activeTab.value = requested ? requested.key : next[0]!.key
+function availableTab(wanted: ComfyUISettingsTab): ComfyUISettingsTab {
+  const list = tabs.value
+  if (!sectionsFresh.value || list.length === 0) return wanted
+  if (list.some((tab) => tab.key === wanted)) return wanted
+  const requested = list.find((tab) => tab.key === props.initialTab)
+  return requested ? requested.key : list[0]!.key
+}
+
+watch([tabs, sectionsFresh], () => {
+  activeTab.value = availableTab(activeTab.value)
 })
 
 const visibleSections = computed(() => {
@@ -452,6 +458,15 @@ watch(
   () => {
     subPage.value = null
     moreMenuOpen.value = false
+    tabTransition.value = 'subpage-push'
+  }
+)
+
+watch(
+  () => props.openEpoch,
+  () => {
+    activeTab.value = availableTab(overviewTab(props.initialTab))
+    subPage.value = null
     tabTransition.value = 'subpage-push'
   }
 )

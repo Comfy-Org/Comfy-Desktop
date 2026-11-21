@@ -15,7 +15,6 @@ import {
   pipFreeze,
   runUvPip as sharedRunUvPip,
   installFilteredRequirements,
-  getPipIndexArgs,
   type PipMirrorConfig
 } from '../pip'
 import { installCnrNode, switchCnrVersion, isSafePathComponent } from '../cnr'
@@ -515,15 +514,15 @@ export async function restorePipPackages(
       sendProgress('restore', { percent: 20, status: `Installing ${toInstall.length} package(s)…` })
 
       const specs = toInstall.map((p) => `${p.name}==${p.version}`)
-      const indexArgs = getPipIndexArgs(mirrors?.pypiMirror, mirrors?.useChineseMirrors)
 
       sendOutput(`\nInstalling ${specs.length} package(s)…\n`)
       const bulkResult = await runUvPip(
         uvPath,
-        ['pip', 'install', ...specs, '--python', pythonPath, ...indexArgs],
+        ['pip', 'install', ...specs, '--python', pythonPath],
         installPath,
         sendOutput,
-        signal
+        signal,
+        mirrors ?? {}
       )
 
       if (bulkResult !== 0) {
@@ -538,10 +537,11 @@ export async function restorePipPackages(
 
           const singleResult = await runUvPip(
             uvPath,
-            ['pip', 'install', spec, '--no-deps', '--python', pythonPath, ...indexArgs],
+            ['pip', 'install', spec, '--no-deps', '--python', pythonPath],
             installPath,
             sendOutput,
-            signal
+            signal,
+            mirrors ?? {}
           )
 
           if (singleResult !== 0) {

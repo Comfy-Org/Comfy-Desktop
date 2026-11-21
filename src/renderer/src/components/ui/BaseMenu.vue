@@ -4,6 +4,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 export interface BaseMenuItem {
   id: string
@@ -87,7 +88,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       <MenuSeparator v-if="item.separator && index > 0" class="ui-menu-separator" />
       <MenuItem
         class="ui-menu-item"
-        :class="item.style === 'danger' ? 'text-destructive focus:text-destructive' : undefined"
+        :class="item.style === 'danger' ? DESTRUCTIVE_MENU_ITEM_CLASS : undefined"
         :disabled="item.disabled"
         :text-value="item.label"
         :data-danger="item.style === 'danger' ? '' : undefined"

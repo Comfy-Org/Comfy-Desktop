@@ -203,7 +203,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         ? 'bg-[var(--surface)] text-[var(--action)] font-semibold hover:bg-[var(--action)] hover:text-[var(--bg)]'
         : 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
     case 'danger':
-      return 'bg-[var(--surface)] text-danger hover:bg-[var(--danger)] hover:text-[var(--bg)]'
+      return 'bg-[var(--surface)] text-danger hover:bg-destructive/12'
     default:
       return 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
   }

@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
 import ContextMenu from './ContextMenu.vue'
 import { TID } from '../../../shared/testIds'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../lib/destructiveStyles'
 
 let wrapper: VueWrapper | undefined
 const originalApi = Object.getOwnPropertyDescriptor(window, 'api')
@@ -175,6 +176,27 @@ describe('ContextMenu', () => {
         dialogButton.remove()
       }
     })
+  })
+
+  it('paints a danger item with the shared red menu item class and leaves the rest plain', async () => {
+    wrapper = mount(ContextMenu, {
+      props: {
+        open: true,
+        x: 40,
+        y: 40,
+        items: [
+          { id: 'stop', label: 'Stop' },
+          { id: 'delete', label: 'Uninstall', style: 'danger' }
+        ]
+      },
+      attachTo: document.body
+    })
+    await flushPromises()
+    const [plain, danger] = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect([...danger!.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
+    expect(plain!.classList).not.toContain('text-destructive')
   })
 
   it('emits the action id and closes after keyboard selection', async () => {

@@ -145,13 +145,6 @@ async function firstRunSummary(): Promise<SummaryMetrics> {
   const rows = [...box.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')]
   expect(rows).toHaveLength(3)
   const metrics = measure(box, rows)
-  const hardware = rows[0]
-  const label = document.createRange()
-  label.selectNodeContents(hardware.children[0])
-  const labelGap =
-    hardware.children[1].getBoundingClientRect().left - label.getBoundingClientRect().right
-  expect(labelGap).toBeGreaterThanOrEqual(8)
-  expect(labelGap).toBeLessThanOrEqual(24)
   expect(Math.max(...metrics.rowGaps)).toBeLessThanOrEqual(20)
   const terms = document.querySelector('[data-testid="setup-consent-telemetry"]')!
   expect(Math.round(terms.getBoundingClientRect().left - box.getBoundingClientRect().left)).toBe(
@@ -159,6 +152,20 @@ async function firstRunSummary(): Promise<SummaryMetrics> {
   )
   wrapper.unmount()
   return metrics
+}
+
+firstRunSummary.withMachineX = async (): Promise<{ metrics: SummaryMetrics; machineX: number }> => {
+  const wrapper = mount(FirstUseTakeover, { attachTo: document.body })
+  mounted.push(wrapper)
+  await flushPromises()
+  await settle()
+  const box = document.querySelector<HTMLElement>('[data-testid="setup-summary"]')!
+  const rows = [...box.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')]
+  const name = document.querySelector<HTMLElement>('[data-testid="setup-machine-name"]')!
+  const machineX = Math.round(name.getBoundingClientRect().left - box.getBoundingClientRect().left)
+  const metrics = measure(box, rows)
+  wrapper.unmount()
+  return { metrics, machineX }
 }
 
 async function newBuildSummary(): Promise<{ metrics: SummaryMetrics; box: HTMLElement }> {
@@ -175,7 +182,7 @@ async function newBuildSummary(): Promise<{ metrics: SummaryMetrics; box: HTMLEl
   await settle()
   const box = document.querySelector<HTMLElement>('.config-summary-list')!
   const rows = [...box.querySelectorAll<HTMLElement>('.config-summary-row')]
-  expect(rows).toHaveLength(4)
+  expect(rows).toHaveLength(3)
   return { metrics: measure(box, rows), box }
 }
 
@@ -231,14 +238,7 @@ describe.each([
     expect(newBuild.border).toBe(firstRun.border)
     expect(newBuild.radius).toBe(firstRun.radius)
     expect(newBuild.padding).toBe(firstRun.padding)
-    for (const key of [
-      'rowHeights',
-      'rowGaps',
-      'iconX',
-      'labelX',
-      'valueX',
-      'noteRight'
-    ] as const) {
+    for (const key of ['rowHeights', 'rowGaps', 'iconX', 'labelX', 'noteRight'] as const) {
       expect(new Set(newBuild[key]), key).toEqual(new Set(firstRun[key]))
     }
   })
@@ -289,6 +289,46 @@ describe.each([
     )
   })
 
+  it('starts each value on the same x as the computer name above it', async () => {
+    await browserPage.viewport(width, height)
+    const firstRun = await firstRunSummary.withMachineX()
+    const { metrics: newBuild, box } = await newBuildSummary()
+    const newBuildName = document
+      .querySelector<HTMLElement>('[data-testid="detected-gpu-field"]')!
+      .getBoundingClientRect().left
+    const nameInput = document
+      .querySelector<HTMLElement>('.config-name-card input')!
+      .getBoundingClientRect().left
+
+    expect(new Set(firstRun.metrics.valueX)).toEqual(new Set([firstRun.machineX]))
+    expect(new Set(newBuild.valueX)).toEqual(
+      new Set([Math.round(newBuildName - box.getBoundingClientRect().left)])
+    )
+    expect(Math.round(nameInput)).toBe(Math.round(newBuildName))
+  })
+
+  it('keeps the Name field as far from the top of its box as from the right', async () => {
+    await browserPage.viewport(width, height)
+    await newBuildSummary()
+    const card = document.querySelector<HTMLElement>('.config-name-card')!.getBoundingClientRect()
+    const field = document
+      .querySelector<HTMLElement>('.config-name-card .config-input')!
+      .getBoundingClientRect()
+
+    expect(Math.round(card.right - field.right)).toBe(Math.round(field.top - card.top))
+    expect(Math.round(card.bottom - field.bottom)).toBe(Math.round(field.top - card.top))
+  })
+
+  it('lines Change up on the right with Browse and the notes below it', async () => {
+    await browserPage.viewport(width, height)
+    const { box } = await newBuildSummary()
+    const right = (el: Element) => Math.round(el.getBoundingClientRect().right)
+    const change = document.querySelector('[data-testid="config-change-setup"]')!
+    const browse = box.querySelector('[data-testid="config-summary-browse"]')!
+
+    expect(right(change)).toBe(right(browse))
+  })
+
   it('draws Browse as a filled secondary button, without an outline', async () => {
     await browserPage.viewport(width, height)
     const { box } = await newBuildSummary()
@@ -300,31 +340,34 @@ describe.each([
     expect(browse.borderTopWidth).toBe('0px')
   })
 
-  it('keeps the value readable when a row note is very long', async () => {
+  it('shows the rows, values and notes of the first-run summary, without long descriptions or recommended picks', async () => {
     await browserPage.viewport(width, height)
     const longNote = 'A very long build description '.repeat(12).trim()
     const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
     const defaultOptions = options.getMockImplementation()!
     options.mockImplementation(async (source: string, field: string) => {
       const list = await defaultOptions(source, field)
-      return field === 'variant'
-        ? list.map((option) => ({ ...option, description: longNote }))
-        : list
+      return list.map((option) => ({ ...option, description: longNote, recommended: undefined }))
     })
+    const lines = (rows: HTMLElement[]): string[][] =>
+      rows.map((row) => [...row.children].map((cell) => cell.textContent!.trim()))
+    const firstRun = mount(FirstUseTakeover, { attachTo: document.body })
+    mounted.push(firstRun)
+    await flushPromises()
+    await settle()
+    const firstRunLines = lines([
+      ...document.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')
+    ])
+    firstRun.unmount()
     const { box } = await newBuildSummary()
-    const row = [...box.querySelectorAll<HTMLElement>('.config-summary-row')].find(
-      (candidate) => candidate.children[2]?.textContent === longNote
-    )!
-    const value = row.children[1] as HTMLElement
-    const note = row.children[2] as HTMLElement
+    const newBuildLines = lines([...box.querySelectorAll<HTMLElement>('.config-summary-row')])
 
-    expect(value.textContent).toBe('Apple Silicon (MPS)')
-    expect(value.getBoundingClientRect().width).toBeGreaterThanOrEqual(value.scrollWidth)
-    expect(note.scrollWidth).toBeGreaterThan(note.clientWidth)
-    expect(note.title).toBe(longNote)
-    expect(Math.round(box.getBoundingClientRect().right - note.getBoundingClientRect().right)).toBe(
-      parseFloat(getComputedStyle(box).paddingRight)
-    )
+    expect(newBuildLines.map(([label]) => label)).toEqual(['Hardware', 'Version', 'Location'])
+    expect(newBuildLines[0]).toEqual(firstRunLines[0])
+    expect(newBuildLines[1]).toEqual(firstRunLines[1])
+    expect(newBuildLines[0]).toEqual(['Hardware', 'Apple Silicon (MPS)', 'Detected'])
+    expect(newBuildLines[1]).toEqual(['Version', 'ComfyUI v0.42.4', 'Stable'])
+    expect(box.textContent).not.toContain(longNote)
   })
 
   it('puts the Location note and Browse on the Location line, right-aligned', async () => {
