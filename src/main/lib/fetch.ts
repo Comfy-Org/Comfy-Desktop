@@ -88,6 +88,7 @@ function fetchJSONOnce(
 
     let data = ''
     request.on('response', (response) => {
+      response.on('error', reject)
       response.on('data', (chunk) => (data += chunk.toString()))
       response.on('end', () => {
         if (response.statusCode === 304 && cached) {
