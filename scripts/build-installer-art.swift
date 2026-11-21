@@ -166,23 +166,24 @@ final class Canvas {
 
 let dmgCanvasWidth = 4096.0
 let dmgCanvasHeight = 2560.0
-let dmgAppCenterX = 135.0
-let dmgFolderCenterX = 405.0
-let dmgIconCenterY = 195.0
+let dmgApp = CGPoint(x: 135, y: 270)
+let dmgFolder = CGPoint(x: 405, y: 190)
 
 func drawDMGBackground(scale: Double) -> Canvas {
     let canvas = Canvas(widthPt: dmgCanvasWidth, heightPt: dmgCanvasHeight, scale: scale)
     canvas.fill(ink)
-    canvas.text("Comfy Desktop", centerX: 270, top: 58, font: formula("Medium", 22), color: warmWhite)
-    canvas.text("Drag to Applications to install", centerX: 270, top: 90, font: formula("Regular", 13), color: canvasColor)
-    let cardWidth = 128.0, cardTop = 138.0, cardHeight = 128.0
-    for centerX in [dmgAppCenterX, dmgFolderCenterX] {
-        canvas.nodeCard(x: centerX - cardWidth / 2, y: cardTop, width: cardWidth, height: cardHeight, band: 24, bandColor: warmGray)
+    canvas.text("Comfy Desktop", centerX: 270, top: 52, font: formula("Medium", 22), color: warmWhite)
+    canvas.text("Drag to Applications to install", centerX: 270, top: 84, font: formula("Regular", 13), color: canvasColor)
+    let cardWidth = 128.0, cardHeight = 128.0, cardTopAboveIcon = 57.0
+    for icon in [dmgApp, dmgFolder] {
+        canvas.nodeCard(x: icon.x - cardWidth / 2, y: icon.y - cardTopAboveIcon, width: cardWidth, height: cardHeight,
+                        band: 24, bandColor: warmGray)
     }
-    let output = CGPoint(x: dmgAppCenterX + cardWidth / 2, y: dmgIconCenterY)
-    let input = CGPoint(x: dmgFolderCenterX - cardWidth / 2, y: dmgIconCenterY)
-    canvas.link(from: output, CGPoint(x: output.x + 40, y: output.y + 22),
-                CGPoint(x: input.x - 40, y: input.y + 22), to: input, color: yellow)
+    let output = CGPoint(x: dmgApp.x + cardWidth / 2, y: dmgApp.y)
+    let input = CGPoint(x: dmgFolder.x - cardWidth / 2, y: dmgFolder.y)
+    let pull = (input.x - output.x) / 2
+    canvas.link(from: output, CGPoint(x: output.x + pull, y: output.y),
+                CGPoint(x: input.x - pull, y: input.y), to: input, color: yellow)
     canvas.outputPort(output, color: yellow)
     canvas.inputPort(input, color: yellow, background: inkLight)
     return canvas
