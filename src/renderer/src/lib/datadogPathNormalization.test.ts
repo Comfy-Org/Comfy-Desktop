@@ -31,6 +31,39 @@ describe('normalizeDatadogBundlePaths', () => {
 })
 
 describe('scrubRumText', () => {
+  it.each([
+    [
+      'Traceback\\n\\Users\\http://h/view?user=alice',
+      'Traceback\\n\\Users\\http://h/view?[REDACTED]'
+    ],
+    ['Traceback\\n\\Users\\data:image/png;base64,QUFBQUFB', 'Traceback\\n\\Users\\data:[REDACTED]'],
+    [
+      'Traceback\\n\\Users\\alice failed: https://h/view?X-Goog-Signature=secret',
+      'Traceback\\n\\Users\\[REDACTED]https://h/view?[REDACTED]'
+    ],
+    [
+      'Traceback\\n\\Users\\fetch(https://h/view?user=alice)',
+      'Traceback\\n\\Users\\[REDACTED]https://h/view?[REDACTED])'
+    ],
+    [
+      'C:\\Users/\\GET https://h/view?user=alice',
+      'C:\\Users/\\[REDACTED]https://h/view?[REDACTED]'
+    ],
+    [
+      'Traceback\\n\\Users\\img data:image/png;base64,QUFBQUFB',
+      'Traceback\\n\\Users\\[REDACTED]data:[REDACTED]'
+    ],
+    [
+      'Traceback\\n\\Users\\GET HTTPS://h/view?user=alice',
+      'Traceback\\n\\Users\\[REDACTED]HTTPS://h/view?[REDACTED]'
+    ]
+  ])(
+    'still hides a URL query or data URI after a path only the wider matching reads: %s',
+    (input, expected) => {
+      expect(scrubRumText(input)).toBe(expected)
+    }
+  )
+
   it('scrubs a user path with the shared scrubber', () => {
     expect(scrubRumText('C:\\Users\\JohnDoe\\AppData\\Local\\foo')).toBe(
       'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'

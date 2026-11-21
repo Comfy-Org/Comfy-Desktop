@@ -1,7 +1,9 @@
-const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
+const ESCAPED_NAME = String.raw`(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
+const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)${ESCAPED_NAME}`
+const MIXED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+|[\\/]{2,})${ESCAPED_NAME}`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
 const SHARE_HOST = String.raw`[^\\/\s"']+`
-const PII_PATH_PATTERNS: RegExp[] = [
+const USER_PATH_ROOTS = [
   String.raw`([A-Za-z]:[\\/]+Users)`,
   String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+${SHARE_HOST}[\\/]+(?:home|mnt[\\/]+[A-Za-z][\\/]+Users))`,
   String.raw`(\\\\tsclient[\\/]+[A-Za-z][\\/]+Users)`,
@@ -12,7 +14,16 @@ const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`((?<![\w.~$\\/-])\\+Users)`,
   String.raw`(\/Users)`,
   String.raw`(\/home)`
-].map((root) => new RegExp(`${root}(?:${ESCAPED_SEP_NAME}|${RAW_SEP_NAME})`, 'gi'))
+]
+const USERS_AFTER_ESCAPED_BREAK = String.raw`((?<=\\(?-i:[nrt]))\\+Users)`
+
+const userPathPatterns = (roots: string[], escapedSepName: string): RegExp[] =>
+  roots.map((root) => new RegExp(`${root}(?:${escapedSepName}|${RAW_SEP_NAME})`, 'gi'))
+const SEQUENTIAL_USER_PATH_PATTERNS = userPathPatterns(USER_PATH_ROOTS, ESCAPED_SEP_NAME)
+const EVERY_START_USER_PATH_PATTERNS = userPathPatterns(
+  [...USER_PATH_ROOTS, USERS_AFTER_ESCAPED_BREAK],
+  MIXED_SEP_NAME
+)
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]'],
@@ -33,16 +44,53 @@ const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] 
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 
-export function scrubPII(value: string): string {
-  let scrubbed = value
-  for (const pattern of PII_PATH_PATTERNS) {
-    scrubbed = scrubbed.replace(
+const URL_SCHEME = /(?:https?|data):/i
+
+type Span = [start: number, end: number]
+
+function nameSpansFromEveryStart(pattern: RegExp, text: string): Span[] {
+  const spans: Span[] = []
+  pattern.lastIndex = 0
+  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+    const [whole, root = '', escapedSep, rawSep = ''] = match
+    const nameStart = match.index + root.length + (escapedSep ?? rawSep).length
+    const name = text.slice(nameStart, match.index + whole.length)
+    const schemeAt = name.search(URL_SCHEME)
+    if (schemeAt !== 0)
+      spans.push([nameStart, schemeAt < 0 ? nameStart + name.length : nameStart + schemeAt])
+    pattern.lastIndex = match.index + 1
+  }
+  return spans
+}
+
+function sequentialNameSpans(text: string): Span[] {
+  const spans: Span[] = []
+  let masked = text
+  for (const pattern of SEQUENTIAL_USER_PATH_PATTERNS) {
+    masked = masked.replace(
       pattern,
-      (_match, root: string, escapedSep: string | undefined, rawSep: string) =>
-        `${root}${escapedSep ?? rawSep}[REDACTED]`
+      (whole: string, root: string, escapedSep: string | undefined, rawSep: string, at: number) => {
+        const nameStart = root.length + (escapedSep ?? rawSep).length
+        spans.push([at + nameStart, at + whole.length])
+        return whole.slice(0, nameStart).padEnd(whole.length, '\0')
+      }
     )
   }
-  return scrubbed.replace(EMAIL_PATTERN, '[REDACTED]')
+  return spans
+}
+
+export function scrubPII(value: string): string {
+  const everyStart = EVERY_START_USER_PATH_PATTERNS.flatMap((pattern) =>
+    nameSpansFromEveryStart(pattern, value)
+  )
+  const spans = [...sequentialNameSpans(value), ...everyStart].sort(([a], [b]) => a - b)
+  let redacted = ''
+  let cursor = 0
+  for (const [start, end] of spans) {
+    if (start > cursor) redacted += `${value.slice(cursor, start)}[REDACTED]`
+    cursor = Math.max(cursor, end)
+  }
+  return (redacted + value.slice(cursor)).replace(EMAIL_PATTERN, '[REDACTED]')
 }
 
 export function scrubSecrets(value: string): string {
