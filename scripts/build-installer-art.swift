@@ -7,9 +7,14 @@ guard CommandLine.arguments.count == 2 else {
     exit(1)
 }
 let fontDir = CommandLine.arguments[1]
-let repo = FileManager.default.currentDirectoryPath
+let repo = URL(fileURLWithPath: #filePath).standardizedFileURL.deletingLastPathComponent().deletingLastPathComponent().path
 let resources = "\(repo)/resources"
 let logoPath = "\(repo)/assets/Comfy_Logo_x512.png"
+guard FileManager.default.fileExists(atPath: "\(resources)/dmg"), FileManager.default.fileExists(atPath: logoPath) else {
+    FileHandle.standardError.write("cannot find resources/dmg or the logo under \(repo)\n".data(using: .utf8)!)
+    exit(1)
+}
+let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
 
 let ink: UInt32 = 0x211927
 let inkLight: UInt32 = 0x2A2330
@@ -20,7 +25,7 @@ let warmGray: UInt32 = 0x7E7C78
 let systemWhite: UInt32 = 0xFFFFFF
 
 func cgColor(_ hex: UInt32, _ alpha: Double = 1) -> CGColor {
-    CGColor(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+    CGColor(srgbRed: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
             blue: Double(hex & 0xFF) / 255, alpha: alpha)
 }
 
@@ -46,7 +51,7 @@ final class Canvas {
         self.heightPt = heightPt
         self.scale = scale
         ctx = CGContext(data: nil, width: Int(widthPt * scale), height: Int(heightPt * scale),
-                        bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                        bitsPerComponent: 8, bytesPerRow: 0, space: sRGB,
                         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
     }
 
@@ -82,7 +87,7 @@ final class Canvas {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    func nodeCard(x: Double, y: Double, width: Double, height: Double, band: Double, background: UInt32) {
+    func nodeCard(x: Double, y: Double, width: Double, height: Double, band: Double, bandColor: UInt32 = canvasColor) {
         let radius = 10 * scale
         let path = CGPath(roundedRect: rect(x, y, width, height), cornerWidth: radius, cornerHeight: radius, transform: nil)
         ctx.setFillColor(cgColor(inkLight))
@@ -92,7 +97,7 @@ final class Canvas {
             ctx.saveGState()
             ctx.addPath(path)
             ctx.clip()
-            ctx.setFillColor(cgColor(canvasColor))
+            ctx.setFillColor(cgColor(bandColor))
             ctx.fill(rect(x, y + height - band, width, band))
             ctx.restoreGState()
         }
@@ -159,8 +164,8 @@ final class Canvas {
     }
 }
 
-let dmgCanvasWidth = 2560.0
-let dmgCanvasHeight = 1600.0
+let dmgCanvasWidth = 4096.0
+let dmgCanvasHeight = 2560.0
 let dmgAppCenterX = 135.0
 let dmgFolderCenterX = 405.0
 let dmgIconCenterY = 195.0
@@ -172,7 +177,7 @@ func drawDMGBackground(scale: Double) -> Canvas {
     canvas.text("Drag to Applications to install", centerX: 270, top: 90, font: formula("Regular", 13), color: canvasColor)
     let cardWidth = 128.0, cardTop = 138.0, cardHeight = 128.0
     for centerX in [dmgAppCenterX, dmgFolderCenterX] {
-        canvas.nodeCard(x: centerX - cardWidth / 2, y: cardTop, width: cardWidth, height: cardHeight, band: 24, background: ink)
+        canvas.nodeCard(x: centerX - cardWidth / 2, y: cardTop, width: cardWidth, height: cardHeight, band: 24, bandColor: warmGray)
     }
     let output = CGPoint(x: dmgAppCenterX + cardWidth / 2, y: dmgIconCenterY)
     let input = CGPoint(x: dmgFolderCenterX - cardWidth / 2, y: dmgIconCenterY)
@@ -187,12 +192,12 @@ func drawWindowsSidebar(connected: Bool) -> Canvas {
     let canvas = Canvas(widthPt: 164, heightPt: 314, scale: 1)
     canvas.fill(ink)
     let card = (x: 14.0, y: 56.0, width: 100.0, height: 100.0)
-    canvas.nodeCard(x: card.x, y: card.y, width: card.width, height: card.height, band: 22, background: ink)
+    canvas.nodeCard(x: card.x, y: card.y, width: card.width, height: card.height, band: 22)
     canvas.image(logoPath, centerX: card.x + card.width / 2, centerY: card.y + 39, size: 50)
     canvas.text("Comfy Desktop", centerX: card.x + card.width / 2, top: card.y + card.height - 17,
                 font: formula("Medium", 11), color: ink)
     let next = (x: 64.0, y: 232.0)
-    canvas.nodeCard(x: next.x, y: next.y, width: 140, height: 130, band: 0, background: ink)
+    canvas.nodeCard(x: next.x, y: next.y, width: 140, height: 130, band: 0)
     let output = CGPoint(x: card.x + card.width, y: card.y + 39)
     let input = CGPoint(x: next.x, y: next.y + 36)
     if connected {
