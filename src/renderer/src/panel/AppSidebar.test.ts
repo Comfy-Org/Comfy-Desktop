@@ -327,6 +327,18 @@ describe('AppSidebar', () => {
       wrapper.unmount()
     })
 
+    it('leaves room above the first picture, so its dot and bounce are not cut off', async () => {
+      appRuns.value = [{ appId: 'character-swap', running: false, finished: true }]
+      const wrapper = await mountWithAppOpen()
+      const rail = wrapper.get('[data-testid="app-sidebar-app-rail"]').element
+      const first = wrapper.get('[data-testid="app-sidebar-app-finished-character-swap"]').element
+
+      const room = first.getBoundingClientRect().top - rail.getBoundingClientRect().top
+      expect(room).toBeGreaterThanOrEqual(6)
+      appRuns.value = []
+      wrapper.unmount()
+    })
+
     it('marks only the open app as the current one and keeps it in its place', async () => {
       const wrapper = await mountWithAppOpen(PRODUCT_SWAP)
 

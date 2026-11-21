@@ -82,7 +82,7 @@ watch(
 
 <template>
   <nav
-    class="-mx-3 mt-2 flex min-h-0 flex-1 scrollbar-hide flex-col overflow-x-hidden overflow-y-auto px-3"
+    class="-mx-3 mt-0.5 flex min-h-0 flex-1 scrollbar-hide flex-col overflow-x-hidden overflow-y-auto px-3 pt-1.5"
     :aria-label="t('sidebar.apps')"
     data-testid="app-sidebar-app-rail"
   >

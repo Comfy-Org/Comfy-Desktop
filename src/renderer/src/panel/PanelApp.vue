@@ -324,8 +324,7 @@ async function confirmLeavingRuns(): Promise<boolean> {
       ? t('apps.closeWhileRunning.bodyOne', { app: onlyApp.title })
       : t('apps.closeWhileRunning.bodyMany', { count: running.length }, running.length),
     confirmLabel: t('apps.closeWhileRunning.close'),
-    cancelLabel: t('apps.closeWhileRunning.cancel'),
-    tone: 'danger'
+    cancelLabel: t('apps.closeWhileRunning.cancel')
   })
   return choice === 'primary'
 }
