@@ -49,6 +49,7 @@ vi.mock('electron', () => ({
 }))
 
 import { startModelTransfer, type ModelTransferOptions } from './modelDownloadTransport'
+import { isSecurePublicDownloadUrl } from './downloadUrlPolicy'
 
 interface FakeResponse extends EventEmitter {
   statusCode: number
@@ -732,6 +733,88 @@ describe('redirects', () => {
     const outcome = await handle.done
     expect(outcome).toEqual({ outcome: 'error', error: 'Download failed: too many redirects' })
     expect(req.abort).toHaveBeenCalled()
+  })
+})
+
+describe('URL policy', () => {
+  it('records a named policy in the staging metadata so a restart keeps it', async () => {
+    const handle = startModelTransfer(baseOpts({ validateUrl: isSecurePublicDownloadUrl }))
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.urlPolicy).toBe('secure-public')
+    const res = makeResponse(200, { 'content-length': '10', etag: '"e"' })
+    requests[0]!.emit('response', res)
+    res.emit('data', Buffer.from('01234'))
+    await flush()
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.urlPolicy).toBe('secure-public')
+    handle.pause()
+    await handle.done
+  })
+
+  it('records no policy for the baseline', async () => {
+    const handle = startModelTransfer(baseOpts())
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.urlPolicy).toBeUndefined()
+    handle.cancel()
+    await handle.done
+  })
+
+  it('refuses a disallowed first URL without issuing a request', async () => {
+    const handle = startModelTransfer(baseOpts({ url: 'file:///etc/passwd' }))
+    const outcome = await handle.done
+    expect(outcome).toEqual({
+      outcome: 'error',
+      error: 'Download failed: the download URL is not allowed'
+    })
+    expect(requests).toHaveLength(0)
+  })
+
+  it('applies a caller-supplied policy to the first URL', async () => {
+    const handle = startModelTransfer(
+      baseOpts({ url: 'https://example.com/m.safetensors', validateUrl: () => false })
+    )
+    expect(await handle.done).toEqual({
+      outcome: 'error',
+      error: 'Download failed: the download URL is not allowed'
+    })
+    expect(requests).toHaveLength(0)
+  })
+
+  it.each([
+    ['instance metadata', 'http://169.254.169.254/latest/meta-data/'],
+    ['embedded credentials', 'https://user:pass@cdn.example.net/blob'],
+    ['non-http scheme', 'file:///etc/passwd'],
+    ['HTTPS to HTTP downgrade', 'http://cdn.example.net/blob']
+  ])('refuses a redirect hop to %s without following it', async (_label, hop) => {
+    const handle = startModelTransfer(baseOpts())
+    const req = requests[0]!
+    req.emit('redirect', 302, 'GET', hop)
+    const outcome = await handle.done
+    expect(outcome).toEqual({
+      outcome: 'error',
+      error: 'Download failed: redirected to a URL that is not allowed'
+    })
+    expect(req.followRedirect).not.toHaveBeenCalled()
+    expect(req.abort).toHaveBeenCalled()
+  })
+
+  it('checks every hop, not just the first', async () => {
+    const handle = startModelTransfer(baseOpts())
+    const req = requests[0]!
+    req.emit('redirect', 302, 'GET', 'https://cdn.example.net/hop/1')
+    req.emit('redirect', 302, 'GET', 'https://cdn.example.net/hop/2')
+    req.emit('redirect', 302, 'GET', 'http://169.254.169.254/latest/meta-data/')
+    expect(await handle.done).toEqual({
+      outcome: 'error',
+      error: 'Download failed: redirected to a URL that is not allowed'
+    })
+    expect(req.followRedirect).toHaveBeenCalledTimes(2)
+  })
+
+  it('applies a caller-supplied policy to each hop', async () => {
+    const validateUrl = vi.fn((url: string) => !url.includes('blocked'))
+    const handle = startModelTransfer(baseOpts({ validateUrl }))
+    const req = requests[0]!
+    req.emit('redirect', 302, 'GET', 'https://cdn.example.net/blocked/blob')
+    expect((await handle.done).outcome).toBe('error')
+    expect(validateUrl).toHaveBeenCalledWith('https://cdn.example.net/blocked/blob')
   })
 })
 
