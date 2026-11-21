@@ -96,7 +96,7 @@ export const EULA: LegalDoc = {
     { kind: 'h2', text: '5. Data collection' },
     {
       kind: 'p',
-      text: 'The Desktop App collects telemetry (usage analytics and crash reports) as described in the Privacy Policy linked from the same consent screen. Before you sign in to Comfy Cloud, this data is keyed only by a local device ID; if you sign in, it is linked to your Comfy account. You can turn telemetry off at any time in **Settings → Telemetry**. Doing so does not affect your ability to use the Desktop App.'
+      text: 'The Desktop App collects telemetry (usage analytics and crash reports) as described in the Privacy Policy linked from the same consent screen. Before you sign in to Comfy Cloud, this data is keyed only by a local device ID; if you sign in, it is linked to your Comfy account. You can turn telemetry off at any time in **Settings → Preferences → Privacy**. Doing so does not affect your ability to use the Desktop App.'
     },
     {
       kind: 'p',
@@ -266,7 +266,7 @@ export const TOS: LegalDoc = {
     { kind: 'h2', text: '6. Telemetry and privacy' },
     {
       kind: 'p',
-      text: 'The Desktop App collects usage analytics and crash reports if you opt in on the first-launch consent screen. Before you sign in to Comfy Cloud, this data is keyed by a local device ID; if you sign in, it is linked to your Comfy account. You can turn this off at any time in **Settings → Telemetry**. Workflows, prompts, models, and outputs are never collected. See the Privacy Policy for details.'
+      text: 'The Desktop App collects usage analytics and crash reports if you opt in on the first-launch consent screen. Before you sign in to Comfy Cloud, this data is keyed by a local device ID; if you sign in, it is linked to your Comfy account. You can turn this off at any time in **Settings → Preferences → Privacy**. Workflows, prompts, models, and outputs are never collected. See the Privacy Policy for details.'
     },
 
     { kind: 'h2', text: '7. Disclaimer of warranty' },
@@ -329,7 +329,7 @@ export const PRIVACY_POLICY: LegalDoc = {
     { kind: 'h2', text: 'Personal data we process' },
     {
       kind: 'p',
-      text: 'If you have enabled telemetry, either on the first-run consent screen or at Settings → Telemetry, we process the following categories of data:'
+      text: 'If you have enabled telemetry, either on the first-run consent screen or at Settings → Preferences → Privacy, we process the following categories of data:'
     },
     {
       kind: 'ul',
@@ -378,7 +378,7 @@ export const PRIVACY_POLICY: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Consent for analytics and crash diagnostics is opt-in, and you may withdraw it at any time at Settings → Telemetry. Withdrawal does not affect the lawfulness of processing carried out before withdrawal. To object to processing on the basis of legitimate interests, contact **support@comfy.org**.'
+      text: 'Consent for analytics and crash diagnostics is opt-in, and you may withdraw it at any time at Settings → Preferences → Privacy. Withdrawal does not affect the lawfulness of processing carried out before withdrawal. To object to processing on the basis of legitimate interests, contact **support@comfy.org**.'
     },
     {
       kind: 'p',
