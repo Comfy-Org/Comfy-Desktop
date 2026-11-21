@@ -8,6 +8,7 @@ export type {
   AppOutputs,
   AppPagePlacement,
   AppPageStatus,
+  AppRun,
   AssetKind,
   AssetSummary,
   CloudAssetPage,

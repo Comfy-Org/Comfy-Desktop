@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { WebContentsView } from 'electron'
 import path from 'path'
+import { runningApps, TITLE_BAR_RUNNING_APPS_CHANNEL } from '../apps/appPageView'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
@@ -553,6 +554,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       updater.getCurrentUpdateState()
     )
     titleBarView.webContents.send('comfy-titlebar:downloads-changed', getDownloadsTrayState())
+    titleBarView.webContents.send(TITLE_BAR_RUNNING_APPS_CHANNEL, runningApps(windowKey))
     const installId = entry?.installationId ?? null
     if (installId !== null) {
       void fx.computeInstallUpdateAvailable(installId).then((state) => {

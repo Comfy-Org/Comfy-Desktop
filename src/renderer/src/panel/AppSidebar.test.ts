@@ -7,6 +7,7 @@ import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
+import { appRuns } from './appRuns'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -278,6 +279,51 @@ describe('AppSidebar', () => {
       ).toBe(PRODUCT_SWAP_STILL)
       expect(wrapper.find('[data-testid="app-sidebar-home"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="app-sidebar-assets"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('shows a spinner on each running app, the open one too, and says so to screen readers', async () => {
+      appRuns.value = [
+        { appId: 'sdr-to-hdr', running: true, finished: false },
+        { appId: 'product-swap', running: true, finished: false }
+      ]
+      const wrapper = await mountWithAppOpen()
+
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-sdr-to-hdr"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-product-swap"]').exists()).toBe(
+        true
+      )
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-character-swap"]').exists()).toBe(
+        false
+      )
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'Character Swap',
+        'Product Swap, making something',
+        'SDR to HDR, making something'
+      ])
+      appRuns.value = []
+      wrapper.unmount()
+    })
+
+    it('puts a dot and a short bounce on an app whose run finished in the background', async () => {
+      appRuns.value = [{ appId: 'product-swap', running: false, finished: true }]
+      const wrapper = await mountWithAppOpen()
+      const finished = wrapper.get('[data-testid="app-sidebar-app-finished-product-swap"]')
+
+      expect(getComputedStyle(finished.element).animationName).toBe('rail-thumb-bounce')
+      expect(finished.find('span.rounded-full').exists()).toBe(true)
+      expect(
+        wrapper.get('[data-testid="app-sidebar-app-product-swap"]').attributes('aria-label')
+      ).toBe('Product Swap, done')
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-product-swap"]').exists()).toBe(
+        false
+      )
+
+      appRuns.value = []
+      await flushPromises()
+      expect(wrapper.find('[data-testid="app-sidebar-app-finished-product-swap"]').exists()).toBe(
+        false
+      )
       wrapper.unmount()
     })
 

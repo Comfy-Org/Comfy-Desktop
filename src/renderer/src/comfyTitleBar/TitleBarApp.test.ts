@@ -1285,4 +1285,70 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
   })
+
+  describe('running apps', () => {
+    type RunningApp = { id: string; title: string }
+
+    function addRunningAppsBridge() {
+      const running = { callbacks: [] as ((apps: RunningApp[]) => void)[], clicks: [] as unknown[] }
+      Object.assign((window as unknown as { __comfyTitleBar: object }).__comfyTitleBar, {
+        onAppsRunningChanged: (cb: (apps: RunningApp[]) => void) => {
+          running.callbacks.push(cb)
+          return () => {}
+        },
+        clickRunningApps: (anchor: unknown) => running.clicks.push(anchor)
+      })
+      return running
+    }
+
+    it('shows nothing while no app is running', async () => {
+      addRunningAppsBridge()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="title-running-apps"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('names the one running app just left of the bell, and opens it on click', async () => {
+      const running = addRunningAppsBridge()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+
+      running.callbacks.forEach((cb) =>
+        cb([{ id: 'remove-background', title: 'Remove Background' }])
+      )
+      await flushPromises()
+      const indicator = wrapper.get('[data-testid="title-running-apps"]')
+
+      expect(indicator.text()).toBe('Remove Background')
+      expect(indicator.attributes('aria-label')).toBe('Open Remove Background')
+      expect(indicator.element.nextElementSibling?.classList).toContain('title-announcement-button')
+      await indicator.trigger('click')
+      expect(running.clicks).toHaveLength(1)
+      wrapper.unmount()
+    })
+
+    it('counts two or more running apps', async () => {
+      const running = addRunningAppsBridge()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+
+      running.callbacks.forEach((cb) =>
+        cb([
+          { id: 'remove-background', title: 'Remove Background' },
+          { id: 'sdr-to-hdr', title: 'SDR to HDR' }
+        ])
+      )
+      await flushPromises()
+      const indicator = wrapper.get('[data-testid="title-running-apps"]')
+
+      expect(indicator.text()).toBe('2 running')
+      expect(indicator.attributes('aria-label')).toBe('Show running apps')
+      wrapper.unmount()
+    })
+  })
 })

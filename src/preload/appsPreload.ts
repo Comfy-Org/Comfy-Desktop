@@ -8,9 +8,11 @@ import type {
   ComfyDesktopHostedLocalBridge,
   ComfyDesktopHostedOutputsBridge,
   ComfyDesktopHostedTelemetryBridge,
+  ComfyDesktopLocalBuild,
   ComfyDesktopLocalEvent,
   ComfyDesktopOutputAction
 } from '../types/comfyDesktopBridge'
+import { watchAppRun } from './appRunWatcher'
 
 const auth: ComfyDesktopHostedAuthBridge = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
@@ -34,6 +36,12 @@ const local: ComfyDesktopHostedLocalBridge = {
   localDownload: (model) => ipcRenderer.invoke('apps-local:download', model),
   openInComfy: (request) => ipcRenderer.invoke('apps-local:open-in-comfy', request),
   localBuilds: () => ipcRenderer.invoke('apps-local:builds'),
+  onLocalBuildsChanged: (callback) => {
+    const handler = (_event: IpcRendererEvent, builds: ComfyDesktopLocalBuild[]): void =>
+      callback(builds)
+    ipcRenderer.on('apps-local:builds-changed', handler)
+    return () => ipcRenderer.removeListener('apps-local:builds-changed', handler)
+  },
   onLocalEvent: (callback) => {
     const handler = (_event: IpcRendererEvent, update: ComfyDesktopLocalEvent): void =>
       callback(update)
@@ -81,3 +89,7 @@ contextBridge.exposeInMainWorld('comfyDesktopLocal', local)
 contextBridge.exposeInMainWorld('comfyDesktopTelemetry', telemetry)
 contextBridge.exposeInMainWorld('comfyDesktopOutputs', outputs)
 contextBridge.exposeInMainWorld('comfyDesktopAssets', assets)
+
+window.addEventListener('DOMContentLoaded', () => {
+  watchAppRun(document, (running) => ipcRenderer.send('apps-page:running', running))
+})

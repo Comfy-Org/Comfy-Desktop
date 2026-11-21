@@ -23,6 +23,11 @@ export interface DownloadsTrayEntry {
   error?: string
 }
 
+export interface RunningApp {
+  id: string
+  title: string
+}
+
 export interface DownloadsTrayState {
   active: DownloadsTrayEntry[]
   recent: DownloadsTrayEntry[]
@@ -62,6 +67,8 @@ export interface ComfyTitleBarBridge {
   clickInstallUpdatePill(): void
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void
   clickDownloadsTray(anchor: TitleMenuAnchor): void
+  onAppsRunningChanged(cb: (apps: RunningApp[]) => void): () => void
+  clickRunningApps(anchor: TitleMenuAnchor): void
   clickFeedback(): void
   openWhatsNewMenu(anchor: TitleMenuAnchor): void
   clickRefreshInstance(): void
@@ -243,6 +250,15 @@ const bridge: ComfyTitleBarBridge = {
   },
   clickDownloadsTray: (anchor) => {
     ipcRenderer.send('comfy-window:click-downloads-tray', { anchor })
+  },
+  onAppsRunningChanged: (cb) => {
+    const handler = (_event: IpcRendererEvent, apps: unknown): void =>
+      cb(Array.isArray(apps) ? (apps as RunningApp[]) : [])
+    ipcRenderer.on('comfy-titlebar:apps-running-changed', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:apps-running-changed', handler)
+  },
+  clickRunningApps: (anchor) => {
+    ipcRenderer.send('comfy-titlebar:click-running-apps', { anchor })
   },
   clickFeedback: () => {
     ipcRenderer.send('comfy-window:click-feedback')

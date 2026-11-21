@@ -282,6 +282,14 @@ export interface ComfyDesktopLocalBuild {
   version?: string
   /** True when it is running now. Absent on Desktop builds that predate it. */
   running?: boolean
+  /**
+   * The app whose run this build is working on or has queued, oldest first,
+   * when an app runs on it. A build runs one workflow at a time, so a new run
+   * waits in its queue until this one ends. `title` is the app's name for the
+   * person, such as `Remove Background`. Absent when the build is free, and on
+   * Desktop builds that predate it.
+   */
+  busyWith?: { appId: string; title: string }
 }
 
 /**
@@ -309,6 +317,12 @@ export interface ComfyDesktopHostedLocalBridge {
   openInComfy?(request: ComfyDesktopOpenInComfyRequest): Promise<ComfyDesktopOpenInComfy>
   /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
   localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
+  /**
+   * Calls back with the builds `localBuilds` would give whenever a build
+   * becomes busy or free, such as when another app's run starts or ends.
+   * Absent on Desktop builds that predate it.
+   */
+  onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
 }
 
 /**

@@ -4,7 +4,8 @@ import type { IpcMainInvokeEvent } from 'electron'
 import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
-import { isAppsPageSender } from '../../apps/appsPages'
+import { isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
+import { onRunsChanged } from '../../apps/localAppEvents'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
 import { localBuilds, openInComfy } from '../../apps/openInComfy'
 import type {
@@ -21,8 +22,19 @@ export const APPS_LOCAL_CHANNELS = {
   fetch: 'apps-local:fetch',
   download: 'apps-local:download',
   openInComfy: 'apps-local:open-in-comfy',
-  builds: 'apps-local:builds'
+  builds: 'apps-local:builds',
+  buildsChanged: 'apps-local:builds-changed'
 } as const
+
+async function announceBuilds(): Promise<void> {
+  const pages = liveAppsPages()
+  if (pages.length === 0) return
+  const builds = await localBuilds().catch(() => null)
+  if (!builds) return
+  for (const page of pages) {
+    if (!page.isDestroyed()) page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
+  }
+}
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
   return isAppsPageSender(event.sender, event.senderFrame) && (await areAppsEnabled())
@@ -84,4 +96,6 @@ export function registerAppsLocalHandlers(): void {
   ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> =>
     (await isFromAppsPage(event)) ? localBuilds() : []
   )
+
+  onRunsChanged(() => void announceBuilds())
 }

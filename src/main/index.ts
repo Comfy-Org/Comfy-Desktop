@@ -125,6 +125,7 @@ import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
+import { runningAppCount, runningApps } from './apps/appPageView'
 import { appsEnabledAtStart } from './apps/appsConfig'
 import { runningPortOf } from './apps/localBuild'
 import {
@@ -1606,7 +1607,29 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
   })
 
+  const confirmQuitStopsAppRuns = (): boolean => {
+    const running = runningAppCount()
+    if (running === 0) return true
+    const [only] = Array.from(comfyWindows.keys()).flatMap((windowKey) => runningApps(windowKey))
+    const choice = dialog.showMessageBoxSync({
+      type: 'warning',
+      buttons: [i18n.t('appsQuit.quit'), i18n.t('appsQuit.cancel')],
+      defaultId: 1,
+      cancelId: 1,
+      title: i18n.t('appsQuit.title'),
+      message:
+        running === 1 && only
+          ? i18n.t('appsQuit.messageOne', { app: only.title })
+          : i18n.t('appsQuit.messageMany', { count: running })
+    })
+    return choice === 0
+  }
+
   app.on('before-quit', (event) => {
+    if (!isQuitInProgress() && !confirmQuitStopsAppRuns()) {
+      event.preventDefault()
+      return
+    }
     if (!isQuitInProgress() && hasActiveTemplateDownloads()) {
       const choice = dialog.showMessageBoxSync({
         type: 'warning',

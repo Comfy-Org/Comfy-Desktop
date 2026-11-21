@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowDownToLine, Bell, House, Menu as MenuIcon, RotateCw, ZoomIn } from '@lucide/vue'
+import {
+  ArrowDownToLine,
+  Bell,
+  House,
+  LoaderCircle,
+  Menu as MenuIcon,
+  RotateCw,
+  ZoomIn
+} from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
+import { useRunningApps } from './useRunningApps'
+import type { RunningApp } from './useRunningApps'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
@@ -90,6 +100,8 @@ interface Bridge {
   clickInstallUpdatePill: () => void
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
+  onAppsRunningChanged?: (cb: (apps: RunningApp[]) => void) => () => void
+  clickRunningApps?: (anchor: MenuAnchor) => void
   clickFeedback: () => void
   openWhatsNewMenu: (anchor: { x: number; y: number }) => void
   clickRefreshInstance: () => void
@@ -202,6 +214,11 @@ onUnmounted(() => {
 
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
+const runningBtnRef = useTemplateRef<HTMLButtonElement>('runningBtn')
+const { runningApps, runningLabel, runningTooltip, openRunning } = useRunningApps(
+  bridge,
+  runningBtnRef
+)
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 
 let unmounted = false
@@ -442,6 +459,23 @@ onUnmounted(() => {
         @click="handleRefreshInstance"
       >
         <RotateCw :size="16" />
+      </button>
+      <button
+        v-if="runningApps.length > 0"
+        ref="runningBtn"
+        type="button"
+        class="title-running-apps inline-flex max-w-[180px] items-center gap-1.5 text-[12px] leading-4"
+        :class="titleMenuButtonClass"
+        data-testid="title-running-apps"
+        v-bind="tooltipAttrs(runningTooltip)"
+        @click="openRunning"
+      >
+        <LoaderCircle
+          :size="14"
+          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <span class="min-w-0 truncate">{{ runningLabel }}</span>
       </button>
       <button
         v-if="!isFirstUseLockdown"

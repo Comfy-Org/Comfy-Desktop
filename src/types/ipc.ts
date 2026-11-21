@@ -172,6 +172,12 @@ export interface AppCard {
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
 
+export interface AppRun {
+  appId: string
+  running: boolean
+  finished: boolean
+}
+
 export interface AppPagePlacement {
   x: number
   y: number
@@ -1299,7 +1305,9 @@ export interface ElectronApi {
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
-  isAppPageBusy(): Promise<boolean>
+  getAppRuns(): Promise<AppRun[]>
+  onAppRunsChanged(callback: (runs: AppRun[]) => void): () => void
+  onOpenRunningApp(callback: (appId: string) => void): () => void
   hideAppPage(): void
   onAppPageStatusChanged(
     callback: (appId: string | null, status: AppPageStatus) => void

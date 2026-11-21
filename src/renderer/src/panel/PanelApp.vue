@@ -54,6 +54,7 @@ import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
+import { MAX_BACKGROUND_RUNS, runningAppIds, switchStopsRun, watchAppRuns } from './appRuns'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -86,10 +87,18 @@ function showHomePage(): void {
 }
 
 let unsubShowHomePage: (() => void) | null = null
+let stopWatchingAppRuns: (() => void) | null = null
+let unsubOpenRunningApp: (() => void) | null = null
 onMounted(() => {
   unsubShowHomePage = window.api.onShowHomePage(showHomePage)
+  stopWatchingAppRuns = watchAppRuns()
+  unsubOpenRunningApp = window.api.onOpenRunningApp((appId) => void openRunningApp(appId))
 })
-onUnmounted(() => unsubShowHomePage?.())
+onUnmounted(() => {
+  unsubShowHomePage?.()
+  stopWatchingAppRuns?.()
+  unsubOpenRunningApp?.()
+})
 
 const installation = computed<Installation | null>(() =>
   installationId ? (installationStore.getById(installationId) ?? null) : null
@@ -281,16 +290,44 @@ function openAppFromHome(app: AppCard): void {
 
 async function switchApp(app: AppCard): Promise<void> {
   const current = appInProgress.value
-  if (current && (await window.api.isAppPageBusy().catch(() => false))) {
+  if (current && switchStopsRun(current.id, app.id)) {
     const choice = await dialogs.confirm({
       title: t('apps.switchWhileRunning.title', { app: app.title }),
-      message: t('apps.switchWhileRunning.body', { current: current.title }),
+      message: t('apps.switchWhileRunning.body', {
+        current: current.title,
+        count: MAX_BACKGROUND_RUNS
+      }),
       confirmLabel: t('apps.switchWhileRunning.switch'),
       cancelLabel: t('apps.switchWhileRunning.stay')
     })
     if (choice !== 'primary') return
   }
   openAppFromHome(app)
+}
+
+async function openRunningApp(appId: string): Promise<void> {
+  const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
+  const app = apps.find((listed) => listed.id === appId)
+  if (!app) return
+  if (app.id === appInProgress.value?.id) openAppFromHome(app)
+  else await switchApp(app)
+}
+
+async function confirmLeavingRuns(): Promise<boolean> {
+  const running = [...runningAppIds.value]
+  if (running.length === 0) return true
+  const onlyApp =
+    running.length === 1 ? listedApps.value?.find((app) => app.id === running[0]) : null
+  const choice = await dialogs.confirm({
+    title: t('apps.closeWhileRunning.title'),
+    message: onlyApp
+      ? t('apps.closeWhileRunning.bodyOne', { app: onlyApp.title })
+      : t('apps.closeWhileRunning.bodyMany', { count: running.length }, running.length),
+    confirmLabel: t('apps.closeWhileRunning.close'),
+    cancelLabel: t('apps.closeWhileRunning.cancel'),
+    tone: 'danger'
+  })
+  return choice === 'primary'
 }
 
 const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
@@ -481,7 +518,8 @@ onMounted(async () => {
   unsubCloseRequest = window.api.onCloseRequest(({ requestId }) => {
     window.api.ackCloseRequest({ requestId })
     void (async () => {
-      window.api.respondCloseRequest({ requestId, ...(await answerCloseRequest()) })
+      const answer = (await confirmLeavingRuns()) ? await answerCloseRequest() : { cleared: false }
+      window.api.respondCloseRequest({ requestId, ...answer })
     })()
   })
 

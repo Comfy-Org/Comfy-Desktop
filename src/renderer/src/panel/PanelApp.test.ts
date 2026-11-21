@@ -217,6 +217,7 @@ interface MockApiState {
   firstUseSkipCallbacks: (() => void)[]
   openFeedbackCallbacks: ((data: { source: 'titlebar' | 'menu' }) => void)[]
   closeRequestCallbacks: ((data: { requestId: string }) => void)[]
+  openRunningAppCallbacks: ((appId: string) => void)[]
   installations: InstallationLike[]
   getInstallations: ReturnType<typeof vi.fn>
   openExternal: ReturnType<typeof vi.fn>
@@ -257,6 +258,7 @@ function installMockApi(initial?: {
     firstUseSkipCallbacks: [],
     openFeedbackCallbacks: [],
     closeRequestCallbacks: [],
+    openRunningAppCallbacks: [],
     installations,
     getInstallations: vi.fn(async () => state.installations),
     openExternal: vi.fn(async () => {}),
@@ -416,7 +418,14 @@ function installMockApi(initial?: {
     listApps: vi.fn(async () => []),
     showAppPage: vi.fn(async () => 'loading'),
     captureAppPage: vi.fn(async () => null),
-    isAppPageBusy: vi.fn(async () => false),
+    getAppRuns: vi.fn(async () => []),
+    onAppRunsChanged: vi.fn(
+      (_cb: (runs: { appId: string; running: boolean; finished: boolean }[]) => void) => () => {}
+    ),
+    onOpenRunningApp: vi.fn((cb: (appId: string) => void) => {
+      state.openRunningAppCallbacks.push(cb)
+      return () => {}
+    }),
     hideAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
@@ -573,6 +582,16 @@ async function closeWorkflowMenu(wrapper: ReturnType<typeof mountPanel>) {
   )
   await flushPromises()
   await settleWorkflowMenu(wrapper)
+}
+
+function reportRuns(running: string[], finished: string[] = []): void {
+  const runs = [
+    ...running.map((appId) => ({ appId, running: true, finished: false })),
+    ...finished.map((appId) => ({ appId, running: false, finished: true }))
+  ]
+  vi.mocked(window.api.onAppRunsChanged).mock.calls.forEach(([appRunsChanged]) =>
+    appRunsChanged(runs)
+  )
 }
 
 function mountPanel() {
@@ -1551,7 +1570,7 @@ describe('PanelApp', () => {
     expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
   })
 
-  it('asks before switching away from an app with a run going, and stays on Stay', async () => {
+  it('asks before switching away from a running app only once three others run, and stays on Stay', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
@@ -1564,7 +1583,8 @@ describe('PanelApp', () => {
     await flushPromises()
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
     await flushPromises()
-    vi.mocked(window.api.isAppPageBusy).mockResolvedValue(true)
+    reportRuns(['upscale', 'room', 'ads', 'hdr'])
+    await flushPromises()
     const dialogButton = (testId: string) =>
       document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
 
@@ -1572,7 +1592,9 @@ describe('PanelApp', () => {
     await vi.waitFor(() => expect(dialogButton('base-alert-action')).not.toBeNull())
 
     expect(document.body.textContent).toContain('Switch to Remove Background?')
-    expect(document.body.textContent).toContain('Upscale 4x is still making something.')
+    expect(document.body.textContent).toContain(
+      'Upscale 4x is still making something. 3 other apps are already running, so switching stops it.'
+    )
     expect(dialogButton('base-alert-action')!.textContent?.trim()).toBe('Switch')
     expect(dialogButton('base-alert-cancel')!.textContent?.trim()).toBe('Stay')
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
@@ -1585,6 +1607,52 @@ describe('PanelApp', () => {
     await vi.waitFor(() => expect(dialogButton('base-alert-action')).not.toBeNull())
     dialogButton('base-alert-action')!.click()
     await flushPromises()
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe(
+        'Remove Background'
+      )
+    )
+  })
+
+  it('switches away from a running app at once, since it keeps running in the background', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    reportRuns(['upscale'])
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe(
+        'Remove Background'
+      )
+    )
+  })
+
+  it('opens a running app picked from the title bar', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
 
     await vi.waitFor(() =>
       expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe(
@@ -4069,6 +4137,55 @@ describe('PanelApp', () => {
       const api = (window as unknown as { api: { respondCloseRequest: ReturnType<typeof vi.fn> } })
         .api
       expect(api.respondCloseRequest).toHaveBeenCalledWith({ requestId: 'req-2', defer: true })
+    })
+
+    it('asks before closing while an app is still making something, and keeps the window on Cancel', async () => {
+      window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+      vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+      vi.mocked(window.api.listApps).mockResolvedValue([
+        { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+      ])
+      const wrapper = mountPanel()
+      await flushPromises()
+      await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+      await flushPromises()
+      reportRuns(['cutout'])
+      const dialogButton = (testId: string) =>
+        document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+
+      mockState.closeRequestCallbacks.forEach((cb) => cb({ requestId: 'req-3' }))
+      await vi.waitFor(() => expect(dialogButton('base-alert-action')).not.toBeNull())
+
+      expect(document.body.textContent).toContain('Close anyway?')
+      expect(document.body.textContent).toContain('Remove Background is still making something.')
+      expect(dialogButton('base-alert-action')!.textContent?.trim()).toBe('Close')
+      dialogButton('base-alert-cancel')!.click()
+      await flushPromises()
+
+      expect(window.api.respondCloseRequest).toHaveBeenCalledWith({
+        requestId: 'req-3',
+        cleared: false
+      })
+    })
+
+    it('counts the apps still making something, and goes on closing on Close', async () => {
+      mountPanel()
+      await flushPromises()
+      reportRuns(['cutout', 'upscale'], ['hdr'])
+      const dialogButton = (testId: string) =>
+        document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+
+      mockState.closeRequestCallbacks.forEach((cb) => cb({ requestId: 'req-4' }))
+      await vi.waitFor(() => expect(dialogButton('base-alert-action')).not.toBeNull())
+
+      expect(document.body.textContent).toContain('2 apps are still making something.')
+      dialogButton('base-alert-action')!.click()
+      await flushPromises()
+
+      expect(window.api.respondCloseRequest).toHaveBeenCalledWith({
+        requestId: 'req-4',
+        defer: true
+      })
     })
   })
 })

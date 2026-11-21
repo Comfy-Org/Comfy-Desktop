@@ -4,7 +4,15 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
+  listeners: new Map<string, Handler>(),
   isPanel: true,
+  isAppsPage: true,
+  titleBarEntry: null as unknown,
+  running: [] as { id: string; title: string }[],
+  noteAppPageRunning: vi.fn(),
+  appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
+  popup: vi.fn(),
+  menuItems: [] as { label: string; click: () => void }[],
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
   )
@@ -13,20 +21,33 @@ const mocks = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler),
-    on: vi.fn()
+    on: (channel: string, handler: Handler) => mocks.listeners.set(channel, handler)
+  },
+  Menu: {
+    buildFromTemplate: (items: { label: string; click: () => void }[]) => {
+      mocks.menuItems = items
+      return { popup: mocks.popup }
+    }
   }
 }))
 vi.mock('../../apps/appPageView', () => ({
+  appRuns: mocks.appRuns,
   captureAppPage: vi.fn(),
   hideAppPage: vi.fn(),
+  noteAppPageRunning: mocks.noteAppPageRunning,
+  runningApps: () => mocks.running,
   showAppPage: vi.fn()
 }))
+vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/appsCatalog', () => ({ listApps: vi.fn(async () => []) }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: vi.fn(async () => true) }))
-vi.mock('../../host/registry', () => ({ isPanelSender: () => mocks.isPanel }))
+vi.mock('../../host/registry', () => ({
+  isPanelSender: () => mocks.isPanel,
+  findEntryByTitleBarSender: () => mocks.titleBarEntry
+}))
 vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse }))
 
-import { registerAppsHandlers } from './registerAppsHandlers'
+import { OPEN_RUNNING_APP_CHANNEL, registerAppsHandlers } from './registerAppsHandlers'
 
 const SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
 const QUESTION_ID = '0f16a789-5c8e-4871-b44e-ec11c54b8c9b'
@@ -85,5 +106,91 @@ describe('apps:send-request', () => {
 
     expect(await sendRequest('An app that colors line art')).toBe(false)
     expect(mocks.sendSurveyResponse).not.toHaveBeenCalled()
+  })
+})
+
+describe('runs of apps kept open', () => {
+  const panelSend = vi.fn()
+  const hostWindow = { isDestroyed: () => false }
+  const REMOVE_BACKGROUND = { id: 'remove-background', title: 'Remove Background' }
+  const HDR = { id: 'sdr-to-hdr', title: 'SDR to HDR' }
+
+  function listener(channel: string): Handler {
+    const handler = mocks.listeners.get(channel)
+    if (!handler) throw new Error(`No listener for ${channel}`)
+    return handler
+  }
+
+  function clickRunningApps(anchor: unknown = { x: 812.4, y: 36 }): void {
+    void listener('comfy-titlebar:click-running-apps')({ sender: {} }, { anchor })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.listeners.clear()
+    mocks.isPanel = true
+    mocks.isAppsPage = true
+    mocks.running = []
+    mocks.titleBarEntry = {
+      id: 7,
+      entry: {
+        window: hostWindow,
+        panelView: { webContents: { send: panelSend, isDestroyed: () => false } }
+      }
+    }
+    registerAppsHandlers()
+  })
+
+  it('hands the panel the runs of its window', async () => {
+    const handler = mocks.handlers.get('apps:get-runs')
+
+    expect(await handler?.({ sender: {} })).toEqual([
+      { appId: 'remove-background', running: true, finished: false }
+    ])
+    mocks.isPanel = false
+    expect(await handler?.({ sender: {} })).toEqual([])
+  })
+
+  it('takes a run report only from an app page', () => {
+    const sender = {}
+    listener('apps-page:running')({ sender, senderFrame: {} }, true)
+    expect(mocks.noteAppPageRunning).toHaveBeenCalledExactlyOnceWith(sender, true)
+
+    mocks.isAppsPage = false
+    listener('apps-page:running')({ sender, senderFrame: {} }, false)
+    expect(mocks.noteAppPageRunning).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the one running app when its title bar indicator is clicked', () => {
+    mocks.running = [REMOVE_BACKGROUND]
+
+    clickRunningApps()
+
+    expect(panelSend).toHaveBeenCalledExactlyOnceWith(
+      OPEN_RUNNING_APP_CHANNEL,
+      REMOVE_BACKGROUND.id
+    )
+    expect(mocks.popup).not.toHaveBeenCalled()
+  })
+
+  it('lists two or more running apps under the indicator, and opens the one picked', () => {
+    mocks.running = [REMOVE_BACKGROUND, HDR]
+
+    clickRunningApps()
+
+    expect(mocks.menuItems.map((item) => item.label)).toEqual(['Remove Background', 'SDR to HDR'])
+    expect(mocks.popup).toHaveBeenCalledExactlyOnceWith({ window: hostWindow, x: 812, y: 36 })
+    mocks.menuItems[1]?.click()
+    expect(panelSend).toHaveBeenCalledExactlyOnceWith(OPEN_RUNNING_APP_CHANNEL, HDR.id)
+  })
+
+  it('does nothing for a click from outside a title bar, or with nothing running', () => {
+    clickRunningApps()
+    mocks.running = [REMOVE_BACKGROUND]
+    mocks.titleBarEntry = null
+    clickRunningApps()
+
+    expect(panelSend).not.toHaveBeenCalled()
   })
 })

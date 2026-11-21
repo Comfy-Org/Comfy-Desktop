@@ -287,6 +287,10 @@ export function pageUrlForListedApp(id: string): string | null {
   return cache?.apps.find((app) => app.card.id === id)?.pageUrl ?? null
 }
 
+export function titleForListedApp(id: string): string | null {
+  return cache?.apps.find((app) => app.card.id === id)?.card.title ?? null
+}
+
 export function _resetAppsCatalogForTest(): void {
   cache = null
   inFlight = null

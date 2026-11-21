@@ -278,7 +278,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     listApps: async () => APP_CARDS,
     showAppPage: async () => 'ready',
     captureAppPage: async () => null,
-    isAppPageBusy: async () => false,
+    getAppRuns: async () => [],
     hideAppPage: () => {},
     sendAppOutputAction: () => {},
     sendAppRequest: async () => true,
@@ -464,6 +464,8 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
 
     onAppPageStatusChanged: listen('onAppPageStatusChanged'),
     onAppPageClosed: listen('onAppPageClosed'),
+    onAppRunsChanged: listen('onAppRunsChanged'),
+    onOpenRunningApp: listen('onOpenRunningApp'),
     onAppOutputs: listen('onAppOutputs'),
     onCreditBalanceChanged: listen('onCreditBalanceChanged'),
     onFirstUseSkip: listen('onFirstUseSkip'),
