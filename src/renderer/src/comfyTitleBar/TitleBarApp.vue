@@ -476,7 +476,7 @@ onUnmounted(() => {
         />
         <span
           v-else
-          class="mx-1 size-1.5 shrink-0 rounded-full bg-foreground"
+          class="mx-1 size-1.5 shrink-0 rounded-full bg-current"
           data-testid="title-ready-dot"
           aria-hidden="true"
         />
