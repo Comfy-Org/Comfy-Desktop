@@ -177,8 +177,8 @@ function openContextMenu(event: MouseEvent): void {
 
 <template>
   <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--shadow-highlight)] px-[18px] text-left transition-colors"
-    :class="canOpen && 'cursor-pointer hover:bg-card-hover'"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] px-[18px] text-left transition-colors"
+    :class="canOpen && 'cursor-pointer hover:bg-(--build-card-hover)'"
     :data-testid="testId"
     :data-build-id="build.id"
     :data-home-tour="homeTourAnchor"

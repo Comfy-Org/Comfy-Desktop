@@ -98,7 +98,8 @@ describe('build cards have no border', () => {
 
 const CARDS = [
   ['Home build card', () => h(HomeBuildCard, { build: BUILD, status: 'ready' })],
-  ['Builds tile', () => h(ChooserInstallTile, { installation: BUILD })]
+  ['Builds tile', () => h(ChooserInstallTile, { installation: BUILD })],
+  ['Home New build tile', () => h(HomeNewBuildTile)]
 ] as const
 
 function tokenStyle(css: string): CSSStyleDeclaration {
@@ -114,8 +115,12 @@ describe('build cards have a glass surface', () => {
     return () => delete document.documentElement.dataset.theme
   })
 
-  it('the sheen token is a visible color', () => {
-    expect(tokenStyle('color: var(--build-card-sheen)').color).not.toBe('rgba(0, 0, 0, 0)')
+  it.each(['--build-card-sheen', '--build-card-hover'])('%s is a visible color', (token) => {
+    expect(tokenStyle(`color: var(${token})`).color).not.toBe('rgba(0, 0, 0, 0)')
+  })
+
+  it('the highlight token is a visible inset line', () => {
+    expect(tokenStyle('box-shadow: var(--build-card-highlight)').boxShadow).toMatch(/ inset$/)
   })
 
   it.each(CARDS)('%s has the card fill with a top sheen and highlight', async (_, render) => {
@@ -124,7 +129,7 @@ describe('build cards have a glass surface', () => {
       [
         'background-color: var(--color-card)',
         'background-image: linear-gradient(180deg, var(--build-card-sheen), transparent 40%)',
-        'box-shadow: var(--shadow-highlight)'
+        'box-shadow: var(--build-card-highlight)'
       ].join(';')
     )
     expect(style.backgroundImage).not.toBe('none')
@@ -133,9 +138,9 @@ describe('build cards have a glass surface', () => {
     expect(style.boxShadow).toBe(tokens.boxShadow)
   })
 
-  it.each(CARDS)('%s turns to the card hover fill under the pointer', async (_, render) => {
+  it.each(CARDS)('%s turns to the build card hover fill under the pointer', async (_, render) => {
     const el = await mountWithHost(render)
-    const hoverFill = tokenStyle('background-color: var(--color-card-hover)').backgroundColor
+    const hoverFill = tokenStyle('background-color: var(--build-card-hover)').backgroundColor
     expect(getComputedStyle(el).backgroundColor).not.toBe(hoverFill)
     await userEvent.hover(el, { force: true })
     await expect.poll(() => getComputedStyle(el).backgroundColor).toBe(hoverFill)
