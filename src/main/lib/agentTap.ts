@@ -1,6 +1,7 @@
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
 import { createStreamLineBuffer, stripAnsi } from './stderrTail'
+import { createHash } from 'node:crypto'
 
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
 
@@ -324,6 +325,29 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
 const PRODUCT_EVENTS_PER_PROCESS = 1500
 let productEventsThisProcess = 0
 
+const PRODUCT_EVENT_UUID_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex')
+
+function productEventUuid(event: string, fields: Record<string, TelemetryValue>): string {
+  const sourceId =
+    fields['mutation_id'] ?? fields['job_id'] ?? fields['turn_id'] ?? fields['thread_id']
+  const occurrence =
+    event === 'agent_session_started' ? `/resume=${fields['is_resume'] === true}` : ''
+  const bytes = createHash('sha1')
+    .update(PRODUCT_EVENT_UUID_NAMESPACE)
+    .update(`comfy.desktop.agent/${event}/${sourceId}${occurrence}`)
+    .digest()
+    .subarray(0, 16)
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function productEventTimestamp(fields: Record<string, TelemetryValue>): Date | undefined {
+  const value = fields['occurred_at'] ?? fields['timestamp'] ?? fields['accepted_at']
+  return typeof value === 'string' ? new Date(value) : undefined
+}
+
 export function _resetProductEventBudgetForTest(): void {
   productEventsThisProcess = 0
 }
@@ -457,7 +481,14 @@ export function createAgentTap(opts: AgentTapOptions): {
       const bucket = rateBucket(parsed.event)
       if (bucket.count >= parsed.product.hourlyCap) return
       try {
-        if (telemetry.capture(parsed.event, { ...parsed.fields, ...productContext })) {
+        if (
+          telemetry.capture(
+            parsed.event,
+            { ...parsed.fields, ...productContext },
+            productEventUuid(parsed.event, parsed.fields),
+            productEventTimestamp(parsed.fields)
+          )
+        ) {
           bucket.count++
           productEventsThisProcess++
         }

@@ -431,6 +431,7 @@ interface QuarantinedWrite {
   properties: TelemetryContext
   forward: boolean
   timestamp: Date
+  uuid?: string
 }
 
 let quarantinedWrites: QuarantinedWrite[] = []
@@ -455,7 +456,7 @@ function flushQuarantinedWrites(): void {
     if (write.kind === 'exception') {
       if (consentState === 'granted') deliverException(write.error, write.properties, write.forward)
     } else if (write.event && isAllowedToFire(write.event)) {
-      deliverEvent(write.event, write.properties, write.forward, write.timestamp)
+      deliverEvent(write.event, write.properties, write.forward, write.timestamp, write.uuid)
     }
   }
 }
@@ -834,24 +835,42 @@ function capturePersonProperties(
   return capture('comfy.desktop.person.set', properties)
 }
 
-export function capture(event: string, properties: TelemetryContext = {}): boolean {
-  return captureEvent(event, properties, false)
+export function capture(
+  event: string,
+  properties: TelemetryContext = {},
+  uuid?: string,
+  timestamp?: Date
+): boolean {
+  return captureEvent(event, properties, false, uuid, timestamp)
 }
 
-function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+function captureEvent(
+  event: string,
+  properties: TelemetryContext,
+  forward: boolean,
+  uuid?: string,
+  timestamp?: Date
+): boolean {
   recordIpcInvocation(`telemetry:${event}`, properties)
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false
   if (firebaseWritesQuarantined()) {
     if (
-      !queueQuarantinedWrite({ kind: 'event', event, properties, forward, timestamp: new Date() })
+      !queueQuarantinedWrite({
+        kind: 'event',
+        event,
+        properties,
+        forward,
+        timestamp: timestamp ?? new Date(),
+        ...(uuid ? { uuid } : {})
+      })
     )
       return false
     _recordCapturedEvent(event)
     return true
   }
-  if (!deliverEvent(event, properties, forward, null)) return false
+  if (!deliverEvent(event, properties, forward, timestamp ?? null, uuid)) return false
   _recordCapturedEvent(event)
   return true
 }
@@ -860,7 +879,8 @@ function deliverEvent(
   event: string,
   properties: TelemetryContext,
   forward: boolean,
-  timestamp: Date | null
+  timestamp: Date | null,
+  uuid?: string
 ): boolean {
   try {
     const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
@@ -868,7 +888,8 @@ function deliverEvent(
       distinctId: distinctId!,
       event,
       properties: scrubProperties(merged),
-      ...(timestamp ? { timestamp } : {})
+      ...(timestamp ? { timestamp } : {}),
+      ...(uuid ? { uuid } : {})
     })
     if (forward) forwardToRenderer(event, properties)
     return true

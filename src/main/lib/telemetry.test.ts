@@ -356,6 +356,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
   posthogClientMock.failNextCaptures = 0
@@ -2341,6 +2342,21 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     })
     telemetry.capture('resolved.event')
     expect(captured.at(-1)?.distinctId).toBe('user-123')
+  })
+
+  it('preserves a source timestamp through quarantine across UTC midnight', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-09T23:59:59Z'))
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+
+    telemetry.applyFirebasePendingConsensus()
+    const sourceTime = new Date('2026-10-09T12:00:01Z')
+    telemetry.capture('pending.event', {}, 'stable-uuid', sourceTime)
+    vi.setSystemTime(new Date('2026-10-10T00:00:01Z'))
+    telemetry.applyFirebaseUserConsensus('user-123')
+
+    expect(captured.find((call) => call.event === 'pending.event')?.timestamp).toEqual(sourceTime)
   })
 
   it('discards quarantined writes when pending resolves to a different user', () => {
