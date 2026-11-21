@@ -58,6 +58,12 @@ export function createUserAttention(
     if (!waitingForAppToDeactivate) return
     waitingForAppToDeactivate = false
     app?.removeListener('did-resign-active', alertOnce)
+    window.removeListener('focus', acknowledgeRefusedBounce)
+  }
+
+  function acknowledgeRefusedBounce(): void {
+    alerted = true
+    stopWaitingForAppToDeactivate()
   }
 
   function bounceDock(target: AttentionDock): boolean {
@@ -69,6 +75,7 @@ export function createUserAttention(
     if (app && !waitingForAppToDeactivate) {
       waitingForAppToDeactivate = true
       app.on('did-resign-active', alertOnce)
+      window.on('focus', acknowledgeRefusedBounce)
     }
     return false
   }

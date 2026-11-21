@@ -198,6 +198,21 @@ describe('asking for the user when the agent waits on them', () => {
     expect(app.listenerCount()).toBe(0)
   })
 
+  it('treats a focus of the build window as seen while a refused bounce waits', () => {
+    const window = fakeWindow()
+    const dock = fakeDock()
+    const app = fakeApp()
+    dock.bounce.mockReturnValueOnce(-1)
+    createUserAttention(window, { platform: 'darwin', dock, app }).setNeeded(true)
+
+    window.focus()
+    window.blur()
+    app.resignActive()
+
+    expect(dock.bounce).toHaveBeenCalledOnce()
+    expect(app.listenerCount()).toBe(0)
+  })
+
   it('stops waiting for Desktop to deactivate when the wait ends', () => {
     const window = fakeWindow()
     const dock = fakeDock()
