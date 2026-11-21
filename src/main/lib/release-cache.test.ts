@@ -27,10 +27,35 @@ vi.mock('fs', async () => {
   return { ...actual, default: { ...actual, existsSync: vi.fn(() => true) } }
 })
 
+import { dataDir } from './paths'
 import { isUpdateAvailable, set, enrichCommitsAhead, onEnriched, get } from './release-cache'
 import type { ReleaseCacheEntry } from './release-cache'
 import * as gitMock from './git'
 import * as releasesMock from './comfyui-releases'
+
+describe('release-cache persistence', () => {
+  it('treats a missing cache file as an empty cache even after a prior load', () => {
+    const repo = 'Comfy-Org/ComfyUI'
+    const channel = 'stable'
+    const cachePath = path.join(dataDir(), 'release-cache.json')
+    let cacheExists = true
+    const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation((filePath) => {
+      const target = String(filePath)
+      return target === cachePath ? cacheExists : true
+    })
+
+    try {
+      set(repo, channel, { latestTag: 'v1.2.3', installedTag: 'v1.2.2' })
+      expect(get(repo, channel)?.latestTag).toBe('v1.2.3')
+
+      cacheExists = false
+      fs.rmSync(cachePath, { force: true })
+      expect(get(repo, channel)).toBeNull()
+    } finally {
+      existsSpy.mockRestore()
+    }
+  })
+})
 
 describe('isUpdateAvailable', () => {
   it('returns false when lastRollback channel matches and installedTag matches latestTag', () => {
