@@ -130,7 +130,7 @@ function handleRemove(row: SharedFolderRow): void {
               <MoreHorizontal :size="14" aria-hidden="true" />
             </Button>
           </template>
-          <MenuItem class="text-destructive" @select="handleRemove(row)">
+          <MenuItem @select="handleRemove(row)">
             {{ t('models.removeDir') }}
           </MenuItem>
         </Menu>

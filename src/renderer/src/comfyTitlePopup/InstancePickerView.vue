@@ -24,6 +24,7 @@ import type {
   SnapshotListData
 } from '../types/ipc'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
+import { lastUsedAt } from '../../../shared/lastUsed'
 
 interface PickerInstall {
   id: string
@@ -32,6 +33,7 @@ interface PickerInstall {
   sourceCategory: string
   version?: string
   lastLaunchedAt?: number
+  lastStoppedAt?: number
   installPath?: string
   status?: string
   statusTag?: { style: string; label: string; detail?: string }
@@ -209,7 +211,7 @@ const headerActions = useTemplateRef<HTMLElement>('headerActions')
 function mostRecentInstallId(installs: PickerInstall[]): string | null {
   let best: PickerInstall | undefined
   for (const inst of installs) {
-    if (!best || (inst.lastLaunchedAt ?? 0) > (best.lastLaunchedAt ?? 0)) {
+    if (!best || (lastUsedAt(inst) ?? 0) > (lastUsedAt(best) ?? 0)) {
       best = inst
     }
   }
@@ -568,6 +570,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
                 :page-title-target="headerTitle"
                 :installation="selectedInstall"
                 :initial-tab="initialExpandedTab"
+                :open-epoch="snapshot.pickerSelectionEpoch ?? 0"
                 :auto-action="snapshot.autoAction ?? null"
                 :auto-action-nonce="snapshot.autoActionNonce ?? 0"
                 :global-settings-snapshot="snapshot.storage"

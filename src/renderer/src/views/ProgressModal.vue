@@ -32,8 +32,6 @@ const secondaryClass =
   'border-neutral-500 bg-transparent text-neutral-100 enabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:text-neutral-100'
 const primaryClass =
   'rounded-[var(--radius-control)] border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
-const dangerClass =
-  'brand-progress__footer-btn--danger hover:border-[var(--semantic-danger,#ff7a7a)] focus-visible:border-[var(--semantic-danger,#ff7a7a)] focus-visible:bg-[color-mix(in_srgb,var(--semantic-danger,#ff7a7a)_14%,transparent)] hover:focus-visible:bg-[var(--brand-surface-bg)]'
 
 interface Props {
   installationId: string | null
@@ -495,8 +493,7 @@ async function handleStopBusyPrior(): Promise<void> {
           ? 'errors.priorProcessUnknownConfirmMessage'
           : 'errors.priorProcessBusyConfirmMessage'
     ),
-    confirmLabel: t(survivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop'),
-    confirmStyle: 'danger'
+    confirmLabel: t(survivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop')
   })
   if (!confirmed) return
   resolvingConflict.value = true
@@ -727,6 +724,13 @@ defineExpose({ startOperation, showOperation })
           </Button>
         </div>
 
+        <p
+          v-if="finishedErrorMessage && !isPortConflictOpen"
+          class="brand-progress__error-detail m-0 -mt-1 text-center text-[13px] leading-[1.45] text-neutral-300"
+          :data-testid="TID.progressErrorDetail"
+        >
+          {{ $t('progress.completedErrorDetail') }}
+        </p>
         <div
           v-if="finishedErrorMessage"
           class="brand-progress__error-row -mt-1 flex w-full max-w-[640px] items-start gap-2"
@@ -740,7 +744,7 @@ defineExpose({ startOperation, showOperation })
           <BaseCopyButton
             :value="finishedErrorMessage"
             :aria-label="$t('common.copy')"
-            class="brand-progress__error-copy mt-1 flex-none"
+            class="brand-progress__error-copy mt-[13px] flex-none"
           />
         </div>
 
@@ -871,7 +875,7 @@ defineExpose({ startOperation, showOperation })
                 size="unset"
                 variant="textonly"
                 type="button"
-                :class="[footerButtonClass, secondaryClass, dangerClass]"
+                :class="[footerButtonClass, secondaryClass]"
                 :data-testid="TID.progressPortConflictKill"
                 @click="handleKillProcess(currentOp.result.portConflict.port)"
               >

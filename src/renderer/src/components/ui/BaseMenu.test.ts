@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import BaseMenu, { type BaseMenuItem } from './BaseMenu.vue'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 const wrappers: VueWrapper[] = []
 
@@ -35,6 +36,20 @@ describe('BaseMenu', () => {
     await openMenu({ items: [{ id: 'a', label: '--enable-assets', detail: 'Asset library' }] })
     expect(list().querySelector('.ui-menu-item-label')?.textContent).toBe('--enable-assets')
     expect(list().querySelector('.ui-menu-item-detail')?.textContent).toBe('Asset library')
+  })
+
+  it('paints a danger item with the shared red menu item class and leaves the rest plain', async () => {
+    await openMenu({
+      items: [
+        { id: 'open', label: 'Open' },
+        { id: 'delete', label: 'Delete', style: 'danger' }
+      ]
+    })
+    const [plain, danger] = [...list().querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect([...danger!.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
+    expect(plain!.classList).not.toContain('text-destructive')
   })
 
   it('puts the list class on the teleported list', async () => {

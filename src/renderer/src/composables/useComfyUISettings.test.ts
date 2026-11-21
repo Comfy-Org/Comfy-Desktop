@@ -453,7 +453,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     scope.stop()
   })
 
-  it('stop: shows a danger confirm, stops the backend, and dismisses the preview on confirm', async () => {
+  it('stop: shows a white confirm, stops the backend, and dismisses the preview on confirm', async () => {
     const api = installMockApi()
     markRunning('a', 'A')
     dialogsSpies.confirm.mockResolvedValue('primary')
@@ -462,9 +462,9 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     await composable.runAction({ id: 'stop', label: 'Stop' } as ActionDef)
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
-    const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { title: string; tone: string }
+    const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { title: string; tone?: string }
     expect(callArg.title).toBe('Stop ComfyUI')
-    expect(callArg.tone).toBe('danger')
+    expect(callArg.tone, 'Stop is not destructive, so its confirm is not red').toBeUndefined()
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(api.stopComfyUI).toHaveBeenCalledWith('a')
     expect(api.closeComfyWindow).toHaveBeenCalledExactlyOnceWith('a', {

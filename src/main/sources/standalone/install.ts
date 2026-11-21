@@ -41,7 +41,7 @@ type InstallPhase = InstallPhaseName | 'env_create' | 'package_copy' | 'torch_de
 function emitInstallPhase(
   installation: InstallationRecord,
   phase: InstallPhase,
-  status: InstallPhaseStatus,
+  status: InstallPhaseStatus | 'update_aborted',
   info: { durationMs?: number; error?: unknown } = {}
 ): void {
   try {
@@ -366,6 +366,7 @@ export async function postInstall(
           status: version ? t('standalone.getComfyDone', { version }) : t('common.done')
         })
       } else {
+        if (!signal?.aborted) emitInstallPhase(installation, 'torch_deps_sync', 'update_aborted')
         const reason = result.message?.split('\n')[0]
         console.warn(`Auto-update to ${channel} failed: ${reason ?? 'no reason given'}`)
         logUpdate(`Could not get ${found}${reason ? `: ${reason}` : ''}`)

@@ -3,7 +3,8 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Ellipsis, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
+import { useNow } from '@vueuse/core'
+import { Ellipsis, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import {
   buildFailure,
@@ -17,15 +18,17 @@ import { useProgressStore } from '../../stores/progressStore'
 import {
   buildDeviceKind,
   HOME_BUILD_TONES,
+  homeBuildTone,
   isBuildUpdating,
-  connectsElsewhere,
   isCloudBuild,
-  type HomeBuildTone
+  buildUsageLabel
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
+import BuildMetaLine from '../../panel/home/BuildMetaLine.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
+import { openInstallManager } from '../../lib/openInstallManager'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -37,15 +40,13 @@ interface Props {
   lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
   showMenu?: boolean
   showFreeRunsPill?: boolean
-  tone?: HomeBuildTone
   autoStart?: boolean
   loggedOut?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   lifecycleStatus: undefined,
-  showMenu: true,
-  tone: 'ember'
+  showMenu: true
 })
 
 const emit = defineEmits<{
@@ -54,7 +55,7 @@ const emit = defineEmits<{
   'why-cloud': []
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const localDeviceKind = useLocalDeviceKind()
 const sessionStore = useSessionStore()
 
@@ -87,7 +88,7 @@ const progressLabel = computed(() => {
     ? phase
     : t('installProgress.detail', { phase, percent: current.percent })
 })
-const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
+const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(props.installation)])
 
 const isRunning = computed(() =>
   props.lifecycleStatus == null
@@ -168,7 +169,7 @@ const statusPill = computed<{
       tone: 'quiet',
       spinning: true
     }
-  if (isRunning.value && !connectsElsewhere(inst.value))
+  if (isRunning.value)
     return {
       label: 'chooser.statusRunning',
       markerClass: 'chooser-tile-status--running',
@@ -188,9 +189,11 @@ const offersWhyCloud = computed(
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
 const needsLogIn = computed(() => props.loggedOut && isCloudBuild(inst.value))
+const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() => {
   if (startsWithDesktop.value) return t('home.autoStartOn')
-  return needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
+  if (needsLogIn.value) return t('home.buildLogInToUse')
+  return buildUsageLabel(inst.value, now.value.getTime(), t, locale.value)
 })
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
@@ -220,13 +223,12 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const updateNote = computed(() =>
-  !isUninstalling.value &&
-  !isUpdatingHere.value &&
-  inst.value.statusTag?.style === 'update' &&
-  !isUpdating.value
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdateNote = computed(
+  () =>
+    !isUninstalling.value &&
+    !isUpdatingHere.value &&
+    inst.value.statusTag?.style === 'update' &&
+    !isUpdating.value
 )
 
 const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
@@ -305,8 +307,8 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     ref="tile"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] transition-colors select-none"
-    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]']"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] px-[18px] transition-colors select-none"
+    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-(--build-card-hover)']"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
     @click="open"
@@ -412,7 +414,6 @@ function openContextMenu(event: MouseEvent): void {
             aria-hidden="true"
             :data-testid="`chooser-tile-starts-with-desktop-${inst.id}`"
           />
-          <Check v-else-if="!needsLogIn" :size="12" class="shrink-0" aria-hidden="true" />
           <span class="truncate">{{ restingLabel }}</span>
         </span>
         <span
@@ -433,15 +434,15 @@ function openContextMenu(event: MouseEvent): void {
           :text="inst.name"
         />
       </div>
-      <div
-        v-if="metaLine || updateNote"
-        class="chooser-tile-meta-line mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
-      >
-        <span v-if="metaLine" class="min-w-0 truncate">{{ metaLine }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ metaLine ? ' · ' : '' }}{{ updateNote }}</span
-        >
-      </div>
+      <BuildMetaLine
+        v-if="metaLine || showsUpdateNote"
+        class="chooser-tile-meta-line mt-0.5"
+        :text="leadingFact"
+        :trailing="trailingFact"
+        :build-name="inst.name"
+        :show-update="showsUpdateNote"
+        @open-update="openInstallManager(inst, { initialTab: 'update' })"
+      />
     </div>
 
     <Button

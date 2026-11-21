@@ -9,7 +9,7 @@ import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
+import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
@@ -73,7 +73,6 @@ const builds = computed(() =>
 const showNewBuildSlot = computed(
   () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
 )
-const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
   if (!latest) return new Set<string>()
@@ -287,7 +286,7 @@ onMounted(() => {
           ]"
         >
           <li
-            v-for="(build, index) in builds"
+            v-for="build in builds"
             :key="build.id"
             class="min-w-0"
             :class="!narrowBuildIds.has(build.id) && '@max-[56rem]/home-builds:hidden'"
@@ -296,7 +295,6 @@ onMounted(() => {
             <HomeBuildCard
               :build="build"
               :status="buildStatus(build)"
-              :tone="buildTones[index]!"
               :auto-start="autoStart.startsOnOpen(build.id)"
               :logged-out="authStore.isSignedOut"
               @open="openBuild(build)"

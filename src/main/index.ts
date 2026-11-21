@@ -51,9 +51,11 @@ import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
 import {
   clearQuitReason,
   isQuitInProgress,
+  isUpdateInstallQuit,
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
+import { createWillQuitHandler } from './lib/quitWork'
 import {
   postponeQuitWhileDestroyedWindowsHaveLiveWebContents,
   trackWindowWebContents
@@ -286,6 +288,7 @@ function quitApp(): void {
 }
 
 const STARTUP_INSTALL_QUIT_BACKSTOP_MS = 4_000
+const STOP_STAMP_QUIT_WAIT_MS = 2_000
 
 async function openStartupSurface(): Promise<void> {
   const autoStartBuild = await pinAutoStartToALocalBuild().catch((err: unknown) => {
@@ -1668,13 +1671,18 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     stopAgentPrefetches()
   })
 
-  let modelDownloadsSuspended = false
-  app.on('will-quit', (event) => {
-    if (modelDownloadsSuspended || !hasActiveModelTransfers()) return
-    modelDownloadsSuspended = true
-    event.preventDefault()
-    void suspendActiveModelDownloadsForQuit().finally(() => app.quit())
-  })
+  app.on(
+    'will-quit',
+    createWillQuitHandler({
+      quit: () => app.quit(),
+      hasActiveModelTransfers,
+      suspendActiveModelDownloadsForQuit,
+      hasPendingStopStamps: ipc.hasPendingStopStamps,
+      settleStopStamps: ipc.settleStopStamps,
+      stopStampWaitMs: STOP_STAMP_QUIT_WAIT_MS,
+      isUpdateInstallQuit
+    })
+  )
 
   powerMonitor.on('suspend', () => {
     suspendActiveModelDownloadsForSleep()

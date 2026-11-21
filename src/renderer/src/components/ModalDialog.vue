@@ -42,9 +42,7 @@ const baseAlertSecondaryTone = computed<'danger' | 'default'>(() =>
 )
 
 const baseAlertTone = computed<'primary' | 'danger'>(() =>
-  state.type === 'confirm' && ['danger', 'danger-solid'].includes(state.confirmStyle)
-    ? 'danger'
-    : 'primary'
+  state.type === 'confirm' && state.confirmStyle === 'danger' ? 'danger' : 'primary'
 )
 
 const baseAlertButtonLabel = computed(() =>
@@ -52,13 +50,14 @@ const baseAlertButtonLabel = computed(() =>
 )
 
 function onBaseAlertClose(): void {
-  if (state.type === 'alert') close(undefined)
+  if (state.type === 'alert') close(true)
   else if (isChoice.value) close('primary')
   else close(true)
 }
 
 function onBaseAlertCancel(): void {
-  close(isChoice.value ? null : false)
+  if (state.type === 'alert') close(undefined)
+  else close(isChoice.value ? null : false)
 }
 
 function onMigrateCheckboxToggle(id: string, checked: boolean): void {
@@ -75,7 +74,7 @@ const localOptions = reactive<(ModalOption & { checked: boolean })[]>([])
 const anyChecked = computed(() => localOptions.some((o) => o.checked))
 
 const confirmVariant = computed(() => {
-  if (state.confirmStyle === 'danger' || state.confirmStyle === 'danger-solid') return 'destructive'
+  if (state.confirmStyle === 'danger') return 'destructive'
   if (state.confirmStyle === 'primary' || state.confirmStyle === 'accent') return 'inverted'
   return 'secondary'
 })
@@ -154,6 +153,7 @@ watch(
     :title="state.title"
     :message="state.message"
     :show-cancel="isSimpleConfirm || isChoice"
+    :show-close-icon="state.dismissAsCancel"
     :button-label="baseAlertButtonLabel"
     :tone="baseAlertTone"
     :secondary-label="isChoice ? state.secondaryLabel : undefined"

@@ -266,3 +266,35 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
     expect(showProgress).not.toHaveBeenCalled()
   })
 })
+
+describe('useListAction confirm colour', () => {
+  beforeEach(() => {
+    sessionState.running.clear()
+    mockModalConfirm.mockReset().mockResolvedValue(false)
+    mockCheckBeforeAction.mockReset().mockResolvedValue(true)
+    mockRunAction.mockReset()
+  })
+
+  async function confirmStyleFor(style: ListAction['style']): Promise<unknown> {
+    const { executeAction } = useListAction('chooser', { showProgress: vi.fn() })
+    await executeAction(INSTALL, {
+      id: 'some-action',
+      label: 'Do it',
+      style,
+      confirm: { title: 'Sure?', message: 'Really?' }
+    })
+    return mockModalConfirm.mock.calls[0]![0].confirmStyle
+  }
+
+  it('is red for a danger action', async () => {
+    expect(await confirmStyleFor('danger')).toBe('danger')
+  })
+
+  it('is white for a primary action', async () => {
+    expect(await confirmStyleFor('primary')).toBe('primary')
+  })
+
+  it('is white for an action with no style', async () => {
+    expect(await confirmStyleFor(undefined)).toBe('primary')
+  })
+})

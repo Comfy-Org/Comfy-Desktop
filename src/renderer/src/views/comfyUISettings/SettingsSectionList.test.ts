@@ -173,6 +173,30 @@ describe('SettingsSectionList', () => {
     })
   })
 
+  describe('a danger section action', () => {
+    function dangerButton() {
+      const wrapper = mount(SettingsSectionList, {
+        props: {
+          sections: [
+            {
+              title: 'Danger zone',
+              actions: [{ id: 'delete', label: 'Uninstall', style: 'danger' }]
+            }
+          ]
+        }
+      })
+      return wrapper.findAll('button').find((button) => button.text() === 'Uninstall')!
+    }
+
+    it('is red text that only tints on hover, never a filled red button', () => {
+      const classes = dangerButton().classes()
+      expect(classes).toContain('text-danger')
+      expect(classes).toContain('hover:bg-destructive/12')
+      expect(classes.some((name) => /^hover:bg-\[var\(--danger\)\]$/.test(name))).toBe(false)
+      expect(classes.some((name) => name.startsWith('hover:text-'))).toBe(false)
+    })
+  })
+
   describe('version-stats section', () => {
     const vsSection = (enabled: boolean): DetailSection => ({
       fields: [
@@ -360,11 +384,11 @@ describe('SettingsSectionList', () => {
       expect(descriptions[0]!.element.closest('header')).not.toBeNull()
     })
 
-    it('pairs grouped fields in two columns with a 16px gap when they wrap', () => {
+    it('pairs grouped fields in two columns 16px apart, and 24px apart when they wrap', () => {
       const wrapper = mountSections([{ title: 'Launch settings', fields: pairedFields }], true)
       const paired = wrapper.findAll('.settings-v2-field-row.is-paired')
       expect(paired).toHaveLength(1)
-      expect(paired[0]!.classes()).toEqual(expect.arrayContaining(['gap-4']))
+      expect(paired[0]!.classes()).toEqual(expect.arrayContaining(['gap-x-4', 'gap-y-6']))
     })
 
     it('pairs grouped fields when the layout is not stacked', () => {

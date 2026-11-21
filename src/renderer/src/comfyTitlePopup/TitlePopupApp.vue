@@ -28,6 +28,7 @@ interface PickerInstall {
   sourceCategory: string
   version?: string
   lastLaunchedAt?: number
+  lastStoppedAt?: number
   installPath?: string
   status?: string
   statusTag?: { style: string; label: string; detail?: string }
