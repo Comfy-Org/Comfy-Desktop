@@ -53,7 +53,7 @@ mac:
         - '**/*'
 dmg:
   title: Comfy Desktop
-  background: dmg/background.png
+  backgroundColor: '#211927'
   iconSize: 84
   iconTextSize: 11
   window:
