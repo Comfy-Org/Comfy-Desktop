@@ -570,6 +570,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
                 :page-title-target="headerTitle"
                 :installation="selectedInstall"
                 :initial-tab="initialExpandedTab"
+                :open-epoch="snapshot.pickerSelectionEpoch ?? 0"
                 :auto-action="snapshot.autoAction ?? null"
                 :auto-action-nonce="snapshot.autoActionNonce ?? 0"
                 :global-settings-snapshot="snapshot.storage"

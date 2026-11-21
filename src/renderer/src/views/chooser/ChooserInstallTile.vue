@@ -27,7 +27,9 @@ import { formatLastUsed } from '../../lib/datetime'
 import { lastUsedAt } from '../../../../shared/lastUsed'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
+import BuildMetaLine from '../../panel/home/BuildMetaLine.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
+import { openInstallManager } from '../../lib/openInstallManager'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -222,13 +224,12 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const updateNote = computed(() =>
-  !isUninstalling.value &&
-  !isUpdatingHere.value &&
-  inst.value.statusTag?.style === 'update' &&
-  !isUpdating.value
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdateNote = computed(
+  () =>
+    !isUninstalling.value &&
+    !isUpdatingHere.value &&
+    inst.value.statusTag?.style === 'update' &&
+    !isUpdating.value
 )
 
 const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
@@ -434,15 +435,15 @@ function openContextMenu(event: MouseEvent): void {
           :text="inst.name"
         />
       </div>
-      <div
-        v-if="metaLine || updateNote"
-        class="chooser-tile-meta-line mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
-      >
-        <span v-if="metaLine" class="min-w-0 truncate">{{ metaLine }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ metaLine ? ' · ' : '' }}{{ updateNote }}</span
-        >
-      </div>
+      <BuildMetaLine
+        v-if="metaLine || showsUpdateNote"
+        class="chooser-tile-meta-line mt-0.5"
+        :text="leadingFact"
+        :trailing="trailingFact"
+        :build-name="inst.name"
+        :show-update="showsUpdateNote"
+        @open-update="openInstallManager(inst, { initialTab: 'update' })"
+      />
     </div>
 
     <Button

@@ -1122,7 +1122,8 @@ async function moveToTrash(asset: GalleryAsset): Promise<void> {
     title: t('assets.deleteTitle', { name: asset.name }),
     message:
       window.api.platform === 'win32' ? t('assets.deleteToRecycleBin') : t('assets.deleteToTrash'),
-    confirmLabel: t('assets.delete')
+    confirmLabel: t('assets.delete'),
+    confirmStyle: 'danger'
   })
   if (!confirmed) return
   const removed = await window.api.trashAsset(asset.source, asset.id).catch(() => false)

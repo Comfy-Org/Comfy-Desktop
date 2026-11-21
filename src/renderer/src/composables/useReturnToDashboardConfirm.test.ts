@@ -47,8 +47,7 @@ describe('useReturnToDashboardConfirm', () => {
     expect(mockConfirm).toHaveBeenCalledWith({
       title: 'Back to Home?',
       message: 'This will stop the current ComfyUI.',
-      confirmLabel: 'Back to Home',
-      confirmStyle: 'danger'
+      confirmLabel: 'Back to Home'
     })
     expect(result).toBe(true)
     expect(getSetting).toHaveBeenCalledWith('keepComfyRunningWhenWindowCloses')
@@ -114,8 +113,7 @@ describe('useReturnToDashboardConfirm', () => {
       title: 'Cancel current operation?',
       message:
         'The operation will stop where it is. Anything not yet completed will be rolled back where possible.',
-      confirmLabel: 'Cancel operation',
-      confirmStyle: 'danger'
+      confirmLabel: 'Cancel operation'
     })
     expect(result).toBe(true)
   })

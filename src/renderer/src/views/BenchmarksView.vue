@@ -577,8 +577,7 @@ function replaceSessionId(oldId: string, newId: string): void {
 async function showRenameError(message?: string): Promise<void> {
   await dialogs.alert({
     title: t('benchmarks.renameErrorTitle'),
-    message: message || t('benchmarks.renameErrorMessage'),
-    tone: 'danger'
+    message: message || t('benchmarks.renameErrorMessage')
   })
 }
 
@@ -604,8 +603,7 @@ async function renameSession(benchmark: PerformanceTestBenchmark, name: string):
 async function showDeleteError(message?: string): Promise<void> {
   await dialogs.alert({
     title: t('benchmarks.deleteErrorTitle'),
-    message: message || t('benchmarks.deleteErrorMessage'),
-    tone: 'danger'
+    message: message || t('benchmarks.deleteErrorMessage')
   })
 }
 

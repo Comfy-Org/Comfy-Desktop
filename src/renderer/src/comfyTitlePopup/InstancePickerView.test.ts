@@ -521,6 +521,18 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
     })
 
+    it('passes each explicit open to the settings pane so it can reapply the requested tab', async () => {
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        activeInstallationId: 'a',
+        runningInstallationIds: [],
+        pickerSelectionEpoch: 3
+      })
+      expect(wrapper.findComponent(ComfyUISettingsContent).props('openEpoch')).toBe(3)
+    })
+
     it('dispatches an in-flight background operation only once', async () => {
       const { default: ComfyUISettingsContent } =
         await import('../components/settings/ComfyUISettingsContent.vue')

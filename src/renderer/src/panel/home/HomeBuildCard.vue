@@ -7,6 +7,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
+import BuildMetaLine from './BuildMetaLine.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import { formatLastUsed } from '../../lib/datetime'
@@ -29,6 +30,7 @@ import {
 } from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useLocalDeviceKind } from '../../composables/useLocalDeviceKind'
+import { openInstallManager } from '../../lib/openInstallManager'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
@@ -119,13 +121,12 @@ const detail = computed(() =>
 )
 const isRunning = computed(() => status === 'running')
 const resting = computed(() => status === 'ready' || status === 'update')
-const updateNote = computed(() =>
-  !uninstalling.value &&
-  !changesInPlace.value &&
-  status !== 'updating' &&
-  build.statusTag?.style === 'update'
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdateNote = computed(
+  () =>
+    !uninstalling.value &&
+    !changesInPlace.value &&
+    status !== 'updating' &&
+    build.statusTag?.style === 'update'
 )
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
@@ -262,15 +263,14 @@ function openContextMenu(event: MouseEvent): void {
       >
         {{ build.name }}
       </span>
-      <span
-        class="mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
+      <BuildMetaLine
+        class="mt-0.5"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
-      >
-        <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ subtitle ? ' · ' : '' }}{{ updateNote }}</span
-        >
-      </span>
+        :text="subtitle"
+        :build-name="build.name"
+        :show-update="showsUpdateNote"
+        @open-update="openInstallManager(build, { initialTab: 'update' })"
+      />
     </span>
     <Button
       v-if="!showsUpdateLock"

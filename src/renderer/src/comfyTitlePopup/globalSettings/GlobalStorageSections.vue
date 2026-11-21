@@ -144,8 +144,7 @@ async function handleRemoveModelsDir(index: number): Promise<void> {
   const ok = await modal.confirm({
     title: t('models.removeDirTitle'),
     message: t('models.removeDirConfirm'),
-    confirmLabel: t('models.removeDir'),
-    confirmStyle: 'danger'
+    confirmLabel: t('models.removeDir')
   })
   if (!ok) return
   emit('touched')

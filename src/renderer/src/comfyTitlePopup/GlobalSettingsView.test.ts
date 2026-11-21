@@ -485,10 +485,17 @@ describe('GlobalSettingsView', () => {
     const wrapper = await openFolders()
     await folderRows(wrapper, 'models')[1]!.find('.shared-folder-more').trigger('click')
     await nextTick()
+    expect(menuItems()[0]!.classes(), 'removing a folder keeps its files').not.toContain(
+      'text-destructive'
+    )
     await menuItems()[0]!.trigger('click')
     await flushPromises()
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
+    expect(modal.state.message).toBe(
+      "This won't delete any files. You can re-add the directory later from this list."
+    )
+    expect(modal.state.confirmStyle, 'removing a folder keeps its files').toBe('primary')
     modal.close(true)
     await flushPromises()
     expect(bridge.setModelsDirsCalls).toEqual([['/home/u/ComfyUI/models']])

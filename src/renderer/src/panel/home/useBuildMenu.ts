@@ -178,8 +178,7 @@ export function useBuildMenu(build: () => Installation, opts: { whyCloud?: () =>
     const confirmed = await modal.confirm({
       title: t('actions.restartConfirmTitle'),
       message: t('actions.restartConfirmMessage'),
-      confirmLabel: t('actions.restartConfirm'),
-      confirmStyle: 'danger'
+      confirmLabel: t('actions.restartConfirm')
     })
     if (!confirmed) return
     try {
