@@ -23,6 +23,7 @@ export interface InstallationRecord {
   comfyVersion?: ComfyVersion
   lastLaunchedAt?: number
   lastLaunchedAtByCategory?: Record<string, number>
+  lastStoppedAt?: number
   useSharedModels?: boolean
   useSharedInput?: boolean
   useSharedOutput?: boolean

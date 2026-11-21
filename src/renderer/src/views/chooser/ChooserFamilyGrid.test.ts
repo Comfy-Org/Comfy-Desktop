@@ -24,7 +24,7 @@ function build(id: string, sourceCategory: 'local' | 'cloud' | 'remote', lastLau
 
 const HOUR_MS = 60 * 60_000
 const DAY_MS = 24 * HOUR_MS
-const NOW = Date.now()
+const NOW = new Date(2026, 10, 20, 15, 0).getTime()
 
 const FIRST_LOCAL = build('first-local', 'local', NOW - 2 * HOUR_MS)
 const CLOUD = build('cloud', 'cloud', NOW - DAY_MS - HOUR_MS)
@@ -59,6 +59,8 @@ async function mountGrid(installations: Installation[], loggedOut = false): Prom
 beforeAll(() => browserPage.viewport(1280, 900))
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
   ;(window as unknown as { api: unknown }).api = {
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -79,6 +81,7 @@ afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
   host.remove()
+  vi.useRealTimers()
 })
 
 describe('Builds grid filtering', () => {
@@ -150,11 +153,21 @@ describe('Builds tile status', () => {
     await mountGrid(ALL)
 
     expect(tile(FIRST_LOCAL).textContent).toContain('Used 2h ago')
-    expect(tile(SECOND_LOCAL).textContent).toContain('Used 3 days ago')
-    expect(tile(THIRD_LOCAL).textContent).toContain('Used 10 days ago')
+    expect(tile(SECOND_LOCAL).textContent).toContain('Used 3d ago')
+    expect(tile(THIRD_LOCAL).textContent).toContain('Used 10d ago')
     for (const resting of ALL) {
       expect(tile(resting).querySelector('.lucide-check')).toBeNull()
     }
+  })
+
+  it('says when a build was stopped, not when it was started, after a long run', async () => {
+    const longRun = {
+      ...build('long-run', 'local', NOW - 6 * HOUR_MS),
+      lastStoppedAt: NOW - HOUR_MS
+    }
+    await mountGrid([longRun])
+
+    expect(tile(longRun).textContent).toContain('Used 1h ago')
   })
 
   it('says Never used on a build that was never opened', async () => {

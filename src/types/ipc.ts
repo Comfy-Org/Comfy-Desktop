@@ -136,6 +136,7 @@ export interface Installation {
   status?: string
   lastLaunchedAt?: number
   lastLaunchedAtByCategory?: Record<string, number>
+  lastStoppedAt?: number
   [key: string]: unknown
 }
 

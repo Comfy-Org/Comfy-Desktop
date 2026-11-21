@@ -37,7 +37,7 @@ const SEVEN_WORKFLOWS = Array.from({ length: 7 }, (_, index) =>
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS
-const NOW = Date.now()
+const NOW = new Date(2026, 10, 20, 15, 0).getTime()
 
 const OLDEST = build({
   id: 'oldest',
@@ -64,6 +64,8 @@ const NEWEST = build({
 })
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
   vi.clearAllMocks()
   listHomeWorkflows.mockResolvedValue([])
   openCatalogWorkflow.mockResolvedValue(true)
@@ -93,6 +95,7 @@ const mounted: VueWrapper[] = []
 afterEach(() => {
   while (mounted.length) mounted.pop()?.unmount()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 async function openHome() {
@@ -456,7 +459,7 @@ describe('Home builds', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
-      'Used 5 min agoMy Local 1Standalone · Update',
+      'Used 5m agoMy Local 1Standalone · Update',
       'RunningVideo LabStandalone',
       'Used yesterdayComfy CloudRTX 6000 Pro · 96 GB'
     ])
@@ -489,7 +492,7 @@ describe('Home builds', () => {
         .get('[data-testid="home-build-status"]')
     const local = statusOn(OLDEST.name)
     const cloud = statusOn(CLOUD.name)
-    expect(local.text()).toBe('Used 3 days ago')
+    expect(local.text()).toBe('Used 3d ago')
     expect(cloud.text()).toBe('Log in to use')
     expect(cloud.find('svg').exists(), 'no icon next to Log in to use').toBe(false)
   })
@@ -543,7 +546,7 @@ describe('Home builds', () => {
     const wrapper = await openHome()
 
     const card = wrapper.get('[data-testid="home-build"]')
-    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Used 5 min ago')
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Used 5m ago')
     await card.get('[data-testid="home-build-open"]').trigger('click')
 
     expect(wrapper.emitted('pick')?.[0]?.[0]).toMatchObject({ id: NEWEST.id })
@@ -573,9 +576,7 @@ describe('Home builds', () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
-      'Used 3 days agoFlux Sandboxv0.42.4'
-    )
+    expect(wrapper.get('[data-testid="home-build"]').text()).toBe('Used 3d agoFlux Sandboxv0.42.4')
     expect(wrapper.get('[data-testid="home-build-status"]').find('svg').exists()).toBe(false)
   })
 
@@ -1034,7 +1035,7 @@ describe('Home build auto start', () => {
 
     expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', RUNNING.id)
     expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3d ago')
     expect(wrapper.emitted('open-build')).toBeUndefined()
   })
 
@@ -1045,7 +1046,7 @@ describe('Home build auto start', () => {
     const wrapper = await openHome()
 
     expect(statusOf(wrapper, CLOUD.id)).toBe('Used yesterday')
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3d ago')
     expect(startingWithDesktop(wrapper)).toEqual([])
   })
 
@@ -1054,7 +1055,7 @@ describe('Home build auto start', () => {
     getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3d ago')
     expect(statusOf(wrapper, RUNNING.id)).toBe('Used 2h ago')
     expect(startingWithDesktop(wrapper)).toEqual([])
   })
@@ -1069,7 +1070,7 @@ describe('Home build auto start', () => {
     await flushPromises()
 
     expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3d ago')
   })
 
   it('shows the install status, not Auto start, while that build installs', async () => {

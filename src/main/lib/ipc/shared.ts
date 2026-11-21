@@ -1015,12 +1015,21 @@ export function _addSession(
     })
 }
 
+function markSessionStopped(installationId: string, session: SessionInfo): void {
+  installations
+    .update(session.sourceInstallationId ?? installationId, { lastStoppedAt: Date.now() })
+    .catch((err) => {
+      console.error('Failed to mark installation stopped:', err)
+    })
+}
+
 export function _removeSession(installationId: string): void {
   const session = _runningSessions.get(installationId)
   if (!session) return
   flushOperationOutput(installationId)
   if (session.port) removePortLock(session.port)
   _runningSessions.delete(installationId)
+  markSessionStopped(installationId, session)
   _broadcastToRenderer('instance-stopped', { installationId })
   sessionLifecycleEvents.emit('changed')
 }
@@ -1395,6 +1404,7 @@ export async function stopRunning(
     if (session.port) removePortLock(session.port)
     markStopRequested(installationId)
     _runningSessions.delete(installationId)
+    markSessionStopped(installationId, session)
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
     }
@@ -1413,6 +1423,7 @@ export async function stopRunning(
     for (const [id, session] of sessions) {
       if (session.port) removePortLock(session.port)
       markStopRequested(id)
+      markSessionStopped(id, session)
     }
     _runningSessions.clear()
     const kills: Promise<unknown>[] = []

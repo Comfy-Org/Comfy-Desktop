@@ -24,7 +24,7 @@ import {
   type HomeBuildTone
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
-import { formatLastUsed } from '../../lib/datetime'
+import { formatLastUsed, lastUsedAt } from '../../lib/datetime'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
@@ -194,7 +194,7 @@ const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() => {
   if (startsWithDesktop.value) return t('home.autoStartOn')
   if (needsLogIn.value) return t('home.buildLogInToUse')
-  return formatLastUsed(inst.value.lastLaunchedAt, now.value.getTime(), t, locale.value)
+  return formatLastUsed(lastUsedAt(inst.value), now.value.getTime(), t, locale.value)
 })
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
