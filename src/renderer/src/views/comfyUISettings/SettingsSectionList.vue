@@ -203,7 +203,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         ? 'bg-[var(--surface)] text-[var(--action)] font-semibold hover:bg-[var(--action)] hover:text-[var(--bg)]'
         : 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
     case 'danger':
-      return 'bg-[var(--surface)] text-danger hover:bg-[var(--danger)] hover:text-[var(--bg)]'
+      return 'bg-[var(--surface)] text-danger hover:bg-destructive/12'
     default:
       return 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
   }
@@ -211,7 +211,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 </script>
 
 <template>
-  <div class="settings-v2-sections flex flex-col gap-8">
+  <div class="settings-v2-sections flex flex-col gap-12">
     <article
       v-for="(section, si) in visibleSections"
       :key="`s-${si}`"
@@ -220,8 +220,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         readonly
           ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
           : isStackedTitled(section)
-            ? 'max-w-3xl gap-2'
-            : 'gap-4',
+            ? 'max-w-3xl gap-3'
+            : 'gap-6',
         {
           'is-collapsible': isCollapsible(section),
           'is-collapsed [&>*:not(.settings-v2-section-title)]:hidden':
@@ -282,7 +282,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
       <div
         class="settings-v2-section-body"
-        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-4' : 'contents'"
+        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-6' : 'contents'"
       >
         <div
           v-for="(item, i) in section.items"
@@ -331,8 +331,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
           :class="[
             row.length > 1
               ? props.stacked
-                ? 'is-paired flex flex-wrap gap-4'
-                : 'is-paired flex flex-wrap gap-4'
+                ? 'is-paired flex flex-wrap gap-x-4 gap-y-6'
+                : 'is-paired flex flex-wrap gap-x-4 gap-y-6'
               : 'contents',
             { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
           ]"
@@ -546,15 +546,10 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
             <p
               v-if="field.description"
-              class="settings-v2-field-description -mt-0.5 mb-0 flex items-start gap-1.5 text-[11.5px] leading-[1.45] text-text-muted"
+              class="settings-v2-field-description -mt-0.5 mb-0 text-[11.5px] leading-[1.45] text-text-muted"
               role="note"
             >
-              <ShieldAlert
-                :size="14"
-                class="settings-v2-field-description-icon mt-0.5 shrink-0 text-[var(--info,var(--neutral-100))]"
-                aria-hidden="true"
-              />
-              <span>{{ field.description }}</span>
+              {{ field.description }}
             </p>
           </div>
         </div>

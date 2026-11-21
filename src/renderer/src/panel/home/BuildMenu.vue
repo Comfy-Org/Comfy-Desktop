@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 import { useBuildMenu } from './useBuildMenu'
 import type { Installation } from '../../types/ipc'
 
@@ -81,7 +82,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <template v-for="item in items" :key="item.id">
       <MenuSeparator v-if="item.separator" />
       <MenuItem
-        :class="item.danger && 'text-destructive focus:text-destructive'"
+        :class="item.danger && DESTRUCTIVE_MENU_ITEM_CLASS"
         :disabled="item.disabled"
         :text-value="item.label"
         :title="item.disabled ? item.title : item.hint"

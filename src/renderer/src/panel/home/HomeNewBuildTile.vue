@@ -10,7 +10,7 @@ const { t } = useI18n()
 <template>
   <button
     type="button"
-    class="group flex h-25 w-full cursor-pointer items-center gap-[38px] rounded-2xl bg-[rgb(137_137_137/0.1)] pr-6 pl-[42px] text-left outline-none transition-colors hover:bg-[rgb(137_137_137/0.16)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none"
+    class="group flex h-25 w-full cursor-pointer items-center gap-[38px] rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] pr-6 pl-[42px] text-left outline-none transition-colors hover:bg-(--build-card-hover) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none"
     data-testid="home-new-build"
     @click="emit('open')"
   >

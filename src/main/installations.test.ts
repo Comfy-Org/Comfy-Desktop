@@ -310,6 +310,29 @@ describe('installations.getRecent', () => {
     expect(recent!.id).toBe(b.id)
     expect(recent!.id).not.toBe(a.id)
   })
+
+  it('picks the build that ran 09:00 to 18:00 over one that ran 12:00 to 12:30', async () => {
+    const installations = await loadInstallations()
+    const day = (hour: number, minute = 0) => new Date(2026, 10, 18, hour, minute).getTime()
+    const longRun = await installations.add({
+      name: 'Long run',
+      installPath: path.join(tmpRoot, 'long'),
+      sourceId: 'standalone',
+      status: 'installed',
+      lastLaunchedAt: day(9),
+      lastStoppedAt: day(18)
+    })
+    await installations.add({
+      name: 'Short run',
+      installPath: path.join(tmpRoot, 'short'),
+      sourceId: 'standalone',
+      status: 'installed',
+      lastLaunchedAt: day(12),
+      lastStoppedAt: day(12, 30)
+    })
+
+    expect((await installations.getRecent())!.id).toBe(longRun.id)
+  })
 })
 
 describe('installations.load (legacy shared-storage flag migrations)', () => {

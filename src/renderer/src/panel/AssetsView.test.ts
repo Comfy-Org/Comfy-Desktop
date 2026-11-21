@@ -1657,7 +1657,8 @@ describe('AssetsView', () => {
 
     expect(confirm.mock.calls[1]![0]).toMatchObject({
       title: 'Delete gone.svg?',
-      message: 'It moves to the Trash.'
+      message: 'It moves to the Trash.',
+      confirmStyle: 'danger'
     })
     expect(trashAsset).toHaveBeenCalledExactlyOnceWith('local', 'gone')
     expect(assetNames(wrapper)).toEqual(['keep.svg'])

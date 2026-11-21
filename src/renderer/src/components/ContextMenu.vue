@@ -7,6 +7,7 @@ import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import { TID } from '../../../shared/testIds'
 import InfoTooltip from './InfoTooltip.vue'
 import type { ContextMenuItem } from '../types/context-menu'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../lib/destructiveStyles'
 
 const props = defineProps<{
   open: boolean
@@ -32,7 +33,7 @@ const entries = computed(() =>
       command: () => emit('select', item.id),
       disabled: item.disabled,
       focusableWhenDisabled: !!item.hint,
-      class: `context-menu-item ${item.disabled ? 'disabled' : ''} ${item.style === 'danger' ? 'is-danger' : ''}`,
+      class: `context-menu-item ${item.disabled ? 'disabled' : ''} ${item.style === 'danger' ? DESTRUCTIVE_MENU_ITEM_CLASS : ''}`,
       variant: item.style === 'danger' ? 'destructive' : undefined
     } satisfies MenuItemAction
   }))

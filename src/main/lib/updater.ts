@@ -149,6 +149,7 @@ function isInstallerUIEnabled(): boolean {
 }
 
 let _installOnQuitSuppressedForSession = false
+let _installOnQuitHeldForNonNewerBuild = false
 
 export function suppressInstallOnQuit(): void {
   _installOnQuitSuppressedForSession = true
@@ -157,11 +158,31 @@ export function suppressInstallOnQuit(): void {
   } catch {}
 }
 
+function forbidDowngrade(): void {
+  try {
+    electronAutoUpdater.allowDowngrade = false
+  } catch {}
+}
+
 export function syncInstallOnQuitPolicy(): void {
   try {
     electronAutoUpdater.autoInstallOnAppQuit =
-      !_installOnQuitSuppressedForSession && !isStartupInstallEnabled() && isAutoInstallEnabled()
+      !_installOnQuitSuppressedForSession &&
+      !_installOnQuitHeldForNonNewerBuild &&
+      !isStartupInstallEnabled() &&
+      isAutoInstallEnabled()
   } catch {}
+}
+
+function holdInstallOnQuitForNonNewerBuild(): void {
+  _installOnQuitHeldForNonNewerBuild = true
+  syncInstallOnQuitPolicy()
+}
+
+function releaseInstallOnQuitForNewerBuild(): void {
+  if (!_installOnQuitHeldForNonNewerBuild) return
+  _installOnQuitHeldForNonNewerBuild = false
+  syncInstallOnQuitPolicy()
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -265,10 +286,16 @@ function bindUpdaterEvents(): void {
   if (!updater) return
   _listenersBound = true
 
+  updater.on('checking-for-update', forbidDowngrade)
+
   updater.on('update-available', (info: unknown) => {
     const version = versionFromPayload(info)
     if (!version) return
-    if (shouldIgnoreNonNewerVersion(version, 'available')) return
+    if (shouldIgnoreNonNewerVersion(version, 'available')) {
+      holdInstallOnQuitForNonNewerBuild()
+      return
+    }
+    releaseInstallOnQuitForNewerBuild()
     const autoInstall = isAutoInstallEnabled()
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.available', version)) {
       emitUpdateTelemetry(
@@ -307,7 +334,11 @@ function bindUpdaterEvents(): void {
   updater.on('update-downloaded', (event: unknown) => {
     const version = versionFromPayload(event)
     if (!version) return
-    if (shouldIgnoreNonNewerVersion(version, 'downloaded')) return
+    if (shouldIgnoreNonNewerVersion(version, 'downloaded')) {
+      holdInstallOnQuitForNonNewerBuild()
+      return
+    }
+    releaseInstallOnQuitForNewerBuild()
     _autoDownloadTriggeredFor = null
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_complete', version)) {
       emitUpdateTelemetry('comfy.desktop.app_update.download_complete', version, { version }, true)
@@ -365,10 +396,12 @@ function bindUpdaterEvents(): void {
     const transferred = typeof p.transferred === 'number' ? p.transferred : null
     const total = typeof p.total === 'number' ? p.total : null
     const bytesPerSecond = typeof p.bytesPerSecond === 'number' ? p.bytesPerSecond : null
+    const targetVersion = _appUpdateState.version ?? _autoDownloadTriggeredFor
+    if (!isStrictlyNewerVersion(targetVersion, app.getVersion())) return
     if (_appUpdateState.kind !== 'downloading' && _appUpdateState.kind !== 'ready') {
       _setUpdateState({
         kind: 'downloading',
-        version: _appUpdateState.version ?? _autoDownloadTriggeredFor,
+        version: targetVersion,
         autoUpdate: isAutoInstallEnabled()
       })
     }
@@ -408,12 +441,14 @@ async function checkForUpdate(
       return { available: false, error: UPDATER_UNAVAILABLE_MESSAGE }
     }
     bindUpdaterEvents()
+    forbidDowngrade()
     const result = await updater.checkForUpdates({
       source,
       disableUpdateReadyAction: true
     })
     const version = versionFromPayload(result)
     if (version && shouldIgnoreNonNewerVersion(version, 'check')) {
+      holdInstallOnQuitForNonNewerBuild()
       return { available: false }
     }
     if (

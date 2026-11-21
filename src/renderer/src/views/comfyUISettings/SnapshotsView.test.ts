@@ -5,6 +5,7 @@ import { nextTick } from 'vue'
 
 import { TID } from '../../../../shared/testIds'
 import SnapshotsView from './SnapshotsView.vue'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 import type { SnapshotSummary, SnapshotListData, CopyEvent } from '../../types/ipc'
 
 const { mockConfirm, mockAlert, mockCheckBeforeAction } = vi.hoisted(() => ({
@@ -508,6 +509,16 @@ describe('comfyUISettings/SnapshotsView', () => {
       await flushPromises()
       return document.body.querySelector<HTMLElement>('.snapshot-row-menu')!
     }
+
+    it('paints Delete with the shared red menu item class', async () => {
+      await openRowMenu('snap-middle.json')
+      const del = document.body.querySelector<HTMLElement>(
+        `[data-testid="${TID.snapshotRowDelete('snap-middle.json')}"]`
+      )!
+      expect([...del.classList]).toEqual(
+        expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+      )
+    })
 
     it('Delete asks to confirm, then deletes that snapshot', async () => {
       mockConfirm.mockResolvedValueOnce('primary')

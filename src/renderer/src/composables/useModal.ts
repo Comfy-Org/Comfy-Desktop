@@ -55,6 +55,7 @@ export interface ModalState {
   items: ModalSelectItem[]
   options: ModalOption[]
   testIds: ModalTestIds
+  dismissAsCancel: boolean
   resolve: ((value: unknown) => void) | null
 }
 
@@ -72,7 +73,7 @@ const state = reactive<ModalState>({
   checkboxes: [],
   buttonLabel: 'OK',
   confirmLabel: 'Confirm',
-  confirmStyle: 'danger',
+  confirmStyle: 'primary',
   secondaryLabel: '',
   placeholder: '',
   defaultValue: '',
@@ -80,6 +81,7 @@ const state = reactive<ModalState>({
   items: [],
   options: [],
   testIds: {},
+  dismissAsCancel: false,
   resolve: null
 })
 
@@ -97,7 +99,7 @@ function reset(): void {
   state.checkboxes = []
   state.buttonLabel = 'OK'
   state.confirmLabel = 'Confirm'
-  state.confirmStyle = 'danger'
+  state.confirmStyle = 'primary'
   state.secondaryLabel = ''
   state.placeholder = ''
   state.defaultValue = ''
@@ -105,6 +107,7 @@ function reset(): void {
   state.items = []
   state.options = []
   state.testIds = {}
+  state.dismissAsCancel = false
   state.resolve = null
 }
 
@@ -155,6 +158,19 @@ export function useModal() {
     })
   }
 
+  function notice(opts: { title: string; message: string; actionLabel: string }): Promise<boolean> {
+    return new Promise((resolve) => {
+      reset()
+      state.visible = true
+      state.type = 'alert'
+      state.title = opts.title
+      state.message = opts.message
+      state.buttonLabel = opts.actionLabel
+      state.dismissAsCancel = true
+      state.resolve = (value) => resolve(value === true)
+    })
+  }
+
   function confirm(opts: {
     title: string
     message: string
@@ -177,7 +193,7 @@ export function useModal() {
       state.snapshotPreview = opts.snapshotPreview ?? null
       state.checkboxes = (opts.checkboxes ?? []).map((c) => ({ ...c }))
       state.confirmLabel = opts.confirmLabel ?? i18n.global.t('modal.confirm')
-      state.confirmStyle = opts.confirmStyle ?? 'danger'
+      state.confirmStyle = opts.confirmStyle ?? 'primary'
       state.testIds = opts.testIds ? { ...opts.testIds } : {}
       state.resolve = resolve as (value: unknown) => void
     })
@@ -248,7 +264,7 @@ export function useModal() {
       state.message = opts.message
       state.options = opts.options.map((o) => ({ ...o }))
       state.confirmLabel = opts.confirmLabel ?? 'Confirm'
-      state.confirmStyle = opts.confirmStyle ?? 'danger'
+      state.confirmStyle = opts.confirmStyle ?? 'primary'
       state.resolve = resolve as (value: unknown) => void
     })
   }
@@ -298,6 +314,7 @@ export function useModal() {
   return {
     state: readonly(state) as ModalState,
     alert,
+    notice,
     confirm,
     choose,
     updateConfirm,

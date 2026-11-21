@@ -9,7 +9,7 @@ import Tooltip from '../../components/ui/Tooltip.vue'
 import { buildFailure } from '../../composables/useBuildProgress'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
-import { isCloudBuild, runsOnThisComputer, type HomeBuildStatus } from './homeBuild'
+import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const { builds, target, statusOf } = defineProps<{
@@ -31,7 +31,7 @@ const sessionStore = useSessionStore()
 const progressStore = useProgressStore()
 
 function isLive(build: Installation): boolean {
-  return runsOnThisComputer(build, statusOf(build))
+  return statusOf(build) === 'running'
 }
 
 function problem(build: Installation): string | undefined {

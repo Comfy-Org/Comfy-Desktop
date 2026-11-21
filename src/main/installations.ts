@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { dataDir } from './lib/paths'
 import { readFileSafeAsync, writeFileSafe, writeFileSafeAsync } from './lib/safe-file'
 import type { ComfyVersion } from './lib/version'
+import { lastUsedAt } from '../shared/lastUsed'
 
 export const installationEvents = new EventEmitter()
 
@@ -23,6 +24,7 @@ export interface InstallationRecord {
   comfyVersion?: ComfyVersion
   lastLaunchedAt?: number
   lastLaunchedAtByCategory?: Record<string, number>
+  lastStoppedAt?: number
   useSharedModels?: boolean
   useSharedInput?: boolean
   useSharedOutput?: boolean
@@ -363,7 +365,7 @@ export async function getRecent(): Promise<InstallationRecord | null> {
   let best: InstallationRecord | null = null
   let bestTs = -Infinity
   for (const inst of list) {
-    const ts = typeof inst.lastLaunchedAt === 'number' ? inst.lastLaunchedAt : -Infinity
+    const ts = lastUsedAt(inst) ?? -Infinity
     if (ts > bestTs) {
       bestTs = ts
       best = inst

@@ -20,8 +20,7 @@ export function useActionGuard() {
       const confirmed = await modal.confirm({
         title: actionLabel,
         message: t('errors.operationInProgress', { operation }),
-        confirmLabel: t('errors.cancelOperation'),
-        confirmStyle: 'danger'
+        confirmLabel: t('errors.cancelOperation')
       })
       if (!confirmed) return false
       await window.api.cancelOperation(installationId)

@@ -45,6 +45,30 @@ export function trackGuardrailBlocked(guardrailType: string, flow: string, stage
   })
 }
 
+export type LocationCheck = { ok: true; issue: string | null } | { ok: false }
+
+export async function checkInstallLocation(
+  path: string,
+  flow: string,
+  stage: string,
+  t: (key: string) => string
+): Promise<LocationCheck> {
+  let issues: PathIssue[]
+  try {
+    issues = await window.api.validateInstallPath(path)
+  } catch {
+    return { ok: false }
+  }
+  for (const issue of issues) {
+    const keys = pathIssueI18nKeys[issue]
+    if (keys) {
+      trackGuardrailBlocked(toPathGuardrail(issue), flow, stage)
+      return { ok: true, issue: t(keys.message) }
+    }
+  }
+  return { ok: true, issue: null }
+}
+
 export async function showPathIssueAlerts(
   issues: PathIssue[],
   flow: string,
