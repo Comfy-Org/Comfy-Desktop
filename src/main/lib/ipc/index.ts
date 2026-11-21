@@ -63,7 +63,9 @@ export {
   getSessionProcess,
   hasActiveOperations,
   getActiveDetails,
-  cancelAll
+  cancelAll,
+  hasPendingStopStamps,
+  settleStopStamps
 } from './shared'
 export type { RegisterCallbacks, ExitCallbackInfo } from './shared'
 

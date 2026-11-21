@@ -50,6 +50,7 @@ interface MockInstall {
   sourceCategory: string
   version?: string
   lastLaunchedAt?: number
+  lastStoppedAt?: number
   installPath?: string
   status?: string
   statusTag?: { style: string; label: string }
@@ -479,6 +480,36 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       await flushPromises()
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
       expect(bridge.selectedInstallSets).toContain('a')
+    })
+
+    it('selects and lists first the build that ran 09:00 to 18:00 over one that ran 12:00 to 12:30', async () => {
+      const day = (hour: number, minute = 0) => new Date(2026, 10, 18, hour, minute).getTime()
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({
+            id: 'short-run',
+            name: 'Short run',
+            lastLaunchedAt: day(12),
+            lastStoppedAt: day(12, 30)
+          }),
+          makeInstall({
+            id: 'long-run',
+            name: 'Long run',
+            lastLaunchedAt: day(9),
+            lastStoppedAt: day(18)
+          })
+        ],
+        activeInstallationId: null,
+        runningInstallationIds: [],
+        selectedInstallationId: null
+      })
+      await flushPromises()
+      expect(wrapper.findAll('.picker-row-name').map((n) => n.text())).toEqual([
+        'Long run',
+        'Short run'
+      ])
+      expect(bridge.selectedInstallSets).toContain('long-run')
+      expect(bridge.selectedInstallSets).not.toContain('short-run')
     })
 
     it('mounts ComfyUISettingsContent when an install is selected', async () => {

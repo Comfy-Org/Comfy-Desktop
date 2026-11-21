@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Ellipsis, LoaderCircle, OctagonAlert, Power } from '@lucide/vue'
+import { useNow } from '@vueuse/core'
+import { Ellipsis, LoaderCircle, OctagonAlert, Power } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
@@ -15,9 +16,8 @@ import {
   isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
+  buildUsageLabel,
   isCloudBuild,
-  isComfyCloud,
-  runsOnThisComputer,
   type HomeBuildStatus
 } from './homeBuild'
 import {
@@ -47,7 +47,7 @@ const {
 
 const emit = defineEmits<{ open: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const localDeviceKind = useLocalDeviceKind()
 const install = useBuildProgress(() => build)
 const progressStore = useProgressStore()
@@ -82,8 +82,11 @@ const startFailedLogs = computed(
 
 const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(build)])
 const needsLogIn = computed(() => loggedOut && isCloudBuild(build))
+const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() =>
-  needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
+  needsLogIn.value
+    ? t('home.buildLogInToUse')
+    : buildUsageLabel(build, now.value.getTime(), t, locale.value)
 )
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')
@@ -101,7 +104,7 @@ const statusLabel = computed(() => {
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
-      return isLive.value ? t('home.buildRunning') : restingLabel.value
+      return t('home.buildRunning')
     case 'starting':
       return t('home.buildStarting')
     case 'update':
@@ -112,12 +115,10 @@ const statusLabel = computed(() => {
   }
 })
 const detail = computed(() =>
-  isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
+  isCloudBuild(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
-const isLive = computed(() => runsOnThisComputer(build, status))
-const resting = computed(
-  () => status === 'ready' || status === 'update' || (status === 'running' && !isLive.value)
-)
+const isRunning = computed(() => status === 'running')
+const resting = computed(() => status === 'ready' || status === 'update')
 const showsUpdateNote = computed(
   () =>
     !uninstalling.value &&
@@ -131,7 +132,7 @@ const openHint = computed(() => {
   if (busy.value || startFailedLogs.value) return t('home.buildClickToViewLogs')
   if (
     broken.value ||
-    isLive.value ||
+    isRunning.value ||
     status === 'starting' ||
     build.sourceCategory === 'remote' ||
     isCloudBuild(build)
@@ -241,7 +242,7 @@ function openContextMenu(event: MouseEvent): void {
           aria-hidden="true"
         />
         <span
-          v-else-if="isLive"
+          v-else-if="isRunning"
           class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
           aria-hidden="true"
         />
@@ -252,7 +253,6 @@ function openContextMenu(event: MouseEvent): void {
           aria-hidden="true"
           data-testid="home-build-starts-with-desktop"
         />
-        <Check v-else-if="resting && !needsLogIn" :size="12" aria-hidden="true" />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
       <span

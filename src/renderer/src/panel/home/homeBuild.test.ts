@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { deviceKindForChassis } from '../../composables/useLocalDeviceKind'
-import { buildDeviceKind, homeBuildStatus, homeBuildTone, runsOnThisComputer } from './homeBuild'
+import { createI18n } from 'vue-i18n'
+import { appI18nOptions } from '../../lib/i18nOptions'
+import { buildDeviceKind, buildUsageLabel, homeBuildStatus, homeBuildTone } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const build = (sourceCategory: string): Installation =>
@@ -62,20 +64,25 @@ describe('homeBuildStatus', () => {
   })
 })
 
-describe('runsOnThisComputer', () => {
-  it('is true for a running local build', () => {
-    expect(runsOnThisComputer(build('local'), 'running')).toBe(true)
+describe('buildUsageLabel', () => {
+  const NOW = new Date(2026, 10, 20, 15, 0).getTime()
+  const t = createI18n(appI18nOptions).global.t
+  const used = (sourceCategory: string, lastLaunchedAt?: number): Installation =>
+    ({ ...build(sourceCategory), lastLaunchedAt }) as Installation
+
+  it('says No setup needed on a Comfy Cloud that was never opened', () => {
+    expect(buildUsageLabel(used('cloud'), NOW, t, 'en')).toBe('No setup needed')
   })
 
-  it('is false for an opened Comfy Cloud, which runs no process here', () => {
-    expect(runsOnThisComputer(build('cloud'), 'running')).toBe(false)
+  it('says Never used on a local build that was never opened', () => {
+    expect(buildUsageLabel(used('local'), NOW, t, 'en')).toBe('Never used')
   })
 
-  it('is false for an opened remote server, which runs no process here', () => {
-    expect(runsOnThisComputer(build('remote'), 'running')).toBe(false)
+  it('says Never used on a remote server that was never opened', () => {
+    expect(buildUsageLabel(used('remote'), NOW, t, 'en')).toBe('Never used')
   })
 
-  it('is false for a local build at rest', () => {
-    expect(runsOnThisComputer(build('local'), 'ready')).toBe(false)
+  it('says when an opened Comfy Cloud was last used', () => {
+    expect(buildUsageLabel(used('cloud', NOW - 2 * 60 * 60_000), NOW, t, 'en')).toBe('Used 2h ago')
   })
 })

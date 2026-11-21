@@ -1,4 +1,6 @@
+import { formatLastUsed } from '../../lib/datetime'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
+import { lastUsedAt } from '../../../../shared/lastUsed'
 import type { LocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import type { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
@@ -26,10 +28,6 @@ export function buildDeviceKind(build: Installation, localKind: LocalDeviceKind)
   return build.sourceCategory === 'remote' ? 'monitor' : localKind
 }
 
-export function isComfyCloud(build: Installation): boolean {
-  return build.sourceId === 'cloud'
-}
-
 export function homeBuildTone(build: Installation): HomeBuildTone {
   return isCloudBuild(build) ? 'tide' : 'iris'
 }
@@ -41,12 +39,15 @@ export function isBuildUpdating(build: Installation, actionId: string | undefine
   )
 }
 
-export function connectsElsewhere(build: Installation): boolean {
-  return build.sourceCategory === 'cloud' || build.sourceCategory === 'remote'
-}
-
-export function runsOnThisComputer(build: Installation, status: HomeBuildStatus): boolean {
-  return status === 'running' && !connectsElsewhere(build)
+export function buildUsageLabel(
+  build: Installation,
+  nowMs: number,
+  t: (key: string, params?: Record<string, unknown>) => string,
+  locale?: string
+): string {
+  const usedAt = lastUsedAt(build)
+  if (usedAt === undefined && isCloudBuild(build)) return t('home.cloudNoSetupNeeded')
+  return formatLastUsed(usedAt, nowMs, t, locale)
 }
 
 export function isBuildOpenBlocked(status: HomeBuildStatus): boolean {

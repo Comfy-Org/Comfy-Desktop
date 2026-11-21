@@ -3,7 +3,8 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Ellipsis, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
+import { useNow } from '@vueuse/core'
+import { Ellipsis, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import {
   buildFailure,
@@ -19,8 +20,8 @@ import {
   HOME_BUILD_TONES,
   homeBuildTone,
   isBuildUpdating,
-  connectsElsewhere,
-  isCloudBuild
+  isCloudBuild,
+  buildUsageLabel
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
@@ -54,7 +55,7 @@ const emit = defineEmits<{
   'why-cloud': []
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const localDeviceKind = useLocalDeviceKind()
 const sessionStore = useSessionStore()
 
@@ -168,7 +169,7 @@ const statusPill = computed<{
       tone: 'quiet',
       spinning: true
     }
-  if (isRunning.value && !connectsElsewhere(inst.value))
+  if (isRunning.value)
     return {
       label: 'chooser.statusRunning',
       markerClass: 'chooser-tile-status--running',
@@ -188,9 +189,11 @@ const offersWhyCloud = computed(
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
 const needsLogIn = computed(() => props.loggedOut && isCloudBuild(inst.value))
+const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() => {
   if (startsWithDesktop.value) return t('home.autoStartOn')
-  return needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
+  if (needsLogIn.value) return t('home.buildLogInToUse')
+  return buildUsageLabel(inst.value, now.value.getTime(), t, locale.value)
 })
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
@@ -411,7 +414,6 @@ function openContextMenu(event: MouseEvent): void {
             aria-hidden="true"
             :data-testid="`chooser-tile-starts-with-desktop-${inst.id}`"
           />
-          <Check v-else-if="!needsLogIn" :size="12" class="shrink-0" aria-hidden="true" />
           <span class="truncate">{{ restingLabel }}</span>
         </span>
         <span

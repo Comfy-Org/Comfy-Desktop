@@ -44,7 +44,7 @@ async function pickAutoStartLine(expected: string): Promise<void> {
 
 test('Auto start picked in a Home build menu saves that build and shows on its tile, and Turn off sets None @windows @macos @linux', async () => {
   await ctx.panel.waitForVisible(TILE)
-  expect(await ctx.panel.textOf(TILE_STATUS)).toBe('Ready')
+  expect(await ctx.panel.textOf(TILE_STATUS)).toBe('Never used')
 
   await pickAutoStartLine('Auto start')
 
@@ -57,5 +57,5 @@ test('Auto start picked in a Home build menu saves that build and shows on its t
   await pickAutoStartLine('Turn off auto start')
 
   await expect.poll(savedAutoStart).toBe('none')
-  await expect.poll(() => ctx.panel.textOf(TILE_STATUS)).toBe('Ready')
+  await expect.poll(() => ctx.panel.textOf(TILE_STATUS)).toBe('Never used')
 })
