@@ -99,6 +99,48 @@ describe('the will-quit wait', () => {
     expect(sources.quit).toHaveBeenCalledTimes(1)
   })
 
+  it('also waits for a stop time written while it waited for downloads', async () => {
+    const downloads = deferred()
+    const lateWrite = deferred()
+    let stampPending = false
+    const { sources, willQuit } = setup({
+      hasActiveModelTransfers: () => true,
+      suspendActiveModelDownloadsForQuit: () => downloads.promise,
+      hasPendingStopStamps: () => stampPending,
+      settleStopStamps: vi.fn(() => lateWrite.promise)
+    })
+
+    willQuit()
+    stampPending = true
+    downloads.resolve()
+    await settle()
+    expect(sources.settleStopStamps).toHaveBeenCalledTimes(1)
+    expect(sources.quit).not.toHaveBeenCalled()
+
+    lateWrite.resolve()
+    await settle()
+    expect(sources.quit).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not wait for a late stop time on a quit that installs an app update', async () => {
+    const downloads = deferred()
+    let stampPending = false
+    const { sources, willQuit } = setup({
+      hasActiveModelTransfers: () => true,
+      suspendActiveModelDownloadsForQuit: () => downloads.promise,
+      hasPendingStopStamps: () => stampPending,
+      isUpdateInstallQuit: () => true
+    })
+
+    willQuit()
+    stampPending = true
+    downloads.resolve()
+    await settle()
+
+    expect(sources.settleStopStamps).not.toHaveBeenCalled()
+    expect(sources.quit).toHaveBeenCalledTimes(1)
+  })
+
   it('quits even when a wait fails', async () => {
     const { sources, willQuit } = setup({
       hasPendingStopStamps: () => true,
@@ -140,8 +182,9 @@ describe('the will-quit wait', () => {
     willQuit()
     await settle()
     willQuit()
+    vi.mocked(sources.settleStopStamps).mockClear()
 
     expect(willQuit().preventDefault).toHaveBeenCalled()
-    expect(sources.settleStopStamps).toHaveBeenCalledTimes(2)
+    expect(sources.settleStopStamps).toHaveBeenCalledTimes(1)
   })
 })

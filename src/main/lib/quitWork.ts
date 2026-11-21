@@ -13,12 +13,15 @@ export function createWillQuitHandler(
   let waiting = false
   let quittingAfterWork = false
 
+  function stopStampWork(): Promise<unknown>[] {
+    return sources.hasPendingStopStamps() && !sources.isUpdateInstallQuit()
+      ? [sources.settleStopStamps()]
+      : []
+  }
+
   function pendingWork(): Promise<unknown>[] {
-    const work: Promise<unknown>[] = []
+    const work = stopStampWork()
     if (sources.hasActiveModelTransfers()) work.push(sources.suspendActiveModelDownloadsForQuit())
-    if (sources.hasPendingStopStamps() && !sources.isUpdateInstallQuit()) {
-      work.push(sources.settleStopStamps())
-    }
     return work
   }
 
@@ -35,10 +38,12 @@ export function createWillQuitHandler(
     if (work.length === 0) return
     waiting = true
     event.preventDefault()
-    void Promise.allSettled(work).finally(() => {
-      waiting = false
-      quittingAfterWork = true
-      sources.quit()
-    })
+    void Promise.allSettled(work)
+      .then(() => Promise.allSettled(stopStampWork()))
+      .finally(() => {
+        waiting = false
+        quittingAfterWork = true
+        sources.quit()
+      })
   }
 }
