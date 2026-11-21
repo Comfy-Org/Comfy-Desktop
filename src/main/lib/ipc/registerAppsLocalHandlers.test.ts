@@ -14,7 +14,9 @@ const mocks = vi.hoisted(() => ({
   localBuilds: vi.fn(),
   loadedApp: 'product-ads' as string | null,
   document: 1,
-  whileChecking: () => {}
+  whileChecking: () => {},
+  pages: [] as { send: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }[],
+  runsChanged: null as (() => void) | null
 }))
 
 vi.mock('electron', () => ({
@@ -32,7 +34,16 @@ vi.mock('../../apps/appPageView', () => ({
   loadedAppPage: () =>
     mocks.loadedApp ? { appId: mocks.loadedApp, document: mocks.document } : null
 }))
-vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
+vi.mock('../../apps/appsPages', () => ({
+  isAppsPageSender: () => mocks.isAppsPage,
+  liveAppsPages: () => mocks.pages
+}))
+vi.mock('../../apps/localAppEvents', () => ({
+  onRunsChanged: (watcher: () => void) => {
+    mocks.runsChanged = watcher
+    return () => {}
+  }
+}))
 vi.mock('../../apps/localComfy', () => ({
   localState: mocks.localState,
   startLocal: mocks.startLocal,
@@ -71,6 +82,7 @@ beforeEach(() => {
   mocks.loadedApp = 'product-ads'
   mocks.document = 1
   mocks.whileChecking = () => {}
+  mocks.pages = []
   mocks.localState.mockResolvedValue({ state: 'stopped', own: true, name: 'Studio' })
   mocks.startLocal.mockResolvedValue(RUNNING)
   mocks.localFetch.mockResolvedValue({ status: 200, contentType: 'application/json', body: null })
@@ -159,6 +171,47 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(mocks.localFetch).not.toHaveBeenCalled()
     expect(mocks.localDownload).not.toHaveBeenCalled()
     expect(mocks.openInComfy).not.toHaveBeenCalled()
+    expect(mocks.localBuilds).not.toHaveBeenCalled()
+  })
+})
+
+describe('telling app pages that a build became busy or free', () => {
+  function runsChange(): Promise<void> {
+    mocks.runsChanged?.()
+    return new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  it('sends every open app page the builds as they are now', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    const closed = { send: vi.fn(), isDestroyed: () => true }
+    mocks.pages = [page, closed]
+
+    await runsChange()
+
+    expect(page.send).toHaveBeenCalledExactlyOnceWith(APPS_LOCAL_CHANNELS.buildsChanged, BUILDS)
+    expect(closed.send).not.toHaveBeenCalled()
+  })
+
+  it('drops an older answer that arrives after a newer one', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    mocks.pages = [page]
+    let answerFirst: (builds: unknown) => void = () => {}
+    const busy = [{ id: 'inst-1', name: 'Studio', busyWith: { appId: 'a', title: 'A' } }]
+    mocks.localBuilds
+      .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
+      .mockResolvedValueOnce(BUILDS)
+
+    mocks.runsChanged?.()
+    await runsChange()
+    answerFirst(busy)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(page.send.mock.calls).toEqual([[APPS_LOCAL_CHANNELS.buildsChanged, BUILDS]])
+  })
+
+  it('does not look up the builds when no app page is open', async () => {
+    await runsChange()
+
     expect(mocks.localBuilds).not.toHaveBeenCalled()
   })
 })

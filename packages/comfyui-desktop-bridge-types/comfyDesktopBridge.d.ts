@@ -289,6 +289,17 @@ export interface ComfyDesktopLocalBuild {
   version?: string
   /** True when it is running now. Absent on Desktop builds that predate it. */
   running?: boolean
+  /**
+   * The app whose run this build is working on or has queued, oldest first,
+   * when an app runs on it. A build runs one workflow at a time, so a new run
+   * waits in its queue until this one ends. `title` is the app's name for the
+   * person, such as `Remove Background`. Absent when the build is free, and on
+   * Desktop builds that predate it.
+   */
+  busyWith?: {
+    appId: string
+    title: string
+  }
 }
 /**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
@@ -315,6 +326,33 @@ export interface ComfyDesktopHostedLocalBridge {
   openInComfy?(request: ComfyDesktopOpenInComfyRequest): Promise<ComfyDesktopOpenInComfy>
   /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
   localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
+  /**
+   * Calls back with the builds `localBuilds` would give whenever a build
+   * becomes busy or free, such as when another app's run starts or ends.
+   * Absent on Desktop builds that predate it.
+   */
+  onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
+}
+/** Whether a Comfy page hosted in Desktop's Apps view has a run going. */
+export interface ComfyDesktopRunState {
+  running: boolean
+}
+/**
+ * Run state from a Comfy page hosted in Desktop's Apps view. Desktop exposes
+ * it to that page as `window.comfyDesktopRuns`. Desktop keeps a page with a
+ * run going alive when the person switches to another app, shows a spinner on
+ * the app's picture in the rail and a running indicator in the title bar, and
+ * asks before a window closes or Desktop quits while a run is going.
+ */
+export interface ComfyDesktopHostedRunsBridge {
+  /**
+   * Reports that a run started (`running: true`) or ended (`running: false`),
+   * from the moment the person presses Run, while the run waits in a queue,
+   * until it finishes, fails or is cancelled. Once a page calls this, Desktop
+   * uses only these reports for that page. Pages that never call it are
+   * followed through their run progress toast (`.cs-toasts .cs-toast`).
+   */
+  reportRun(state: ComfyDesktopRunState): void
 }
 /**
  * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop

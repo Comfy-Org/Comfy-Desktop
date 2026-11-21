@@ -44,6 +44,9 @@ vi.mock('../lib/ipc/shared', () => ({
   _hasActiveLaunch: (id: string) => mocks.launchesUnderWay.has(id),
   _runningSessions: mocks.sessions
 }))
+vi.mock('./appsCatalog', () => ({
+  titleForListedApp: (id: string) => (id === 'remove-background' ? 'Remove Background' : null)
+}))
 vi.mock('./localBuild', () => ({
   usableLocalBuilds: async () => mocks.builds,
   runningPortOf: (id: string) => (mocks.sessions.get(id)?.['port'] as number | undefined) ?? null,
@@ -68,6 +71,7 @@ import {
   openInComfy,
   WINDOW_TIMEOUT_MS
 } from './openInComfy'
+import { _resetForTest as forgetRuns, finishRun, runAccepted } from './localAppEvents'
 import { COMFY_STATE_SCRIPT, MARK_PAGE_STALE_SCRIPT } from './openRequest'
 import type { ComfyPageState } from './openRequest'
 
@@ -184,6 +188,7 @@ function openWindowsOnLaunch(): void {
 beforeEach(() => {
   vi.clearAllMocks()
   _resetForTest()
+  forgetRuns()
   mocks.records = [
     { id: STUDIO.id, name: STUDIO.name, sourceId: 'standalone', status: 'installed' },
     { id: LAB.id, name: LAB.name, sourceId: 'standalone', status: 'installed' }
@@ -548,6 +553,27 @@ describe('the builds a page can pick from', () => {
       { id: STUDIO.id, name: STUDIO.name, version: '0.42.1', running: true },
       { id: LAB.id, name: LAB.name, running: false }
     ])
+  })
+
+  it('name the app a build is busy with, so the page can mark it Busy', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+
+    expect(await localBuilds()).toEqual([
+      {
+        id: STUDIO.id,
+        name: STUDIO.name,
+        running: false,
+        busyWith: { appId: 'remove-background', title: 'Remove Background' }
+      },
+      { id: LAB.id, name: LAB.name, running: false }
+    ])
+  })
+
+  it('show a build as free again once its run ends', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+    finishRun('run-1', { outcome: 'success', at: 2 })
+
+    expect((await localBuilds())[0]).not.toHaveProperty('busyWith')
   })
 
   it('come most recently launched first, which the page labels Last used', async () => {
