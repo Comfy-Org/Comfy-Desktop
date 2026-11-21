@@ -952,6 +952,18 @@ describe('keeping apps running in the background', () => {
     expect(runningAppCount()).toBe(0)
   })
 
+  it('stops calling an app ready when its page crashes after the run finished in the background', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    reportRun(cutout, false)
+    expect(titleBarApps(WINDOW_KEY).ready).toEqual([{ id: CUTOUT, title: 'Remove Background' }])
+
+    cutout.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+
+    expect(titleBarApps(WINDOW_KEY)).toEqual({ running: [], ready: [] })
+    expect(runsSentToPanel()).toEqual([])
+  })
+
   it('says a switch stops a run only once the open app runs and the background is full of runs', async () => {
     await runInBackground(CUTOUT)
     await runInBackground(HDR)
