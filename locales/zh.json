@@ -393,7 +393,9 @@
     "showRunning": "显示运行中的应用",
     "appReady": "{app}已完成",
     "readyMany": "{count} 个已完成",
-    "showReady": "显示已完成的应用"
+    "showReady": "显示已完成的应用",
+    "appsMany": "{count} 个应用",
+    "showApps": "显示应用"
   },
   "comfyUISettings": {
     "title": "设置",
