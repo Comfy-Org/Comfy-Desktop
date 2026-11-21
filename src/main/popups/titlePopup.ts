@@ -4,6 +4,7 @@ import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
 import type { PopupTheme, TitlePopupKind, TitlePopupMenuItem } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
+import { blurContentsBehindBackdrop, type BlurrableContents } from './backdropBlur'
 import {
   cancelModelDownload,
   clearFinishedDownloads,
@@ -365,6 +366,7 @@ async function refreshCachedInstallsForPicker(): Promise<void> {
 interface PopupBackdropEntry {
   view: WebContentsView
   visible: boolean
+  unblur: (() => void) | null
 }
 const popupBackdropsByParent = new Map<number, PopupBackdropEntry>()
 const popupBackdropsByWebContents = new Map<number, number>()
@@ -400,7 +402,7 @@ function ensurePopupBackdrop(parent: BrowserWindow): PopupBackdropEntry {
   void view.webContents
     .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(POPUP_BACKDROP_HTML)}`)
     .catch(() => {})
-  const entry: PopupBackdropEntry = { view, visible: false }
+  const entry: PopupBackdropEntry = { view, visible: false, unblur: null }
   popupBackdropsByParent.set(parent.id, entry)
   popupBackdropsByWebContents.set(view.webContents.id, parent.id)
   parent.on('resize', () => {
@@ -440,12 +442,22 @@ function showPopupBackdrop(parent: BrowserWindow): void {
   } catch {}
   entry.view.setVisible(true)
   entry.visible = true
+  entry.unblur?.()
+  entry.unblur = blurContentsBehindBackdrop(viewsBehind(parent, entry.view))
+}
+
+function viewsBehind(parent: BrowserWindow, backdrop: WebContentsView): BlurrableContents[] {
+  return parent.contentView.children
+    .filter((child): child is WebContentsView => child !== backdrop && 'webContents' in child)
+    .map((child) => child.webContents)
 }
 
 function hidePopupBackdrop(parent: BrowserWindow): void {
   const entry = popupBackdropsByParent.get(parent.id)
   if (!entry || !entry.visible) return
   entry.visible = false
+  entry.unblur?.()
+  entry.unblur = null
   if (entry.view.webContents.isDestroyed()) return
   entry.view.setVisible(false)
   if (!parent.isDestroyed()) {
@@ -781,17 +793,9 @@ interface CenteredCardClamp {
   heightRatio: number
 }
 
-type CenteredCardKind = typeof POPUP_KIND.globalSettings | typeof POPUP_KIND.downloadsFull
+type CenteredCardKind = typeof POPUP_KIND.downloadsFull
 
 const CENTERED_CARD_CLAMPS: Record<CenteredCardKind, CenteredCardClamp> = {
-  [POPUP_KIND.globalSettings]: {
-    minWidth: 640,
-    maxWidth: 880,
-    widthRatio: 0.65,
-    minHeight: 420,
-    maxHeight: 560,
-    heightRatio: 0.7
-  },
   [POPUP_KIND.downloadsFull]: {
     minWidth: 640,
     maxWidth: 900,
@@ -803,7 +807,13 @@ const CENTERED_CARD_CLAMPS: Record<CenteredCardKind, CenteredCardClamp> = {
 }
 
 function kindIsCentered(kind: TitlePopupKind): kind is CenteredCardKind {
-  return kind === POPUP_KIND.globalSettings || kind === POPUP_KIND.downloadsFull
+  return kind === POPUP_KIND.downloadsFull
+}
+
+function kindUsesSettingsBounds(
+  kind: TitlePopupKind
+): kind is typeof POPUP_KIND.instancePicker | typeof POPUP_KIND.globalSettings {
+  return kind === POPUP_KIND.instancePicker || kind === POPUP_KIND.globalSettings
 }
 
 export const CENTERED_CARD_CLOSE_GUTTER = 48
@@ -833,6 +843,14 @@ function computeCenteredCardBounds(
   return { x, y, width, height }
 }
 
+type ModalPopupKind =
+  typeof POPUP_KIND.instancePicker | typeof POPUP_KIND.globalSettings | CenteredCardKind
+
+function modalBounds(kind: ModalPopupKind, parent: BrowserWindow): PickerBounds {
+  if (kindUsesSettingsBounds(kind)) return computePickerBounds(parent)
+  return withOutsideCloseGutter(computeCenteredCardBounds(kind, parent))
+}
+
 function withOutsideCloseGutter(bounds: { x: number; y: number; width: number; height: number }): {
   x: number
   y: number
@@ -858,22 +876,8 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   const cur = entry.view.popup.getBounds()
   const parent = entry.view.parentWindow
 
-  if (entry.kind === 'instance-picker') {
-    const target = computePickerBounds(parent)
-    if (
-      target.x === cur.x &&
-      target.y === cur.y &&
-      target.width === cur.width &&
-      target.height === cur.height
-    ) {
-      return
-    }
-    entry.view.popup.setBounds(target)
-    return
-  }
-
-  if (kindIsCentered(entry.kind)) {
-    const target = withOutsideCloseGutter(computeCenteredCardBounds(entry.kind, parent))
+  if (kindUsesSettingsBounds(entry.kind) || kindIsCentered(entry.kind)) {
+    const target = modalBounds(entry.kind, parent)
     if (
       target.x === cur.x &&
       target.y === cur.y &&
@@ -977,16 +981,8 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
       Math.round(opts.parent.getContentBounds().height * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
     )
     x = clampPopupX(rawX, width, opts.parent)
-  } else if (opts.kind === 'instance-picker') {
-    const bounds = computePickerBounds(opts.parent)
-    width = bounds.width
-    height = bounds.height
-    x = bounds.x
-    y = bounds.y
   } else {
-    ;({ x, y, width, height } = withOutsideCloseGutter(
-      computeCenteredCardBounds(opts.kind, opts.parent)
-    ))
+    ;({ x, y, width, height } = modalBounds(opts.kind, opts.parent))
   }
 
   entry.view.popup.setBounds({ x, y, width, height })
@@ -2196,6 +2192,10 @@ export function _test_getOpenTitlePopupBounds(): {
     return { kind: entry.kind, bounds: entry.view.popup.getBounds() }
   }
   return null
+}
+
+export function _test_modalBounds(kind: ModalPopupKind, parent: BrowserWindow): PickerBounds {
+  return modalBounds(kind, parent)
 }
 
 export function _test_centeredCardBounds(

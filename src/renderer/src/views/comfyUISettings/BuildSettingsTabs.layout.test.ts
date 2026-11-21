@@ -366,7 +366,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     expectSame(labelGaps, 'label to field gap is even')
     expectSame(rowGaps, 'field to next label gap is even')
     expect(Math.round(labelGaps[0]!), 'label sits 4px above its field').toBe(4)
-    expect(Math.round(rowGaps[0]!), 'fields sit 16px apart').toBe(16)
+    expect(Math.round(rowGaps[0]!), 'fields sit 24px apart').toBe(24)
     for (const control of root.querySelectorAll<HTMLElement>(CONTROL)) {
       expect(Math.round(control.getBoundingClientRect().height), 'field height').toBe(40)
       expect(getComputedStyle(control).borderRadius, 'field radius').toBe('8px')
@@ -392,7 +392,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     const port = root.querySelector('[data-field-id="portConflict"]')!.getBoundingClientRect()
     const note = env.querySelector('.settings-v2-env-notice')!.getBoundingClientRect()
     const label = env.querySelector('.settings-v2-field-label')!.getBoundingClientRect()
-    expect(Math.round(env.getBoundingClientRect().top - port.bottom), 'env block gap').toBe(16)
+    expect(Math.round(env.getBoundingClientRect().top - port.bottom), 'env block gap').toBe(24)
     expect(note.top, 'note stays below the field above').toBeGreaterThanOrEqual(
       env.getBoundingClientRect().top
     )

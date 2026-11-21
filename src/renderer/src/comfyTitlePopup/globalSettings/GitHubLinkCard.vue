@@ -33,14 +33,14 @@ const starCountLabel = computed(() => {
 <template>
   <Button
     type="button"
-    variant="outline"
+    variant="textonly"
     size="unset"
-    class="github-link-card w-full justify-between gap-3 px-3 py-2.5 text-left"
+    class="github-link-card min-h-7 w-full justify-between gap-3 rounded-md p-0 text-left hover:bg-transparent [&:hover_.github-link-label]:underline"
     @click="emit('open', url)"
   >
     <span class="github-link-main inline-flex min-w-0 items-center gap-2">
       <GithubIcon :size="16" />
-      <span class="github-link-label text-[13px] leading-[19px] font-medium">{{ label }}</span>
+      <span class="github-link-label text-[13px] leading-[19px] font-normal">{{ label }}</span>
       <ExternalLink
         :size="12"
         class="github-link-external shrink-0 opacity-50"
