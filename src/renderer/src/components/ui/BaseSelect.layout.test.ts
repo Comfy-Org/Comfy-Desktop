@@ -34,7 +34,32 @@ async function openSelectAt(width: number, labels: string[]) {
   const listboxEl = document.querySelector<HTMLElement>('.ui-select-listbox')!
   await Promise.all(listboxEl.getAnimations().map((animation) => animation.finished))
   const listbox = listboxEl.getBoundingClientRect()
-  return { trigger, listbox }
+  return { trigger, listbox, triggerEl: wrapper.get('.ui-select-trigger').element, listboxEl }
+}
+
+function opaque(color: string): boolean {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const context = canvas.getContext('2d')!
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  return context.getImageData(0, 0, 1, 1).data[3] === 255
+}
+
+function lightnessOverModal(color: string): number {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const context = canvas.getContext('2d')!
+  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(
+    '--modal-surface-bg'
+  )
+  context.fillRect(0, 0, 1, 1)
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
+  return (red + green + blue) / 3
 }
 
 describe('BaseSelect open menu width', () => {
@@ -43,5 +68,17 @@ describe('BaseSelect open menu width', () => {
 
     expect(listbox.width).toBe(trigger.width)
     expect(listbox.left).toBe(trigger.left)
+  })
+
+  it('sits above its trigger: a lighter surface with an edge that stands out from it', async () => {
+    const { triggerEl, listboxEl } = await openSelectAt(160, ['English', '简体中文'])
+    const listboxStyle = getComputedStyle(listboxEl)
+    const listboxSurface = lightnessOverModal(listboxStyle.backgroundColor)
+
+    expect(opaque(listboxStyle.backgroundColor), 'nothing behind the menu shows through').toBe(true)
+    expect(listboxSurface).toBeGreaterThan(
+      lightnessOverModal(getComputedStyle(triggerEl).backgroundColor)
+    )
+    expect(lightnessOverModal(listboxStyle.borderTopColor)).toBeGreaterThan(listboxSurface)
   })
 })

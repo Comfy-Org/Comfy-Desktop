@@ -109,7 +109,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       >
     </SelectTrigger>
     <SelectContent
-      class="ui-select-listbox z-[9999] mt-0 max-h-[min(360px,var(--reka-select-content-available-height))] w-min min-w-[var(--reka-select-trigger-width)] border bg-popover p-1 shadow-lg [overflow-wrap:anywhere] [&_[data-reka-select-viewport]]:min-w-[calc(var(--reka-select-trigger-width)-10px)]"
+      class="ui-select-listbox z-[9999] mt-0 max-h-[min(360px,var(--reka-select-content-available-height))] w-min min-w-[var(--reka-select-trigger-width)] border border-[color-mix(in_oklch,var(--foreground)_10%,transparent)] bg-[color-mix(in_oklch,var(--foreground)_6%,var(--popover))] p-1 shadow-lg [overflow-wrap:anywhere] [&_[data-reka-select-viewport]]:min-w-[calc(var(--reka-select-trigger-width)-10px)]"
       :class="{ 'ui-select-listbox--compact': compact }"
       :side-offset="2"
       :collision-padding="8"
@@ -126,7 +126,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         :disabled="option.disabled"
         :text-value="option.label"
         :data-testid="option.testId"
-        class="ui-select-option mt-0.5 min-h-7 shrink-0 rounded-md px-3 py-1.5 first:mt-0 data-[state=checked]:data-highlighted:bg-accent"
+        class="ui-select-option mt-0.5 min-h-7 shrink-0 rounded-md px-3 py-1.5 first:mt-0 data-highlighted:bg-[color-mix(in_oklch,var(--foreground)_1%,var(--accent))] data-[state=checked]:data-highlighted:bg-[color-mix(in_oklch,var(--foreground)_1%,var(--accent))]"
         :class="{ 'text-xs': compact, 'py-2': option.description }"
         text-class="min-w-0 whitespace-normal"
       >
