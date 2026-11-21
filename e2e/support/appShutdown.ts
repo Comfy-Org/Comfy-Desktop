@@ -68,7 +68,7 @@ export const isPidAlive = (pid: number): boolean => isPidAliveWithin(pid, FORCED
 export function killProcessTrees(pids: number[], timeoutMs = FORCED_EXIT_DEADLINE_MS): void {
   const stopBy = Date.now() + timeoutMs
   for (const pid of pids) {
-    if (process.platform === 'win32') {
+    if (process.platform === 'win32' && Date.now() < stopBy) {
       spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], {
         stdio: 'ignore',
         timeout: msUntil(stopBy),
