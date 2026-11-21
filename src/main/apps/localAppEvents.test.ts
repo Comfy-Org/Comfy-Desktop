@@ -823,6 +823,25 @@ describe('which app a build is busy with', () => {
     expect(busyAppOn('inst-1', 'product-swap')).toBe('remove-background')
   })
 
+  it("follows ComfyUI's queue numbers, not send times, including runs sent at the same moment", () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1, 11)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2, 10)
+    runAccepted('run-ads', 'inst-1', 'product-ads', 2, 12)
+
+    expect(busyAppOn('inst-1', 'product-swap')).toBeNull()
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1')).toBe('product-swap')
+  })
+
+  it('keeps the order runs were accepted in when they were sent at the same moment with no queue number', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 5)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 5)
+
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'product-ads')).toBeNull()
+  })
+
   it('names nothing for the app whose own run the build is working on', () => {
     runAccepted('run-cutout', 'inst-1', 'remove-background', 1)
     runAccepted('run-swap', 'inst-1', 'product-swap', 2)

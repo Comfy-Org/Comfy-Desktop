@@ -33,6 +33,7 @@ interface Run {
   buildId: string
   appId: string | null
   submittedAt: number
+  queueNumber?: number
   startedAt?: number
   heardEnd?: RunEnd
 }
@@ -143,12 +144,13 @@ export function runAccepted(
   promptId: string,
   buildId: string,
   appId: string | null,
-  submittedAt: number
+  submittedAt: number,
+  queueNumber?: number
 ): void {
   if (runs.has(promptId)) return
   const early = earlyRuns.get(promptId)
   earlyRuns.delete(promptId)
-  const run: Run = { buildId, appId, submittedAt, startedAt: early?.startedAt }
+  const run: Run = { buildId, appId, submittedAt, queueNumber, startedAt: early?.startedAt }
   keepNewest(runs, promptId, run, MAX_RUNS)
   if (early?.end) finishRun(promptId, early.end)
   else runsChanged()
@@ -238,13 +240,16 @@ export function busyAppOn(buildId: string, askingAppId: string | null = null): s
   )
   const working = onBuild.find((run) => run.startedAt !== undefined)
   if (working) return working.appId === askingAppId ? null : working.appId
-  const askingSince = Math.min(
-    ...onBuild.filter((run) => run.appId === askingAppId).map((run) => run.submittedAt)
-  )
-  const [firstInQueue] = onBuild
-    .filter((run) => run.appId !== askingAppId && run.submittedAt < askingSince)
-    .sort((a, b) => a.submittedAt - b.submittedAt)
+  const queue = inQueueOrder(onBuild)
+  const asking = queue.findIndex((run) => run.appId === askingAppId)
+  const [firstInQueue] = asking === -1 ? queue : queue.slice(0, asking)
   return firstInQueue?.appId ?? null
+}
+
+function inQueueOrder<T extends Run>(queued: T[]): T[] {
+  const numbered = queued.every((run) => run.queueNumber !== undefined)
+  const place = (run: T): number => (numbered ? (run.queueNumber ?? 0) : run.submittedAt)
+  return [...queued].sort((a, b) => place(a) - place(b))
 }
 
 export function isFollowing(promptId: string): boolean {

@@ -99,6 +99,7 @@ import { _resetCrashBuffer, getAllCrashes } from '../lib/crashBuffer'
 import type { InstallationRecord } from '../installations'
 import { sessionLifecycleEvents } from '../lib/ipc/shared'
 import * as local from './localComfy'
+import { busyAppOn } from './localAppEvents'
 
 const { LOCAL_EVENT_CHANNEL, LOCAL_IDLE_STOP_MS, _resetForTest } = local
 
@@ -464,6 +465,22 @@ describe('a run from an app page', () => {
   beforeEach(async () => {
     running()
     await localState(WANT)
+  })
+
+  it("keeps ComfyUI's queue number, so a build names the app really ahead of a run", async () => {
+    const send = (appId: string) =>
+      local.localFetch(
+        asContents(page),
+        { method: 'POST', path: '/prompt', body: JSON.stringify({ prompt: {} }) },
+        appId
+      )
+    comfy.promptAnswer = { status: 200, body: { prompt_id: 'sent-first', number: 11 } }
+    await send('remove-background')
+    comfy.promptAnswer = { status: 200, body: { prompt_id: 'sent-second', number: 10 } }
+    await send('product-swap')
+
+    expect(busyAppOn(STUDIO, 'product-swap')).toBeNull()
+    expect(busyAppOn(STUDIO, 'remove-background')).toBe('product-swap')
   })
 
   it("is sent as Desktop's client, whatever client the page named", async () => {
