@@ -293,15 +293,16 @@ export interface ComfyDesktopLocalBuild {
    * Another app in Desktop's Apps view whose run this build is working on, or
    * whose run is first in its queue. Never the app that asks. A build runs one
    * workflow at a time, so a new run waits in its queue until that one ends.
-   * `title` is the app's name for the person, such as `Remove Background`, or
-   * a stand-in such as `another app` when Desktop has no name for it. Absent
+   * `title` is the app's name for the person, such as `Remove Background`. It
+   * is absent when Desktop has no name for the app, so the page can say
+   * `another app` in its own words and language. `busyWith` is absent
    * when no other app in the Apps view has a run on this build: the build can
    * still be busy with a run from somewhere else, such as its ComfyUI window.
    * Absent on Desktop builds that predate it.
    */
   busyWith?: {
     appId: string
-    title: string
+    title?: string
   }
 }
 /**

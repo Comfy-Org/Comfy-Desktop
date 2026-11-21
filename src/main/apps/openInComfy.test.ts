@@ -66,6 +66,7 @@ import {
   _resetForTest,
   LOAD_TIMEOUT_MS,
   localBuilds,
+  localBuildsForEach,
   NO_WORKFLOW_GRACE_MS,
   openEmbeddedWorkflow,
   openInComfy,
@@ -569,13 +570,13 @@ describe('the builds a page can pick from', () => {
     ])
   })
 
-  it('give a stand-in name for an app the catalog has no name for, and never name the asking app', async () => {
+  it('leave the name out for an app the catalog has no name for, and never name the asking app', async () => {
     runAccepted('run-1', STUDIO.id, 'unlisted-app', 1)
     runAccepted('run-2', LAB.id, 'remove-background', 2)
 
     const builds = await localBuilds('remove-background')
 
-    expect(builds[0]?.busyWith).toEqual({ appId: 'unlisted-app', title: 'apps.local.otherApp' })
+    expect(builds[0]?.busyWith).toEqual({ appId: 'unlisted-app' })
     expect(builds[1]).not.toHaveProperty('busyWith')
   })
 
@@ -584,6 +585,18 @@ describe('the builds a page can pick from', () => {
     finishRun('run-1', { outcome: 'success', at: 2 })
 
     expect((await localBuilds())[0]).not.toHaveProperty('busyWith')
+  })
+
+  it('can be described for several asking apps with one look at the builds', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+
+    const [forCutout, forAds] = await localBuildsForEach(['remove-background', 'product-ads'])
+
+    expect(forCutout?.[0]).not.toHaveProperty('busyWith')
+    expect(forAds?.[0]?.busyWith).toEqual({
+      appId: 'remove-background',
+      title: 'Remove Background'
+    })
   })
 
   it('come most recently launched first, which the page labels Last used', async () => {

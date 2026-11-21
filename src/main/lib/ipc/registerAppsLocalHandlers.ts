@@ -7,7 +7,7 @@ import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
 import { onRunsChanged } from '../../apps/localAppEvents'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
-import { localBuilds, openInComfy } from '../../apps/openInComfy'
+import { localBuilds, localBuildsForEach, openInComfy } from '../../apps/openInComfy'
 import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopLocalComfy,
@@ -32,10 +32,10 @@ async function announceBuilds(): Promise<void> {
   const announcement = ++latestAnnouncement
   if (liveAppsPages().length === 0 || !(await areAppsEnabled())) return
   const pages = liveAppsPages()
-  const lists = await Promise.all(
-    pages.map((page) => localBuilds(loadedAppPage(page)?.appId ?? null).catch(() => null))
-  )
-  if (announcement !== latestAnnouncement) return
+  const lists = await localBuildsForEach(
+    pages.map((page) => loadedAppPage(page)?.appId ?? null)
+  ).catch(() => null)
+  if (!lists || announcement !== latestAnnouncement) return
   pages.forEach((page, index) => {
     const builds = lists[index]
     if (builds && !page.isDestroyed()) page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
@@ -99,9 +99,10 @@ export function registerAppsLocalHandlers(): void {
         : { opened: false, error: i18n.t('apps.local.notRunning') }
   )
 
-  ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> =>
-    (await isFromAppsPage(event)) ? localBuilds(loadedAppPage(event.sender)?.appId ?? null) : []
-  )
+  ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> => {
+    const caller = await callerUnchanged(event)
+    return caller ? localBuilds(caller.appId) : []
+  })
 
   onRunsChanged(() => void announceBuilds())
 }

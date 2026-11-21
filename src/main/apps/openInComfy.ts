@@ -72,10 +72,11 @@ function refusalText(refusal: OpenRefusal): string {
   }
 }
 
-export async function localBuilds(
-  askingAppId: string | null = null
-): Promise<ComfyDesktopLocalBuild[]> {
-  return (await usableLocalBuilds())
+function describeBuilds(
+  builds: LocalBuild[],
+  askingAppId: string | null
+): ComfyDesktopLocalBuild[] {
+  return [...builds]
     .sort((a, b) => b.lastLaunchedAt - a.lastLaunchedAt)
     .map((build) => ({
       id: build.id,
@@ -86,13 +87,27 @@ export async function localBuilds(
     }))
 }
 
+export async function localBuilds(
+  askingAppId: string | null = null
+): Promise<ComfyDesktopLocalBuild[]> {
+  return describeBuilds(await usableLocalBuilds(), askingAppId)
+}
+
+export async function localBuildsForEach(
+  askingAppIds: readonly (string | null)[]
+): Promise<ComfyDesktopLocalBuild[][]> {
+  const builds = await usableLocalBuilds()
+  return askingAppIds.map((askingAppId) => describeBuilds(builds, askingAppId))
+}
+
 function busyWithOf(
   buildId: string,
   askingAppId: string | null
 ): Pick<ComfyDesktopLocalBuild, 'busyWith'> {
   const appId = busyAppOn(buildId, askingAppId)
   if (appId === null) return {}
-  return { busyWith: { appId, title: titleForListedApp(appId) ?? i18n.t('apps.local.otherApp') } }
+  const title = titleForListedApp(appId)
+  return { busyWith: title === null ? { appId } : { appId, title } }
 }
 
 function pickLocal(builds: LocalBuild[], wanted: string | null): LocalBuild | null {

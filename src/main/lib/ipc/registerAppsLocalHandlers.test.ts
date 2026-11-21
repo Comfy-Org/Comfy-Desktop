@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   localDownload: vi.fn(),
   openInComfy: vi.fn(),
   localBuilds: vi.fn(),
+  localBuildsForEach: vi.fn(),
   loadedApp: 'product-ads' as string | null,
   document: 1,
   whileChecking: () => {},
@@ -52,7 +53,8 @@ vi.mock('../../apps/localComfy', () => ({
 }))
 vi.mock('../../apps/openInComfy', () => ({
   openInComfy: mocks.openInComfy,
-  localBuilds: mocks.localBuilds
+  localBuilds: mocks.localBuilds,
+  localBuildsForEach: mocks.localBuildsForEach
 }))
 vi.mock('../i18n', () => ({ t: (key: string) => key }))
 
@@ -89,6 +91,7 @@ beforeEach(() => {
   mocks.localDownload.mockResolvedValue({ state: 'done' })
   mocks.openInComfy.mockResolvedValue({ opened: true })
   mocks.localBuilds.mockResolvedValue(BUILDS)
+  mocks.localBuildsForEach.mockImplementation(async (askers: unknown[]) => askers.map(() => BUILDS))
   registerAppsLocalHandlers()
 })
 
@@ -197,13 +200,13 @@ describe('telling app pages that a build became busy or free', () => {
     mocks.pages = [page]
     let answerFirst: (builds: unknown) => void = () => {}
     const busy = [{ id: 'inst-1', name: 'Studio', busyWith: { appId: 'a', title: 'A' } }]
-    mocks.localBuilds
+    mocks.localBuildsForEach
       .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
-      .mockResolvedValueOnce(BUILDS)
+      .mockResolvedValueOnce([BUILDS])
 
     mocks.runsChanged?.()
     await runsChange()
-    answerFirst(busy)
+    answerFirst([busy])
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(page.send.mock.calls).toEqual([[APPS_LOCAL_CHANNELS.buildsChanged, BUILDS]])
@@ -214,7 +217,7 @@ describe('telling app pages that a build became busy or free', () => {
 
     await runsChange()
 
-    expect(mocks.localBuilds).toHaveBeenCalledWith('product-ads')
+    expect(mocks.localBuildsForEach).toHaveBeenCalledExactlyOnceWith(['product-ads'])
   })
 
   it('tells no page once Apps is turned off', async () => {
@@ -225,12 +228,12 @@ describe('telling app pages that a build became busy or free', () => {
     await runsChange()
 
     expect(page.send).not.toHaveBeenCalled()
-    expect(mocks.localBuilds).not.toHaveBeenCalled()
+    expect(mocks.localBuildsForEach).not.toHaveBeenCalled()
   })
 
   it('does not look up the builds when no app page is open', async () => {
     await runsChange()
 
-    expect(mocks.localBuilds).not.toHaveBeenCalled()
+    expect(mocks.localBuildsForEach).not.toHaveBeenCalled()
   })
 })

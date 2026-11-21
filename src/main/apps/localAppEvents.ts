@@ -175,8 +175,11 @@ export function noteRunMessage(message: unknown, now = Date.now()): void {
   const at = timeOf(data, now)
   const run = runs.get(promptId)
   if (type === 'execution_start') {
-    if (run) run.startedAt ??= at
-    else noteEarly(promptId, { startedAt: at })
+    if (!run) noteEarly(promptId, { startedAt: at })
+    else if (run.startedAt === undefined) {
+      run.startedAt = at
+      runsChanged()
+    }
     return
   }
   const outcome = RUN_ENDS[type]

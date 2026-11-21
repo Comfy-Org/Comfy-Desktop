@@ -830,6 +830,17 @@ describe('which app a build is busy with', () => {
     expect(watcher).toHaveBeenCalledTimes(1)
   })
 
+  it('tells its watchers when a queued run starts working', () => {
+    runAccepted('run-1', 'inst-1', 'product-ads', 1)
+    const watcher = vi.fn()
+    onRunsChanged(watcher)
+
+    noteRunMessage(message('execution_start', { timestamp: 2 }, 'run-1'))
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-1'))
+
+    expect(watcher).toHaveBeenCalledTimes(1)
+  })
+
   it('tells its watchers when a run starts or ends', () => {
     const watcher = vi.fn()
     const stop = onRunsChanged(watcher)

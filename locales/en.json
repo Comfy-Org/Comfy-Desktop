@@ -88,8 +88,7 @@
       "openCloudFailed": "Comfy Desktop could not open Comfy Cloud.",
       "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
       "openUnreadable": "Comfy Desktop could not read this file. Try again.",
-      "openNotTaken": "ComfyUI did not open the workflow.",
-      "otherApp": "another app"
+      "openNotTaken": "ComfyUI did not open the workflow."
     },
     "closeWhileRunning": {
       "title": "Close anyway?",

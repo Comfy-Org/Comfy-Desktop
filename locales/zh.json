@@ -88,8 +88,7 @@
       "openCloudFailed": "Comfy Desktop 无法打开 Comfy Cloud。",
       "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
       "openUnreadable": "Comfy Desktop 无法读取此文件。请重试。",
-      "openNotTaken": "ComfyUI 没有打开这个工作流。",
-      "otherApp": "另一个应用"
+      "openNotTaken": "ComfyUI 没有打开这个工作流。"
     },
     "closeWhileRunning": {
       "title": "仍要关闭？",
