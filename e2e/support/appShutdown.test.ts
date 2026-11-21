@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createShutdown,
   descendantsOf,
+  EXIT_SETTLE_MS,
   isPidAlive,
   killProcessTrees,
   listProcesses,
@@ -54,6 +55,10 @@ async function launchShellAndApp(
 }
 
 const never = (): Promise<void> => new Promise(() => {})
+
+function blockFor(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
 
 async function withoutProcessTools<T>(run: () => Promise<T>): Promise<T> {
   const path = process.env['PATH']
@@ -129,6 +134,71 @@ describe('app shutdown', () => {
     await expect(shutdown()).rejects.toThrow(String(appPid))
   })
 
+  it('keeps a slow forced kill inside the shutdown deadline', async () => {
+    const { launcher, appPid } = await launchShellAndApp()
+    const gracefulCloseMs = 50
+    const forcedExitMs = 200
+    const shutdownMs = gracefulCloseMs + EXIT_SETTLE_MS + forcedExitMs
+    const killBudgets: number[] = []
+    const startedAt = Date.now()
+    const { shutdown } = createShutdown(
+      { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+      {
+        gracefulCloseMs,
+        forcedExitMs,
+        log: () => {},
+        forceKill: (_pids, timeoutMs) => {
+          killBudgets.push(timeoutMs)
+          blockFor(timeoutMs)
+        }
+      }
+    )
+
+    await expect(shutdown()).rejects.toThrow(String(appPid))
+
+    expect(killBudgets).toHaveLength(1)
+    expect(killBudgets[0]!, 'the kill only gets what the graceful close left').toBeLessThanOrEqual(
+      shutdownMs - gracefulCloseMs
+    )
+    expect(Date.now() - startedAt, 'the shutdown ends near its deadline').toBeLessThan(
+      shutdownMs + 1_000
+    )
+  })
+
+  it('gives a slow process query only what is left of the shutdown deadline', async () => {
+    const { launcher, appPid } = await launchShellAndApp()
+    const queryBudgets: number[] = []
+    const startedAt = Date.now()
+    const { shutdown } = createShutdown(
+      {
+        launcher,
+        appPid,
+        appStartTime: 'the start time recorded at launch',
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
+      {
+        gracefulCloseMs: 50,
+        forcedExitMs: 200,
+        log: () => {},
+        readStartTime: (_pid, timeoutMs) => {
+          queryBudgets.push(timeoutMs)
+          blockFor(Math.min(timeoutMs, 300))
+          return 'the start time recorded at launch'
+        }
+      }
+    )
+
+    await shutdown()
+
+    expect(queryBudgets).toHaveLength(2)
+    expect(queryBudgets[1]!, 'the second lookup gets less time than the first').toBeLessThanOrEqual(
+      queryBudgets[0]! - 300
+    )
+    expect(Date.now() - startedAt).toBeLessThan(50 + EXIT_SETTLE_MS + 200 + 1_000)
+    expect(isPidAlive(appPid)).toBe(false)
+  })
+
   it('runs one shutdown when cleanup is called twice at once', async () => {
     const { launcher, appPid } = await launchShellAndApp()
     const closeGracefully = vi.fn(never)
@@ -150,6 +220,8 @@ describe('app shutdown', () => {
         LAUNCHER_THAT_STARTS_AN_APP_WITH_A_HELPER
       )
       await vi.waitFor(() => expect(descendantsOf([appPid]).size).toBe(1))
+      const discoveredHelpers = [...descendantsOf([appPid]).keys()]
+      started.push(...discoveredHelpers)
       const killed: number[] = []
       await createShutdown(
         { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
@@ -164,8 +236,7 @@ describe('app shutdown', () => {
       ).shutdown()
 
       const helpers = killed.filter((pid) => pid !== launcher.pid && pid !== appPid)
-      started.push(...helpers)
-      expect(helpers, 'the helper was part of the forced kill').toHaveLength(1)
+      expect(helpers, 'the helper was part of the forced kill').toEqual(discoveredHelpers)
       expect(helpers.filter(isPidAlive), 'no helper outlives the shutdown').toEqual([])
     }
   )
@@ -217,6 +288,26 @@ describe('app shutdown', () => {
       expect(isPidAlive(helperPid!)).toBe(false)
     }
   )
+
+  it('does not signal a process that took over the app pid while the app was closing', async () => {
+    const { appPid } = await launchShellAndApp()
+    const startTimes = ['the start time recorded at launch', 'a later process on the same pid']
+    const forceKill = vi.fn()
+
+    await createShutdown(
+      {
+        launcher: undefined,
+        appPid,
+        appStartTime: startTimes[0],
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
+      { gracefulCloseMs: 50, log: () => {}, forceKill, readStartTime: () => startTimes.shift() }
+    ).shutdown()
+
+    expect(forceKill).not.toHaveBeenCalledWith(expect.arrayContaining([appPid]), expect.anything())
+    expect(isPidAlive(appPid), 'the unrelated process still runs').toBe(true)
+  })
 
   it.skipIf(process.platform === 'win32')(
     'fails instead of reporting success when it cannot list processes',

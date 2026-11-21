@@ -4,7 +4,7 @@ import process from 'node:process'
 export const GRACEFUL_CLOSE_DEADLINE_MS = 10_000
 export const FORCED_EXIT_DEADLINE_MS = 10_000
 const EXIT_POLL_MS = 100
-const EXIT_SETTLE_MS = 2_000
+export const EXIT_SETTLE_MS = 2_000
 
 export interface ShutdownTarget {
   launcher: ChildProcess | undefined
@@ -18,9 +18,9 @@ export interface ShutdownTarget {
 export interface ShutdownOptions {
   gracefulCloseMs?: number
   forcedExitMs?: number
-  forceKill?: (pids: number[]) => void
+  forceKill?: (pids: number[], timeoutMs: number) => void
   log?: (line: string) => void
-  readStartTime?: (pid: number) => string | undefined
+  readStartTime?: (pid: number, timeoutMs: number) => string | undefined
 }
 
 export interface ShutdownHandle {
@@ -38,10 +38,12 @@ export class ProcessLookupError extends Error {}
 
 const isZombieState = (state: string): boolean => state.startsWith('Z')
 
-function isUnreapedZombie(pid: number): boolean {
+const msUntil = (stopBy: number): number => Math.max(1, stopBy - Date.now())
+
+function isUnreapedZombie(pid: number, timeoutMs: number): boolean {
   const result = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], {
     encoding: 'utf8',
-    timeout: FORCED_EXIT_DEADLINE_MS
+    timeout: timeoutMs
   })
   if (result.error || result.status === null) {
     throw new ProcessLookupError(`[e2e-harness] could not read the state of process ${pid}`)
@@ -51,22 +53,25 @@ function isUnreapedZombie(pid: number): boolean {
   return isZombieState(state)
 }
 
-export function isPidAlive(pid: number): boolean {
+function isPidAliveWithin(pid: number, timeoutMs: number): boolean {
   try {
     process.kill(pid, 0)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EPERM') return false
   }
   if (process.platform === 'win32') return true
-  return !isUnreapedZombie(pid)
+  return !isUnreapedZombie(pid, timeoutMs)
 }
 
-export function killProcessTrees(pids: number[]): void {
+export const isPidAlive = (pid: number): boolean => isPidAliveWithin(pid, FORCED_EXIT_DEADLINE_MS)
+
+export function killProcessTrees(pids: number[], timeoutMs = FORCED_EXIT_DEADLINE_MS): void {
+  const stopBy = Date.now() + timeoutMs
   for (const pid of pids) {
     if (process.platform === 'win32') {
       spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], {
         stdio: 'ignore',
-        timeout: FORCED_EXIT_DEADLINE_MS,
+        timeout: msUntil(stopBy),
         windowsHide: true
       })
       continue
@@ -77,10 +82,10 @@ export function killProcessTrees(pids: number[]): void {
   }
 }
 
-export function listProcesses(): Map<number, ListedProcess> {
+export function listProcesses(timeoutMs = FORCED_EXIT_DEADLINE_MS): Map<number, ListedProcess> {
   const listing = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,stat=,lstart=,command='], {
     encoding: 'utf8',
-    timeout: FORCED_EXIT_DEADLINE_MS
+    timeout: timeoutMs
   })
   if (listing.status !== 0) {
     throw new ProcessLookupError('[e2e-harness] could not list processes with ps')
@@ -98,8 +103,11 @@ export function listProcesses(): Map<number, ListedProcess> {
   return processes
 }
 
-export function processStartTime(pid: number): string | undefined {
-  if (process.platform !== 'win32') return listProcesses().get(pid)?.startTime
+export function processStartTime(
+  pid: number,
+  timeoutMs = FORCED_EXIT_DEADLINE_MS
+): string | undefined {
+  if (process.platform !== 'win32') return listProcesses(timeoutMs).get(pid)?.startTime
   const result = spawnSync(
     'powershell',
     [
@@ -108,7 +116,7 @@ export function processStartTime(pid: number): string | undefined {
       '-Command',
       `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $p.StartTime.ToFileTimeUtc() }`
     ],
-    { encoding: 'utf8', timeout: FORCED_EXIT_DEADLINE_MS, windowsHide: true }
+    { encoding: 'utf8', timeout: timeoutMs, windowsHide: true }
   )
   if (result.status !== 0) {
     throw new ProcessLookupError(`[e2e-harness] could not read the start time of process ${pid}`)
@@ -160,6 +168,7 @@ export function createShutdown(
 ): ShutdownHandle {
   const gracefulCloseMs = options.gracefulCloseMs ?? GRACEFUL_CLOSE_DEADLINE_MS
   const forcedExitMs = options.forcedExitMs ?? FORCED_EXIT_DEADLINE_MS
+  const shutdownMs = gracefulCloseMs + EXIT_SETTLE_MS + forcedExitMs
   const forceKill = options.forceKill ?? killProcessTrees
   const log = options.log ?? ((line: string) => console.log(line))
   const readStartTime = options.readStartTime ?? processStartTime
@@ -170,17 +179,21 @@ export function createShutdown(
     !!launcher && launcher.exitCode === null && launcher.signalCode === null
   let appPid = target.appPid !== launcher?.pid ? target.appPid : undefined
   const helpers = new Map<number, string>()
+  let shutdownStopBy: number | undefined
+
+  const queryTimeoutMs = (): number =>
+    shutdownStopBy === undefined ? FORCED_EXIT_DEADLINE_MS : msUntil(shutdownStopBy)
 
   const rootPids = (): number[] => {
     const pids: number[] = []
     if (launcherAlive() && launcher?.pid !== undefined) pids.push(launcher.pid)
-    if (appPid !== undefined && isPidAlive(appPid)) pids.push(appPid)
+    if (appPid !== undefined && isPidAliveWithin(appPid, queryTimeoutMs())) pids.push(appPid)
     return pids
   }
 
   const trackHelpers = (): void => {
     if (!helpersAreTracked) return
-    const processes = listProcesses()
+    const processes = listProcesses(queryTimeoutMs())
     const roots = rootPids()
     for (const [pid, startTime] of descendantsOf(roots, processes)) helpers.set(pid, startTime)
     if (!target.profileDir) return
@@ -192,7 +205,7 @@ export function createShutdown(
 
   const liveHelpers = (): number[] => {
     if (!helpersAreTracked || helpers.size === 0) return []
-    const processes = listProcesses()
+    const processes = listProcesses(queryTimeoutMs())
     return [...helpers]
       .filter(([pid, startTime]) => processes.get(pid)?.startTime === startTime)
       .map(([pid]) => pid)
@@ -202,10 +215,10 @@ export function createShutdown(
 
   const forgetAppIfItsPidWasReused = (): void => {
     if (appPid === undefined || target.appStartTime === undefined) return
-    if (!isPidAlive(appPid)) return
-    const startTime = readStartTime(appPid)
+    if (!isPidAliveWithin(appPid, queryTimeoutMs())) return
+    const startTime = readStartTime(appPid, queryTimeoutMs())
     if (startTime === undefined) {
-      if (!isPidAlive(appPid)) return
+      if (!isPidAliveWithin(appPid, queryTimeoutMs())) return
       throw new ProcessLookupError(
         `[e2e-harness] process ${appPid} is running but its start time could not be read`
       )
@@ -213,40 +226,51 @@ export function createShutdown(
     if (startTime !== target.appStartTime) appPid = undefined
   }
 
-  const waitForExit = async (ms: number): Promise<boolean> => {
-    const stopBy = Date.now() + ms
-    while (livePids().length > 0) {
-      if (Date.now() >= stopBy) return false
-      await wait(EXIT_POLL_MS)
+  const phaseEnd = (stopBy: number, phaseMs: number): number =>
+    Math.min(Date.now() + phaseMs, stopBy)
+
+  const survivorsAt = async (until: number): Promise<number[]> => {
+    for (;;) {
+      const alive = livePids()
+      if (alive.length === 0 || Date.now() >= until) return alive
+      await wait(Math.min(EXIT_POLL_MS, until - Date.now()))
     }
-    return true
   }
 
-  const allGoneWithin = async (ms: number): Promise<boolean> => {
-    if (!(await waitForExit(ms))) return false
+  const survivorsIncludingNewHelpersAt = async (until: number): Promise<number[]> => {
+    const alive = await survivorsAt(until)
+    if (alive.length > 0) return alive
     trackHelpers()
-    return livePids().length === 0
+    return livePids()
   }
 
-  const run = async (): Promise<void> => {
+  const run = async (stopBy: number): Promise<void> => {
+    shutdownStopBy = stopBy
     forgetAppIfItsPidWasReused()
     trackHelpers()
     let quitOnItsOwn = true
     if (livePids().length > 0 && !target.connectionClosed()) {
-      quitOnItsOwn = await closeWithin(target.closeGracefully, gracefulCloseMs)
+      const closeMs = Math.min(gracefulCloseMs, msUntil(stopBy))
+      quitOnItsOwn = await closeWithin(target.closeGracefully, closeMs)
       if (!quitOnItsOwn) {
-        log(`[e2e-harness] app did not quit within ${gracefulCloseMs}ms, killing it`)
+        log(`[e2e-harness] app did not quit within ${closeMs}ms, killing it`)
       }
     }
-    if (quitOnItsOwn && (await allGoneWithin(EXIT_SETTLE_MS))) return
+    if (quitOnItsOwn) {
+      const settled = await survivorsIncludingNewHelpersAt(phaseEnd(stopBy, EXIT_SETTLE_MS))
+      if (settled.length === 0) return
+    }
+    forgetAppIfItsPidWasReused()
     trackHelpers()
-    forceKill(livePids())
-    if (await allGoneWithin(forcedExitMs)) return
+    const killedAt = Date.now()
+    forceKill(livePids(), msUntil(stopBy))
+    const survivors = await survivorsIncludingNewHelpersAt(phaseEnd(stopBy, forcedExitMs))
+    if (survivors.length === 0) return
     throw new Error(
-      `[e2e-harness] app processes ${livePids().join(', ')} still running ${forcedExitMs}ms after a forced kill`
+      `[e2e-harness] app processes ${survivors.join(', ')} still running ${Date.now() - killedAt}ms after a forced kill`
     )
   }
 
   let running: Promise<void> | undefined
-  return { shutdown: () => (running ??= run()), trackHelpers }
+  return { shutdown: () => (running ??= run(Date.now() + shutdownMs)), trackHelpers }
 }

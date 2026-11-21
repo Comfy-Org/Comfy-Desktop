@@ -5,7 +5,12 @@ import process from 'node:process'
 import { test } from '@playwright/test'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 
-import { createShutdown, processStartTime } from './appShutdown'
+import {
+  createShutdown,
+  processStartTime,
+  type ShutdownHandle,
+  type ShutdownTarget
+} from './appShutdown'
 import { evalWithRetry } from './evalRetry'
 import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
 import { recordVideoOptions } from './videoRecording'
@@ -104,6 +109,63 @@ function buildIsolatedEnv(
   if (opsFlagsSeed) env['E2E_OPS_FLAGS_SEED'] = JSON.stringify(opsFlagsSeed)
 
   return env
+}
+
+async function showWindowAndLogAppEvents(application: ElectronApplication): Promise<void> {
+  const page = await application.firstWindow()
+  await page.waitForLoadState('domcontentloaded')
+  await evalWithRetry(() =>
+    application.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win && !win.isVisible()) win.show()
+    })
+  )
+
+  await evalWithRetry(() =>
+    application.evaluate(({ app: electronApp, dialog }) => {
+      dialog.showErrorBox = () => {}
+      const marked = electronApp as typeof electronApp & {
+        __e2eRendererLossLogged?: boolean
+      }
+      if (!marked.__e2eRendererLossLogged) {
+        marked.__e2eRendererLossLogged = true
+        electronApp.on('render-process-gone', (_event, contents, details) => {
+          const pageWithoutSecrets = (): string => {
+            if (contents.isDestroyed()) return '(destroyed)'
+            try {
+              const { protocol, host, pathname } = new URL(contents.getURL())
+              return `${protocol}//${host}${pathname}`
+            } catch {
+              return '(unparsed)'
+            }
+          }
+          console.error(
+            `[e2e-harness] renderer gone reason=${details.reason} exitCode=${details.exitCode} page=${pageWithoutSecrets()}`
+          )
+        })
+        electronApp.on('child-process-gone', (_event, details) => {
+          console.error(
+            `[e2e-harness] child process gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`
+          )
+        })
+        for (const name of ['before-quit', 'will-quit', 'quit'] as const) {
+          electronApp.on(name as 'quit', () => {
+            console.error(`[e2e-harness] app ${name}\n${new Error().stack ?? ''}`)
+          })
+        }
+        const quit = electronApp.quit.bind(electronApp)
+        electronApp.quit = () => {
+          console.error(`[e2e-harness] app.quit() called\n${new Error().stack ?? ''}`)
+          quit()
+        }
+        const exit = electronApp.exit.bind(electronApp)
+        electronApp.exit = (code?: number) => {
+          console.error(`[e2e-harness] app.exit(${code}) called\n${new Error().stack ?? ''}`)
+          exit(code)
+        }
+      }
+    })
+  )
 }
 
 export async function launchLauncherApp(options?: SeedOptions): Promise<LauncherAppHandle> {
@@ -232,80 +294,40 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     ...(recordVideo ? { recordVideo } : {})
   })
 
-  const page = await application.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  await evalWithRetry(() =>
-    application.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0]
-      if (win && !win.isVisible()) win.show()
-    })
-  )
-
-  await evalWithRetry(() =>
-    application.evaluate(({ app: electronApp, dialog }) => {
-      dialog.showErrorBox = () => {}
-      const marked = electronApp as typeof electronApp & {
-        __e2eRendererLossLogged?: boolean
-      }
-      if (!marked.__e2eRendererLossLogged) {
-        marked.__e2eRendererLossLogged = true
-        electronApp.on('render-process-gone', (_event, contents, details) => {
-          const pageWithoutSecrets = (): string => {
-            if (contents.isDestroyed()) return '(destroyed)'
-            try {
-              const { protocol, host, pathname } = new URL(contents.getURL())
-              return `${protocol}//${host}${pathname}`
-            } catch {
-              return '(unparsed)'
-            }
-          }
-          console.error(
-            `[e2e-harness] renderer gone reason=${details.reason} exitCode=${details.exitCode} page=${pageWithoutSecrets()}`
-          )
-        })
-        electronApp.on('child-process-gone', (_event, details) => {
-          console.error(
-            `[e2e-harness] child process gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`
-          )
-        })
-        for (const name of ['before-quit', 'will-quit', 'quit'] as const) {
-          electronApp.on(name as 'quit', () => {
-            console.error(`[e2e-harness] app ${name}\n${new Error().stack ?? ''}`)
-          })
-        }
-        const quit = electronApp.quit.bind(electronApp)
-        electronApp.quit = () => {
-          console.error(`[e2e-harness] app.quit() called\n${new Error().stack ?? ''}`)
-          quit()
-        }
-        const exit = electronApp.exit.bind(electronApp)
-        electronApp.exit = (code?: number) => {
-          console.error(`[e2e-harness] app.exit(${code}) called\n${new Error().stack ?? ''}`)
-          exit(code)
-        }
-      }
-    })
-  )
-
   let connectionClosed = false
   application.once('close', () => {
     connectionClosed = true
   })
+  const shutdownTarget = (appPid?: number, appStartTime?: string): ShutdownTarget => ({
+    launcher: application.process() ?? undefined,
+    appPid,
+    appStartTime,
+    profileDir: homeDir,
+    closeGracefully: () => application.close(),
+    connectionClosed: () => connectionClosed
+  })
+
   application.process()?.once('exit', (code, signal) => {
     console.log(
       `[e2e-harness] app process ended at ${new Date().toISOString()} code=${code} signal=${signal}`
     )
   })
 
-  const appPid = await evalWithRetry(() => application.evaluate(() => globalThis.process.pid))
-  const { shutdown, trackHelpers } = createShutdown({
-    launcher: application.process() ?? undefined,
-    appPid,
-    appStartTime: processStartTime(appPid),
-    profileDir: homeDir,
-    closeGracefully: () => application.close(),
-    connectionClosed: () => connectionClosed
-  })
+  let appPid: number | undefined
+  let shutdownHandle: ShutdownHandle
+  try {
+    await showWindowAndLogAppEvents(application)
+    appPid = await evalWithRetry(() => application.evaluate(() => globalThis.process.pid))
+    shutdownHandle = createShutdown(shutdownTarget(appPid, processStartTime(appPid)))
+  } catch (error) {
+    await createShutdown(shutdownTarget(appPid))
+      .shutdown()
+      .catch((stopError: unknown) => {
+        console.error(`[e2e-harness] could not stop the app after a failed launch: ${stopError}`)
+      })
+    throw error
+  }
+  const { shutdown, trackHelpers } = shutdownHandle
   const trackHelpersNow = (): void => {
     try {
       trackHelpers()
