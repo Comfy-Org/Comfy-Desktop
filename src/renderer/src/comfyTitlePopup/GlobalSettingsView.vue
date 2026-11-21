@@ -321,12 +321,14 @@ onMounted(() => {
         class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto pt-8 pr-8 pb-8 pl-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
-          <SettingsSectionList
-            class="gs-language [&_.settings-v2-field]:flex-row [&_.settings-v2-field]:items-center [&_.settings-v2-field]:justify-between [&_.settings-v2-field]:gap-3 [&_.settings-v2-field>:last-child]:w-40 [&_.settings-v2-field>:last-child]:flex-none [&_.ui-select-trigger]:h-8"
-            :sections="languageSections"
-            @update-field="handleUpdateField"
-            @open-path="handleOpenPath"
-          />
+          <GlobalSettingsMicroSection :title="t('settings.generalSection')">
+            <SettingsSectionList
+              class="gs-language [&_.settings-v2-field]:flex-row [&_.settings-v2-field]:items-center [&_.settings-v2-field]:justify-between [&_.settings-v2-field]:gap-3 [&_.settings-v2-field>:last-child]:w-40 [&_.settings-v2-field>:last-child]:flex-none [&_.ui-select-trigger]:h-8"
+              :sections="languageSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
+          </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.appBehavior')">
             <SettingsSectionList

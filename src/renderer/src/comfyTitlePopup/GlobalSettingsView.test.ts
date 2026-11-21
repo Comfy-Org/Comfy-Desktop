@@ -206,6 +206,27 @@ describe('GlobalSettingsView', () => {
     expect(background('.gs-pane'), 'the settings sit on the card itself').toBe(transparent)
   })
 
+  it('groups Language under General, ahead of the other Preferences groups', async () => {
+    installMockBridge()
+    const wrapper = mountView(
+      makeSnapshot({
+        languageFields: [
+          { id: 'language', label: 'Language', value: 'en', editable: true, editType: 'select' }
+        ]
+      })
+    )
+    await flushPromises()
+    const sections = wrapper.findAll('.gs-micro-section')
+
+    expect(sections.map((section) => section.get('.gs-micro-title').text())).toEqual([
+      'General',
+      'App behavior',
+      'Privacy',
+      'Community'
+    ])
+    expect(sections[0]!.find('.gs-language').exists(), 'Language sits in General').toBe(true)
+  })
+
   it('keeps the Language menu as short as a toggle row', async () => {
     document.documentElement.setAttribute('data-theme', 'dark')
     installMockBridge()
