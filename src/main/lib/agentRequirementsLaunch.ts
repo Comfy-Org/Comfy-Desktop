@@ -378,12 +378,11 @@ function uvErrorSection(output: string): string | null {
   return start === -1 ? null : lines.slice(start).join('\n').trim()
 }
 
-function cannotDownload(result: CachedResult): boolean {
+function cannotDownload(result: CachedResult): 'no_solution' | 'other' | false {
   if (!result.online || result.report.outcome !== 'exited') return false
+  if (NO_SOLUTION.test(stripAnsi(result.output))) return 'no_solution'
   const error = uvErrorSection(result.output)
-  return (
-    NO_SOLUTION.test(stripAnsi(result.output)) || (error !== null && !DOWNLOAD_FAILED.test(error))
-  )
+  return error !== null && !DOWNLOAD_FAILED.test(error) ? 'other' : false
 }
 
 export type Deferral = 'agent' | 'update'
@@ -652,9 +651,9 @@ async function tryOverride(
     })
     if (signal?.aborted) return { decision: 'reverted', reason: 'install_failed', pins }
     if (!installed.ok) {
-      return cannotDownload(installed)
-        ? revertOnInstall(sendOutput, pins, installed.report)
-        : deferOverride(sendOutput, pins, installed.report)
+      const cause = cannotDownload(installed)
+      if (!cause) return deferOverride(sendOutput, pins, installed.report)
+      return revertOnInstall(sendOutput, pins, installed.report, cause === 'no_solution')
     }
   } catch {
     return revertOnInstall(sendOutput, pins)
@@ -840,12 +839,14 @@ function deferOverride(
 function revertOnInstall(
   sendOutput: (text: string) => void,
   pins: OverridePins,
-  install?: InstallReport
+  install?: InstallReport,
+  noSolution = false
 ): OverrideDecision {
   sendOutput(
-    `agent version override ${overrideSignature(pins)} did not install; using ComfyUI's versions\n`
+    `agent version override ${overrideSignature(pins)} ${noSolution ? 'found no solution' : 'did not install'}; using ComfyUI's versions\n`
   )
-  return { decision: 'reverted', reason: 'install_failed', pins, ...(install ? { install } : {}) }
+  const reason = noSolution ? 'resolve_failed' : 'install_failed'
+  return { decision: 'reverted', reason, pins, ...(install ? { install } : {}) }
 }
 
 const FRONTEND_RESTORE_TIMEOUT_MS = 60_000

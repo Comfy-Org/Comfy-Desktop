@@ -365,6 +365,24 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(api.returnToDashboard).toHaveBeenCalledTimes(1)
   })
 
+  it('starts Stop process and retry from a neutral button and confirms killing the other process in red', async () => {
+    const api = installMockApi()
+    api.killPortProcess.mockResolvedValue({ ok: false })
+    const portConflict: PortConflictInfo = { port: 8188, pids: [777], isComfy: true }
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      finished: true,
+      result: { ok: false, message: 'Port 8188 is already in use', portConflict } as ActionResult
+    })
+
+    const killButton = '[data-testid="progress-port-conflict-kill"]'
+    expect(body.classList(killButton).some((name) => name.includes('danger'))).toBe(false)
+    expect(await body.click(killButton)).toBe(true)
+    await flushPromises()
+
+    expect(mockModal.confirm.mock.lastCall![0]).toMatchObject({ confirmStyle: 'danger' })
+  })
+
   it('says so when "Stop process and retry" could not free the port', async () => {
     const api = installMockApi()
     api.killPortProcess.mockResolvedValue({ ok: false })
@@ -376,7 +394,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
     expect(body.selectorText('.brand-progress__error-message')).not.toContain('Could not free')
 
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
 
     expect(api.killPortProcess).toHaveBeenCalledWith(8188)
@@ -410,15 +428,15 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and start this build')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
 
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
 
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        confirmLabel: 'Stop it and start this build',
-        confirmStyle: 'danger'
+        confirmLabel: 'Stop it and start this build'
       })
     )
+    expect(mockModal.confirm.mock.lastCall![0]).not.toHaveProperty('confirmStyle')
     expect(api.killPortProcess).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
   })
@@ -474,7 +492,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       'An earlier ComfyUI is still running'
     )
     expect(body.selectorText('.brand-progress__banner')).not.toContain('running a prompt')
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -504,7 +522,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       'Processes from an earlier ComfyUI are still running'
     )
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and start this build')
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({

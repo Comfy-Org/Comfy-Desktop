@@ -54,6 +54,7 @@ import {
 } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
 import { startFirstBuildWithDesktop } from '../firstBuildAutoStart'
+import { seedNewInstallComfySettings } from '../newInstallSettings'
 
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
   void runStartupReleaseChecks(allInstalls, {
@@ -296,6 +297,7 @@ export function registerInstallationHandlers(): void {
             installations.update(installationId, data).then(() => {})
           await source.postInstall(inst, { sendProgress, sendOutput, update, signal: abort.signal })
         }
+        if (!isComfyUpdate) await seedNewInstallComfySettings(inst)
 
         const freshInst = await installations.get(installationId)
         const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined
