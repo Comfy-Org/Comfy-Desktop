@@ -24,6 +24,7 @@ import { useTheme } from '../composables/useTheme'
 import { provideLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
@@ -69,6 +70,7 @@ const urlFirstUsePending = params.get('firstUseCompleted') === 'false'
 const sessionStore = useSessionStore()
 provideLocalDeviceKind()
 const installationStore = useInstallationStore()
+const progressStore = useProgressStore()
 const launcherPrefs = useLauncherPrefs()
 void launcherPrefs.loadPrefs()
 const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
@@ -323,6 +325,15 @@ function retryLaunch(id: string): void {
   if (inst) void handleChooserPick(inst)
 }
 
+function showStartingBuild(inst: Installation): void {
+  const op = progressStore.operations.get(inst.id)
+  if (op && !op.finished) {
+    buildProgressId.value = inst.id
+    return
+  }
+  if (!installationId && buildDetailsInstall.value?.id !== inst.id) void openBuildFromSidebar(inst)
+}
+
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
   await handleChooserPick(inst)
@@ -360,7 +371,8 @@ const performanceTestRunActive = ref(false)
 chooserHandoff = useChooserHandoff({
   showProgress: handleShowProgress,
   switchPanel,
-  hostOwnsPerformanceTestRun: () => performanceTestRunActive.value
+  hostOwnsPerformanceTestRun: () => performanceTestRunActive.value,
+  showStartingBuild
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 

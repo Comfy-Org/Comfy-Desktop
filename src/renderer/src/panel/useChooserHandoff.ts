@@ -8,9 +8,11 @@ export interface ChooserHandoffOpts {
   showProgress: (opts: ShowProgressOpts) => Promise<void>
   switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
   hostOwnsPerformanceTestRun: () => boolean
+  showStartingBuild: (installation: Installation) => void
 }
 
-export type ChooserLaunchOutcome = 'focused-running' | 'launched' | 'missing-action'
+export type ChooserLaunchOutcome =
+  'focused-running' | 'already-starting' | 'launched' | 'missing-action'
 
 interface PickerLaunchOptions {
   isRestart?: boolean
@@ -37,6 +39,7 @@ export interface ChooserHandoffApi {
 }
 
 export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
+  const { showStartingBuild } = opts
   const sessionStore = useSessionStore()
   const { executeAction: executeChooserAction } = useListAction('chooser', {
     showProgress: opts.showProgress
@@ -78,6 +81,11 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
         await window.api.focusComfyWindow(installation.id)
       }
       return 'focused-running'
+    }
+    if (sessionStore.isLaunching(installation.id)) {
+      const focused = await window.api.focusComfyWindow(installation.id)
+      if (!focused) showStartingBuild(installation)
+      return 'already-starting'
     }
     const actions = await window.api.getListActions(installation.id)
     const launchAction =
