@@ -288,7 +288,9 @@ onMounted(() => {
       orientation="vertical"
       class="gs-card min-w-0 flex-auto flex-row gap-0 overflow-hidden rounded-[16px] bg-neutral-900 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
     >
-      <div class="gs-nav flex w-52 flex-[0_0_208px] flex-col gap-4 pt-7 pr-3 pb-6 pl-6">
+      <div
+        class="gs-nav m-2 mr-0 flex w-50 flex-[0_0_200px] flex-col gap-4 rounded-[14px] bg-[color-mix(in_oklch,white_5%,var(--color-neutral-900))] pt-5 pr-2 pb-4 pl-4"
+      >
         <h2
           class="gs-title m-0 px-2 font-sans text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"
         >
@@ -316,11 +318,11 @@ onMounted(() => {
       <TabsContent
         :key="activeTab"
         :value="activeTab"
-        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 m-2 ml-0 overflow-y-auto rounded-[14px] bg-[color-mix(in_oklch,white_5%,var(--color-neutral-900))] p-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto pt-8 pr-8 pb-8 pl-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
           <SettingsSectionList
-            class="gs-language [&_.settings-v2-field]:flex-row [&_.settings-v2-field]:items-center [&_.settings-v2-field]:justify-between [&_.settings-v2-field]:gap-3 [&_.settings-v2-field>:last-child]:w-50 [&_.settings-v2-field>:last-child]:flex-none"
+            class="gs-language [&_.settings-v2-field]:flex-row [&_.settings-v2-field]:items-center [&_.settings-v2-field]:justify-between [&_.settings-v2-field]:gap-3 [&_.settings-v2-field>:last-child]:w-40 [&_.settings-v2-field>:last-child]:flex-none [&_.ui-select-trigger]:h-8"
             :sections="languageSections"
             @update-field="handleUpdateField"
             @open-path="handleOpenPath"

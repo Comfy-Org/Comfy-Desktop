@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+import '../assets/main.css'
 import { useModal } from '../composables/useModal'
 import GlobalSettingsView from './GlobalSettingsView.vue'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
@@ -189,6 +190,42 @@ describe('GlobalSettingsView', () => {
     const tabLabels = wrapper.findAll('.gs-tab').map((t) => t.text())
     expect(tabLabels).toEqual(['General', 'Updates', 'Folders', 'Advanced', 'Logs'])
     expect(wrapper.find('.gs-tab.active').text()).toBe('General')
+  })
+
+  it('puts the tab list on the lighter panel and the settings on the card, like build settings', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const wrapper = mountView()
+    await flushPromises()
+    const background = (selector: string): string =>
+      getComputedStyle(wrapper.get(selector).element).backgroundColor
+    const transparent = 'rgba(0, 0, 0, 0)'
+
+    expect(background('.gs-nav'), 'the tab list sits on a panel').not.toBe(transparent)
+    expect(background('.gs-nav')).not.toBe(background('.gs-card'))
+    expect(background('.gs-pane'), 'the settings sit on the card itself').toBe(transparent)
+  })
+
+  it('keeps the Language menu as short as a toggle row', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const languageField = {
+      id: 'language',
+      label: 'Language',
+      value: 'en',
+      editable: true,
+      editType: 'select',
+      options: [
+        { value: 'en', label: 'English' },
+        { value: 'zh', label: '中文' }
+      ]
+    }
+    const wrapper = mountView(makeSnapshot({ languageFields: [languageField] }))
+    await flushPromises()
+    const trigger = wrapper.get('.gs-language .ui-select-trigger').element as HTMLElement
+
+    expect(trigger.getBoundingClientRect().height).toBe(32)
+    expect(trigger.getBoundingClientRect().width).toBe(160)
   })
 
   it('keeps a requested tab when the popup refocuses the tab that had focus before', async () => {
