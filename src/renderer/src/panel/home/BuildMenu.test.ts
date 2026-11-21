@@ -311,7 +311,7 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('shows the update beside the version and keeps the whole tile as the primary button', async () => {
+  it('shows the update beside the version as its own link and keeps the whole tile as the primary button', async () => {
     const build: Installation = {
       ...BUILD,
       statusTag: { label: 'Update available', style: 'update' }
@@ -323,11 +323,13 @@ describe('Build menu', () => {
     mounted.push(wrapper)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.4 · Update')
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
+      'v0.42.4 · Update available'
+    )
     const buttons = [...wrapper.element.querySelectorAll('button')].map((b) =>
       b.getAttribute('data-testid')
     )
-    expect(buttons).toEqual(['home-build-open', 'home-build-more'])
+    expect(buttons).toEqual(['home-build-open', 'build-update-open', 'home-build-more'])
   })
 
   it('shows upload progress on Home and holds the tile and menu launch actions until it finishes', async () => {
