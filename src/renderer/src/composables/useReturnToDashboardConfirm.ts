@@ -24,8 +24,7 @@ export function useReturnToDashboardConfirm() {
       return modal.confirm({
         title: t('overlay.cancelCurrentTitle'),
         message: t('overlay.cancelMessage'),
-        confirmLabel: t('overlay.cancelConfirm'),
-        confirmStyle: 'danger'
+        confirmLabel: t('overlay.cancelConfirm')
       })
     }
     if (!installation || installation.sourceCategory !== 'local') return true
@@ -34,8 +33,7 @@ export function useReturnToDashboardConfirm() {
     return modal.confirm({
       title: t('dashboard.confirmStopLocal.title'),
       message: t('dashboard.confirmStopLocal.message'),
-      confirmLabel: t('dashboard.confirmStopLocal.confirmLabel'),
-      confirmStyle: 'danger'
+      confirmLabel: t('dashboard.confirmStopLocal.confirmLabel')
     })
   }
 

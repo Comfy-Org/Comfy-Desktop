@@ -5,6 +5,7 @@ import type { PerformanceTestBenchmark } from '../types/ipc'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import { useDialogs } from '../composables/useDialogs'
 import BenchmarksView from './BenchmarksView.vue'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../lib/destructiveStyles'
 import { setChecked } from './testHelpers'
 
 const createResultsPngMock = vi.hoisted(() =>
@@ -996,6 +997,16 @@ describe('BenchmarksView', () => {
     await flushPromises()
     expect(sessionField(wrapper, '13').textContent).toBe('13')
     expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
+  })
+
+  it('paints Delete files with the shared red menu item class', async () => {
+    const wrapper = await mountPortrait4090()
+    await openMenu(wrapper, '[data-testid="benchmark-row-13"] .benchmarks__row-menu')
+    const del = document.body.querySelector<HTMLElement>('.benchmarks__delete-record')!
+    expect([...del.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
+    await closeMenu()
   })
 
   it('confirms before deleting all files for a session', async () => {

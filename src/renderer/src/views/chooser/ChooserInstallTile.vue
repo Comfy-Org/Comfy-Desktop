@@ -17,15 +17,17 @@ import { useProgressStore } from '../../stores/progressStore'
 import {
   buildDeviceKind,
   HOME_BUILD_TONES,
+  homeBuildTone,
   isBuildUpdating,
   connectsElsewhere,
-  isCloudBuild,
-  type HomeBuildTone
+  isCloudBuild
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
+import BuildMetaLine from '../../panel/home/BuildMetaLine.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
+import { openInstallManager } from '../../lib/openInstallManager'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -37,15 +39,13 @@ interface Props {
   lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
   showMenu?: boolean
   showFreeRunsPill?: boolean
-  tone?: HomeBuildTone
   autoStart?: boolean
   loggedOut?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   lifecycleStatus: undefined,
-  showMenu: true,
-  tone: 'ember'
+  showMenu: true
 })
 
 const emit = defineEmits<{
@@ -87,7 +87,7 @@ const progressLabel = computed(() => {
     ? phase
     : t('installProgress.detail', { phase, percent: current.percent })
 })
-const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
+const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(props.installation)])
 
 const isRunning = computed(() =>
   props.lifecycleStatus == null
@@ -220,13 +220,12 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const updateNote = computed(() =>
-  !isUninstalling.value &&
-  !isUpdatingHere.value &&
-  inst.value.statusTag?.style === 'update' &&
-  !isUpdating.value
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdateNote = computed(
+  () =>
+    !isUninstalling.value &&
+    !isUpdatingHere.value &&
+    inst.value.statusTag?.style === 'update' &&
+    !isUpdating.value
 )
 
 const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
@@ -305,8 +304,8 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     ref="tile"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] transition-colors select-none"
-    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]']"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] px-[18px] transition-colors select-none"
+    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-(--build-card-hover)']"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
     @click="open"
@@ -433,15 +432,15 @@ function openContextMenu(event: MouseEvent): void {
           :text="inst.name"
         />
       </div>
-      <div
-        v-if="metaLine || updateNote"
-        class="chooser-tile-meta-line mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
-      >
-        <span v-if="metaLine" class="min-w-0 truncate">{{ metaLine }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ metaLine ? ' · ' : '' }}{{ updateNote }}</span
-        >
-      </div>
+      <BuildMetaLine
+        v-if="metaLine || showsUpdateNote"
+        class="chooser-tile-meta-line mt-0.5"
+        :text="leadingFact"
+        :trailing="trailingFact"
+        :build-name="inst.name"
+        :show-update="showsUpdateNote"
+        @open-update="openInstallManager(inst, { initialTab: 'update' })"
+      />
     </div>
 
     <Button

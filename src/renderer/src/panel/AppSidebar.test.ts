@@ -10,6 +10,7 @@ import { appPageShown, sidebarHovered } from './appPageCover'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { __resetHomeTourForTest } from './home/useHomeTour'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 import type { AppCard, CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
 
@@ -69,6 +70,7 @@ beforeEach(() => {
     }
   }
   setActivePinia(createPinia())
+  __resetHomeTourForTest()
   appPageShown.value = false
   sidebarHovered.value = false
 })
@@ -586,6 +588,76 @@ describe('AppSidebar', () => {
     function buildNames(wrapper: Awaited<ReturnType<typeof mountSidebar>>): string[] {
       return wrapper.findAll('[data-testid^="app-sidebar-build-"]').map((row) => row.text())
     }
+
+    function newBuildShown(wrapper: Awaited<ReturnType<typeof mountSidebar>>): boolean {
+      return wrapper.get('[data-testid="app-sidebar-new-build"]').classes('opacity-100')
+    }
+
+    it('makes Builds a row like Home, marked when the Builds page is open', async () => {
+      const wrapper = await mountSidebar('chooser', [OLD])
+
+      const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
+      expect(builds.text()).toBe('Builds')
+      expect(builds.find('svg').exists(), 'Builds has an icon like the other rows').toBe(true)
+      expect(builds.attributes('aria-current')).toBe('page')
+      expect([...builds.element.parentElement!.classList]).toEqual(
+        expect.arrayContaining(['bg-accent', 'text-foreground'])
+      )
+      expect(builds.element.parentElement!.classList).not.toContain('text-muted-foreground')
+    })
+
+    it('keeps New build out of sight until the Builds row is pointed at', async () => {
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(newBuildShown(wrapper)).toBe(false)
+      expect(wrapper.get('[data-testid="app-sidebar-new-build"]').classes()).toContain(
+        'group-hover/builds:opacity-100'
+      )
+    })
+
+    it('shows New build on the Builds page', async () => {
+      const wrapper = await mountSidebar('chooser', [OLD])
+
+      expect(newBuildShown(wrapper)).toBe(true)
+    })
+
+    it('shows New build while the Home tour runs, so its step can point at it', async () => {
+      ;(window.api as unknown as { getSetting: ReturnType<typeof vi.fn> }).getSetting = vi.fn(
+        async (key: string) => (key === 'homeTourAudience' ? 'new' : false)
+      )
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(newBuildShown(wrapper)).toBe(true)
+    })
+
+    it('shows a build name on hover only when it is cut off', async () => {
+      const long = build({ id: 'long', name: 'A build with a name far too long to fit the row' })
+      const wrapper = await mountSidebar('home', [OLD, long])
+      document.body.appendChild(wrapper.element)
+
+      const opens = (id: string) =>
+        (
+          wrapper
+            .get(`[data-testid="app-sidebar-build-${id}"]`)
+            .findComponent(Tooltip)
+            .props('shouldOpen') as () => boolean
+        )()
+      expect(opens('old')).toBe(false)
+      expect(opens('long')).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('still says on hover why a build failed, even when its name fits', async () => {
+      useSessionStore().errorInstances.set(OLD.id, {
+        installationName: OLD.name,
+        message: 'Port 8188 is in use',
+        startFailed: true
+      })
+      const wrapper = await mountSidebar('home', [OLD])
+
+      const tooltip = wrapper.get('[data-testid="app-sidebar-build-old"]').findComponent(Tooltip)
+      expect((tooltip.props('shouldOpen') as () => boolean)()).toBe(true)
+    })
 
     it('lists the builds of the selected workspace, most recently used first', async () => {
       const wrapper = await mountSidebar('home', [OLD, TEAM, CLOUD, NEW])

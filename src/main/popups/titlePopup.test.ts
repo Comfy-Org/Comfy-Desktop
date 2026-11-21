@@ -999,6 +999,52 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
   })
 })
 
+describe('desktop2-open-terminal', () => {
+  it('opens no instance picker for a Remote Connection', async () => {
+    const { ipcMain } = await import('electron')
+    const getInstancePickerInstalls = vi.fn(async () => [])
+    registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.findLast(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-remote',
+      sourceCategory: 'remote',
+      comfyView: { webContents: sender },
+      titleBarView: { webContents: {} },
+      window: { isDestroyed: () => true }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(false)
+    expect(getInstancePickerInstalls).not.toHaveBeenCalled()
+  })
+
+  it('hands a local install to the instance picker', async () => {
+    const { ipcMain } = await import('electron')
+    const getInstancePickerInstalls = vi.fn(async () => [])
+    registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.findLast(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-local-terminal',
+      sourceCategory: 'local',
+      comfyView: { webContents: sender },
+      titleBarView: { webContents: {} },
+      window: { isDestroyed: () => true }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(true)
+    expect(getInstancePickerInstalls).toHaveBeenCalledOnce()
+  })
+})
+
 describe('global settings remove app data', () => {
   type IpcListener = (event: Electron.IpcMainEvent, payload: unknown) => void
 

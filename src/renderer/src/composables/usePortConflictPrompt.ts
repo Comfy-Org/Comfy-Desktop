@@ -75,8 +75,7 @@ export function usePortConflictPrompt(
     return modal.confirm({
       title: t(portConflictTitleKey(conflict)),
       message: t(messageKey),
-      confirmLabel: t(stopLabelKey(conflict)),
-      confirmStyle: 'danger'
+      confirmLabel: t(stopLabelKey(conflict))
     })
   }
 
@@ -108,7 +107,7 @@ export function usePortConflictPrompt(
         title,
         message,
         confirmLabel: onlyNext ? useNextLabel : stopLabel,
-        confirmStyle: onlyNext ? 'primary' : 'danger',
+        confirmStyle: onlyNext || conflict.priorBusy ? 'primary' : 'danger',
         testIds: {
           action: onlyNext ? TID.progressPortConflictUsePort : TID.progressPortConflictKill
         }

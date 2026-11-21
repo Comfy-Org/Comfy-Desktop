@@ -20,9 +20,10 @@ import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import {
   displayPath,
   installLocation,
+  hardwareNoteKey,
   isCpuVariant,
   machineName,
-  planVersion,
+  versionText,
   resolveSetupPlan,
   setupPlatform,
   splitPathTail,
@@ -122,7 +123,14 @@ const hardwareDetected = computed(
   () =>
     !!variant.value &&
     !workspaceBuild.value &&
-    (!props.savedPlan || variant.value.recommended === true)
+    (!props.savedPlan || (props.savedPlan.hardwareDetected ?? variant.value.recommended === true))
+)
+const hardwareNote = computed(() =>
+  hardwareNoteKey({
+    unsupported: !!unsupportedReason.value,
+    cpuOnly: cpuOnly.value,
+    detected: hardwareDetected.value
+  })
 )
 const machine = computed(() => machineName(systemInfo.value, cpuOnly.value))
 const memoryGb = computed(() =>
@@ -157,8 +165,8 @@ const locationMeta = computed(() => {
 const version = computed(() => {
   if (!plan.value) return ''
   if (workspaceBuild.value) return workspaceBuild.value.buildName
-  const tag = planVersion(plan.value)
-  return tag ? t('setup.versionValue', { version: tag }) : t('standalone.comfyui')
+  const text = versionText(plan.value.selections)
+  return t(text.key, text.params)
 })
 const channel = computed(() =>
   workspaceBuild.value ? '' : (plan.value?.selections.release?.label ?? '')
@@ -505,7 +513,7 @@ defineExpose({ open, resetContinue })
         </section>
 
         <section
-          class="mt-3"
+          class="mt-3 [--summary-label-width:164px]"
           :class="SUMMARY_BOX_CLASS"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
@@ -526,15 +534,22 @@ defineExpose({ open, resetContinue })
                 ]"
                 :title="unsupportedReason || hardwareWarning || undefined"
               >
-                {{
-                  unsupportedReason
-                    ? t('setup.unsupported')
-                    : cpuOnly
-                      ? t('setup.noGpu')
-                      : hardwareDetected
-                        ? t('setup.detected')
-                        : ''
-                }}
+                {{ hardwareNote ? t(hardwareNote) : '' }}
+              </span>
+            </SetupSummaryRow>
+            <SetupSummaryRow
+              :icon="Package"
+              :label="t('setup.version')"
+              data-testid="setup-row-version"
+            >
+              <span class="truncate text-foreground" data-testid="setup-version">{{
+                version || t('setup.checking')
+              }}</span>
+              <span
+                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
+                :title="channel || undefined"
+              >
+                {{ channel }}
               </span>
             </SetupSummaryRow>
             <SetupSummaryRow
@@ -557,21 +572,6 @@ defineExpose({ open, resetContinue })
                 data-testid="setup-location-meta"
               >
                 {{ locationMeta }}
-              </span>
-            </SetupSummaryRow>
-            <SetupSummaryRow
-              :icon="Package"
-              :label="t('setup.version')"
-              data-testid="setup-row-version"
-            >
-              <span class="truncate text-foreground" data-testid="setup-version">{{
-                version || t('setup.checking')
-              }}</span>
-              <span
-                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
-                :title="channel || undefined"
-              >
-                {{ channel }}
               </span>
             </SetupSummaryRow>
           </template>
