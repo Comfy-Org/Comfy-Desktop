@@ -233,9 +233,18 @@ export function createShutdown(
   const phaseEnd = (stopBy: number, phaseMs: number): number =>
     Math.min(Date.now() + phaseMs, stopBy)
 
+  const pollLivePids = (until: number): number[] => {
+    try {
+      return livePids()
+    } catch (error) {
+      if (error instanceof ProcessLookupError && Date.now() >= until) return lastKnownAlive
+      throw error
+    }
+  }
+
   const survivorsAt = async (until: number): Promise<number[]> => {
     while (Date.now() < until) {
-      if (livePids().length === 0) return lastKnownAlive
+      if (pollLivePids(until).length === 0) return lastKnownAlive
       await wait(Math.min(EXIT_POLL_MS, until - Date.now()))
     }
     return lastKnownAlive
@@ -262,18 +271,14 @@ export function createShutdown(
       }
     }
     if (quitOnItsOwn) {
-      const settleBy = phaseEnd(stopBy, EXIT_SETTLE_MS)
-      shutdownStopBy = settleBy
-      const settled = await survivorsIncludingNewHelpersAt(settleBy)
+      const settled = await survivorsIncludingNewHelpersAt(phaseEnd(stopBy, EXIT_SETTLE_MS))
       if (settled.length === 0) return
     }
-    shutdownStopBy = stopBy
     forgetAppIfItsPidWasReused()
     trackHelpers()
     const doomed = livePids()
     const killedAt = Date.now()
     const forcedBy = phaseEnd(stopBy, forcedExitMs)
-    shutdownStopBy = forcedBy
     forceKill(doomed, msUntil(forcedBy))
     const survivors = await survivorsIncludingNewHelpersAt(forcedBy)
     if (survivors.length === 0) return
