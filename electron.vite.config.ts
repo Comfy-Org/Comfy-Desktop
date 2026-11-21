@@ -17,7 +17,7 @@ export default defineConfig({
     build: {
       sourcemap: 'hidden',
       rollupOptions: {
-        external: ['node-pty']
+        external: ['node-pty', 'koffi']
       }
     }
   },

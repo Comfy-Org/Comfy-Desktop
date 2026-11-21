@@ -967,8 +967,15 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const existenceCandidates = opts.destinationBaseDir
     ? [savePath]
     : buildExistenceCandidates(ctx, baseDir, directory, filename)
+  const retryStage = opts.isRetry ? revalidateStagedPair(savePath) : null
+  const retryingVerifiedStage =
+    retryStage?.meta.readyToInstall === true &&
+    retryStage.stagedBytes > 0 &&
+    retryStage.stagedBytes === retryStage.meta.expectedSize &&
+    (retryStage.meta.url === url || (sha256 !== undefined && retryStage.meta.sha256 === sha256))
   for (const candidate of existenceCandidates) {
     if (unsafeDestKeys.has(canonicalDestKey(candidate))) continue
+    if (retryingVerifiedStage && candidate === savePath) continue
     if (await regularFileExists(candidate)) {
       const lockedBeforeExistingResult = rejectLockedRoot(candidate)
       if (lockedBeforeExistingResult) return lockedBeforeExistingResult
