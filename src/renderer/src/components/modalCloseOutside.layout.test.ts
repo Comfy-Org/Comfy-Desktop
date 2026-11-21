@@ -175,4 +175,27 @@ describe('modals close with the round button outside the card', () => {
     await track(mount(WhyTryCloudModal, { attachTo: document.body }))
     expectCardFill('[data-testid="why-cloud-close"]', '.why-cloud-content')
   })
+
+  it('shows a focus ring on the round button when Tab reaches it, keeping its ringed edge', async () => {
+    document.documentElement.dataset.theme = 'dark'
+    await track(
+      mount(BaseModal, {
+        attachTo: document.body,
+        props: { open: true, closeOutside: true, ariaLabel: 'Modal' },
+        slots: { default: '<p>Body</p>' }
+      })
+    )
+    const close = document.querySelector<HTMLElement>('[data-testid="base-modal-close"]')!
+    const restingShadow = getComputedStyle(close).boxShadow
+    for (let step = 0; step < 10 && document.activeElement !== close; step++) {
+      await userEvent.tab()
+    }
+
+    expect(document.activeElement, 'Tab reaches the close button').toBe(close)
+    await vi.waitFor(() => {
+      const focusedShadow = getComputedStyle(close).boxShadow
+      expect(focusedShadow, 'focus adds a visible ring').not.toBe(restingShadow)
+      expect(focusedShadow, 'the edge ring stays').toMatch(/inset/)
+    })
+  })
 })
