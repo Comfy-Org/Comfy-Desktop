@@ -39,6 +39,25 @@ describe('VersionStatPanel primary action', () => {
     expect(background(button)).toBe(resting)
   })
 
+  it('keeps a running primary action white on hover', async () => {
+    const wrapper = mount(VersionStatPanel, {
+      attachTo: document.body,
+      props: {
+        headline: 'v0.3.40',
+        actions: [{ id: 'update-comfyui', label: 'Update', style: 'primary' }],
+        runningActionIds: new Set(['update-comfyui'])
+      }
+    })
+    wrappers.push(wrapper)
+    const button = document.querySelector<HTMLButtonElement>('.version-stat-action')!
+    expect(button.disabled).toBe(true)
+    const resting = background(button)
+
+    await userEvent.hover(button)
+
+    expect(background(button)).toBe(resting)
+  })
+
   it('dims an enabled primary action on hover', async () => {
     const button = mountPanel(true)
     const resting = background(button)
