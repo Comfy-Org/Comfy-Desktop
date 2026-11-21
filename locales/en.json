@@ -47,6 +47,12 @@
     "emptyBody": "New apps will show up here.",
     "noMatchesHint": "Try another word.",
     "allApps": "All apps",
+    "switchWhileRunning": {
+      "title": "Switch to {app}?",
+      "body": "{current} is still making something.",
+      "switch": "Switch",
+      "stay": "Stay"
+    },
     "request": {
       "bandTitle": "Missing an app?",
       "bandBody": "Your ideas decide which apps we build next.",

@@ -47,6 +47,12 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatchesHint": "换个关键词试试。",
     "allApps": "全部应用",
+    "switchWhileRunning": {
+      "title": "切换到{app}？",
+      "body": "{current}仍在生成。",
+      "switch": "切换",
+      "stay": "留在这里"
+    },
     "request": {
       "bandTitle": "没有你想要的应用？",
       "bandBody": "你的想法决定我们接下来做哪些应用。",

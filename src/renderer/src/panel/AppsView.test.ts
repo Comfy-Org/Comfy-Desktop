@@ -478,6 +478,15 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="apps-empty"]').text()).toContain('No apps yet')
   })
 
+  it('hands the list it loaded to the sidebar, and an empty one when it could not load', async () => {
+    const loaded = await mountApps([CUTOUT, HDR])
+    expect(loaded.emitted('apps-loaded')).toEqual([[[CUTOUT, HDR]]])
+    loaded.unmount()
+
+    const failed = await mountApps(Promise.reject(new Error('offline')))
+    expect(failed.emitted('apps-loaded')).toEqual([[[]]])
+  })
+
   it('says the apps did not load and loads them again on Try again', async () => {
     const wrapper = await mountApps(Promise.reject(new Error('offline')))
     expect(wrapper.get('[data-testid="apps-failed"]').text()).toContain("Apps didn't load")
