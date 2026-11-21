@@ -22,10 +22,14 @@ function build(id: string, sourceCategory: 'local' | 'cloud' | 'remote', lastLau
   } satisfies Installation
 }
 
-const FIRST_LOCAL = build('first-local', 'local', 500)
-const CLOUD = build('cloud', 'cloud', 400)
-const SECOND_LOCAL = build('second-local', 'local', 300)
-const THIRD_LOCAL = build('third-local', 'local', 200)
+const HOUR_MS = 60 * 60_000
+const DAY_MS = 24 * HOUR_MS
+const NOW = Date.now()
+
+const FIRST_LOCAL = build('first-local', 'local', NOW - 2 * HOUR_MS)
+const CLOUD = build('cloud', 'cloud', NOW - DAY_MS - HOUR_MS)
+const SECOND_LOCAL = build('second-local', 'local', NOW - 3 * DAY_MS)
+const THIRD_LOCAL = build('third-local', 'local', NOW - 10 * DAY_MS)
 const ALL = [FIRST_LOCAL, CLOUD, SECOND_LOCAL, THIRD_LOCAL]
 
 let host: HTMLElement
@@ -126,24 +130,41 @@ describe('Builds tile status', () => {
     expect(running?.querySelector('.rounded-full')).not.toBeNull()
   })
 
-  it('shows Comfy Cloud as Ready with no green dot, never Always on', async () => {
+  it('shows Comfy Cloud by when it was last used, with no green dot, never Always on', async () => {
     await mountGrid(ALL)
 
     expect(tile(CLOUD).textContent).not.toContain('Always on')
-    expect(tile(CLOUD).textContent).toContain('Ready')
+    expect(tile(CLOUD).textContent).toContain('Used yesterday')
     expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
   })
 
-  it('asks a logged-out user to log in to use Comfy Cloud, with no check, while local builds stay Ready', async () => {
+  it('asks a logged-out user to log in to use Comfy Cloud, while local builds say when they were last used', async () => {
     await mountGrid(ALL, true)
 
     expect(tile(CLOUD).textContent).toContain('Log in to use')
-    expect(tile(CLOUD).textContent).not.toContain('Ready')
-    expect(tile(CLOUD).querySelector('.lucide-check')).toBeNull()
-    expect(tile(FIRST_LOCAL).textContent).toContain('Ready')
+    expect(tile(CLOUD).textContent).not.toContain('Used')
+    expect(tile(FIRST_LOCAL).textContent).toContain('Used 2h ago')
   })
 
-  it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {
+  it('says how long ago each resting build was used, with no check icon', async () => {
+    await mountGrid(ALL)
+
+    expect(tile(FIRST_LOCAL).textContent).toContain('Used 2h ago')
+    expect(tile(SECOND_LOCAL).textContent).toContain('Used 3 days ago')
+    expect(tile(THIRD_LOCAL).textContent).toContain('Used 10 days ago')
+    for (const resting of ALL) {
+      expect(tile(resting).querySelector('.lucide-check')).toBeNull()
+    }
+  })
+
+  it('says Never used on a build that was never opened', async () => {
+    const fresh = { ...build('fresh', 'local', 0), lastLaunchedAt: undefined }
+    await mountGrid([fresh])
+
+    expect(tile(fresh).textContent).toContain('Never used')
+  })
+
+  it('shows an opened Comfy Cloud by when it was last used, with no green dot, since it runs nothing here', async () => {
     useSessionStore().runningInstances.set(CLOUD.id, {
       installationId: CLOUD.id,
       installationName: CLOUD.name,
@@ -153,7 +174,7 @@ describe('Builds tile status', () => {
 
     expect(tile(CLOUD).querySelector('.chooser-tile-status--running')).toBeNull()
     expect(tile(CLOUD).textContent).not.toContain('Running')
-    expect(tile(CLOUD).textContent).toContain('Ready')
+    expect(tile(CLOUD).textContent).toContain('Used yesterday')
     expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
   })
 

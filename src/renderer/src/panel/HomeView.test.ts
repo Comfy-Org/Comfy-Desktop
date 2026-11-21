@@ -34,10 +34,15 @@ const SEVEN_WORKFLOWS = Array.from({ length: 7 }, (_, index) =>
   workflow(`workflow-${index}`, `Workflow ${index}`)
 )
 
+const MINUTE_MS = 60_000
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
+const NOW = Date.now()
+
 const OLDEST = build({
   id: 'oldest',
   name: 'Flux Sandbox',
-  lastLaunchedAt: 100,
+  lastLaunchedAt: NOW - 3 * DAY_MS,
   version: 'v0.42.4',
   installPath: '/Users/pablo/ComfyUI-Installs/Flux'
 })
@@ -48,13 +53,13 @@ const CLOUD = build({
   sourceLabel: 'Cloud',
   sourceCategory: 'cloud',
   listPreview: 'https://cloud.comfy.org/',
-  lastLaunchedAt: 200
+  lastLaunchedAt: NOW - DAY_MS - HOUR_MS
 })
-const RUNNING = build({ id: 'running', name: 'Video Lab', lastLaunchedAt: 300 })
+const RUNNING = build({ id: 'running', name: 'Video Lab', lastLaunchedAt: NOW - 2 * HOUR_MS })
 const NEWEST = build({
   id: 'newest',
   name: 'My Local 1',
-  lastLaunchedAt: 400,
+  lastLaunchedAt: NOW - 5 * MINUTE_MS,
   statusTag: { style: 'update', label: 'Update available' }
 })
 
@@ -451,13 +456,13 @@ describe('Home builds', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
-      'ReadyMy Local 1Standalone · Update',
+      'Used 5 min agoMy Local 1Standalone · Update',
       'RunningVideo LabStandalone',
-      'ReadyComfy CloudRTX 6000 Pro · 96 GB'
+      'Used yesterdayComfy CloudRTX 6000 Pro · 96 GB'
     ])
   })
 
-  it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {
+  it('shows an opened Comfy Cloud by when it was last used, with no green dot, since it runs nothing here', async () => {
     getAuthStatus.mockResolvedValue({ signedIn: true })
     getInstallations.mockResolvedValue([CLOUD])
     const wrapper = await openHome()
@@ -469,11 +474,11 @@ describe('Home builds', () => {
     await flushPromises()
 
     const status = wrapper.get('[data-testid="home-build-status"]')
-    expect(status.text()).toBe('Ready')
+    expect(status.text()).toBe('Used yesterday')
     expect(status.find('.rounded-full').exists()).toBe(false)
   })
 
-  it('asks a logged-out user to log in to use Comfy Cloud, with no check, while local builds stay Ready', async () => {
+  it('asks a logged-out user to log in to use Comfy Cloud, with no icon, while local builds say when they were last used', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD])
     const wrapper = await openHome()
 
@@ -484,12 +489,12 @@ describe('Home builds', () => {
         .get('[data-testid="home-build-status"]')
     const local = statusOn(OLDEST.name)
     const cloud = statusOn(CLOUD.name)
-    expect(local.text()).toBe('Ready')
+    expect(local.text()).toBe('Used 3 days ago')
     expect(cloud.text()).toBe('Log in to use')
-    expect(cloud.find('svg').exists(), 'no check: Cloud is not ready to use').toBe(false)
+    expect(cloud.find('svg').exists(), 'no icon next to Log in to use').toBe(false)
   })
 
-  it('says Ready on Comfy Cloud once the user logs in', async () => {
+  it('says when Comfy Cloud was last used once the user logs in, with no check icon', async () => {
     getInstallations.mockResolvedValue([CLOUD])
     const wrapper = await openHome()
     expect(wrapper.get('[data-testid="home-build-status"]').text()).toBe('Log in to use')
@@ -498,8 +503,8 @@ describe('Home builds', () => {
     await flushPromises()
 
     const status = wrapper.get('[data-testid="home-build-status"]')
-    expect(status.text()).toBe('Ready')
-    expect(status.find('svg').exists()).toBe(true)
+    expect(status.text()).toBe('Used yesterday')
+    expect(status.find('svg').exists()).toBe(false)
   })
 
   it('keeps Running on top of a running build with an update, and names the update at the bottom', async () => {
@@ -533,12 +538,12 @@ describe('Home builds', () => {
     expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.3.68 · Update')
   })
 
-  it('starts a build with an update from its card, saying Ready on top', async () => {
+  it('starts a build with an update from its card, saying when it was last used on top', async () => {
     getInstallations.mockResolvedValue([NEWEST])
     const wrapper = await openHome()
 
     const card = wrapper.get('[data-testid="home-build"]')
-    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Ready')
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Used 5 min ago')
     await card.get('[data-testid="home-build-open"]').trigger('click')
 
     expect(wrapper.emitted('pick')?.[0]?.[0]).toMatchObject({ id: NEWEST.id })
@@ -564,14 +569,17 @@ describe('Home builds', () => {
     expect(kept).toEqual(['My Local 1', 'Video Lab'])
   })
 
-  it('shows a stopped local build as ready, with its version and no folder path', async () => {
+  it('shows a stopped local build by when it was last used, with its version and no folder path', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-build"]').text()).toBe('ReadyFlux Sandboxv0.42.4')
+    expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
+      'Used 3 days agoFlux Sandboxv0.42.4'
+    )
+    expect(wrapper.get('[data-testid="home-build-status"]').find('svg').exists()).toBe(false)
   })
 
-  it('shows the address of a remote ComfyUI instead of hardware', async () => {
+  it('shows the address of a remote ComfyUI instead of hardware, and Never used before it is opened', async () => {
     getInstallations.mockResolvedValue([
       build({
         id: 'studio',
@@ -584,7 +592,7 @@ describe('Home builds', () => {
     const wrapper = await openHome()
 
     expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
-      'ReadyStudio serverstudio.local:8188'
+      'Never usedStudio serverstudio.local:8188'
     )
   })
 
@@ -949,7 +957,7 @@ describe('Home build auto start', () => {
 
     expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
     expect(statusOf(wrapper, OLDEST.id)).toBe('Auto start')
-    expect(statusOf(wrapper, RUNNING.id)).toBe('Ready')
+    expect(statusOf(wrapper, RUNNING.id)).toBe('Used 2h ago')
     expect(startingWithDesktop(wrapper)).toEqual([OLDEST.id])
     expect(
       cardOf(wrapper, OLDEST.id).get('[data-testid="home-build-open"]').attributes('aria-label')
@@ -1026,28 +1034,28 @@ describe('Home build auto start', () => {
 
     expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', RUNNING.id)
     expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
     expect(wrapper.emitted('open-build')).toBeUndefined()
   })
 
-  it('says Ready, never Always on, for Comfy Cloud when it is the one that starts with Desktop', async () => {
+  it('says when Comfy Cloud was last used, never Auto start, when it is the one that starts with Desktop', async () => {
     getAuthStatus.mockResolvedValue({ signedIn: true })
     saved = CLOUD.id
     getInstallations.mockResolvedValue([OLDEST, CLOUD])
     const wrapper = await openHome()
 
-    expect(statusOf(wrapper, CLOUD.id)).toBe('Ready')
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
+    expect(statusOf(wrapper, CLOUD.id)).toBe('Used yesterday')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
     expect(startingWithDesktop(wrapper)).toEqual([])
   })
 
-  it('says Ready on every card when Settings says Last used build', async () => {
+  it('says when each build was last used on every card when Settings says Last used build', async () => {
     saved = 'last'
     getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
-    expect(statusOf(wrapper, RUNNING.id)).toBe('Ready')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
+    expect(statusOf(wrapper, RUNNING.id)).toBe('Used 2h ago')
     expect(startingWithDesktop(wrapper)).toEqual([])
   })
 
@@ -1061,7 +1069,7 @@ describe('Home build auto start', () => {
     await flushPromises()
 
     expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Used 3 days ago')
   })
 
   it('shows the install status, not Auto start, while that build installs', async () => {

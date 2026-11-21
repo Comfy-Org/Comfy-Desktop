@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Ellipsis, LoaderCircle, OctagonAlert, Power } from '@lucide/vue'
+import { useNow } from '@vueuse/core'
+import { Ellipsis, LoaderCircle, OctagonAlert, Power } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
+import { formatLastUsed } from '../../lib/datetime'
 import {
   HOME_BUILD_TONES,
   isBuildOpenBlocked,
@@ -47,7 +49,7 @@ const {
 
 const emit = defineEmits<{ open: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const localDeviceKind = useLocalDeviceKind()
 const install = useBuildProgress(() => build)
 const progressStore = useProgressStore()
@@ -82,8 +84,11 @@ const startFailedLogs = computed(
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const needsLogIn = computed(() => loggedOut && isCloudBuild(build))
+const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() =>
-  needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
+  needsLogIn.value
+    ? t('home.buildLogInToUse')
+    : formatLastUsed(build.lastLaunchedAt, now.value.getTime(), t, locale.value)
 )
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')
@@ -253,7 +258,6 @@ function openContextMenu(event: MouseEvent): void {
           aria-hidden="true"
           data-testid="home-build-starts-with-desktop"
         />
-        <Check v-else-if="resting && !needsLogIn" :size="12" aria-hidden="true" />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
       <span

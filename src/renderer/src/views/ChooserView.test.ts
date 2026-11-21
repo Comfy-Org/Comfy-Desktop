@@ -404,7 +404,7 @@ describe('ChooserView', () => {
     expect(startsWithDesktop('a')).toBe(true)
     expect(tile('a').text()).toContain('Auto start')
     expect(startsWithDesktop('b')).toBe(false)
-    expect(tile('b').text()).toContain('Ready')
+    expect(tile('b').text()).toContain('Never used')
 
     const itemsA = await menuFor('a', 'right-click')
     expect(itemsA.slice(0, 3)).toEqual(['launch', 'auto-start', 'manage'])
@@ -431,7 +431,7 @@ describe('ChooserView', () => {
     expect(startsWithDesktop('b')).toBe(false)
   })
 
-  it('names the update briefly in the meta line, keeps Ready on top and Launch first in its menu', async () => {
+  it('names the update briefly in the meta line, keeps the last-used line on top and Launch first in its menu', async () => {
     installMockApi([
       makeInstall({
         id: 'a',
@@ -444,7 +444,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update')
-    expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Ready/)
+    expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Never used/)
     expect(wrapper.find('.chooser-tile-pill-update').exists()).toBe(false)
 
     const items = await openBuildMenu(wrapper, 'a')
@@ -709,7 +709,7 @@ describe('ChooserView', () => {
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
     expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update$/)
-    expect(tile.get('.chooser-tile-body').text()).toMatch(/^Ready/)
+    expect(tile.get('.chooser-tile-body').text()).toMatch(/^Never used/)
   })
 
   it('confirms an update over the Builds page from the ⋯ menu, without opening the build manager', async () => {
