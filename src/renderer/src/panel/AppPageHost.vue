@@ -17,7 +17,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useCoveredByPage } from '../composables/useCoveredByPage'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import type {
   AppOutputAction,
   AppOutputs,
@@ -37,9 +37,10 @@ const { t } = useI18n()
 
 const host = useTemplateRef<HTMLElement>('host')
 const coveredByPage = useCoveredByPage(host)
-const covered = computed(() => coveredByPage.value || sidebarHovered.value)
+const covered = computed(() => coveredByPage.value || sidebarHovered.value || sidebarFocused.value)
 const status = ref<AppPageStatus | null>(null)
 const frozenFrame = ref<string | null>(null)
+const loadedHidden = ref(false)
 const outputs = shallowRef<OutputDetailItem[] | null>(null)
 const outputIndex = ref(0)
 const outputsShown = ref(0)
@@ -84,9 +85,20 @@ async function reveal(): Promise<void> {
   const placement = takePlacement()
   if (!placement) return
   appPageShown.value = true
+  loadedHidden.value = false
   const shown = await window.api.showAppPage(appId, placement)
   if (turn !== latestTurn) return
   status.value = shown
+}
+
+async function loadHidden(): Promise<void> {
+  const turn = ++latestTurn
+  const placement = takePlacement()
+  if (!placement) return
+  appPageShown.value = false
+  const loading = await window.api.showAppPage(appId, { ...placement, hidden: true })
+  if (turn !== latestTurn) return
+  status.value = loading
 }
 
 async function conceal(): Promise<void> {
@@ -169,10 +181,16 @@ watch(
   () => appId,
   () => {
     justOpened = true
-    status.value = null
     frozenFrame.value = null
     releaseOutputs()
-    if (!covered.value) void reveal()
+    if (covered.value) {
+      status.value = 'loading'
+      loadedHidden.value = true
+      void loadHidden()
+    } else {
+      status.value = null
+      void reveal()
+    }
   }
 )
 
@@ -220,7 +238,7 @@ onBeforeUnmount(() => {
       data-testid="app-page-frozen-frame"
     />
     <div
-      v-else-if="status === 'loading'"
+      v-else-if="status === 'loading' || (status === 'ready' && loadedHidden)"
       class="flex size-full gap-2"
       data-testid="app-page-loading"
     >

@@ -26,6 +26,7 @@ const startWith = defineModel<AppCard | null>('startWith', { default: null })
 const emit = defineEmits<{
   'app-open-change': [open: boolean]
   'current-app': [app: AppCard | null]
+  'apps-loaded': [apps: AppCard[]]
   'view-in-assets': [name: string]
 }>()
 
@@ -62,6 +63,7 @@ async function loadApps(): Promise<void> {
     apps.value = []
     state.value = 'failed'
   }
+  emit('apps-loaded', apps.value)
 }
 
 const RHYTHM_GRID_CLASS =
