@@ -1,0 +1,17 @@
+diff --git a/out/dmgUtil.js b/out/dmgUtil.js
+index 490d088acde7a303001a013390dbe445fc15d5e5..abe66ee4370a64b6f7e4f0c7b004be6ecfaf5704 100644
+--- a/out/dmgUtil.js
++++ b/out/dmgUtil.js
+@@ -173,8 +173,10 @@ async function customizeDmg({ appPath, artifactPath, volumeName, specification,
+         settings.background = specification.background == null ? null : await transformBackgroundFileIfNeed(specification.background, packager.info.tempDirManager);
+     }
+     if (!(0, builder_util_1.isEmptyOrSpaces)(settings.background)) {
+-        const size = await getImageSizeUsingSips(settings.background);
+-        settings.window = { position: { x: 400, y: Math.round((1440 - size.height) / 2) }, size, ...settings.window };
++        const imageSize = await getImageSizeUsingSips(settings.background);
++        const requested = specification.window || {};
++        const size = { width: requested.width ?? imageSize.width, height: requested.height ?? imageSize.height };
++        settings.window = { position: { x: requested.x ?? 400, y: requested.y ?? Math.round((1440 - size.height) / 2) }, size, ...settings.window };
+     }
+     const workspaceRoot = await packager.info.getWorkspaceRoot();
+     for (const item of (_f = settings.contents) !== null && _f !== void 0 ? _f : []) {

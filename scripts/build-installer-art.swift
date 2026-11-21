@@ -235,6 +235,10 @@ tiffutil.arguments = ["-cathidpicheck", "\(dmgDir)/background.png", "\(dmgDir)/b
                       "-out", "\(dmgDir)/background.tiff"]
 try! tiffutil.run()
 tiffutil.waitUntilExit()
+guard tiffutil.terminationStatus == 0 else {
+    FileHandle.standardError.write("tiffutil failed with status \(tiffutil.terminationStatus)\n".data(using: .utf8)!)
+    exit(1)
+}
 
 drawWindowsSidebar(connected: true).writeBMP24("\(resources)/installerSidebar.bmp")
 drawWindowsSidebar(connected: false).writeBMP24("\(resources)/uninstallerSidebar.bmp")

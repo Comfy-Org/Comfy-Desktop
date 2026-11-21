@@ -7,6 +7,11 @@ settings:
 overrides:
   extract-zip>yauzl: 3.4.0
 
+patchedDependencies:
+  dmg-builder@26.18.0:
+    hash: 75ddd43bb61455868363c86745681ded835657adde21659b3162195479130383
+    path: patches/dmg-builder@26.18.0.patch
+
 importers:
 
   .:
@@ -4497,7 +4502,7 @@ snapshots:
       chromium-pickle-js: 0.2.0
       ci-info: 4.3.1
       debug: 4.4.3
-      dmg-builder: 26.18.0(electron-builder-squirrel-windows@26.18.0)
+      dmg-builder: 26.18.0(patch_hash=75ddd43bb61455868363c86745681ded835657adde21659b3162195479130383)(electron-builder-squirrel-windows@26.18.0)
       dotenv: 16.6.1
       dotenv-expand: 11.0.7
       ejs: 3.1.10
@@ -4823,7 +4828,7 @@ snapshots:
     dependencies:
       path-type: 4.0.0
 
-  dmg-builder@26.18.0(electron-builder-squirrel-windows@26.18.0):
+  dmg-builder@26.18.0(patch_hash=75ddd43bb61455868363c86745681ded835657adde21659b3162195479130383)(electron-builder-squirrel-windows@26.18.0):
     dependencies:
       app-builder-lib: 26.18.0(dmg-builder@26.18.0)(electron-builder-squirrel-windows@26.18.0)
       builder-util: 26.16.0
@@ -4898,7 +4903,7 @@ snapshots:
       builder-util-runtime: 9.7.0
       chalk: 4.1.2
       ci-info: 4.5.0
-      dmg-builder: 26.18.0(electron-builder-squirrel-windows@26.18.0)
+      dmg-builder: 26.18.0(patch_hash=75ddd43bb61455868363c86745681ded835657adde21659b3162195479130383)(electron-builder-squirrel-windows@26.18.0)
       fs-extra: 10.1.0
       lazy-val: 1.0.5
       simple-update-notifier: 2.0.0
