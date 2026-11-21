@@ -18,6 +18,7 @@ An error or info notice closes with the white OK. It never takes a tone, because
 ## Decided cases
 
 - **Forget build** takes the build off the list. Its folder stays on the computer and it can be added again with Add existing build. It starts from a plain item and confirms with the white Forget button, and its message says the folder stays and how to add it back.
+- **Forget** on a remote connection takes the connection off the list. It has no folder, so its message says the server isn't changed and it can be connected again with Connect to a server. It starts from a plain item and confirms with the white Forget button, like Forget build.
 - **Remove models folder** (Settings > Folders and a build's Storage tab) takes the folder off the list. Its confirm says it won't delete any files. It starts from a plain item and confirms with the white Remove button.
 - **Retry** after builds fail to load is plain text, not red.
 - **A port in use.** Stopping an earlier run of the same build ("Stop it and start this build") is like Stop: white confirm. Stopping another program on the port ("Stop process and retry") ends something Desktop does not own and may lose its unsaved work, so it confirms with the red button. Either way it starts from a neutral button.

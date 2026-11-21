@@ -29,7 +29,14 @@ export function deleteAction(installation: { installPath: string }): ActionDef {
   }
 }
 
-export function untrackAction(): ActionDef {
+export type ForgetTarget = 'localBuild' | 'remoteConnection'
+
+const FORGET_CONFIRM_MESSAGE_KEYS: Record<ForgetTarget, string> = {
+  localBuild: 'actions.untrackConfirmMessage',
+  remoteConnection: 'actions.untrackRemoteConfirmMessage'
+}
+
+export function untrackAction(target: ForgetTarget = 'localBuild'): ActionDef {
   return {
     id: 'remove',
     label: t('actions.untrack'),
@@ -37,7 +44,7 @@ export function untrackAction(): ActionDef {
     enabled: true,
     confirm: {
       title: t('actions.untrackConfirmTitle'),
-      message: t('actions.untrackConfirmMessage')
+      message: t(FORGET_CONFIRM_MESSAGE_KEYS[target])
     }
   }
 }

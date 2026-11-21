@@ -14,6 +14,15 @@ describe('Forget build', () => {
     expect(en.actions.untrackConfirmMessage).toContain('folder stays on your computer')
     expect(en.actions.untrackConfirmMessage).toContain(en.chooser.addExistingBuild)
   })
+
+  it('tells a remote connection it leaves the app and how to connect again, with no folder', () => {
+    const forget = untrackAction('remoteConnection')
+    expect(forget.style).toBe('default')
+    expect(forget.confirm?.message).toBe('actions.untrackRemoteConfirmMessage')
+    expect(en.actions.untrackRemoteConfirmMessage).toContain('removes the connection')
+    expect(en.actions.untrackRemoteConfirmMessage).toContain(en.newInstall.startFromServer)
+    expect(en.actions.untrackRemoteConfirmMessage).not.toContain('folder')
+  })
 })
 
 describe('Uninstall', () => {
