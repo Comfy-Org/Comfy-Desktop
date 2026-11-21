@@ -300,8 +300,9 @@ watch([sidebarPage, appInProgress, appsVisits], () => {
 
 async function switchStillWanted(app: AppCard): Promise<boolean> {
   const started = ++navigation
-  const confirmed = await confirmAppSwitch(app, appInProgress.value?.id ?? null)
-  return confirmed && started === navigation
+  const stillCurrent = () => started === navigation
+  const confirmed = await confirmAppSwitch(app, appInProgress.value?.id ?? null, stillCurrent)
+  return confirmed && stillCurrent()
 }
 
 async function openAppFromHome(app: AppCard): Promise<void> {
