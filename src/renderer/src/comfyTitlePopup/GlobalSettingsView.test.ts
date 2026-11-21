@@ -240,6 +240,20 @@ describe('GlobalSettingsView', () => {
     expect(link.height, 'as tall as a toggle row').toBeLessThanOrEqual(toggleRow.height)
   })
 
+  it('leaves 32px between the Preferences groups', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const wrapper = mountView()
+    await flushPromises()
+    const groups = wrapper
+      .findAll('.gs-micro-section')
+      .map((g) => g.element.getBoundingClientRect())
+
+    for (let index = 1; index < groups.length; index++) {
+      expect(groups[index]!.top - groups[index - 1]!.bottom).toBe(32)
+    }
+  })
+
   it('keeps the Language menu as short as a toggle row', async () => {
     document.documentElement.setAttribute('data-theme', 'dark')
     installMockBridge()

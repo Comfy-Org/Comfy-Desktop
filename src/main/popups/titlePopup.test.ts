@@ -25,6 +25,7 @@ vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
 import {
   _test_buildGlobalSettingsSnapshot,
   _test_centeredCardBounds,
+  _test_modalBounds,
   _test_deleteTitlePopupEntry,
   _test_setTitlePopupEntry,
   activateTitlePopupMenuItem,
@@ -1105,6 +1106,28 @@ describe('global settings remove app data', () => {
   })
 })
 
+describe('settings popups', () => {
+  function parentOf(width: number, height: number): Electron.BrowserWindow {
+    return {
+      getContentBounds: () => ({ x: 0, y: 0, width, height })
+    } as unknown as Electron.BrowserWindow
+  }
+
+  it.each([
+    [1280, 800],
+    [1024, 720],
+    [1600, 1000]
+  ] as const)(
+    'opens Desktop settings with the same size and place as build settings in a %ix%i window',
+    (width, height) => {
+      const parent = parentOf(width, height)
+      expect(_test_modalBounds('global-settings', parent)).toEqual(
+        _test_modalBounds('instance-picker', parent)
+      )
+    }
+  )
+})
+
 describe('centered card popups', () => {
   function parentOf(width: number, height: number): Electron.BrowserWindow {
     return {
@@ -1112,19 +1135,13 @@ describe('centered card popups', () => {
     } as unknown as Electron.BrowserWindow
   }
 
-  it.each(['global-settings', 'downloads-full'] as const)(
-    'leaves room beside the %s card for the round close button outside it',
-    (kind) => {
-      const bounds = _test_centeredCardBounds(kind, parentOf(1400, 900))
-      const cardWidth = kind === 'global-settings' ? 880 : 900
-      expect(bounds.width).toBe(cardWidth + 48)
-    }
-  )
+  it('leaves room beside the downloads-full card for the round close button outside it', () => {
+    const bounds = _test_centeredCardBounds('downloads-full', parentOf(1400, 900))
+    expect(bounds.width).toBe(900 + 48)
+  })
 
   it.each([
-    ['global-settings', 640],
     ['downloads-full', 640],
-    ['global-settings', 800],
     ['downloads-full', 1000]
   ] as const)(
     'shrinks the %s card in a %ipx window so the close button stays inside it',

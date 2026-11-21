@@ -318,7 +318,7 @@ onMounted(() => {
       <TabsContent
         :key="activeTab"
         :value="activeTab"
-        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto pt-8 pr-8 pb-8 pl-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-8 overflow-y-auto pt-8 pr-8 pb-8 pl-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
           <GlobalSettingsMicroSection :title="t('settings.generalSection')">
