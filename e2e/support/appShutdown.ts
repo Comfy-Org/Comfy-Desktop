@@ -324,6 +324,7 @@ export function createShutdown(
     forgetAppIfItsPidWasReused()
     trackHelpers()
     const doomed = livePids()
+    if (lateRecoveryPassed()) killLauncherAndFailUnverified()
     const killedAt = Date.now()
     const forcedBy = phaseEnd(stopBy, forcedExitMs)
     forceKill(doomed, forcedBy - Date.now())

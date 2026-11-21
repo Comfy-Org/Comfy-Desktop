@@ -386,6 +386,41 @@ describe('app shutdown', () => {
     expect(isPidAlive(appPid), 'the unverified app pid is left alone').toBe(true)
   })
 
+  it('signals no unverified process when the last identity check uses up the recovery time', async () => {
+    const { launcher, appPid } = await launchShellAndApp()
+    const killed: number[] = []
+    let lookups = 0
+    const shutdown = createShutdown(
+      {
+        launcher,
+        appPid,
+        appStartTime: 'the start time recorded at launch',
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
+      {
+        gracefulCloseMs: 50,
+        forcedExitMs: 200,
+        log: () => {},
+        readStartTime: (_pid, timeoutMs) => {
+          lookups += 1
+          if (lookups === 2) blockFor(timeoutMs + LATE_RECOVERY_MS + 50)
+          return 'the start time recorded at launch'
+        },
+        forceKill: (pids, timeoutMs) => {
+          killed.push(...pids)
+          killProcessTrees(pids, timeoutMs)
+        }
+      }
+    ).shutdown()
+
+    await expect(shutdown).rejects.toThrow(/ran out of recovery time/)
+    expect(killed, 'only the launcher, which this test started, is signalled').toEqual([
+      launcher.pid
+    ])
+    expect(isPidAlive(appPid), 'the unverified app pid is left alone').toBe(true)
+  })
+
   it('keeps late recovery work within LATE_RECOVERY_MS past the deadline', async () => {
     const { launcher, appPid } = await launchShellAndApp()
     const gracefulCloseMs = 50
