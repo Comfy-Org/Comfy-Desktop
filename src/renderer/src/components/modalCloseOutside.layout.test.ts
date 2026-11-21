@@ -52,29 +52,32 @@ function straightRgbaBytes(css: string): number[] {
   return [...ctx.getImageData(0, 0, 1, 1).data]
 }
 
-function expectCardFill(
-  closeSelector: string,
-  cardSelector: string,
-  alpha: number,
-  crossOpacity = 0.8
-): void {
+function expectCardFill(closeSelector: string, cardSelector: string, hovered = false): void {
   const close = document.querySelector<HTMLElement>(closeSelector)!
   const card = document.querySelector<HTMLElement>(cardSelector)!
   const style = getComputedStyle(close)
   const fill = straightRgbaBytes(style.backgroundColor)
   const cardFill = straightRgbaBytes(getComputedStyle(card).backgroundColor)
   expect(cardFill[3], `${cardSelector} is opaque`).toBe(255)
+  expect(fill[3], `${closeSelector} is opaque, so busy art behind it never shows through`).toBe(255)
   fill.slice(0, 3).forEach((channel, i) => {
-    expect(Math.abs(channel - cardFill[i]!), `${closeSelector} channel ${i}`).toBeLessThanOrEqual(3)
+    if (hovered) {
+      expect(channel, `${closeSelector} channel ${i} lifts on hover`).toBeGreaterThan(
+        cardFill[i]! + 3
+      )
+    } else {
+      expect(Math.abs(channel - cardFill[i]!), `${closeSelector} channel ${i}`).toBeLessThanOrEqual(
+        3
+      )
+    }
   })
-  expect(Math.abs(fill[3]! / 255 - alpha), `${closeSelector} alpha`).toBeLessThanOrEqual(0.01)
   expect(style.borderTopWidth).toBe('0px')
-  expect(style.boxShadow).toBe('none')
+  expect(style.boxShadow, `${closeSelector} has a ringed edge`).toMatch(/inset/)
   expect(style.backdropFilter).toBe('none')
   const cross = close.querySelector('svg')!
   expect(straightRgbaBytes(getComputedStyle(cross).color).slice(0, 3)).toEqual([255, 255, 255])
   expect(Number(getComputedStyle(cross).opacity), `${closeSelector} cross`).toBeCloseTo(
-    crossOpacity,
+    hovered ? 1 : 0.9,
     2
   )
 }
@@ -127,7 +130,7 @@ describe('modals close with the round button outside the card', () => {
     })
   })
 
-  it('fills the round button with its card colour at 50% and a white cross at 80%, 70% and full on hover', async () => {
+  it('fills the round button solid with its card colour, a ringed edge and a white cross at 90%, lighter and full on hover', async () => {
     document.documentElement.dataset.theme = 'dark'
     await track(
       mount(BaseModal, {
@@ -136,10 +139,10 @@ describe('modals close with the round button outside the card', () => {
         slots: { default: '<p>Body</p>' }
       })
     )
-    expectCardFill('[data-testid="base-modal-close"]', '.base-modal-panel', 0.5)
+    expectCardFill('[data-testid="base-modal-close"]', '.base-modal-panel')
     await userEvent.hover(document.querySelector<HTMLElement>('[data-testid="base-modal-close"]')!)
     await vi.waitFor(() =>
-      expectCardFill('[data-testid="base-modal-close"]', '.base-modal-panel', 0.7, 1)
+      expectCardFill('[data-testid="base-modal-close"]', '.base-modal-panel', true)
     )
     await userEvent.unhover(
       document.querySelector<HTMLElement>('[data-testid="base-modal-close"]')!
@@ -156,7 +159,7 @@ describe('modals close with the round button outside the card', () => {
         }
       })
     )
-    expectCardFill('[data-testid="base-alert-close-icon"]', '.base-alert-panel', 0.5)
+    expectCardFill('[data-testid="base-alert-close-icon"]', '.base-alert-panel')
     mounted.splice(0).forEach((w) => w.unmount())
 
     await track(
@@ -166,10 +169,10 @@ describe('modals close with the round button outside the card', () => {
         slots: { default: 'Body' }
       })
     )
-    expectCardFill('.setup-modal-close', '.setup-modal-panel', 0.5)
+    expectCardFill('.setup-modal-close', '.setup-modal-panel')
     mounted.splice(0).forEach((w) => w.unmount())
 
     await track(mount(WhyTryCloudModal, { attachTo: document.body }))
-    expectCardFill('[data-testid="why-cloud-close"]', '.why-cloud-content', 0.5)
+    expectCardFill('[data-testid="why-cloud-close"]', '.why-cloud-content')
   })
 })
