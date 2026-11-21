@@ -38,7 +38,7 @@ import SidebarAccount from './SidebarAccount.vue'
 import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
-import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
+import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
 import { buildFailure, buildProgressOf } from '../composables/useBuildProgress'
@@ -192,7 +192,7 @@ function buildNameClipped(buildId: string): boolean {
 }
 
 function isLive(build: Installation): boolean {
-  return runsOnThisComputer(build, homeBuildStatus(build, sessionStore))
+  return homeBuildStatus(build, sessionStore) === 'running'
 }
 
 function failureText(build: Installation): string | null {

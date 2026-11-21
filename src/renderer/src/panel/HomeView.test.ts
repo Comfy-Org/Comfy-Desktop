@@ -687,6 +687,14 @@ describe('Home builds', () => {
     )
   })
 
+  it('says No setup needed on a Comfy Cloud that was never opened, once signed in', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: true })
+    getInstallations.mockResolvedValue([{ ...CLOUD, lastLaunchedAt: undefined }])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-build-status"]').text()).toBe('No setup needed')
+  })
+
   it("lists only the builds of the workspace picked in the sidebar, and opens that workspace's latest", async () => {
     const teamBuild = build({
       id: 'team-build',
@@ -781,14 +789,16 @@ describe('Home builds', () => {
     await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
   })
 
-  it('lists every build of the workspace in the Open ComfyUI menu, with a dot only on running builds', async () => {
+  it('lists every build of the workspace in the Open ComfyUI menu, with a dot on each open build, Comfy Cloud too', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
     const wrapper = await openHome()
-    useSessionStore().runningInstances.set(RUNNING.id, {
-      installationId: RUNNING.id,
-      installationName: RUNNING.name,
-      mode: 'window'
-    })
+    for (const open of [RUNNING, CLOUD]) {
+      useSessionStore().runningInstances.set(open.id, {
+        installationId: open.id,
+        installationName: open.name,
+        mode: 'window'
+      })
+    }
     await openBuildMenu(wrapper)
 
     expect(buildOptions().map((option) => option.textContent?.trim())).toEqual([
@@ -810,7 +820,7 @@ describe('Home builds', () => {
             .querySelector('[data-testid="home-open-build-status-dot"]')
             ?.getAttribute('data-tone') ?? null
       )
-    ).toEqual([null, 'live', null, null])
+    ).toEqual([null, 'live', 'live', null])
   })
 
   it('marks a broken build red and keeps it from opening, with the reason on hover', async () => {

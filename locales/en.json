@@ -198,6 +198,7 @@
     "buildRunning": "Running",
     "buildStarting": "Starting",
     "buildNeverUsed": "Never used",
+    "cloudNoSetupNeeded": "No setup needed",
     "buildUsedJustNow": "Used just now",
     "buildUsedMinutesAgo": "Used {count}m ago",
     "buildUsedHoursAgo": "Used {count}h ago",

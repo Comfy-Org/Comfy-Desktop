@@ -198,6 +198,7 @@
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildNeverUsed": "从未使用",
+    "cloudNoSetupNeeded": "无需设置",
     "buildUsedJustNow": "刚刚使用",
     "buildUsedMinutesAgo": "{count} 分钟前使用",
     "buildUsedHoursAgo": "{count} 小时前使用",

@@ -20,11 +20,10 @@ import {
   HOME_BUILD_TONES,
   homeBuildTone,
   isBuildUpdating,
-  isCloudBuild
+  isCloudBuild,
+  buildUsageLabel
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
-import { formatLastUsed } from '../../lib/datetime'
-import { lastUsedAt } from '../../../../shared/lastUsed'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
 import BuildMetaLine from '../../panel/home/BuildMetaLine.vue'
@@ -194,7 +193,7 @@ const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() => {
   if (startsWithDesktop.value) return t('home.autoStartOn')
   if (needsLogIn.value) return t('home.buildLogInToUse')
-  return formatLastUsed(lastUsedAt(inst.value), now.value.getTime(), t, locale.value)
+  return buildUsageLabel(inst.value, now.value.getTime(), t, locale.value)
 })
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))

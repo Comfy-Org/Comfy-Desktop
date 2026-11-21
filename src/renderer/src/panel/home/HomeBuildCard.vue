@@ -10,14 +10,13 @@ import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildMetaLine from './BuildMetaLine.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
-import { formatLastUsed } from '../../lib/datetime'
-import { lastUsedAt } from '../../../../shared/lastUsed'
 import {
   HOME_BUILD_TONES,
   homeBuildTone,
   isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
+  buildUsageLabel,
   isCloudBuild,
   isComfyCloud,
   type HomeBuildStatus
@@ -88,7 +87,7 @@ const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() =>
   needsLogIn.value
     ? t('home.buildLogInToUse')
-    : formatLastUsed(lastUsedAt(build), now.value.getTime(), t, locale.value)
+    : buildUsageLabel(build, now.value.getTime(), t, locale.value)
 )
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')

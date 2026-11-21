@@ -177,6 +177,14 @@ describe('Builds tile status', () => {
     expect(tile(fresh).textContent).toContain('Never used')
   })
 
+  it('says No setup needed, not Never used, on a Comfy Cloud that was never opened', async () => {
+    const freshCloud = { ...build('fresh-cloud', 'cloud', 0), lastLaunchedAt: undefined }
+    await mountGrid([freshCloud])
+
+    expect(tile(freshCloud).textContent).toContain('No setup needed')
+    expect(tile(freshCloud).textContent).not.toContain('Never used')
+  })
+
   it('shows Running with the green dot while Comfy Cloud is open, like a local build', async () => {
     useSessionStore().runningInstances.set(CLOUD.id, {
       installationId: CLOUD.id,
