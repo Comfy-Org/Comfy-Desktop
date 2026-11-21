@@ -11,7 +11,8 @@ import type {
   AppPageStatus,
   AppRun,
   AppSwitchStop,
-  RunningApp
+  RunningApp,
+  TitleBarApps
 } from '../../types/ipc'
 import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
@@ -31,7 +32,7 @@ export const APP_PAGE_CLOSED_CHANNEL = 'apps:page-closed'
 export const APP_OUTPUTS_CHANNEL = 'apps:outputs'
 export const APP_OUTPUT_ACTION_CHANNEL = 'apps-outputs:action'
 export const APP_RUNS_CHANNEL = 'apps:runs-changed'
-export const TITLE_BAR_RUNNING_APPS_CHANNEL = 'comfy-titlebar:apps-running-changed'
+export const TITLE_BAR_APPS_CHANNEL = 'comfy-titlebar:apps-running-changed'
 export const MAX_BACKGROUND_RUNS = 3
 export const APP_OPENED_EVENT = 'comfy.desktop.apps.app_opened'
 export const APP_PAGE_FAILED_EVENT = 'comfy.desktop.apps.app_page_failed'
@@ -161,17 +162,28 @@ function runsOf(windowKey: number): AppRun[] {
   )
 }
 
-export function runningApps(windowKey: number): RunningApp[] {
+function appsWhere(windowKey: number, matches: (run: AppRun) => boolean): RunningApp[] {
   return runsOf(windowKey)
-    .filter((run) => run.running)
+    .filter(matches)
     .map((run) => ({ id: run.appId, title: titleForListedApp(run.appId) ?? run.appId }))
+}
+
+export function runningApps(windowKey: number): RunningApp[] {
+  return appsWhere(windowKey, (run) => run.running)
+}
+
+export function titleBarApps(windowKey: number): TitleBarApps {
+  return {
+    running: runningApps(windowKey),
+    ready: appsWhere(windowKey, (run) => run.finished && !run.running)
+  }
 }
 
 function announceRuns(windowKey: number): void {
   panelOf(windowKey)?.send(APP_RUNS_CHANNEL, runsOf(windowKey))
   const titleBar = comfyWindows.get(windowKey)?.titleBarView?.webContents
   if (titleBar && !titleBar.isDestroyed()) {
-    titleBar.send(TITLE_BAR_RUNNING_APPS_CHANNEL, runningApps(windowKey))
+    titleBar.send(TITLE_BAR_APPS_CHANNEL, titleBarApps(windowKey))
   }
 }
 

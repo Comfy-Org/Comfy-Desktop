@@ -1290,9 +1290,14 @@ describe('TitleBarApp', () => {
     type RunningApp = { id: string; title: string }
 
     function addRunningAppsBridge() {
-      const running = { callbacks: [] as ((apps: RunningApp[]) => void)[], clicks: [] as unknown[] }
+      const running = {
+        callbacks: [] as ((apps: { running: RunningApp[]; ready: RunningApp[] }) => void)[],
+        clicks: [] as unknown[]
+      }
       Object.assign((window as unknown as { __comfyTitleBar: object }).__comfyTitleBar, {
-        onAppsRunningChanged: (cb: (apps: RunningApp[]) => void) => {
+        onAppsRunningChanged: (
+          cb: (apps: { running: RunningApp[]; ready: RunningApp[] }) => void
+        ) => {
           running.callbacks.push(cb)
           return () => {}
         },
@@ -1318,7 +1323,7 @@ describe('TitleBarApp', () => {
       await flushPromises()
 
       running.callbacks.forEach((cb) =>
-        cb([{ id: 'remove-background', title: 'Remove Background' }])
+        cb({ running: [{ id: 'remove-background', title: 'Remove Background' }], ready: [] })
       )
       await flushPromises()
       const indicator = wrapper.get('[data-testid="title-running-apps"]')
@@ -1338,16 +1343,66 @@ describe('TitleBarApp', () => {
       await flushPromises()
 
       running.callbacks.forEach((cb) =>
-        cb([
-          { id: 'remove-background', title: 'Remove Background' },
-          { id: 'sdr-to-hdr', title: 'SDR to HDR' }
-        ])
+        cb({
+          running: [
+            { id: 'remove-background', title: 'Remove Background' },
+            { id: 'sdr-to-hdr', title: 'SDR to HDR' }
+          ],
+          ready: []
+        })
       )
       await flushPromises()
       const indicator = wrapper.get('[data-testid="title-running-apps"]')
 
       expect(indicator.text()).toBe('2 running')
       expect(indicator.attributes('aria-label')).toBe('Show running apps')
+      wrapper.unmount()
+    })
+
+    it('keeps a done state after the run, with a dot instead of the spinner, and opens the app', async () => {
+      const running = addRunningAppsBridge()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+
+      running.callbacks.forEach((cb) =>
+        cb({ running: [], ready: [{ id: 'remove-background', title: 'Remove Background' }] })
+      )
+      await flushPromises()
+      const indicator = wrapper.get('[data-testid="title-running-apps"]')
+
+      expect(indicator.text()).toBe('Remove Background is ready')
+      expect(indicator.find('[data-testid="title-ready-dot"]').exists()).toBe(true)
+      expect(indicator.find('svg').exists()).toBe(false)
+      expect(indicator.attributes('aria-label')).toBe('Open Remove Background')
+      await indicator.trigger('click')
+      expect(running.clicks).toHaveLength(1)
+      wrapper.unmount()
+    })
+
+    it('counts two or more ready apps, and shows the spinner while any app still runs', async () => {
+      const running = addRunningAppsBridge()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+      const ready = [
+        { id: 'remove-background', title: 'Remove Background' },
+        { id: 'sdr-to-hdr', title: 'SDR to HDR' }
+      ]
+
+      running.callbacks.forEach((cb) => cb({ running: [], ready }))
+      await flushPromises()
+      expect(wrapper.get('[data-testid="title-running-apps"]').text()).toBe('2 ready')
+      expect(wrapper.get('[data-testid="title-running-apps"]').attributes('aria-label')).toBe(
+        'Show ready apps'
+      )
+
+      running.callbacks.forEach((cb) =>
+        cb({ running: [{ id: 'product-ads', title: 'Product Ads' }], ready })
+      )
+      await flushPromises()
+      expect(wrapper.get('[data-testid="title-running-apps"]').text()).toBe('Product Ads')
+      expect(wrapper.find('[data-testid="title-ready-dot"]').exists()).toBe(false)
       wrapper.unmount()
     })
   })

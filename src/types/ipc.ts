@@ -183,6 +183,11 @@ export interface RunningApp {
   title: string
 }
 
+export interface TitleBarApps {
+  running: RunningApp[]
+  ready: RunningApp[]
+}
+
 export interface AppSwitchStop {
   appTitle: string
   otherRuns: number

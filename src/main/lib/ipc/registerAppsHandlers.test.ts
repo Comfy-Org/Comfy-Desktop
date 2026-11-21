@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   isAppsPage: true,
   titleBarEntry: null as unknown,
   running: [] as { id: string; title: string }[],
+  ready: [] as { id: string; title: string }[],
   noteAppPageRunning: vi.fn(),
   appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
   appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
@@ -37,8 +38,8 @@ vi.mock('../../apps/appPageView', () => ({
   captureAppPage: vi.fn(),
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
-  runningApps: () => mocks.running,
-  showAppPage: vi.fn()
+  showAppPage: vi.fn(),
+  titleBarApps: () => ({ running: mocks.running, ready: mocks.ready })
 }))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/appsCatalog', () => ({ listApps: vi.fn(async () => []) }))
@@ -48,6 +49,10 @@ vi.mock('../../host/registry', () => ({
   findEntryByTitleBarSender: () => mocks.titleBarEntry
 }))
 vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse }))
+vi.mock('../i18n', () => ({
+  t: (key: string, params: { app?: string } = {}) =>
+    key === 'titleBar.appReady' ? `${params.app} is ready` : key
+}))
 
 import { OPEN_RUNNING_APP_CHANNEL, registerAppsHandlers } from './registerAppsHandlers'
 
@@ -134,6 +139,7 @@ describe('runs of apps kept open', () => {
     mocks.isPanel = true
     mocks.isAppsPage = true
     mocks.running = []
+    mocks.ready = []
     mocks.titleBarEntry = {
       id: 7,
       entry: {
@@ -198,6 +204,19 @@ describe('runs of apps kept open', () => {
     expect(mocks.popup).toHaveBeenCalledExactlyOnceWith({ window: hostWindow, x: 812, y: 36 })
     mocks.menuItems[1]?.click()
     expect(panelSend).toHaveBeenCalledExactlyOnceWith(OPEN_RUNNING_APP_CHANNEL, HDR.id)
+  })
+
+  it('opens the one app whose run ended, and lists ready apps after running ones', () => {
+    mocks.ready = [HDR]
+    clickRunningApps()
+    expect(panelSend).toHaveBeenCalledExactlyOnceWith(OPEN_RUNNING_APP_CHANNEL, HDR.id)
+
+    mocks.running = [REMOVE_BACKGROUND]
+    clickRunningApps()
+    expect(mocks.menuItems.map((item) => item.label)).toEqual([
+      'Remove Background',
+      'SDR to HDR is ready'
+    ])
   })
 
   it('does nothing for a click from outside a title bar, or with nothing running', () => {

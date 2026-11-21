@@ -390,7 +390,10 @@
     "betaNoticeSettings": "设置",
     "runningMany": "{count} 个运行中",
     "openRunning": "打开{app}",
-    "showRunning": "显示运行中的应用"
+    "showRunning": "显示运行中的应用",
+    "appReady": "{app}已完成",
+    "readyMany": "{count} 个已完成",
+    "showReady": "显示已完成的应用"
   },
   "comfyUISettings": {
     "title": "设置",
@@ -2203,10 +2206,10 @@
     "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
   },
   "appsQuit": {
-    "title": "应用仍在生成",
-    "messageOne": "{app}仍在生成。退出会停止它。",
-    "messageMany": "{count} 个应用仍在生成。退出会停止它们。",
-    "quit": "仍要退出",
+    "message": "仍要退出？",
+    "detailOne": "{app}仍在生成。退出会停止它。",
+    "detailMany": "{count} 个应用仍在生成。退出会停止它们。",
+    "quit": "退出",
     "cancel": "取消"
   }
 }

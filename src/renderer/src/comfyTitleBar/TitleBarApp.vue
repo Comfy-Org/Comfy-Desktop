@@ -16,7 +16,7 @@ import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useRunningApps } from './useRunningApps'
-import type { RunningApp } from '../types/ipc'
+import type { TitleBarApps } from '../types/ipc'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
@@ -100,7 +100,7 @@ interface Bridge {
   clickInstallUpdatePill: () => void
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
-  onAppsRunningChanged?: (cb: (apps: RunningApp[]) => void) => () => void
+  onAppsRunningChanged?: (cb: (apps: TitleBarApps) => void) => () => void
   clickRunningApps?: (anchor: MenuAnchor) => void
   clickFeedback: () => void
   openWhatsNewMenu: (anchor: { x: number; y: number }) => void
@@ -215,7 +215,7 @@ onUnmounted(() => {
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
 const runningBtnRef = useTemplateRef<HTMLButtonElement>('runningBtn')
-const { runningApps, runningLabel, runningTooltip, openRunning } = useRunningApps(
+const { hasApps, isRunning, runningLabel, runningTooltip, openRunning } = useRunningApps(
   bridge,
   runningBtnRef
 )
@@ -461,7 +461,7 @@ onUnmounted(() => {
         <RotateCw :size="16" />
       </button>
       <button
-        v-if="runningApps.length > 0"
+        v-if="hasApps"
         ref="runningBtn"
         type="button"
         class="title-running-apps inline-flex max-w-[180px] items-center gap-1.5 text-[12px] leading-4"
@@ -471,8 +471,15 @@ onUnmounted(() => {
         @click="openRunning"
       >
         <LoaderCircle
+          v-if="isRunning"
           :size="14"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <span
+          v-else
+          class="mx-1 size-1.5 shrink-0 rounded-full bg-current"
+          data-testid="title-ready-dot"
           aria-hidden="true"
         />
         <span class="min-w-0 truncate">{{ runningLabel }}</span>
