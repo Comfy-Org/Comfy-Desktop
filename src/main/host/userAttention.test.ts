@@ -1,27 +1,57 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
 
-import { createUserAttention, type AttentionDock, type AttentionWindow } from './userAttention'
+import {
+  createUserAttention,
+  type AttentionApp,
+  type AttentionDock,
+  type AttentionWindow
+} from './userAttention'
+
+type Listeners = Map<string, Set<() => void>>
+
+function emit(listeners: Listeners, event: string): void {
+  for (const listener of [...(listeners.get(event) ?? [])]) listener()
+}
+
+function listen(listeners: Listeners, event: string, listener: () => void): void {
+  const set = listeners.get(event) ?? new Set()
+  set.add(listener)
+  listeners.set(event, set)
+}
 
 function fakeWindow(focused = false): AttentionWindow & {
   focus(): void
+  blur(): void
+  listenerCount(): number
   flashFrame: Mock<(flag: boolean) => void>
 } {
-  const focusListeners = new Set<() => void>()
+  const listeners: Listeners = new Map()
   let isFocused = focused
   return {
     isFocused: () => isFocused,
     isDestroyed: () => false,
     flashFrame: vi.fn<(flag: boolean) => void>(),
-    on: (_event: 'focus', listener: () => void) => {
-      focusListeners.add(listener)
-    },
-    removeListener: (_event: 'focus', listener: () => void) => {
-      focusListeners.delete(listener)
-    },
+    on: (event: string, listener: () => void) => listen(listeners, event, listener),
+    removeListener: (event: string, listener: () => void) => listeners.get(event)?.delete(listener),
     focus() {
       isFocused = true
-      for (const listener of [...focusListeners]) listener()
-    }
+      emit(listeners, 'focus')
+    },
+    blur() {
+      isFocused = false
+      emit(listeners, 'blur')
+    },
+    listenerCount: () => [...listeners.values()].reduce((sum, set) => sum + set.size, 0)
+  }
+}
+
+function fakeApp(): AttentionApp & { resignActive(): void; listenerCount(): number } {
+  const listeners: Listeners = new Map()
+  return {
+    on: (event, listener) => listen(listeners, event, listener),
+    removeListener: (event, listener) => listeners.get(event)?.delete(listener),
+    resignActive: () => emit(listeners, 'did-resign-active'),
+    listenerCount: () => listeners.get('did-resign-active')?.size ?? 0
   }
 }
 
@@ -138,5 +168,60 @@ describe('asking for the user when the agent waits on them', () => {
     attention.dispose()
 
     expect(window.flashFrame).not.toHaveBeenCalled()
+  })
+
+  it('alerts once when the user leaves a window that was focused when the wait began', () => {
+    const window = fakeWindow(true)
+    const attention = createUserAttention(window, { platform: 'win32' })
+
+    attention.setNeeded(true)
+    expect(window.flashFrame).not.toHaveBeenCalled()
+
+    window.blur()
+    window.focus()
+    window.blur()
+
+    expect(window.flashFrame.mock.calls).toEqual([[true], [false]])
+  })
+
+  it('bounces the dock once Desktop stops being the active app when macOS refused the first bounce', () => {
+    const window = fakeWindow()
+    const dock = fakeDock()
+    const app = fakeApp()
+    dock.bounce.mockReturnValueOnce(-1)
+    createUserAttention(window, { platform: 'darwin', dock, app }).setNeeded(true)
+
+    app.resignActive()
+    app.resignActive()
+
+    expect(dock.bounce).toHaveBeenCalledTimes(2)
+    expect(app.listenerCount()).toBe(0)
+  })
+
+  it('stops waiting for Desktop to deactivate when the wait ends', () => {
+    const window = fakeWindow()
+    const dock = fakeDock()
+    const app = fakeApp()
+    dock.bounce.mockReturnValueOnce(-1)
+    const attention = createUserAttention(window, { platform: 'darwin', dock, app })
+
+    attention.setNeeded(true)
+    attention.setNeeded(false)
+    app.resignActive()
+
+    expect(dock.bounce).toHaveBeenCalledOnce()
+    expect(dock.cancelBounce).not.toHaveBeenCalled()
+    expect(app.listenerCount()).toBe(0)
+  })
+
+  it('removes every window listener when the wait ends', () => {
+    const window = fakeWindow(true)
+    const attention = createUserAttention(window, { platform: 'win32' })
+
+    attention.setNeeded(true)
+    window.blur()
+    attention.setNeeded(false)
+
+    expect(window.listenerCount()).toBe(0)
   })
 })

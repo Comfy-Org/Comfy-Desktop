@@ -3,7 +3,9 @@ export interface AttentionWindow {
   isDestroyed(): boolean
   flashFrame(flag: boolean): void
   on(event: 'focus', listener: () => void): unknown
+  on(event: 'blur', listener: () => void): unknown
   removeListener(event: 'focus', listener: () => void): unknown
+  removeListener(event: 'blur', listener: () => void): unknown
 }
 
 export interface AttentionDock {
@@ -11,9 +13,15 @@ export interface AttentionDock {
   cancelBounce(id: number): void
 }
 
+export interface AttentionApp {
+  on(event: 'did-resign-active', listener: () => void): unknown
+  removeListener(event: 'did-resign-active', listener: () => void): unknown
+}
+
 export interface UserAttentionOptions {
   platform: NodeJS.Platform
   dock?: AttentionDock
+  app?: AttentionApp
 }
 
 export interface UserAttention {
@@ -21,13 +29,17 @@ export interface UserAttention {
   dispose(): void
 }
 
+const BOUNCE_REFUSED = -1
+
 export function createUserAttention(
   window: AttentionWindow,
-  { platform, dock }: UserAttentionOptions
+  { platform, dock, app }: UserAttentionOptions
 ): UserAttention {
-  const usesDock = platform === 'darwin' && dock !== undefined
+  const macDock = platform === 'darwin' ? dock : undefined
   let needed = false
+  let alerted = false
   let alerting = false
+  let waitingForAppToDeactivate = false
   let bounceId: number | undefined
 
   function stopAlert(): void {
@@ -35,31 +47,65 @@ export function createUserAttention(
     alerting = false
     window.removeListener('focus', stopAlert)
     if (bounceId !== undefined) {
-      dock?.cancelBounce(bounceId)
+      macDock?.cancelBounce(bounceId)
       bounceId = undefined
     } else if (!window.isDestroyed()) {
       window.flashFrame(false)
     }
   }
 
-  function startAlert(): void {
-    if (window.isDestroyed() || window.isFocused()) return
+  function stopWaitingForAppToDeactivate(): void {
+    if (!waitingForAppToDeactivate) return
+    waitingForAppToDeactivate = false
+    app?.removeListener('did-resign-active', alertOnce)
+  }
+
+  function bounceDock(target: AttentionDock): boolean {
+    const id = target.bounce('informational')
+    if (id !== BOUNCE_REFUSED) {
+      bounceId = id
+      return true
+    }
+    if (app && !waitingForAppToDeactivate) {
+      waitingForAppToDeactivate = true
+      app.on('did-resign-active', alertOnce)
+    }
+    return false
+  }
+
+  function alertOnce(): void {
+    if (!needed || alerted || window.isDestroyed() || window.isFocused()) return
+    if (macDock) {
+      if (!bounceDock(macDock)) return
+    } else {
+      window.flashFrame(true)
+    }
+    stopWaitingForAppToDeactivate()
+    alerted = true
     alerting = true
     window.on('focus', stopAlert)
-    if (usesDock) bounceId = dock.bounce('informational')
-    else window.flashFrame(true)
+  }
+
+  function endWait(): void {
+    if (!needed) return
+    needed = false
+    window.removeListener('blur', alertOnce)
+    stopWaitingForAppToDeactivate()
+    stopAlert()
   }
 
   return {
     setNeeded(next: boolean): void {
-      if (next === needed) return
-      needed = next
-      if (needed) startAlert()
-      else stopAlert()
+      if (!next) {
+        endWait()
+        return
+      }
+      if (needed) return
+      needed = true
+      alerted = false
+      window.on('blur', alertOnce)
+      alertOnce()
     },
-    dispose(): void {
-      needed = false
-      stopAlert()
-    }
+    dispose: endWait
   }
 }

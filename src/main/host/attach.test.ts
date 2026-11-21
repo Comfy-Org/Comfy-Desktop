@@ -217,22 +217,25 @@ describe('a build page waiting on the user', () => {
   function openWindowWithIpc(): {
     entry: ComfyWindowEntry
     sendFromPage: (channel: string, ...args: unknown[]) => void
+    emitContents: (event: string, ...args: unknown[]) => void
     flashFrame: ReturnType<typeof vi.fn>
   } {
     const entry = openWindow()
-    const ipcListeners: Array<(event: unknown, channel: string, ...args: unknown[]) => void> = []
+    const contentsListeners: Array<[string, (...args: unknown[]) => void]> = []
     const contents = entry.comfyView.webContents as unknown as Record<string, unknown>
-    contents.on = (event: string, listener: never) => {
-      if (event === 'ipc-message') ipcListeners.push(listener)
+    contents.on = (event: string, listener: (...args: unknown[]) => void) => {
+      contentsListeners.push([event, listener])
+    }
+    const emitContents = (event: string, ...args: unknown[]): void => {
+      for (const [name, listener] of contentsListeners) if (name === event) listener(...args)
     }
     const flashFrame = vi.fn()
     Object.assign(entry.window, { flashFrame, on: () => {}, removeListener: () => {} })
     return {
       entry,
       flashFrame,
-      sendFromPage: (channel, ...args) => {
-        for (const listener of ipcListeners) listener({}, channel, ...args)
-      }
+      emitContents,
+      sendFromPage: (channel, ...args) => emitContents('ipc-message', {}, channel, ...args)
     }
   }
 
@@ -253,5 +256,16 @@ describe('a build page waiting on the user', () => {
     sendFromPage('desktop2-attention-needed', 'yes')
 
     expect(flashFrame).not.toHaveBeenCalled()
+  })
+
+  it('ends the wait when the page is replaced, so the next page can ask again', () => {
+    const { entry, sendFromPage, emitContents, flashFrame } = openWindowWithIpc()
+    showBuild(entry, true)
+
+    sendFromPage('desktop2-attention-needed', true)
+    emitContents('did-navigate')
+    sendFromPage('desktop2-attention-needed', true)
+
+    expect(flashFrame.mock.calls).toEqual([[true], [false], [true]])
   })
 })
