@@ -1606,6 +1606,44 @@ describe('PanelApp', () => {
     )
   })
 
+  it('drops a switch whose run check answers after the person picked another app or went back to Apps', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] },
+      { id: 'hdr', title: 'SDR to HDR', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    const answers: ((busy: boolean) => void)[] = []
+    vi.mocked(window.api.isAppPageBusy).mockImplementation(
+      () => new Promise<boolean>((resolve) => answers.push(resolve))
+    )
+    const hostTitle = () => wrapper.find('[data-testid="app-page-host"]').attributes('aria-label')
+
+    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    await wrapper.get('[data-testid="app-sidebar-app-hdr"]').trigger('click')
+    answers[1]?.(false)
+    await flushPromises()
+    answers[0]?.(false)
+    await flushPromises()
+    expect(hostTitle()).toBe('SDR to HDR')
+
+    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    const appPageWentBackToAllApps = vi.mocked(window.api.onAppPageClosed).mock.calls.at(-1)![0]
+    appPageWentBackToAllApps()
+    await flushPromises()
+    answers[2]?.(false)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-card-cutout"]').exists()).toBe(true)
+  })
+
   it('opens the app picked on Home inside Desktop, on the Apps page beside the folded sidebar', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)

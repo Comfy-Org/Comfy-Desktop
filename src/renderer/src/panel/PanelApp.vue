@@ -281,16 +281,24 @@ function openAppFromHome(app: AppCard): void {
   dashboardHomePage.value = 'apps'
 }
 
+let navigation = 0
+watch([sidebarPage, appInProgress, appsVisits], () => {
+  navigation += 1
+})
+
 async function switchApp(app: AppCard): Promise<void> {
   const current = appInProgress.value
-  if (current && (await window.api.isAppPageBusy().catch(() => false))) {
+  const started = ++navigation
+  const busy = current !== null && (await window.api.isAppPageBusy().catch(() => false))
+  if (started !== navigation) return
+  if (current && busy) {
     const choice = await dialogs.confirm({
       title: t('apps.switchWhileRunning.title', { app: app.title }),
       message: t('apps.switchWhileRunning.body', { current: current.title }),
       confirmLabel: t('apps.switchWhileRunning.switch'),
       cancelLabel: t('apps.switchWhileRunning.stay')
     })
-    if (choice !== 'primary') return
+    if (choice !== 'primary' || started !== navigation) return
   }
   openAppFromHome(app)
 }
