@@ -257,7 +257,21 @@ function updateTrayMenu(): void {
   tray.setContextMenu(contextMenu)
 }
 
+function confirmQuitStopsAppRuns(): boolean {
+  const [only] = Array.from(comfyWindows.keys()).flatMap((windowKey) => runningApps(windowKey))
+  const prompt = appsQuitPrompt(
+    {
+      running: runningAppCount(),
+      onlyTitle: only?.title ?? null,
+      downloading: hasActiveTemplateDownloads()
+    },
+    i18n.t
+  )
+  return prompt === null || dialog.showMessageBoxSync(prompt) === QUIT_BUTTON
+}
+
 function quitApp(): void {
+  if (!confirmQuitStopsAppRuns()) return
   setQuitReason('user-quit')
   ipc.cancelAll()
   for (const [, entry] of comfyWindows) {
@@ -1607,19 +1621,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       }
     })
   })
-
-  const confirmQuitStopsAppRuns = (): boolean => {
-    const [only] = Array.from(comfyWindows.keys()).flatMap((windowKey) => runningApps(windowKey))
-    const prompt = appsQuitPrompt(
-      {
-        running: runningAppCount(),
-        onlyTitle: only?.title ?? null,
-        downloading: hasActiveTemplateDownloads()
-      },
-      i18n.t
-    )
-    return prompt === null || dialog.showMessageBoxSync(prompt) === QUIT_BUTTON
-  }
 
   app.on('before-quit', (event) => {
     const asksAboutRuns = !isQuitInProgress() && runningAppCount() > 0

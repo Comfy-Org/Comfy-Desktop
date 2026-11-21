@@ -196,7 +196,7 @@ function forgetRun(hosted: HostedPage): void {
 function setRunning(hosted: HostedPage, running: boolean): void {
   if (hosted.running === running) return
   hosted.running = running
-  if (!running && !isOnScreen(hosted) && hosted.loaded) hosted.finished = true
+  hosted.finished = !running && !isOnScreen(hosted) && hosted.loaded !== null
   announceRuns(hosted.windowKey)
 }
 

@@ -851,6 +851,16 @@ describe('keeping apps running in the background', () => {
     expect(runsSentToPanel()).toEqual([])
   })
 
+  it('drops the done mark when a kept page starts another run', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    reportRun(cutout, false)
+
+    reportRun(cutout, true)
+
+    expect(runsSentToPanel()).toEqual([{ appId: CUTOUT, running: true, finished: false }])
+  })
+
   it('does not mark a run done that ends while its page is on screen', async () => {
     const cutout = await runInBackground(CUTOUT)
 
