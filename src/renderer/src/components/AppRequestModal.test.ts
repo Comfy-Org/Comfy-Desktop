@@ -303,6 +303,15 @@ describe('AppRequestModal', () => {
     expect(card.width, 'the image grows, the form keeps its width').toBeCloseTo(704, 0)
     expect(artBox.top).toBeLessThanOrEqual(title.top)
 
+    const formWidth = () =>
+      document.querySelector('.base-modal-body')!.getBoundingClientRect().width
+    const wideFormWidth = formWidth()
+    await page.viewport(800, 700)
+    await expect
+      .poll(formWidth, 'the smallest window narrows the image, not the form')
+      .toBeCloseTo(wideFormWidth, 0)
+    expect(art.getBoundingClientRect().width).toBeGreaterThan(232)
+
     await page.viewport(520, 700)
     await expect.poll(() => art.getBoundingClientRect().width).toBe(0)
     expect(input().getBoundingClientRect().width).toBeGreaterThan(0)
