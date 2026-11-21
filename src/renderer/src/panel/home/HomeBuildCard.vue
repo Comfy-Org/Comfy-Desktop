@@ -6,18 +6,19 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
+import BuildMetaLine from './BuildMetaLine.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import {
   HOME_BUILD_TONES,
+  homeBuildTone,
   isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
   isCloudBuild,
   isComfyCloud,
   runsOnThisComputer,
-  type HomeBuildStatus,
-  type HomeBuildTone
+  type HomeBuildStatus
 } from './homeBuild'
 import {
   buildFailure,
@@ -27,6 +28,7 @@ import {
 } from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useLocalDeviceKind } from '../../composables/useLocalDeviceKind'
+import { openInstallManager } from '../../lib/openInstallManager'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
@@ -34,13 +36,11 @@ import type { Installation } from '../../types/ipc'
 const {
   build,
   status,
-  tone,
   autoStart = false,
   loggedOut = false
 } = defineProps<{
   build: Installation
   status: HomeBuildStatus
-  tone: HomeBuildTone
   autoStart?: boolean
   loggedOut?: boolean
 }>()
@@ -80,7 +80,7 @@ const startFailedLogs = computed(
   () => build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id)
 )
 
-const toneStyle = computed(() => HOME_BUILD_TONES[tone])
+const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(build)])
 const needsLogIn = computed(() => loggedOut && isCloudBuild(build))
 const restingLabel = computed(() =>
   needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
@@ -118,13 +118,12 @@ const isLive = computed(() => runsOnThisComputer(build, status))
 const resting = computed(
   () => status === 'ready' || status === 'update' || (status === 'running' && !isLive.value)
 )
-const updateNote = computed(() =>
-  !uninstalling.value &&
-  !changesInPlace.value &&
-  status !== 'updating' &&
-  build.statusTag?.style === 'update'
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdateNote = computed(
+  () =>
+    !uninstalling.value &&
+    !changesInPlace.value &&
+    status !== 'updating' &&
+    build.statusTag?.style === 'update'
 )
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
@@ -179,8 +178,8 @@ function openContextMenu(event: MouseEvent): void {
 
 <template>
   <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
-    :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] px-[18px] text-left transition-colors"
+    :class="canOpen && 'cursor-pointer hover:bg-(--build-card-hover)'"
     :data-testid="testId"
     :data-build-id="build.id"
     :data-home-tour="homeTourAnchor"
@@ -262,15 +261,14 @@ function openContextMenu(event: MouseEvent): void {
       >
         {{ build.name }}
       </span>
-      <span
-        class="mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
+      <BuildMetaLine
+        class="mt-0.5"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
-      >
-        <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ subtitle ? ' · ' : '' }}{{ updateNote }}</span
-        >
-      </span>
+        :text="subtitle"
+        :build-name="build.name"
+        :show-update="showsUpdateNote"
+        @open-update="openInstallManager(build, { initialTab: 'update' })"
+      />
     </span>
     <Button
       v-if="!showsUpdateLock"

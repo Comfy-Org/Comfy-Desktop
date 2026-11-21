@@ -2,7 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { expect, test, type ElectronApplication } from '@playwright/test'
-import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
+import { comfyWindowShowsPort, keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { WebContentsPage } from './support/cdpPages'
@@ -86,15 +86,10 @@ test.afterAll(async () => {
 test('a payload-supplied feature name reaches the card @linux @macos', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
 
-  await ctx.panel.waitFor(
-    async () =>
-      (await ctx.app.evaluate(
-        ({ webContents }, port) =>
-          webContents.getAllWebContents().some((wc) => wc.getURL().includes(String(port))),
-        port
-      )) === true,
-    { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
-  )
+  await ctx.panel.waitFor(() => comfyWindowShowsPort(ctx.app, port), {
+    timeout: 90_000,
+    message: 'ComfyUI stub never came up / the host never attached'
+  })
   await keepOnlyComfyHostWindow(ctx.app)
 
   const popup = coachmarkPopup(ctx.app)

@@ -71,6 +71,7 @@ describe('ModalDialog shared controls', () => {
       title: 'Delete files',
       message: 'Select files.',
       confirmLabel: 'Delete selected',
+      confirmStyle: 'danger',
       options: [{ id: 'cache', label: 'Cache', checked: false }]
     })
     await settle()
@@ -86,11 +87,20 @@ describe('ModalDialog shared controls', () => {
     await expect(result).resolves.toEqual({ cache: true })
   })
 
-  it('retains destructive styling for a simple danger-solid confirmation', async () => {
+  it('shows the white button for a confirm that does not ask for danger', async () => {
+    const result = modal.confirm({ title: 'Stop ComfyUI', message: 'Stop it?' })
+    await settle()
+    const action = getElement<HTMLButtonElement>('[data-testid="base-alert-action"]')
+    expect(action.getAttribute('data-variant')).toBe('inverted')
+    action.click()
+    await expect(result).resolves.toBe(true)
+  })
+
+  it('retains destructive styling for a simple danger confirmation', async () => {
     const result = modal.confirm({
       title: 'Delete installation',
       message: 'Delete files?',
-      confirmStyle: 'danger-solid'
+      confirmStyle: 'danger'
     })
     await settle()
     const action = getElement<HTMLButtonElement>('[data-testid="base-alert-action"]')

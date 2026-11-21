@@ -73,7 +73,7 @@ const state = reactive<ModalState>({
   checkboxes: [],
   buttonLabel: 'OK',
   confirmLabel: 'Confirm',
-  confirmStyle: 'danger',
+  confirmStyle: 'primary',
   secondaryLabel: '',
   placeholder: '',
   defaultValue: '',
@@ -99,7 +99,7 @@ function reset(): void {
   state.checkboxes = []
   state.buttonLabel = 'OK'
   state.confirmLabel = 'Confirm'
-  state.confirmStyle = 'danger'
+  state.confirmStyle = 'primary'
   state.secondaryLabel = ''
   state.placeholder = ''
   state.defaultValue = ''
@@ -193,7 +193,7 @@ export function useModal() {
       state.snapshotPreview = opts.snapshotPreview ?? null
       state.checkboxes = (opts.checkboxes ?? []).map((c) => ({ ...c }))
       state.confirmLabel = opts.confirmLabel ?? i18n.global.t('modal.confirm')
-      state.confirmStyle = opts.confirmStyle ?? 'danger'
+      state.confirmStyle = opts.confirmStyle ?? 'primary'
       state.testIds = opts.testIds ? { ...opts.testIds } : {}
       state.resolve = resolve as (value: unknown) => void
     })
@@ -264,7 +264,7 @@ export function useModal() {
       state.message = opts.message
       state.options = opts.options.map((o) => ({ ...o }))
       state.confirmLabel = opts.confirmLabel ?? 'Confirm'
-      state.confirmStyle = opts.confirmStyle ?? 'danger'
+      state.confirmStyle = opts.confirmStyle ?? 'primary'
       state.resolve = resolve as (value: unknown) => void
     })
   }

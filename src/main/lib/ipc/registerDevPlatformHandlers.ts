@@ -162,7 +162,7 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
         message: i18n.t('devPlatform.account.installationInProgressMessage'),
         confirmLabel: i18n.t('devPlatform.account.cancelInstallationAndSignOut'),
         cancelLabel: i18n.t('common.close'),
-        confirmStyle: 'danger',
+        confirmStyle: 'primary',
         theme: host.lastTheme
       }
     })

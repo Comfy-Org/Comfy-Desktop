@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
-import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import { ref, computed, onMounted, toRaw, type Component } from 'vue'
+import { ref, computed, onMounted, toRaw, watch, type Component } from 'vue'
 import { Box, GitBranch, GitFork, Package, ScanSearch, Tag } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { TID } from '../../../shared/testIds'
 import { useModal } from '../composables/useModal'
 import SetupFormRow from './SetupFormRow.vue'
 import InstallLocationRow from './InstallLocationRow.vue'
+import InstallNameInput from './InstallNameInput.vue'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { BaseSelect, type BaseSelectOption } from './ui'
 
@@ -29,8 +28,34 @@ const selectedProbe = ref<ProbeResult | null>(null)
 const venvOverride = ref<string | null>(null)
 const probing = ref(false)
 const saving = ref(false)
+const nameTaken = ref(false)
 
-const canSave = computed(() => !!trackPath.value && !!selectedProbe.value && !saving.value)
+const nameError = computed(() => {
+  if (name.value.length > 0 && name.value.trim().length === 0) return t('newInstall.nameWhitespace')
+  if (nameTaken.value) return t('errors.duplicateName', { name: name.value.trim() })
+  return ''
+})
+
+const canSave = computed(
+  () => !!trackPath.value && !!selectedProbe.value && !saving.value && !nameError.value
+)
+
+let nameCheck = 0
+watch(
+  () => name.value.trim(),
+  (typed) => {
+    const check = ++nameCheck
+    nameTaken.value = false
+    if (!typed) return
+    void window.api
+      .getUniqueName(typed)
+      .then((unique) => {
+        if (check === nameCheck) nameTaken.value = unique !== typed
+      })
+      .catch(() => {})
+  },
+  { immediate: true }
+)
 
 let probeGeneration = 0
 
@@ -156,14 +181,28 @@ async function save(): Promise<void> {
 async function trackProbedInstall(probed: ProbeResult): Promise<void> {
   const typedName = name.value.trim()
   const probeCount = probeResults.value.length
-
   const rawProbe = JSON.parse(JSON.stringify(toRaw(probed))) as Record<string, unknown>
   if (venvOverride.value !== null) {
     rawProbe.venvPath = venvOverride.value
   }
   const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
+  const finalName = await window.api
+    .getUniqueName(typedName || DEFAULT_INSTALL_NAME)
+    .catch(async (error: unknown) => {
+      await alertCannotTrack(error instanceof Error ? error.message : String(error))
+      return null
+    })
+  if (finalName === null) return
+  if (typedName && finalName !== typedName) {
+    if (name.value.trim() === typedName) {
+      nameCheck++
+      nameTaken.value = true
+    }
+    return
+  }
+
   const data: Record<string, unknown> = {
-    name: typedName || DEFAULT_INSTALL_NAME,
+    name: finalName,
     ...rawProbe,
     installPath
   }
@@ -187,6 +226,10 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
   emit('saved')
 }
 
+async function alertCannotTrack(message: string): Promise<void> {
+  await modal.alert({ title: t('track.cannotTrack'), message })
+}
+
 defineExpose({ save, canSave })
 </script>
 
@@ -203,16 +246,13 @@ defineExpose({ save, canSave })
     />
 
     <SetupFormRow :label="$t('common.name')" :icon="Tag" label-for="track-name">
-      <InputGroup class="config-input">
-        <InputGroupInput
-          id="track-name"
-          v-model="name"
-          class="text-[13px] text-neutral-100"
-          data-initial-focus
-          type="text"
-          :placeholder="suggestedName || $t('common.namePlaceholder')"
-        />
-      </InputGroup>
+      <InstallNameInput
+        v-model="name"
+        input-id="track-name"
+        initial-focus
+        :placeholder="suggestedName || $t('common.namePlaceholder')"
+        :error="nameError"
+      />
     </SetupFormRow>
 
     <SetupFormRow :label="$t('track.detectedType')" :icon="ScanSearch">

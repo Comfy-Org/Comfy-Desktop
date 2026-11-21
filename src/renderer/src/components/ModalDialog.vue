@@ -42,9 +42,7 @@ const baseAlertSecondaryTone = computed<'danger' | 'default'>(() =>
 )
 
 const baseAlertTone = computed<'primary' | 'danger'>(() =>
-  state.type === 'confirm' && ['danger', 'danger-solid'].includes(state.confirmStyle)
-    ? 'danger'
-    : 'primary'
+  state.type === 'confirm' && state.confirmStyle === 'danger' ? 'danger' : 'primary'
 )
 
 const baseAlertButtonLabel = computed(() =>
@@ -76,7 +74,7 @@ const localOptions = reactive<(ModalOption & { checked: boolean })[]>([])
 const anyChecked = computed(() => localOptions.some((o) => o.checked))
 
 const confirmVariant = computed(() => {
-  if (state.confirmStyle === 'danger' || state.confirmStyle === 'danger-solid') return 'destructive'
+  if (state.confirmStyle === 'danger') return 'destructive'
   if (state.confirmStyle === 'primary' || state.confirmStyle === 'accent') return 'inverted'
   return 'secondary'
 })

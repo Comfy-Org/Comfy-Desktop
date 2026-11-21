@@ -1,6 +1,7 @@
 import type { useModal } from './useModal'
 import type { useDialogs } from './useDialogs'
 import type { ActionDef, DiskSpaceInfo, FieldOption, Installation } from '../types/ipc'
+import { confirmToneForActionStyle } from '../lib/destructiveStyles'
 
 type Modal = ReturnType<typeof useModal>
 type Dialogs = ReturnType<typeof useDialogs>
@@ -153,7 +154,7 @@ export async function runConfirmChain(
       message: action.confirm.message || 'Are you sure?',
       options: action.confirm.options,
       confirmLabel: action.confirm.confirmLabel || action.label,
-      confirmStyle: action.style || 'danger'
+      confirmStyle: confirmToneForActionStyle(action.style)
     })
     if (!result) return null
     return { ...action, data: { ...action.data, ...result } }
@@ -165,7 +166,7 @@ export async function runConfirmChain(
       messageDetails: action.confirm.messageDetails,
       restoreDiff: action.confirm.restoreDiff,
       confirmLabel: action.confirm.confirmLabel || action.label,
-      tone: action.style === 'primary' || action.style === 'accent' ? 'primary' : 'danger'
+      tone: confirmToneForActionStyle(action.style)
     })
     return result === 'primary' ? action : null
   }
@@ -174,7 +175,7 @@ export async function runConfirmChain(
     message: action.confirm.message || 'Are you sure?',
     messageDetails: action.confirm.messageDetails,
     confirmLabel: action.label,
-    confirmStyle: action.style || 'danger'
+    confirmStyle: confirmToneForActionStyle(action.style)
   })
   return confirmed ? action : null
 }

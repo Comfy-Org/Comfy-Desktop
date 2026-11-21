@@ -1904,7 +1904,7 @@ defineExpose({ open })
       <div v-if="buildCatalogFailed" class="mt-2 flex px-1" role="alert">
         <Button
           size="unset"
-          variant="destructive-textonly"
+          variant="textonly"
           type="button"
           class="wizard-build-retry text-left text-[12px] leading-[1.4] whitespace-normal"
           data-testid="config-summary-build-retry"
@@ -2138,7 +2138,7 @@ defineExpose({ open })
               <Button
                 v-if="authStore.buildsError"
                 size="unset"
-                variant="destructive-textonly"
+                variant="textonly"
                 type="button"
                 class="wizard-build-retry self-start text-left text-[13px] whitespace-normal"
                 :disabled="authStore.loadingBuilds || authorizingWorkspace"

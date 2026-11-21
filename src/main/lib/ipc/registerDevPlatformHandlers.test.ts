@@ -395,7 +395,7 @@ describe('registerDevPlatformHandlers', () => {
         spec: expect.objectContaining({
           cancelLabel: 'common.close',
           confirmLabel: 'devPlatform.account.cancelInstallationAndSignOut',
-          confirmStyle: 'danger'
+          confirmStyle: 'primary'
         })
       })
     )
