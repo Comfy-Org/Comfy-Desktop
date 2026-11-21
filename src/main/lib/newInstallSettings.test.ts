@@ -86,4 +86,33 @@ describe('seedNewInstallComfySettings', () => {
     await expect(seedNewInstallComfySettings(install())).resolves.toBeUndefined()
     expect(warned).toHaveBeenCalled()
   })
+
+  it('keeps the settings the download has when writing stops partway', async () => {
+    const existing = JSON.stringify({ 'Comfy.Locale': 'fr' })
+    writeSettings(existing)
+    const realWriteFile = fs.promises.writeFile.bind(fs.promises)
+    vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(async (target) => {
+      await realWriteFile(target, '{ "Comfy.Lo', 'utf-8')
+      throw Object.assign(new Error('EIO'), { code: 'EIO' })
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await seedNewInstallComfySettings(install())
+
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(existing)
+  })
+
+  it('keeps the settings the download has when the new file cannot replace them', async () => {
+    const existing = JSON.stringify({ 'Comfy.Locale': 'fr' })
+    writeSettings(existing)
+    vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(
+      Object.assign(new Error('EIO'), { code: 'EIO' })
+    )
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await seedNewInstallComfySettings(install())
+
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(existing)
+    expect(fs.existsSync(`${settingsPath}.tmp`)).toBe(false)
+  })
 })

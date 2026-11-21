@@ -297,8 +297,6 @@ export function registerInstallationHandlers(): void {
             installations.update(installationId, data).then(() => {})
           await source.postInstall(inst, { sendProgress, sendOutput, update, signal: abort.signal })
         }
-        // Only here: migrations and copies run postInstall too, then merge the source's user
-        // files without overwriting, so a file written in postInstall would hide its settings.
         if (!isComfyUpdate) await seedNewInstallComfySettings(inst)
 
         const freshInst = await installations.get(installationId)
