@@ -465,7 +465,7 @@ describe('Home builds', () => {
     ])
   })
 
-  it('shows an opened Comfy Cloud by when it was last used, with no green dot, since it runs nothing here', async () => {
+  it('shows Running with the green dot while Comfy Cloud is open, like a local build', async () => {
     getAuthStatus.mockResolvedValue({ signedIn: true })
     getInstallations.mockResolvedValue([CLOUD])
     const wrapper = await openHome()
@@ -477,8 +477,31 @@ describe('Home builds', () => {
     await flushPromises()
 
     const status = wrapper.get('[data-testid="home-build-status"]')
-    expect(status.text()).toBe('Used yesterday')
-    expect(status.find('.rounded-full').exists()).toBe(false)
+    expect(status.text()).toBe('Running')
+    expect(status.find('.rounded-full').exists()).toBe(true)
+  })
+
+  it('shows Running with the green dot while a remote build is connected', async () => {
+    const studio = build({
+      id: 'studio',
+      name: 'Studio server',
+      sourceId: 'remote',
+      sourceCategory: 'remote',
+      listPreview: 'http://studio.local:8188/',
+      lastLaunchedAt: NOW - 3 * HOUR_MS
+    })
+    getInstallations.mockResolvedValue([studio])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(studio.id, {
+      installationId: studio.id,
+      installationName: studio.name,
+      mode: 'window'
+    })
+    await flushPromises()
+
+    const status = wrapper.get('[data-testid="home-build-status"]')
+    expect(status.text()).toBe('Running')
+    expect(status.find('.rounded-full').exists()).toBe(true)
   })
 
   it('asks a logged-out user to log in to use Comfy Cloud, with no icon, while local builds say when they were last used', async () => {

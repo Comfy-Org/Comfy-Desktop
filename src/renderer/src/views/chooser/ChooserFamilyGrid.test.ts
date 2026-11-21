@@ -177,7 +177,7 @@ describe('Builds tile status', () => {
     expect(tile(fresh).textContent).toContain('Never used')
   })
 
-  it('shows an opened Comfy Cloud by when it was last used, with no green dot, since it runs nothing here', async () => {
+  it('shows Running with the green dot while Comfy Cloud is open, like a local build', async () => {
     useSessionStore().runningInstances.set(CLOUD.id, {
       installationId: CLOUD.id,
       installationName: CLOUD.name,
@@ -185,13 +185,13 @@ describe('Builds tile status', () => {
     })
     await mountGrid(ALL)
 
-    expect(tile(CLOUD).querySelector('.chooser-tile-status--running')).toBeNull()
-    expect(tile(CLOUD).textContent).not.toContain('Running')
-    expect(tile(CLOUD).textContent).toContain('Used yesterday')
-    expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
+    const running = tile(CLOUD).querySelector('.chooser-tile-status--running')
+    expect(running?.textContent?.trim()).toBe('Running')
+    expect(running?.querySelector('.rounded-full')).not.toBeNull()
+    expect(tile(CLOUD).textContent).not.toContain('Used')
   })
 
-  it('shows no Running or green dot on an opened remote server, since it runs nothing here', async () => {
+  it('shows Running with the green dot while a remote server is connected', async () => {
     const remote = build('remote', 'remote', 100)
     useSessionStore().runningInstances.set(remote.id, {
       installationId: remote.id,
@@ -200,8 +200,8 @@ describe('Builds tile status', () => {
     })
     await mountGrid([...ALL, remote])
 
-    expect(tile(remote).querySelector('.chooser-tile-status--running')).toBeNull()
-    expect(tile(remote).textContent).not.toContain('Running')
-    expect(tile(remote).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
+    const running = tile(remote).querySelector('.chooser-tile-status--running')
+    expect(running?.textContent?.trim()).toBe('Running')
+    expect(running?.querySelector('.rounded-full')).not.toBeNull()
   })
 })

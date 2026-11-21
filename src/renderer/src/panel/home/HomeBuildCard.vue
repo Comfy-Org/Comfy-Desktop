@@ -18,7 +18,6 @@ import {
   buildDeviceKind,
   isCloudBuild,
   isComfyCloud,
-  runsOnThisComputer,
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
@@ -107,7 +106,7 @@ const statusLabel = computed(() => {
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
-      return isLive.value ? t('home.buildRunning') : restingLabel.value
+      return t('home.buildRunning')
     case 'starting':
       return t('home.buildStarting')
     case 'update':
@@ -120,10 +119,8 @@ const statusLabel = computed(() => {
 const detail = computed(() =>
   isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
-const isLive = computed(() => runsOnThisComputer(build, status))
-const resting = computed(
-  () => status === 'ready' || status === 'update' || (status === 'running' && !isLive.value)
-)
+const isRunning = computed(() => status === 'running')
+const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
   !uninstalling.value &&
   !changesInPlace.value &&
@@ -138,7 +135,7 @@ const openHint = computed(() => {
   if (busy.value || startFailedLogs.value) return t('home.buildClickToViewLogs')
   if (
     broken.value ||
-    isLive.value ||
+    isRunning.value ||
     status === 'starting' ||
     build.sourceCategory === 'remote' ||
     isCloudBuild(build)
@@ -248,7 +245,7 @@ function openContextMenu(event: MouseEvent): void {
           aria-hidden="true"
         />
         <span
-          v-else-if="isLive"
+          v-else-if="isRunning"
           class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
           aria-hidden="true"
         />
