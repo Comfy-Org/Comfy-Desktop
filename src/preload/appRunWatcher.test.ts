@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { watchAppRun } from './appRunWatcher'
+import { createRunReporter, watchAppRun } from './appRunWatcher'
 
 const toasts = document.createElement('div')
 toasts.className = 'cs-toasts'
@@ -62,5 +62,47 @@ describe('watchAppRun', () => {
     await settle()
 
     expect(report).toHaveBeenCalledExactlyOnceWith(true)
+  })
+})
+
+describe('createRunReporter', () => {
+  it('follows the toast until the page reports runs itself, then only its reports', async () => {
+    document.body.append(toasts)
+    const send = vi.fn()
+    const reporter = createRunReporter(document, send)
+    reporter.watchToast()
+    const toast = showToast()
+    await settle()
+    expect(send).toHaveBeenLastCalledWith(true)
+
+    reporter.reportRun({ running: false })
+    toast.remove()
+    showToast()
+    await settle()
+
+    expect(send.mock.calls).toEqual([[true], [false]])
+  })
+
+  it('never watches the toast once the page has reported a run', async () => {
+    document.body.append(toasts)
+    const send = vi.fn()
+    const reporter = createRunReporter(document, send)
+
+    reporter.reportRun({ running: true })
+    reporter.watchToast()
+    showToast()
+    await settle()
+
+    expect(send.mock.calls).toEqual([[true]])
+  })
+
+  it('counts anything but running true as no run', () => {
+    const send = vi.fn()
+    const reporter = createRunReporter(document, send)
+
+    reporter.reportRun({ running: 'yes' })
+    reporter.reportRun(null)
+
+    expect(send.mock.calls).toEqual([[false], [false]])
   })
 })

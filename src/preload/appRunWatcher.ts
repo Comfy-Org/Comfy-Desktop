@@ -13,3 +13,26 @@ export function watchAppRun(page: Document, report: (running: boolean) => void):
   check()
   return () => observer.disconnect()
 }
+
+export interface RunReporter {
+  watchToast(): void
+  reportRun(state: unknown): void
+}
+
+export function createRunReporter(page: Document, send: (running: boolean) => void): RunReporter {
+  let stopWatching: (() => void) | null = null
+  let pageReports = false
+  return {
+    watchToast() {
+      if (pageReports || stopWatching) return
+      stopWatching = watchAppRun(page, send)
+    },
+    reportRun(state) {
+      pageReports = true
+      stopWatching?.()
+      stopWatching = null
+      const running = typeof state === 'object' && state !== null && 'running' in state
+      send(running && state.running === true)
+    }
+  }
+}
