@@ -279,6 +279,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     showAppPage: async () => 'ready',
     captureAppPage: async () => null,
     getAppRuns: async () => [],
+    appSwitchStopsRun: async () => null,
     hideAppPage: () => {},
     sendAppOutputAction: () => {},
     sendAppRequest: async () => true,

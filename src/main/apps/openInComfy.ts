@@ -13,8 +13,6 @@ import * as i18n from '../lib/i18n'
 import type { ActionResult } from '../lib/ipc/sessionActions/types'
 import { _hasActiveLaunch, _onLaunch, _runningSessions } from '../lib/ipc/shared'
 import type { SessionInfo } from '../lib/ipc/shared'
-import { titleForListedApp } from './appsCatalog'
-import { busyAppOn } from './localAppEvents'
 import { chooseLocalBuild, runningPortOf, usableLocalBuilds } from './localBuild'
 import type { LocalBuild } from './localBuild'
 import { launchOnce, launchQuietly, otherLaunchSettled, pageBuildId } from './localComfy'
@@ -79,14 +77,8 @@ export async function localBuilds(): Promise<ComfyDesktopLocalBuild[]> {
       id: build.id,
       name: build.name,
       ...(build.version === null ? {} : { version: build.version }),
-      running: build.port !== null,
-      ...busyWithOf(build.id)
+      running: build.port !== null
     }))
-}
-
-function busyWithOf(buildId: string): Pick<ComfyDesktopLocalBuild, 'busyWith'> {
-  const appId = busyAppOn(buildId)
-  return appId === null ? {} : { busyWith: { appId, title: titleForListedApp(appId) ?? appId } }
 }
 
 function pickLocal(builds: LocalBuild[], wanted: string | null): LocalBuild | null {

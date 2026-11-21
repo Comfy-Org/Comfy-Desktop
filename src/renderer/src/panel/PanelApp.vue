@@ -54,7 +54,8 @@ import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import { MAX_BACKGROUND_RUNS, runningAppIds, switchStopsRun, watchAppRuns } from './appRuns'
+import { runningAppIds, watchAppRuns } from './appRuns'
+import { useAppSwitchConfirm } from './useAppSwitchConfirm'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -283,34 +284,26 @@ const appPickedOnHome = ref<AppCard | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
 
-function openAppFromHome(app: AppCard): void {
+const confirmAppSwitch = useAppSwitchConfirm()
+
+async function openAppFromHome(app: AppCard): Promise<void> {
+  if (!(await confirmAppSwitch(app))) return
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
-}
-
-async function switchApp(app: AppCard): Promise<void> {
-  const current = appInProgress.value
-  if (current && switchStopsRun(current.id, app.id)) {
-    const choice = await dialogs.confirm({
-      title: t('apps.switchWhileRunning.title', { app: app.title }),
-      message: t('apps.switchWhileRunning.body', {
-        current: current.title,
-        count: MAX_BACKGROUND_RUNS
-      }),
-      confirmLabel: t('apps.switchWhileRunning.switch'),
-      cancelLabel: t('apps.switchWhileRunning.stay')
-    })
-    if (choice !== 'primary') return
-  }
-  openAppFromHome(app)
 }
 
 async function openRunningApp(appId: string): Promise<void> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
   const app = apps.find((listed) => listed.id === appId)
   if (!app) return
-  if (app.id === appInProgress.value?.id) openAppFromHome(app)
-  else await switchApp(app)
+  if (activePanel.value !== 'chooser') {
+    window.api.navigatePanel('apps')
+    await switchPanel('chooser', 'titlebar')
+    await nextTick()
+  }
+  closeBuildDetails()
+  assetsFocusName.value = null
+  await openAppFromHome(app)
 }
 
 async function confirmLeavingRuns(): Promise<boolean> {
@@ -347,7 +340,7 @@ function returnToApp(app: AppCard): void {
   })
   closeBuildDetails()
   assetsFocusName.value = null
-  openAppFromHome(app)
+  void openAppFromHome(app)
 }
 
 function viewInAssets(name: string): void {
@@ -636,7 +629,7 @@ onUnmounted(() => {
         :apps="listedApps"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
-        @switch-app="switchApp"
+        @switch-app="openAppFromHome"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />

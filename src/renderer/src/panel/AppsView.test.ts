@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
+import { useDialogs } from '../composables/useDialogs'
 
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
@@ -139,6 +140,7 @@ beforeEach(() => {
     listApps,
     showAppPage,
     captureAppPage: vi.fn().mockResolvedValue(null),
+    appSwitchStopsRun: vi.fn().mockResolvedValue(null),
     hideAppPage,
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppOutputs: vi.fn(() => () => {}),
@@ -499,6 +501,28 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="app-card-remove-background"]').exists()).toBe(true)
   })
 
+  it('opens nothing when the person stays on an app whose run the switch would stop', async () => {
+    const wrapper = await mountApps()
+    vi.mocked(window.api.appSwitchStopsRun).mockResolvedValueOnce({
+      appTitle: 'Remove Background',
+      otherRuns: 3
+    })
+
+    const dialogs = useDialogs()
+
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
+    expect(dialogs.state.confirm.title).toBe('Switch to SDR to HDR?')
+    expect(dialogs.state.confirm.message).toBe(
+      'Remove Background is still making something. 3 other apps are already running, so switching stops it.'
+    )
+    dialogs.cancel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(showAppPage).not.toHaveBeenCalled()
+  })
+
   it('opens an app from its card in place of the cards', async () => {
     const wrapper = await mountApps()
 
@@ -519,6 +543,7 @@ describe('AppsView', () => {
     const pageBox = page.getBoundingClientRect()
 
     await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await flushPromises()
 
     expect(showAppPage).toHaveBeenCalledTimes(1)
     expect(showAppPage.mock.calls[0]?.[1]).toMatchObject({

@@ -76,6 +76,7 @@ import {
   MAX_BACKGROUND_RUNS,
   TITLE_BAR_RUNNING_APPS_CHANNEL,
   _resetForTest,
+  appSwitchStopsRun,
   captureAppPage,
   hideAppPage,
   loadedAppPage,
@@ -905,6 +906,40 @@ describe('keeping apps running in the background', () => {
     finishLoading()
     reportRun(hostedPage(), 'yes')
     expect(runningAppCount()).toBe(0)
+  })
+
+  it('does not call a run done when its page crashes', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+
+    cutout.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+
+    expect(runsSentToPanel()).toEqual([])
+    expect(runningAppCount()).toBe(0)
+  })
+
+  it('says a switch stops a run only once the open app runs and the background is full of runs', async () => {
+    await runInBackground(CUTOUT)
+    await runInBackground(HDR)
+    await runInBackground(SWAP)
+    expect(appSwitchStopsRun(panelContents(), ROOM)).toBeNull()
+
+    await runInBackground(ADS)
+
+    expect(appSwitchStopsRun(panelContents(), ROOM)).toEqual({ appTitle: ADS, otherRuns: 3 })
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toBeNull()
+    expect(appSwitchStopsRun(panelContents(), ADS)).toBeNull()
+  })
+
+  it('says a switch keeps the run when a done page in the background can make room', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await runInBackground(HDR)
+    await runInBackground(SWAP)
+    await runInBackground(ADS)
+
+    reportRun(cutout, false)
+
+    expect(appSwitchStopsRun(panelContents(), ROOM)).toBeNull()
   })
 
   it('forgets a run once its page loads a new document', async () => {

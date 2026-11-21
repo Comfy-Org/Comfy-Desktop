@@ -91,8 +91,8 @@
     },
     "closeWhileRunning": {
       "title": "Close anyway?",
-      "bodyOne": "{app} is still making something.",
-      "bodyMany": "{count} app is still making something. | {count} apps are still making something.",
+      "bodyOne": "{app} is still making something. Closing stops it.",
+      "bodyMany": "{count} app is still making something. Closing stops it. | {count} apps are still making something. Closing stops them.",
       "close": "Close",
       "cancel": "Cancel"
     },

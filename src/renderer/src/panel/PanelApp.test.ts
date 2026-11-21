@@ -419,6 +419,7 @@ function installMockApi(initial?: {
     showAppPage: vi.fn(async () => 'loading'),
     captureAppPage: vi.fn(async () => null),
     getAppRuns: vi.fn(async () => []),
+    appSwitchStopsRun: vi.fn(async () => null),
     onAppRunsChanged: vi.fn(
       (_cb: (runs: { appId: string; running: boolean; finished: boolean }[]) => void) => () => {}
     ),
@@ -1508,6 +1509,7 @@ describe('PanelApp', () => {
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
 
@@ -1529,6 +1531,7 @@ describe('PanelApp', () => {
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
 
     await viewAnOutputInAssets(wrapper)
@@ -1570,7 +1573,7 @@ describe('PanelApp', () => {
     expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
   })
 
-  it('asks before switching away from a running app only once three others run, and stays on Stay', async () => {
+  it('asks before a switch that would stop a run, and stays on Stay', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
@@ -1583,8 +1586,10 @@ describe('PanelApp', () => {
     await flushPromises()
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
     await flushPromises()
-    reportRuns(['upscale', 'room', 'ads', 'hdr'])
-    await flushPromises()
+    vi.mocked(window.api.appSwitchStopsRun).mockResolvedValue({
+      appTitle: 'Upscale 4x',
+      otherRuns: 3
+    })
     const dialogButton = (testId: string) =>
       document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
 
@@ -1615,6 +1620,40 @@ describe('PanelApp', () => {
     )
   })
 
+  it('asks before opening an app from the Apps list or Home when that would stop a run', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    vi.mocked(window.api.appSwitchStopsRun).mockResolvedValue({
+      appTitle: 'Upscale 4x',
+      otherRuns: 3
+    })
+    const dialogButton = (testId: string) =>
+      document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-cutout"]').trigger('click')
+    await vi.waitFor(() => expect(dialogButton('base-alert-cancel')).not.toBeNull())
+    expect(window.api.appSwitchStopsRun).toHaveBeenLastCalledWith('cutout')
+    dialogButton('base-alert-cancel')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    await vi.waitFor(() => expect(dialogButton('base-alert-cancel')).not.toBeNull())
+    dialogButton('base-alert-cancel')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+  })
+
   it('switches away from a running app at once, since it keeps running in the background', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
@@ -1642,7 +1681,7 @@ describe('PanelApp', () => {
     )
   })
 
-  it('opens a running app picked from the title bar', async () => {
+  it('opens a running app picked from the title bar while a build view shows', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
@@ -1651,6 +1690,9 @@ describe('PanelApp', () => {
     ])
     const wrapper = mountPanel()
     await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+    await flushPromises()
+    expect(wrapper.find('.panel-comfy-lifecycle').exists()).toBe(true)
 
     mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
 

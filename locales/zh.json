@@ -91,8 +91,8 @@
     },
     "closeWhileRunning": {
       "title": "仍要关闭？",
-      "bodyOne": "{app}仍在生成。",
-      "bodyMany": "{count} 个应用仍在生成。 | {count} 个应用仍在生成。",
+      "bodyOne": "{app}仍在生成。关闭会停止它。",
+      "bodyMany": "{count} 个应用仍在生成。关闭会停止它们。 | {count} 个应用仍在生成。关闭会停止它们。",
       "close": "关闭",
       "cancel": "取消"
     },

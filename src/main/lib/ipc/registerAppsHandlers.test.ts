@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   running: [] as { id: string; title: string }[],
   noteAppPageRunning: vi.fn(),
   appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
+  appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
   popup: vi.fn(),
   menuItems: [] as { label: string; click: () => void }[],
   sendSurveyResponse: vi.fn(
@@ -32,6 +33,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../../apps/appPageView', () => ({
   appRuns: mocks.appRuns,
+  appSwitchStopsRun: mocks.appSwitchStopsRun,
   captureAppPage: vi.fn(),
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
@@ -150,6 +152,19 @@ describe('runs of apps kept open', () => {
     ])
     mocks.isPanel = false
     expect(await handler?.({ sender: {} })).toEqual([])
+  })
+
+  it('asks the page host whether opening an app stops a run, for the panel only', async () => {
+    const handler = mocks.handlers.get('apps:switch-stops-run')
+    const sender = {}
+
+    expect(await handler?.({ sender }, 'sdr-to-hdr')).toEqual({
+      appTitle: 'Remove Background',
+      otherRuns: 3
+    })
+    expect(mocks.appSwitchStopsRun).toHaveBeenCalledWith(sender, 'sdr-to-hdr')
+    mocks.isPanel = false
+    expect(await handler?.({ sender }, 'sdr-to-hdr')).toBeNull()
   })
 
   it('takes a run report only from an app page', () => {

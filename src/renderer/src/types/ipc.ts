@@ -9,6 +9,8 @@ export type {
   AppPagePlacement,
   AppPageStatus,
   AppRun,
+  AppSwitchStop,
+  RunningApp,
   AssetKind,
   AssetSummary,
   CloudAssetPage,

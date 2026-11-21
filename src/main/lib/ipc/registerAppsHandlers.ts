@@ -3,6 +3,7 @@ import type { IpcMainEvent } from 'electron'
 
 import {
   appRuns,
+  appSwitchStopsRun,
   captureAppPage,
   hideAppPage,
   noteAppPageRunning,
@@ -68,6 +69,10 @@ export function registerAppsHandlers(): void {
 
   ipcMain.handle('apps:get-runs', (event) =>
     isPanelSender(event.sender) ? appRuns(event.sender) : []
+  )
+
+  ipcMain.handle('apps:switch-stops-run', (event, appId: unknown) =>
+    isPanelSender(event.sender) ? appSwitchStopsRun(event.sender, appId) : null
   )
 
   ipcMain.on('apps-page:running', (event, running: unknown) => {

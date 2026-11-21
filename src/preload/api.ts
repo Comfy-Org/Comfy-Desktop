@@ -131,6 +131,7 @@ export function buildElectronApi(): ElectronApi {
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
     getAppRuns: () => ipcRenderer.invoke('apps:get-runs'),
+    appSwitchStopsRun: (appId) => ipcRenderer.invoke('apps:switch-stops-run', appId),
     onAppRunsChanged: (callback) => {
       const handler = (_event: IpcRendererEvent, runs: AppRun[]): void => callback(runs)
       ipcRenderer.on('apps:runs-changed', handler)

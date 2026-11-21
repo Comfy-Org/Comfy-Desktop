@@ -4,7 +4,15 @@ import path from 'path'
 
 import { isAppsListUrl, isInAppsScope, isWebUrl } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../../types/ipc'
+import type {
+  AppOutputAction,
+  AppOutputs,
+  AppPagePlacement,
+  AppPageStatus,
+  AppRun,
+  AppSwitchStop,
+  RunningApp
+} from '../../types/ipc'
 import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
@@ -61,17 +69,6 @@ interface HostedPage {
   running: boolean
   finished: boolean
   forget: () => void
-}
-
-export interface AppRun {
-  appId: string
-  running: boolean
-  finished: boolean
-}
-
-export interface RunningApp {
-  id: string
-  title: string
 }
 
 interface PageHost {
@@ -176,6 +173,12 @@ function announceRuns(windowKey: number): void {
   if (titleBar && !titleBar.isDestroyed()) {
     titleBar.send(TITLE_BAR_RUNNING_APPS_CHANNEL, runningApps(windowKey))
   }
+}
+
+function forgetRun(hosted: HostedPage): void {
+  if (!hosted.running) return
+  hosted.running = false
+  announceRuns(hosted.windowKey)
 }
 
 function setRunning(hosted: HostedPage, running: boolean): void {
@@ -376,10 +379,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     return { action: 'deny' }
   })
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
-    if (hosted.running) {
-      hosted.running = false
-      announceRuns(windowKey)
-    }
+    forgetRun(hosted)
     commitDocument(hosted, url)
     dismissStaleOutputs(windowKey, hosted)
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
@@ -399,8 +399,8 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     if (isMainFrame && errorCode !== NAVIGATION_ABORTED) fail(windowKey, hosted, 'network')
   })
   contents.on('render-process-gone', () => {
+    forgetRun(hosted)
     fail(windowKey, hosted, 'crashed')
-    setRunning(hosted, false)
   })
   attachContextMenu(entry.window, contents)
   if (!watchedWindows.has(entry.window)) {
@@ -584,6 +584,16 @@ export function noteAppPageRunning(contents: WebContents, running: unknown): voi
   const hosted = everyPage().find((page) => page.view.webContents === contents)
   if (!hosted || (running && !hosted.loaded)) return
   setRunning(hosted, running)
+}
+
+export function appSwitchStopsRun(panel: WebContents, appId: unknown): AppSwitchStop | null {
+  const host = hostOf(panel)
+  const current = host && hostedFor(host)
+  if (!current?.running || current.appId === null || current.appId === appId) return null
+  const background = [...backgroundOf(current.windowKey).values()]
+  const otherRuns = background.filter((page) => page.running && page.appId !== appId).length
+  if (otherRuns < MAX_BACKGROUND_RUNS) return null
+  return { appTitle: titleForListedApp(current.appId) ?? current.appId, otherRuns }
 }
 
 export function appRuns(panel: WebContents): AppRun[] {

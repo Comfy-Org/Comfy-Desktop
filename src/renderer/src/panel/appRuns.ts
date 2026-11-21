@@ -1,8 +1,6 @@
 import { computed, ref } from 'vue'
 import type { AppRun } from '../types/ipc'
 
-export const MAX_BACKGROUND_RUNS = 3
-
 export const appRuns = ref<AppRun[]>([])
 
 export const runningAppIds = computed(
@@ -29,10 +27,4 @@ export function watchAppRuns(): () => void {
     stop()
     appRuns.value = []
   }
-}
-
-export function switchStopsRun(currentAppId: string, nextAppId: string): boolean {
-  if (!runningAppIds.value.has(currentAppId)) return false
-  const others = [...runningAppIds.value].filter((id) => id !== currentAppId && id !== nextAppId)
-  return others.length >= MAX_BACKGROUND_RUNS
 }

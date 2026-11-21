@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
+import type { RunningApp } from '../types/ipc'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
@@ -21,11 +22,6 @@ export interface DownloadsTrayEntry {
   progress: number
   status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
   error?: string
-}
-
-export interface RunningApp {
-  id: string
-  title: string
 }
 
 export interface DownloadsTrayState {

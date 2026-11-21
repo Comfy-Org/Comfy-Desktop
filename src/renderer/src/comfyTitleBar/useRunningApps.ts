@@ -2,10 +2,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-export interface RunningApp {
-  id: string
-  title: string
-}
+import type { RunningApp } from '../types/ipc'
 
 interface MenuAnchor {
   x: number

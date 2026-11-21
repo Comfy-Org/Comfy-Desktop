@@ -37,14 +37,12 @@ import * as telemetry from '../lib/telemetry'
 import {
   _resetForTest,
   buildsWithRuns,
-  busyAppOn,
   COMFYUI_EXITED,
   errorClassOf,
   failRunsOn,
   finishRun,
   isFollowing,
   noteRunMessage,
-  onRunsChanged,
   RUN_FINISHED_EVENT,
   runAccepted,
   runEndFromHistory,
@@ -775,35 +773,5 @@ describe('setup', () => {
     setupStarted('start', APP).finished()
 
     expect(sent(SETUP_EVENT)).toEqual([])
-  })
-})
-
-describe('which app a build is busy with', () => {
-  beforeEach(() => _resetForTest())
-
-  it('names the app of the oldest run on the build, and nothing once its runs end', () => {
-    runAccepted('run-1', 'inst-1', 'remove-background', 1)
-    runAccepted('run-2', 'inst-1', 'sdr-to-hdr', 2)
-
-    expect(busyAppOn('inst-1')).toBe('remove-background')
-    expect(busyAppOn('inst-2')).toBeNull()
-
-    finishRun('run-1', { outcome: 'success', at: 3 })
-    expect(busyAppOn('inst-1')).toBe('sdr-to-hdr')
-    finishRun('run-2', { outcome: 'success', at: 4 })
-    expect(busyAppOn('inst-1')).toBeNull()
-  })
-
-  it('tells its watchers when a run starts or ends', () => {
-    const watcher = vi.fn()
-    const stop = onRunsChanged(watcher)
-
-    runAccepted('run-1', 'inst-1', 'remove-background', 1)
-    finishRun('run-1', { outcome: 'success', at: 2 })
-    expect(watcher).toHaveBeenCalledTimes(2)
-
-    stop()
-    runAccepted('run-2', 'inst-1', 'remove-background', 3)
-    expect(watcher).toHaveBeenCalledTimes(2)
   })
 })

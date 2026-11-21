@@ -16,7 +16,7 @@ import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useRunningApps } from './useRunningApps'
-import type { RunningApp } from './useRunningApps'
+import type { RunningApp } from '../types/ipc'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 

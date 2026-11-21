@@ -44,16 +44,6 @@ interface EarlyRun {
 
 const runs = new Map<string, Run>()
 const earlyRuns = new Map<string, EarlyRun>()
-const runWatchers = new Set<() => void>()
-
-function runsChanged(): void {
-  for (const watcher of runWatchers) watcher()
-}
-
-export function onRunsChanged(watcher: () => void): () => void {
-  runWatchers.add(watcher)
-  return () => runWatchers.delete(watcher)
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -127,7 +117,6 @@ export function finishRun(promptId: string, end: RunEnd): void {
   if (!run) return
   runs.delete(promptId)
   sendRunFinished(run, end)
-  runsChanged()
 }
 
 export function finishHeardRun(promptId: string): void {
@@ -151,7 +140,6 @@ export function runAccepted(
   const run: Run = { buildId, appId, submittedAt, startedAt: early?.startedAt }
   keepNewest(runs, promptId, run, MAX_RUNS)
   if (early?.end) finishRun(promptId, early.end)
-  else runsChanged()
 }
 
 function noteEarly(promptId: string, change: EarlyRun): void {
@@ -229,13 +217,6 @@ export function unstartedRunsOn(buildId: string): string[] {
   return runsOn(buildId).filter((promptId) => runs.get(promptId)?.startedAt === undefined)
 }
 
-export function busyAppOn(buildId: string): string | null {
-  for (const run of runs.values()) {
-    if (run.buildId === buildId && run.appId !== null) return run.appId
-  }
-  return null
-}
-
 export function isFollowing(promptId: string): boolean {
   return runs.has(promptId)
 }
@@ -280,7 +261,6 @@ export function setupStarted(stage: SetupStage, appId: string | null): SetupStep
 }
 
 export function _resetForTest(): void {
-  runWatchers.clear()
   runs.clear()
   earlyRuns.clear()
 }

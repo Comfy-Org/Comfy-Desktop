@@ -178,6 +178,16 @@ export interface AppRun {
   finished: boolean
 }
 
+export interface RunningApp {
+  id: string
+  title: string
+}
+
+export interface AppSwitchStop {
+  appTitle: string
+  otherRuns: number
+}
+
 export interface AppPagePlacement {
   x: number
   y: number
@@ -1306,6 +1316,7 @@ export interface ElectronApi {
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
   getAppRuns(): Promise<AppRun[]>
+  appSwitchStopsRun(appId: string): Promise<AppSwitchStop | null>
   onAppRunsChanged(callback: (runs: AppRun[]) => void): () => void
   onOpenRunningApp(callback: (appId: string) => void): () => void
   hideAppPage(): void
