@@ -99,7 +99,7 @@
     },
     "rail": {
       "running": "{app}, making something",
-      "finished": "{app}, done"
+      "finished": "{app}, ready"
     }
   },
   "assets": {
