@@ -17,7 +17,7 @@ const {
 
 const emit = defineEmits<{ 'open-update': [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const lineEl = useTemplateRef<HTMLElement>('line')
 const textEl = useTemplateRef<HTMLElement>('text')
@@ -32,14 +32,13 @@ function fitNote(): void {
     shortLabel.value = false
     return
   }
-  const textWidth =
-    (textEl.value?.scrollWidth ?? 0) + (trailingEl.value?.getBoundingClientRect().width ?? 0)
+  const textWidth = (textEl.value?.scrollWidth ?? 0) + (trailingEl.value?.scrollWidth ?? 0)
   shortLabel.value = textWidth + fullNote.getBoundingClientRect().width > line.clientWidth + 0.5
 }
 
 useResizeObserver(lineEl, fitNote)
 watch(
-  () => [text, trailing, showUpdate],
+  () => [text, trailing, showUpdate, locale.value],
   () => void nextTick(fitNote),
   { flush: 'post' }
 )

@@ -291,6 +291,23 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
+  describe('explicit reopen', () => {
+    it('returns to the requested tab when the same build reopens on the same tab', async () => {
+      const w = await mountContent({ initialTab: 'update', openEpoch: 1 })
+      await w.find(`[data-testid="${TID.settingsTab('snapshots')}"]`).trigger('click')
+      await flushPromises()
+      expect(w.find('[data-testid="snapshots-view-stub"]').exists()).toBe(true)
+
+      await w.setProps({ openEpoch: 2 })
+      await flushPromises()
+
+      expect(w.find('[data-testid="snapshots-view-stub"]').exists()).toBe(false)
+      expect(w.find(`[data-testid="${TID.settingsTab('update')}"]`).classes()).toContain(
+        'is-active'
+      )
+    })
+  })
+
   describe('overlay routing', () => {
     it('does NOT render the overlay for snapshot-restore on the snapshots tab', async () => {
       const w = await mountContent({

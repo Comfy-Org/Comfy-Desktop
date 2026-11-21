@@ -77,6 +77,7 @@ interface ActiveOperation {
 interface Props {
   installation: Installation | null
   initialTab?: ComfyUISettingsTab
+  openEpoch?: number
   autoAction?: string | null
   autoActionNonce?: number
   globalSettingsSnapshot?: StorageSnapshot
@@ -92,6 +93,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   initialTab: 'update',
+  openEpoch: 0,
   showBack: false,
   autoAction: null,
   autoActionNonce: 0,
@@ -452,6 +454,15 @@ watch(
   () => {
     subPage.value = null
     moreMenuOpen.value = false
+    tabTransition.value = 'subpage-push'
+  }
+)
+
+watch(
+  () => props.openEpoch,
+  () => {
+    activeTab.value = overviewTab(props.initialTab)
+    subPage.value = null
     tabTransition.value = 'subpage-push'
   }
 )
