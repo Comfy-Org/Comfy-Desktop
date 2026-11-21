@@ -798,6 +798,9 @@ export async function performCopy(
       copiedAt: _copiedAt,
       copiedFromName: _copiedFromName,
       copyReason: _copyReason,
+      lastLaunchedAt: _lastLaunchedAt,
+      lastLaunchedAtByCategory: _lastLaunchedAtByCategory,
+      lastStoppedAt: _lastStoppedAt,
       ...inherited
     } = inst
 
