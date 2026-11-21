@@ -1657,7 +1657,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       hasActiveModelTransfers,
       suspendActiveModelDownloadsForQuit,
       hasPendingStopStamps: ipc.hasPendingStopStamps,
-      settleStopStamps: () => ipc.settleStopStamps(STOP_STAMP_QUIT_WAIT_MS),
+      settleStopStamps: ipc.settleStopStamps,
+      stopStampWaitMs: STOP_STAMP_QUIT_WAIT_MS,
       isUpdateInstallQuit
     })
   )

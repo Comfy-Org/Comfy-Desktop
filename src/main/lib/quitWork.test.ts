@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createWillQuitHandler, type QuitWorkSources } from './quitWork'
 
@@ -17,6 +17,7 @@ function setup(overrides: Partial<QuitWorkSources> = {}) {
     suspendActiveModelDownloadsForQuit: vi.fn(async () => {}),
     hasPendingStopStamps: vi.fn(() => false),
     settleStopStamps: vi.fn(async () => {}),
+    stopStampWaitMs: 2_000,
     isUpdateInstallQuit: vi.fn(() => false),
     ...overrides
   }
@@ -34,6 +35,10 @@ async function settle(): Promise<void> {
 }
 
 describe('the will-quit wait', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('lets Desktop quit at once when nothing is pending', () => {
     const { sources, willQuit } = setup()
 
@@ -119,6 +124,42 @@ describe('the will-quit wait', () => {
 
     lateWrite.resolve()
     await settle()
+    expect(sources.quit).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives the late stop time only what is left of the one time limit', async () => {
+    const downloads = deferred()
+    let stampPending = false
+    const { sources, willQuit } = setup({
+      hasActiveModelTransfers: () => true,
+      suspendActiveModelDownloadsForQuit: () => downloads.promise,
+      hasPendingStopStamps: () => stampPending
+    })
+    const start = Date.now()
+    vi.spyOn(Date, 'now').mockReturnValue(start)
+
+    willQuit()
+    stampPending = true
+    vi.mocked(Date.now).mockReturnValue(start + 500)
+    downloads.resolve()
+    await settle()
+
+    expect(sources.settleStopStamps).toHaveBeenCalledWith(1_500)
+  })
+
+  it('stops waiting at the time limit when a stop time is still not written after the first wait', async () => {
+    const { sources, willQuit } = setup({ hasPendingStopStamps: () => true })
+    const start = Date.now()
+    vi.spyOn(Date, 'now').mockReturnValue(start)
+    vi.mocked(sources.settleStopStamps).mockImplementation(async () => {
+      vi.mocked(Date.now).mockReturnValue(start + 2_000)
+    })
+
+    willQuit()
+    await settle()
+
+    expect(sources.settleStopStamps).toHaveBeenCalledTimes(1)
+    expect(sources.settleStopStamps).toHaveBeenCalledWith(2_000)
     expect(sources.quit).toHaveBeenCalledTimes(1)
   })
 

@@ -3,7 +3,8 @@ export interface QuitWorkSources {
   hasActiveModelTransfers: () => boolean
   suspendActiveModelDownloadsForQuit: () => Promise<unknown>
   hasPendingStopStamps: () => boolean
-  settleStopStamps: () => Promise<unknown>
+  settleStopStamps: (timeoutMs: number) => Promise<unknown>
+  stopStampWaitMs: number
   isUpdateInstallQuit: () => boolean
 }
 
@@ -12,10 +13,12 @@ export function createWillQuitHandler(
 ): (event: { preventDefault: () => void }) => void {
   let waiting = false
   let quittingAfterWork = false
+  let stopStampDeadline = 0
 
   function stopStampWork(): Promise<unknown>[] {
-    return sources.hasPendingStopStamps() && !sources.isUpdateInstallQuit()
-      ? [sources.settleStopStamps()]
+    const remainingMs = stopStampDeadline - Date.now()
+    return remainingMs > 0 && sources.hasPendingStopStamps() && !sources.isUpdateInstallQuit()
+      ? [sources.settleStopStamps(remainingMs)]
       : []
   }
 
@@ -34,6 +37,7 @@ export function createWillQuitHandler(
       event.preventDefault()
       return
     }
+    stopStampDeadline = Date.now() + sources.stopStampWaitMs
     const work = pendingWork()
     if (work.length === 0) return
     waiting = true
