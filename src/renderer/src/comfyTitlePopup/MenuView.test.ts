@@ -176,7 +176,7 @@ describe('MenuView rows', () => {
       messages: {
         en: {
           titleBar: { ready: 'Ready' },
-          apps: { rail: { running: '{app}, making something', finished: '{app}, done' } }
+          apps: { rail: { running: '{app}, making something', finished: '{app}, ready' } }
         }
       }
     })
@@ -207,7 +207,7 @@ describe('MenuView rows', () => {
     expect(ready?.text()).toBe('SDR to HDR Ready')
     expect(ready?.find('img').exists()).toBe(false)
     expect(ready?.find('[data-testid="title-popup-app-ready"]').exists()).toBe(true)
-    expect(ready?.attributes('aria-label')).toBe('SDR to HDR, done')
+    expect(ready?.attributes('aria-label')).toBe('SDR to HDR, ready')
     expect(wrapper.find('ul').classes()).toContain('gap-0.5')
 
     await ready?.trigger('click')

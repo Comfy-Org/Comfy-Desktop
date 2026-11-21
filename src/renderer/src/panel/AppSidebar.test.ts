@@ -314,7 +314,7 @@ describe('AppSidebar', () => {
       expect(finished.find('span.rounded-full').exists()).toBe(true)
       expect(
         wrapper.get('[data-testid="app-sidebar-app-product-swap"]').attributes('aria-label')
-      ).toBe('Product Swap, done')
+      ).toBe('Product Swap, ready')
       expect(wrapper.find('[data-testid="app-sidebar-app-running-product-swap"]').exists()).toBe(
         false
       )
