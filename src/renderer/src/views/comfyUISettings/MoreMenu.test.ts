@@ -5,6 +5,7 @@ import { userEvent } from 'vitest/browser'
 import MoreMenu from './MoreMenu.vue'
 import DialogHost from '../../components/DialogHost.vue'
 import { useDialogs } from '../../composables/useDialogs'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 function mountMenu({ canUninstall = false } = {}) {
   return mount(
@@ -58,6 +59,21 @@ describe('MoreMenu', () => {
     await flushPromises()
     expect(wrapper.get('output').text()).toBe('copy')
     expect(page().find('.more-menu').exists()).toBe(false)
+  })
+
+  it('paints Uninstall with the shared red menu item class and leaves the rest plain', async () => {
+    const wrapper = mountMenu({ canUninstall: true })
+    await wrapper.get('[data-testid="trigger"]').trigger('click')
+    await flushPromises()
+    const items = [...document.querySelectorAll<HTMLElement>('.more-menu [role="menuitem"]')]
+    const uninstall = items.find((item) => item.textContent?.includes('Uninstall'))!
+    expect([...uninstall.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
+    expect(
+      items.filter((item) => item.classList.contains('text-destructive')),
+      'only Uninstall is red'
+    ).toEqual([uninstall])
   })
 
   it('lets the parent trigger close an open menu without reopening it', async () => {

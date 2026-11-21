@@ -229,11 +229,7 @@ const rows = computed(() =>
                 <MenuItem v-if="row.shared" @select="handleManage()">
                   {{ t('comfyUISettings.manageSharedDirs') }}
                 </MenuItem>
-                <MenuItem
-                  v-if="row.canRemove"
-                  class="text-destructive"
-                  @select="handleRemove(row.index)"
-                >
+                <MenuItem v-if="row.canRemove" @select="handleRemove(row.index)">
                   {{ t('models.removeDir') }}
                 </MenuItem>
               </Menu>

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 import TrackModal from './TrackModal.vue'
+import { useModal } from '../composables/useModal'
 import type { ProbeResult } from '../types/ipc'
 
 interface MockApi {
@@ -317,5 +318,217 @@ describe('TrackModal — install path resolution on save', () => {
 
     expect(api.trackInstallation).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('navigate-list')).toHaveLength(1)
+  })
+
+  it('saves the folder that was picked when Add build was pressed, even if another is browsed during the name check', async () => {
+    let holdNames = false
+    let releaseName: () => void = () => {}
+    const api = installMockApi({
+      getUniqueName: vi.fn((base: string) => {
+        if (!holdNames) return Promise.resolve(base)
+        return new Promise<string>((resolve) => {
+          releaseName = () => resolve(base)
+        })
+      }),
+      browseFolder: vi
+        .fn()
+        .mockResolvedValueOnce('/Users/jo/A')
+        .mockResolvedValueOnce('/Users/jo/B'),
+      probeInstallation: vi
+        .fn()
+        .mockResolvedValueOnce([{ ...gitProbe, commit: 'aaaa1111', venvPath: '/Users/jo/A/.venv' }])
+        .mockResolvedValueOnce([{ ...gitProbe, commit: 'bbbb2222', venvPath: '/Users/jo/B/.venv' }])
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+
+    holdNames = true
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+    releaseName()
+    await flushPromises()
+
+    expect(api.trackInstallation).toHaveBeenCalledTimes(1)
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.installPath).toBe('/Users/jo/A')
+    expect(data.commit).toBe('aaaa1111')
+    expect(data.venvPath).toBe('/Users/jo/A/.venv')
+  })
+})
+
+describe('TrackModal — build name', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const takenNames = new Set(['ComfyUI'])
+  const uniqueName = vi.fn(async (base: string) => (takenNames.has(base) ? `${base} (1)` : base))
+
+  async function openWithFolder() {
+    const api = installMockApi({
+      getUniqueName: uniqueName,
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+    return { api, wrapper }
+  }
+
+  it('saves the suggested name shown in the empty field', async () => {
+    const { api, wrapper } = await openWithFolder()
+
+    expect(wrapper.get('#track-name').attributes('placeholder')).toBe('ComfyUI (1)')
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.name).toBe('ComfyUI (1)')
+  })
+
+  it('warns and keeps Add build disabled when the typed name already exists', async () => {
+    const { api, wrapper } = await openWithFolder()
+
+    await wrapper.get('#track-name').setValue('ComfyUI')
+    await flushPromises()
+
+    expect(wrapper.get('#track-name-error').text()).toBe(
+      'A build named "ComfyUI" already exists. Please choose a different name.'
+    )
+    expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+
+    await wrapper.get('#track-name').setValue('Old portable')
+    await flushPromises()
+    expect(wrapper.find('#track-name-error').exists()).toBe(false)
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.name).toBe('Old portable')
+  })
+
+  it('shows the error and does not add the build when the name check fails on Add build', async () => {
+    const modal = useModal()
+    const { api, wrapper } = await openWithFolder()
+    api.getUniqueName.mockRejectedValueOnce(new Error('Could not read the builds list.'))
+
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe("Couldn't add this build")
+    expect(modal.state.message).toBe('Could not read the builds list.')
+    expect(api.trackInstallation).not.toHaveBeenCalled()
+
+    modal.dismiss()
+    await flushPromises()
+    expect(trackButton(wrapper).attributes('disabled')).toBeUndefined()
+  })
+
+  it('asks for a name when only spaces are typed', async () => {
+    const { wrapper } = await openWithFolder()
+
+    await wrapper.get('#track-name').setValue('   ')
+    await flushPromises()
+
+    expect(wrapper.get('#track-name-error').text()).toBe(
+      'Enter a name, or leave blank to use the suggested one.'
+    )
+    expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+  })
+
+  describe('when the name is checked again on Add build', () => {
+    async function openWithHeldName() {
+      const held: Array<() => void> = []
+      const api = installMockApi({
+        getUniqueName: vi.fn((base: string) => {
+          const unique = takenNames.has(base) ? `${base} (1)` : base
+          if (base !== 'ComfyUI') return Promise.resolve(unique)
+          return new Promise<string>((resolve) => {
+            held.push(() => resolve(unique))
+          })
+        }),
+        browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
+      })
+      const wrapper = mountTrack()
+      ;(wrapper.vm as unknown as { open: () => void }).open()
+      await flushPromises()
+      await browseButton(wrapper).trigger('click')
+      await flushPromises()
+      await wrapper.get('#track-name').setValue('ComfyUI')
+      await trackButton(wrapper).trigger('click')
+      await flushPromises()
+      const releaseAll = async () => {
+        held.splice(0).forEach((release) => release())
+        await flushPromises()
+      }
+      return { api, wrapper, releaseAll }
+    }
+
+    it('still rejects a taken name when the field has not changed', async () => {
+      const { api, wrapper, releaseAll } = await openWithHeldName()
+
+      await releaseAll()
+
+      expect(api.trackInstallation).not.toHaveBeenCalled()
+      expect(wrapper.get('#track-name-error').text()).toBe(
+        'A build named "ComfyUI" already exists. Please choose a different name.'
+      )
+      expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+    })
+
+    it('does not flag a new name when the check for the old one returns late', async () => {
+      const { api, wrapper, releaseAll } = await openWithHeldName()
+
+      await wrapper.get('#track-name').setValue('Old portable')
+      await flushPromises()
+      await releaseAll()
+
+      expect(api.trackInstallation).not.toHaveBeenCalled()
+      expect(wrapper.find('#track-name-error').exists()).toBe(false)
+      expect(trackButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('keeps the warning when an older check for the same name returns free after Add build found it taken', async () => {
+      let releaseEditCheck: () => void = () => {}
+      let holdNextCheck = false
+      const api = installMockApi({
+        getUniqueName: vi.fn((base: string) => {
+          if (base !== 'ComfyUI') return Promise.resolve(base)
+          if (holdNextCheck) {
+            holdNextCheck = false
+            return new Promise<string>((resolve) => {
+              releaseEditCheck = () => resolve(base)
+            })
+          }
+          return Promise.resolve(`${base} (1)`)
+        }),
+        browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
+      })
+      const wrapper = mountTrack()
+      ;(wrapper.vm as unknown as { open: () => void }).open()
+      await flushPromises()
+      await browseButton(wrapper).trigger('click')
+      await flushPromises()
+      holdNextCheck = true
+      await wrapper.get('#track-name').setValue('ComfyUI')
+      await trackButton(wrapper).trigger('click')
+      await flushPromises()
+
+      releaseEditCheck()
+      await flushPromises()
+
+      expect(api.trackInstallation).not.toHaveBeenCalled()
+      expect(wrapper.get('#track-name-error').text()).toBe(
+        'A build named "ComfyUI" already exists. Please choose a different name.'
+      )
+      expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+    })
   })
 })

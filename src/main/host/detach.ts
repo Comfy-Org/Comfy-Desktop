@@ -148,7 +148,7 @@ async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): 
       message: 'This will stop the current ComfyUI.',
       confirmLabel: 'Back to Home',
       cancelLabel: 'Cancel',
-      confirmStyle: 'danger',
+      confirmStyle: 'primary',
       theme: entry.lastTheme
     }
   })
@@ -207,7 +207,7 @@ export async function confirmAndCloseAllHostWindows(
       details,
       confirmLabel: 'Quit',
       cancelLabel: 'Cancel',
-      confirmStyle: 'danger',
+      confirmStyle: 'primary',
       theme: overlayParentEntry.lastTheme
     }
   })
@@ -234,7 +234,7 @@ export async function confirmCloseInstanceWindow(
       message,
       confirmLabel: 'Close Window',
       cancelLabel: 'Cancel',
-      confirmStyle: 'danger',
+      confirmStyle: 'primary',
       theme
     }
   })

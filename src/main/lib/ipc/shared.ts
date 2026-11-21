@@ -798,6 +798,9 @@ export async function performCopy(
       copiedAt: _copiedAt,
       copiedFromName: _copiedFromName,
       copyReason: _copyReason,
+      lastLaunchedAt: _lastLaunchedAt,
+      lastLaunchedAtByCategory: _lastLaunchedAtByCategory,
+      lastStoppedAt: _lastStoppedAt,
       ...inherited
     } = inst
 
@@ -1015,12 +1018,38 @@ export function _addSession(
     })
 }
 
+const _pendingStopStamps = new Set<Promise<unknown>>()
+
+function markSessionStopped(installationId: string, session: SessionInfo): void {
+  const write = installations
+    .update(session.sourceInstallationId ?? installationId, { lastStoppedAt: Date.now() })
+    .catch((err) => {
+      console.error('Failed to mark installation stopped:', err)
+    })
+  _pendingStopStamps.add(write)
+  void write.finally(() => _pendingStopStamps.delete(write))
+}
+
+export function hasPendingStopStamps(): boolean {
+  return _pendingStopStamps.size > 0
+}
+
+export async function settleStopStamps(timeoutMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+  })
+  await Promise.race([Promise.all(_pendingStopStamps), deadline])
+  clearTimeout(timer)
+}
+
 export function _removeSession(installationId: string): void {
   const session = _runningSessions.get(installationId)
   if (!session) return
   flushOperationOutput(installationId)
   if (session.port) removePortLock(session.port)
   _runningSessions.delete(installationId)
+  markSessionStopped(installationId, session)
   _broadcastToRenderer('instance-stopped', { installationId })
   sessionLifecycleEvents.emit('changed')
 }
@@ -1395,6 +1424,7 @@ export async function stopRunning(
     if (session.port) removePortLock(session.port)
     markStopRequested(installationId)
     _runningSessions.delete(installationId)
+    markSessionStopped(installationId, session)
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
     }
@@ -1413,6 +1443,7 @@ export async function stopRunning(
     for (const [id, session] of sessions) {
       if (session.port) removePortLock(session.port)
       markStopRequested(id)
+      markSessionStopped(id, session)
     }
     _runningSessions.clear()
     const kills: Promise<unknown>[] = []
@@ -1550,6 +1581,7 @@ export function _test_addRunningSession(
 export function _test_clearRunningSessions(): void {
   const ids = Array.from(_runningSessions.keys())
   _runningSessions.clear()
+  _pendingStopStamps.clear()
   for (const id of ids) {
     _broadcastToRenderer('instance-stopped', { installationId: id })
   }

@@ -76,7 +76,7 @@ describe('useActionGuard.checkBeforeAction', () => {
     progressState.info.set(INSTALL_ID, { status: 'Copying…', percent: 42 })
     mockConfirm.mockResolvedValue(false)
 
-    const ok = await useActionGuard().checkBeforeAction(INSTALL_ID, 'Open Folder')
+    const ok = await useActionGuard().checkBeforeAction(INSTALL_ID, 'Open folder')
 
     expect(ok).toBe(false)
     expect(mockConfirm).toHaveBeenCalledOnce()
