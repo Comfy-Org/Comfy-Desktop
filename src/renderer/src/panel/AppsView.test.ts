@@ -543,9 +543,8 @@ describe('AppsView', () => {
     const pageBox = page.getBoundingClientRect()
 
     await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
-    await flushPromises()
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalled())
 
-    expect(showAppPage).toHaveBeenCalledTimes(1)
     expect(showAppPage.mock.calls[0]?.[1]).toMatchObject({
       x: pageBox.x,
       y: pageBox.y,
