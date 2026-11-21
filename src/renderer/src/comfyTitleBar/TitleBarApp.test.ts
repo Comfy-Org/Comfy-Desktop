@@ -1387,7 +1387,7 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    it('counts two or more ready apps, and calls a mix of running and ready apps a group', async () => {
+    it('says how many apps are ready, and shows the dot beside the spinner for a mix of running and ready apps', async () => {
       const running = addRunningAppsBridge()
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp)
@@ -1399,7 +1399,8 @@ describe('TitleBarApp', () => {
 
       running.callbacks.forEach((cb) => cb({ running: [], ready }))
       await flushPromises()
-      expect(wrapper.get('[data-testid="title-running-apps"]').text()).toBe('2 ready')
+      expect(wrapper.get('[data-testid="title-running-apps"]').text()).toBe('2 apps are ready')
+      expect(wrapper.find('[data-testid="title-ready-dot"]').exists()).toBe(true)
       expect(wrapper.get('[data-testid="title-running-apps"]').attributes('aria-label')).toBe(
         'Show ready apps'
       )
@@ -1412,6 +1413,12 @@ describe('TitleBarApp', () => {
       expect(group.text()).toBe('3 apps')
       expect(group.attributes('aria-label')).toBe('Show apps')
       expect(group.find('svg').exists()).toBe(true)
+      expect(group.find('[data-testid="title-ready-dot"]').exists()).toBe(true)
+
+      running.callbacks.forEach((cb) =>
+        cb({ running: [{ id: 'product-ads', title: 'Product Ads' }], ready: [] })
+      )
+      await flushPromises()
       expect(wrapper.find('[data-testid="title-ready-dot"]').exists()).toBe(false)
       wrapper.unmount()
     })

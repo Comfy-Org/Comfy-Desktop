@@ -131,6 +131,14 @@ describe('computePopupHeight', () => {
     ])
     expect(h).toBe(68)
   })
+
+  it('adds the same 2px gap between rows of apps', () => {
+    const h = computePopupHeight([
+      { id: 'running-app:a', label: 'A', app: { picture: null, state: 'running' } },
+      { id: 'running-app:b', label: 'B', app: { picture: null, state: 'ready' } }
+    ])
+    expect(h).toBe(68)
+  })
 })
 
 describe('buildWhatsNewMenuItems', () => {
@@ -344,6 +352,21 @@ describe('activateTitlePopupMenuItem', () => {
     activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'reset-zoom', bindings)
 
     expect(bindings.resetComfyZoom).toHaveBeenCalledExactlyOnceWith('inst-1')
+  })
+
+  it('opens a running app picked from the title bar menu in the panel of its window', () => {
+    const send = vi.fn()
+    const host = {
+      ...makeEntry({ installationId: null }),
+      panelView: { webContents: { send, isDestroyed: () => false } }
+    } as unknown as ComfyWindowEntry
+    comfyWindows.set(host.windowKey, host)
+    const popup = makePopupEntry(host.windowKey)
+
+    activateTitlePopupMenuItem(popup, 'running-app:sdr-to-hdr', {} as TitlePopupHostBindings)
+
+    expect(send).toHaveBeenCalledExactlyOnceWith('apps:open-running-app', 'sdr-to-hdr')
+    expect(popup.view.hide).toHaveBeenCalledOnce()
   })
 
   it('defensively ignores Reset Zoom on an install-less host', () => {

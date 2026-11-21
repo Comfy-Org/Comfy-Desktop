@@ -24,6 +24,7 @@ export function useRunningApps(
 
   const listed = computed(() => [...apps.value.running, ...apps.value.ready])
   const isRunning = computed(() => apps.value.running.length > 0)
+  const hasReady = computed(() => apps.value.ready.length > 0)
   const hasApps = computed(() => listed.value.length > 0)
 
   const readyTitle = computed(() => {
@@ -36,7 +37,7 @@ export function useRunningApps(
     if (!only) return ''
     if (others.length === 0) return only.title
     const count = listed.value.length
-    if (apps.value.ready.length === 0) return t('titleBar.runningMany', { count })
+    if (!hasReady.value) return t('titleBar.runningMany', { count })
     if (!isRunning.value) return t('titleBar.readyMany', { count })
     return t('titleBar.appsMany', { count })
   })
@@ -45,7 +46,7 @@ export function useRunningApps(
     const [only, ...others] = listed.value
     if (!only) return ''
     if (others.length === 0) return t('titleBar.openRunning', { app: only.title })
-    if (apps.value.ready.length === 0) return t('titleBar.showRunning')
+    if (!hasReady.value) return t('titleBar.showRunning')
     if (!isRunning.value) return t('titleBar.showReady')
     return t('titleBar.showApps')
   })
@@ -68,6 +69,7 @@ export function useRunningApps(
   return {
     hasApps,
     isRunning,
+    hasReady,
     readyTitle,
     runningLabel: label,
     runningTooltip: tooltip,

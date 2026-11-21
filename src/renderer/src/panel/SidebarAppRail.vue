@@ -6,7 +6,7 @@ import { AppWindow, LoaderCircle } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Tooltip from '../components/ui/Tooltip.vue'
 import CoverRotation from '../components/CoverRotation.vue'
-import { stillsOf } from '../lib/appStills'
+import { stillsOf } from '../../../shared/appStills'
 import { finishedAppIds, runningAppIds } from './appRuns'
 import type { AppCard } from '../types/ipc'
 

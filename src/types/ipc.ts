@@ -1617,14 +1617,22 @@ export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
 export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
 
+export interface TitlePopupMenuApp {
+  picture: string | null
+  state: 'running' | 'ready'
+}
+
 export interface TitlePopupMenuItem {
   id?: string
   label?: string
   labelKey?: string
   labelParams?: Record<string, string | number>
   icon?: TitlePopupMenuIcon
+  app?: TitlePopupMenuApp
   kind?: 'separator'
 }
+
+export const OPEN_RUNNING_APP_CHANNEL = 'apps:open-running-app'
 
 export interface PopupTheme {
   bg: string

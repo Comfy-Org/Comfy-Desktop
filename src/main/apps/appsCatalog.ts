@@ -1,6 +1,7 @@
 import { app as electronApp } from 'electron'
 import path from 'path'
 
+import { stillsOf } from '../../shared/appStills'
 import { APP_ID_PATTERN, isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
 import type { AppBadge, AppBadgeStyle, AppBadgeWords, AppCard, AppCover } from '../../types/ipc'
@@ -287,8 +288,17 @@ export function pageUrlForListedApp(id: string): string | null {
   return cache?.apps.find((app) => app.card.id === id)?.pageUrl ?? null
 }
 
+function listedCard(id: string): AppCard | null {
+  return cache?.apps.find((app) => app.card.id === id)?.card ?? null
+}
+
 export function titleForListedApp(id: string): string | null {
-  return cache?.apps.find((app) => app.card.id === id)?.card.title ?? null
+  return listedCard(id)?.title ?? null
+}
+
+export function pictureForListedApp(id: string): string | null {
+  const card = listedCard(id)
+  return card ? (stillsOf(card)[0] ?? null) : null
 }
 
 export function _resetAppsCatalogForTest(): void {

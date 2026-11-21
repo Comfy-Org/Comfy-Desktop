@@ -392,7 +392,8 @@
     "openRunning": "Open {app}",
     "showRunning": "Show running apps",
     "appReady": "{app} is ready",
-    "readyMany": "{count} ready",
+    "ready": "Ready",
+    "readyMany": "{count} apps are ready",
     "showReady": "Show ready apps",
     "appsMany": "{count} apps",
     "showApps": "Show apps"
