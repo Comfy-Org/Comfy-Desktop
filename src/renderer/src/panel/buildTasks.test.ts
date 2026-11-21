@@ -419,7 +419,9 @@ describe('a task on a build runs on its tile, never on the full-screen page', ()
 })
 
 describe('a port conflict when a build starts', () => {
-  async function startIntoConflict(): Promise<void> {
+  async function finishIntoConflict(
+    portConflict: NonNullable<ActionResult['portConflict']>
+  ): Promise<void> {
     await openBuildsList()
     await desktop.startFromPicker({
       actionId: 'launch',
@@ -430,11 +432,30 @@ describe('a port conflict when a build starts', () => {
     ;(await lastRun()).finish({
       ok: false,
       message: 'Port 8188 is already in use by python.',
-      portConflict: { port: 8188, nextPort: 8189, isComfy: true }
+      portConflict
     })
     await flushPromises()
+  }
+
+  async function startIntoConflict(): Promise<void> {
+    await finishIntoConflict({ port: 8188, nextPort: 8189, isComfy: true })
     await vi.waitFor(() => expect(onPage(TID.progressPortConflictUsePort)).not.toBeNull())
   }
+
+  it('asks in red when the only choice stops another program on the port', async () => {
+    await finishIntoConflict({ port: 8188, isComfy: true })
+
+    await vi.waitFor(() => expect(onPage(TID.progressPortConflictKill)).not.toBeNull())
+    expect(onPage(TID.progressPortConflictUsePort)).toBeNull()
+    expect(useModal().state.confirmStyle).toBe('danger')
+  })
+
+  it('asks in white when the only choice stops an earlier run of this build', async () => {
+    await finishIntoConflict({ port: 8188, isComfy: true, priorBusy: true })
+
+    await vi.waitFor(() => expect(onPage(TID.progressPortConflictKill)).not.toBeNull())
+    expect(useModal().state.confirmStyle).toBe('primary')
+  })
 
   it('asks in a dialog over the builds list, not on the full-screen page', async () => {
     await startIntoConflict()

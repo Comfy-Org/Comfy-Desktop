@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowUpRight, Plus, Search } from '@lucide/vue'
-import { stillsOf } from '../lib/appStills'
+import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'

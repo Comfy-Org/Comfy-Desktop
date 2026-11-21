@@ -40,6 +40,7 @@ import BaseAccordion from '../../components/ui/BaseAccordion.vue'
 import EmptyState from '../../components/ui/EmptyState.vue'
 import OperationErrorDetail from '../../components/ui/OperationErrorDetail.vue'
 import { humanizeOpStatus } from '../../lib/progressStatusLabel'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 interface ActiveOperation {
   percent: number
@@ -383,8 +384,7 @@ async function handleSave(): Promise<void> {
   } catch (err: unknown) {
     await dialogs.alert({
       title: t('snapshots.saveErrorTitle'),
-      message: (err as Error).message || String(err),
-      tone: 'danger'
+      message: (err as Error).message || String(err)
     })
     return
   }
@@ -446,8 +446,7 @@ async function handleDelete(filename: string): Promise<void> {
   } catch (err: unknown) {
     await dialogs.alert({
       title: t('snapshots.deleteErrorTitle'),
-      message: (err as Error).message || String(err),
-      tone: 'danger'
+      message: (err as Error).message || String(err)
     })
     return
   }
@@ -486,8 +485,7 @@ async function handleImport(): Promise<void> {
     if (preview.message) {
       await dialogs.alert({
         title: t('snapshots.importErrorTitle'),
-        message: preview.message,
-        tone: 'danger'
+        message: preview.message
       })
     }
     return
@@ -513,8 +511,7 @@ async function handleImport(): Promise<void> {
     if (diff.message) {
       await dialogs.alert({
         title: t('snapshots.importErrorTitle'),
-        message: diff.message,
-        tone: 'danger'
+        message: diff.message
       })
     }
     return
@@ -527,8 +524,7 @@ async function handleImport(): Promise<void> {
     if (importResult.message) {
       await dialogs.alert({
         title: t('snapshots.importErrorTitle'),
-        message: importResult.message,
-        tone: 'danger'
+        message: importResult.message
       })
     }
     return
@@ -911,7 +907,8 @@ async function handleImport(): Promise<void> {
                 <MenuItem
                   as="button"
                   type="button"
-                  class="snapshot-row-delete w-full justify-start gap-2 text-left text-destructive"
+                  class="snapshot-row-delete w-full justify-start gap-2 text-left"
+                  :class="DESTRUCTIVE_MENU_ITEM_CLASS"
                   :disabled="restoreInFlight"
                   :data-testid="TID.snapshotRowDelete(item.snapshot.filename)"
                   @select="handleDelete(item.snapshot.filename)"

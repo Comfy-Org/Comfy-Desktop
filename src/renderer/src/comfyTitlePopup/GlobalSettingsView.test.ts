@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+import '../assets/main.css'
 import { useModal } from '../composables/useModal'
 import GlobalSettingsView from './GlobalSettingsView.vue'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
@@ -189,6 +190,98 @@ describe('GlobalSettingsView', () => {
     const tabLabels = wrapper.findAll('.gs-tab').map((t) => t.text())
     expect(tabLabels).toEqual(['General', 'Updates', 'Folders', 'Advanced', 'Logs'])
     expect(wrapper.find('.gs-tab.active').text()).toBe('General')
+  })
+
+  it('puts the tab list on the lighter panel and the settings on the card, like build settings', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const wrapper = mountView()
+    await flushPromises()
+    const background = (selector: string): string =>
+      getComputedStyle(wrapper.get(selector).element).backgroundColor
+    const transparent = 'rgba(0, 0, 0, 0)'
+
+    expect(background('.gs-nav'), 'the tab list sits on a panel').not.toBe(transparent)
+    expect(background('.gs-nav')).not.toBe(background('.gs-card'))
+    expect(background('.gs-pane'), 'the settings sit on the card itself').toBe(transparent)
+    const surface = document.createElement('div')
+    surface.className = 'bg-[var(--modal-surface-bg)]'
+    document.body.append(surface)
+    const modalSurface = getComputedStyle(surface).backgroundColor
+    surface.remove()
+    expect(background('.gs-card'), 'the card uses the same surface as build settings').toBe(
+      modalSurface
+    )
+  })
+
+  it('groups Language under General, ahead of the other Preferences groups', async () => {
+    installMockBridge()
+    const wrapper = mountView(
+      makeSnapshot({
+        languageFields: [
+          { id: 'language', label: 'Language', value: 'en', editable: true, editType: 'select' }
+        ]
+      })
+    )
+    await flushPromises()
+    const sections = wrapper.findAll('.gs-micro-section')
+
+    expect(sections.map((section) => section.get('.gs-micro-title').text())).toEqual([
+      'General',
+      'App behavior',
+      'Privacy',
+      'Community'
+    ])
+    expect(sections[0]!.find('.gs-language').exists(), 'Language sits in General').toBe(true)
+  })
+
+  it('lays out the Community link as a settings row, lined up with the labels above', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const wrapper = mountView()
+    await flushPromises()
+    const link = wrapper.get('.github-link-card').element.getBoundingClientRect()
+    const toggleRow = wrapper.get('.settings-v2-boolean-row').element.getBoundingClientRect()
+    const icon = wrapper.get('.github-link-main svg').element.getBoundingClientRect()
+
+    expect(icon.left, 'the GitHub icon starts where the row labels start').toBe(toggleRow.left)
+    expect(link.height, 'as tall as a toggle row').toBeLessThanOrEqual(toggleRow.height)
+  })
+
+  it('leaves 32px between the Preferences groups', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const wrapper = mountView()
+    await flushPromises()
+    const groups = wrapper
+      .findAll('.gs-micro-section')
+      .map((g) => g.element.getBoundingClientRect())
+
+    for (let index = 1; index < groups.length; index++) {
+      expect(groups[index]!.top - groups[index - 1]!.bottom).toBe(32)
+    }
+  })
+
+  it('keeps the Language menu as short as a toggle row', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const languageField = {
+      id: 'language',
+      label: 'Language',
+      value: 'en',
+      editable: true,
+      editType: 'select',
+      options: [
+        { value: 'en', label: 'English' },
+        { value: 'zh', label: '中文' }
+      ]
+    }
+    const wrapper = mountView(makeSnapshot({ languageFields: [languageField] }))
+    await flushPromises()
+    const trigger = wrapper.get('.gs-language .ui-select-trigger').element as HTMLElement
+
+    expect(trigger.getBoundingClientRect().height).toBe(32)
+    expect(trigger.getBoundingClientRect().width).toBe(160)
   })
 
   it('keeps a requested tab when the popup refocuses the tab that had focus before', async () => {
@@ -485,10 +578,17 @@ describe('GlobalSettingsView', () => {
     const wrapper = await openFolders()
     await folderRows(wrapper, 'models')[1]!.find('.shared-folder-more').trigger('click')
     await nextTick()
+    expect(menuItems()[0]!.classes(), 'removing a folder keeps its files').not.toContain(
+      'text-destructive'
+    )
     await menuItems()[0]!.trigger('click')
     await flushPromises()
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
+    expect(modal.state.message).toBe(
+      "This won't delete any files. You can re-add the directory later from this list."
+    )
+    expect(modal.state.confirmStyle, 'removing a folder keeps its files').toBe('primary')
     modal.close(true)
     await flushPromises()
     expect(bridge.setModelsDirsCalls).toEqual([['/home/u/ComfyUI/models']])

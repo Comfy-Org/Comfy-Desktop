@@ -169,7 +169,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.exists('.brand-progress__footer')).toBe(true)
     expect(body.selectorText('.brand-progress__footer')).toContain('Back to Home')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Minimize')
-    expect(body.selectorText('.brand-progress__footer')).not.toContain('Reboot')
+    expect(body.selectorText('.brand-progress__footer')).not.toContain('Try again')
     expect(body.classList('.brand-progress__footer-bar')).not.toContain('is-centered')
   })
 
@@ -259,7 +259,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(wrapper.emitted('close')?.length).toBeGreaterThan(0)
   })
 
-  it('renders the error banner + error message + Back + Reboot, and does NOT auto-close', async () => {
+  it('renders the error banner + explanation + error message + Back + Try again, and does NOT auto-close', async () => {
     const { wrapper, body } = await mountWithOp('inst-1', {
       finished: true,
       error: 'Disk write failed: ENOSPC'
@@ -267,7 +267,10 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     expect(body.exists('.brand-progress__banner')).toBe(true)
     expect(body.classList('.brand-progress__banner')).toContain('brand-progress__banner--error')
-    expect(body.selectorText('.brand-progress__banner')).toContain('Operation failed')
+    expect(body.selectorText('.brand-progress__banner')).toContain("Couldn't finish")
+    expect(body.selectorText('[data-testid="progress-error-detail"]')).toBe(
+      'Comfy Desktop stopped before this finished. The details are below.'
+    )
 
     expect(body.exists('.brand-progress__error-message')).toBe(true)
     expect(body.selectorText('.brand-progress__error-message')).toContain(
@@ -278,9 +281,10 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.exists('.brand-progress__error-copy')).toBe(true)
 
     expect(body.exists('.brand-progress__error-actions')).toBe(true)
-    expect(body.selectorText('.brand-progress__error-actions')).toContain('Reboot')
+    expect(body.selectorText('.brand-progress__error-actions')).toContain('Try again')
+    expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Reboot')
     expect(body.selectorText('.brand-progress__error-actions')).toContain('Back')
-    expect(body.selectorText('.brand-progress__footer')).not.toContain('Reboot')
+    expect(body.selectorText('.brand-progress__footer')).not.toContain('Try again')
 
     vi.advanceTimersByTime(2000)
     await flushPromises()
@@ -305,7 +309,8 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     expect(body.exists('.brand-progress__banner')).toBe(true)
     expect(body.selectorText('.brand-progress__banner')).toContain('Port already in use')
-    expect(body.selectorText('.brand-progress__banner')).not.toContain('Operation failed')
+    expect(body.selectorText('.brand-progress__banner')).not.toContain("Couldn't finish")
+    expect(body.exists('[data-testid="progress-error-detail"]')).toBe(false)
 
     expect(body.selectorText('.brand-progress__error-message')).toContain(
       'Port 8188 is already in use'
@@ -365,6 +370,24 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(api.returnToDashboard).toHaveBeenCalledTimes(1)
   })
 
+  it('starts Stop process and retry from a neutral button and confirms killing the other process in red', async () => {
+    const api = installMockApi()
+    api.killPortProcess.mockResolvedValue({ ok: false })
+    const portConflict: PortConflictInfo = { port: 8188, pids: [777], isComfy: true }
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      finished: true,
+      result: { ok: false, message: 'Port 8188 is already in use', portConflict } as ActionResult
+    })
+
+    const killButton = '[data-testid="progress-port-conflict-kill"]'
+    expect(body.classList(killButton).some((name) => name.includes('danger'))).toBe(false)
+    expect(await body.click(killButton)).toBe(true)
+    await flushPromises()
+
+    expect(mockModal.confirm.mock.lastCall![0]).toMatchObject({ confirmStyle: 'danger' })
+  })
+
   it('says so when "Stop process and retry" could not free the port', async () => {
     const api = installMockApi()
     api.killPortProcess.mockResolvedValue({ ok: false })
@@ -376,7 +399,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
     expect(body.selectorText('.brand-progress__error-message')).not.toContain('Could not free')
 
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
 
     expect(api.killPortProcess).toHaveBeenCalledWith(8188)
@@ -410,15 +433,15 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and start this build')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
 
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
 
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        confirmLabel: 'Stop it and start this build',
-        confirmStyle: 'danger'
+        confirmLabel: 'Stop it and start this build'
       })
     )
+    expect(mockModal.confirm.mock.lastCall![0]).not.toHaveProperty('confirmStyle')
     expect(api.killPortProcess).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
   })
@@ -474,7 +497,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       'An earlier ComfyUI is still running'
     )
     expect(body.selectorText('.brand-progress__banner')).not.toContain('running a prompt')
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -504,7 +527,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       'Processes from an earlier ComfyUI are still running'
     )
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and start this build')
-    expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
+    expect(await body.click('[data-testid="progress-port-conflict-kill"]')).toBe(true)
     await flushPromises()
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -526,14 +549,14 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Back to Home')
   })
 
-  it('labels a failed launch\'s retry "Restart ComfyUI", not "Reboot"', async () => {
+  it('labels a failed launch\'s retry "Restart ComfyUI", not "Try again"', async () => {
     const { body } = await mountWithOp('inst-1', {
       finished: true,
       error: "Another ComfyUI is using this installation's database",
       opKind: 'launch'
     })
     expect(body.selectorText('.brand-progress__error-actions')).toContain('Restart ComfyUI')
-    expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Reboot')
+    expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Try again')
   })
 
   it('keeps a failed start and its actions on screen when the build starts from another window', async () => {
@@ -557,7 +580,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__error-actions')).toContain('Restart ComfyUI')
   })
 
-  it('renders Back (no Reboot) on a destroy op error', async () => {
+  it('renders Back (no Try again) on a destroy op error', async () => {
     const { body } = await mountWithOp('inst-1', {
       destroysInstance: true,
       finished: true,
@@ -565,7 +588,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
     expect(body.exists('.brand-progress__error-actions')).toBe(true)
     expect(body.selectorText('.brand-progress__error-actions')).toContain('Back')
-    expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Reboot')
+    expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Try again')
   })
 
   it('cancels the in-flight destroy op and emits close when Cancel is clicked', async () => {

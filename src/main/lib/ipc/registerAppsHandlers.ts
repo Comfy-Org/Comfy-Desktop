@@ -1,4 +1,4 @@
-import { ipcMain, Menu } from 'electron'
+import { ipcMain } from 'electron'
 import type { IpcMainEvent } from 'electron'
 
 import {
@@ -10,18 +10,18 @@ import {
   showAppPage,
   titleBarApps
 } from '../../apps/appPageView'
-import { listApps } from '../../apps/appsCatalog'
+import { listApps, pictureForListedApp } from '../../apps/appsCatalog'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender } from '../../apps/appsPages'
 import { findEntryByTitleBarSender, isPanelSender } from '../../host/registry'
-import * as i18n from '../i18n'
+import { openRunningAppsMenu } from '../../popups/titlePopup'
+import { OPEN_RUNNING_APP_CHANNEL } from '../../../types/ipc'
+import type { RunningApp } from '../../../types/ipc'
 import { sendSurveyResponse } from '../telemetry'
 
 const APP_REQUEST_SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
 const APP_REQUEST_QUESTION_ID = '0f16a789-5c8e-4871-b44e-ec11c54b8c9b'
 const APP_REQUEST_MAX_LENGTH = 500
-
-export const OPEN_RUNNING_APP_CHANNEL = 'apps:open-running-app'
 
 interface MenuAnchor {
   x?: unknown
@@ -38,21 +38,19 @@ function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): v
   const panel = found.entry.panelView?.webContents
   if (!panel || panel.isDestroyed()) return
   const { running, ready } = titleBarApps(found.id)
-  const open = (appId: string): void => panel.send(OPEN_RUNNING_APP_CHANNEL, appId)
-  const items = [
-    ...running.map((app) => ({ id: app.id, label: app.title })),
-    ...ready.map((app) => ({ id: app.id, label: i18n.t('titleBar.appReady', { app: app.title }) }))
-  ]
-  const [only, ...others] = items
+  const withState = (state: 'running' | 'ready') => (app: RunningApp) => ({
+    ...app,
+    picture: pictureForListedApp(app.id),
+    state
+  })
+  const apps = [...running.map(withState('running')), ...ready.map(withState('ready'))]
+  const [only, ...others] = apps
   if (!only) return
   if (others.length === 0) {
-    open(only.id)
+    panel.send(OPEN_RUNNING_APP_CHANNEL, only.id)
     return
   }
-  Menu.buildFromTemplate(
-    items.map((item) => ({ label: item.label, click: () => open(item.id) }))
-  ).popup({
-    window: found.entry.window,
+  openRunningAppsMenu(found.id, apps, {
     x: anchorCoordinate(anchor?.x),
     y: anchorCoordinate(anchor?.y)
   })

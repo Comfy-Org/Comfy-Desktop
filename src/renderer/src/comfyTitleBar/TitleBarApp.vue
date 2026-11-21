@@ -215,7 +215,7 @@ onUnmounted(() => {
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
 const runningBtnRef = useTemplateRef<HTMLButtonElement>('runningBtn')
-const { hasApps, isRunning, readyTitle, runningLabel, runningTooltip, openRunning } =
+const { hasApps, isRunning, hasReady, readyTitle, runningLabel, runningTooltip, openRunning } =
   useRunningApps(bridge, runningBtnRef)
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 
@@ -475,7 +475,7 @@ onUnmounted(() => {
           aria-hidden="true"
         />
         <span
-          v-else
+          v-if="hasReady"
           class="mx-1 size-1.5 shrink-0 rounded-full bg-current"
           data-testid="title-ready-dot"
           aria-hidden="true"

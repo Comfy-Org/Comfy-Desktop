@@ -86,6 +86,25 @@ function closeEveryWindowButTheComfyHost(app: ElectronApplication): Promise<bool
   )
 }
 
+export function comfyWindowShowsPort(app: ElectronApplication, port: number): Promise<boolean> {
+  return evalWithRetry(() =>
+    app.evaluate(
+      ({ BrowserWindow, WebContentsView }, p) =>
+        BrowserWindow.getAllWindows().some(
+          (win) =>
+            !win.isDestroyed() &&
+            win.contentView.children.some(
+              (view) =>
+                view instanceof WebContentsView &&
+                !view.webContents.isDestroyed() &&
+                view.webContents.getURL().includes(String(p))
+            )
+        ),
+      port
+    )
+  )
+}
+
 export async function keepOnlyComfyHostWindow(app: ElectronApplication): Promise<void> {
   await expect
     .poll(() => closeEveryWindowButTheComfyHost(app), {

@@ -80,6 +80,9 @@
   --chooser-surface-bg-hover: rgba(255, 255, 255, 0.07);
   --chooser-surface-border: rgba(255, 255, 255, 0.05);
   --chooser-surface-border-hover: rgba(255, 255, 255, 0.1);
+  --build-card-sheen: rgba(255, 255, 255, 0.04);
+  --build-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.024);
+  --build-card-hover: color-mix(in oklab, var(--color-card-hover) 40%, var(--color-card));
 
   --modal-surface-bg: #27202d;
   --modal-surface-border: var(--chooser-surface-border);
@@ -159,6 +162,9 @@
   --chooser-surface-bg-hover: rgba(255, 255, 255, 0.07);
   --chooser-surface-border: rgba(255, 255, 255, 0.05);
   --chooser-surface-border-hover: rgba(255, 255, 255, 0.1);
+  --build-card-sheen: rgba(255, 255, 255, 0.04);
+  --build-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.024);
+  --build-card-hover: color-mix(in oklab, var(--color-card-hover) 40%, var(--color-card));
 
   --modal-surface-bg: #27202d;
   --modal-surface-border: var(--chooser-surface-border);
@@ -242,6 +248,9 @@
   --chooser-surface-bg-hover: oklch(1 0 0 / 0.07);
   --chooser-surface-border: var(--color-border);
   --chooser-surface-border-hover: var(--color-border-strong);
+  --build-card-sheen: color-mix(in oklab, var(--color-border-strong) 40%, transparent);
+  --build-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.024);
+  --build-card-hover: color-mix(in oklab, var(--color-card-hover) 40%, var(--color-card));
 
   --modal-surface-bg: var(--neutral-800);
   --modal-surface-border: var(--color-border);
@@ -310,9 +319,9 @@
 
 :root {
   --titlebar-height: 37px;
-  --modal-close-fill: 50%;
-  --modal-close-fill-hover: 70%;
-  --modal-close-icon: 80%;
+  --modal-close-fill: 100%;
+  --modal-close-hover-lift: 8%;
+  --modal-close-icon: 90%;
   --modal-close-icon-hover: 100%;
 }
 
@@ -322,12 +331,16 @@
     var(--modal-close-card, var(--neutral-900)) var(--modal-close-fill),
     transparent
   );
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 0 0 1px color-mix(in oklch, var(--foreground) 12%, transparent);
 }
 .modal-close-fill:hover {
   background-color: color-mix(
     in oklch,
-    var(--modal-close-card, var(--neutral-900)) var(--modal-close-fill-hover),
-    transparent
+    var(--foreground) var(--modal-close-hover-lift),
+    var(--modal-close-card, var(--neutral-900))
   );
 }
 .modal-close-fill > svg {
