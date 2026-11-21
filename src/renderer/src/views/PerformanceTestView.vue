@@ -155,13 +155,16 @@ function startRun(): void {
 
 async function removeWorkflow(): Promise<void> {
   if (workflow.example.download) return workflow.remove()
+  const selectedPath = workflow.filePath
   const choice = await dialogs.confirm({
     title: t('performanceTest.deleteWorkflowTitle', { workflow: workflow.label }),
     message: t('performanceTest.deleteWorkflowMessage'),
     confirmLabel: t('performanceTest.deleteWorkflow'),
     tone: 'danger'
   })
-  if (choice === 'primary') await workflow.remove()
+  if (choice === 'primary' && selectedPath === workflow.filePath) {
+    await workflow.remove(selectedPath)
+  }
 }
 
 function openResultsFolder(): void {

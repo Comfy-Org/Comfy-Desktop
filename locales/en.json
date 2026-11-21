@@ -1147,6 +1147,7 @@
     "untrack": "Forget",
     "untrackConfirmTitle": "Forget build",
     "untrackConfirmMessage": "This removes the build from the app. Its folder stays on your computer, and you can add it again with Add existing build.",
+    "untrackRemoteConfirmMessage": "This removes the connection from the app. The server isn't changed, and you can connect again with Connect to a server.",
     "rename": "Rename",
     "renameTitle": "Rename build",
     "renameMessage": "Enter a new name for this build."
@@ -1912,7 +1913,7 @@
     "importFailed": "Could not import the workflow.",
     "deleteWorkflow": "Delete workflow",
     "deleteWorkflowTitle": "Delete {workflow}?",
-    "deleteWorkflowMessage": "This deletes the copy saved for Performance tests. Your original file and results from earlier runs are kept.",
+    "deleteWorkflowMessage": "This removes it from Performance tests. The copy saved for Performance tests is deleted if no run has used it yet. Your original file and results from earlier runs are kept.",
     "deleteFailed": "Could not delete the workflow.",
     "run": "Run",
     "runNeedsBuild": "Select a build first.",

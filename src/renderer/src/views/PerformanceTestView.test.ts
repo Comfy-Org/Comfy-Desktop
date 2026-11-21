@@ -319,12 +319,45 @@ describe('PerformanceTestView Delete workflow', () => {
     expect(dialogs.state.confirm.title).toBe('Delete portrait.json?')
     expect(dialogs.state.confirm.confirmLabel).toBe('Delete workflow')
     expect(dialogs.state.confirm.tone).toBe('danger')
+    expect(
+      dialogs.state.confirm.message,
+      'the saved copy stays when a run has already written results next to it'
+    ).toBe(
+      'This removes it from Performance tests. The copy saved for Performance tests is deleted if no run has used it yet. Your original file and results from earlier runs are kept.'
+    )
 
     dialogs.confirmPrimary()
     await flushPromises()
 
     expect(window.api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(
       '/benchmarks/s1/portrait.json'
+    )
+  })
+
+  it('deletes nothing when another import finishes while the confirm is open', async () => {
+    const wrapper = await mountWithWorkflow()
+    const dialogs = useDialogs()
+    let finishLandscapeImport: (value: { ok: true; filePath: string }) => void = () => {}
+    vi.mocked(window.api.importPerformanceTestWorkflow).mockReturnValue(
+      new Promise((resolve) => {
+        finishLandscapeImport = resolve
+      }) as ReturnType<typeof window.api.importPerformanceTestWorkflow>
+    )
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('import')
+    await flushPromises()
+
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('remove')
+    await flushPromises()
+    expect(dialogs.state.confirm.title).toBe('Delete portrait.json?')
+
+    finishLandscapeImport({ ok: true, filePath: '/benchmarks/s1/landscape.json' })
+    await flushPromises()
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(window.api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(PerformanceTestWorkflowMenu).props('filePath')).toBe(
+      '/benchmarks/s1/landscape.json'
     )
   })
 
