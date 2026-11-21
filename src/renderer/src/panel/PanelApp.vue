@@ -293,14 +293,25 @@ function showApp(app: AppCard): void {
   dashboardHomePage.value = 'apps'
 }
 
+let navigation = 0
+watch([sidebarPage, appInProgress, appsVisits], () => {
+  navigation += 1
+})
+
+async function switchStillWanted(app: AppCard): Promise<boolean> {
+  const started = ++navigation
+  const confirmed = await confirmAppSwitch(app, appInProgress.value?.id ?? null)
+  return confirmed && started === navigation
+}
+
 async function openAppFromHome(app: AppCard): Promise<void> {
-  if (await confirmAppSwitch(app, appInProgress.value?.id ?? null)) showApp(app)
+  if (await switchStillWanted(app)) showApp(app)
 }
 
 async function openRunningApp(appId: string): Promise<void> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
   const app = apps.find((listed) => listed.id === appId)
-  if (!app || !(await confirmAppSwitch(app, appInProgress.value?.id ?? null))) return
+  if (!app || !(await switchStillWanted(app))) return
   if (activePanel.value !== 'chooser') {
     window.api.navigatePanel('apps')
     await switchPanel('chooser', 'titlebar')
