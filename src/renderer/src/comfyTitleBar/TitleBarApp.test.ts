@@ -1375,7 +1375,10 @@ describe('TitleBarApp', () => {
       expect(indicator.get('[data-testid="title-ready-label"] .truncate').text()).toBe(
         'Remove Background'
       )
-      expect(indicator.get('[data-testid="title-ready-dot"]').classes()).toContain('bg-foreground')
+      expect(
+        indicator.get('[data-testid="title-ready-dot"]').classes(),
+        'the dot follows the title bar text, which follows the ComfyUI theme'
+      ).toContain('bg-current')
       expect(indicator.find('[data-testid="title-ready-dot"]').exists()).toBe(true)
       expect(indicator.find('svg').exists()).toBe(false)
       expect(indicator.attributes('aria-label')).toBe('Open Remove Background')
