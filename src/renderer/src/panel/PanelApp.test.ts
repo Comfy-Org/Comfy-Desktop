@@ -1708,6 +1708,30 @@ describe('PanelApp', () => {
     expect(window.api.navigatePanel).not.toHaveBeenCalledWith('apps')
   })
 
+  it('opens the app already open from the title bar without asking, even when Desktop cannot tell', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-cutout"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    vi.mocked(window.api.appSwitchStopsRun).mockRejectedValue(new Error('no answer'))
+
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe(
+      'Remove Background'
+    )
+  })
+
   it('opens a running app picked from the title bar while a build view shows', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)

@@ -4,10 +4,14 @@ import type { AppCard } from '../types/ipc'
 
 const UNKNOWN = 'unknown' as const
 
-export function useAppSwitchConfirm(): (app: AppCard) => Promise<boolean> {
+export function useAppSwitchConfirm(): (
+  app: AppCard,
+  openAppId: string | null
+) => Promise<boolean> {
   const { t } = useI18n()
   const dialogs = useDialogs()
-  return async (app) => {
+  return async (app, openAppId) => {
+    if (app.id === openAppId) return true
     const stop = await window.api.appSwitchStopsRun(app.id).catch(() => UNKNOWN)
     if (!stop) return true
     const choice = await dialogs.confirm({

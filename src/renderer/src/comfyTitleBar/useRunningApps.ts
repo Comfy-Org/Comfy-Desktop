@@ -22,28 +22,32 @@ export function useRunningApps(
   const apps = ref<TitleBarApps>({ running: [], ready: [] })
   let stop: (() => void) | undefined
 
+  const listed = computed(() => [...apps.value.running, ...apps.value.ready])
   const isRunning = computed(() => apps.value.running.length > 0)
-  const shown = computed(() => (isRunning.value ? apps.value.running : apps.value.ready))
-  const hasApps = computed(() => shown.value.length > 0)
+  const hasApps = computed(() => listed.value.length > 0)
+
+  const readyTitle = computed(() => {
+    const [only, ...others] = listed.value
+    return only && others.length === 0 && !isRunning.value ? only.title : null
+  })
 
   const label = computed(() => {
-    const [only, ...others] = shown.value
+    const [only, ...others] = listed.value
     if (!only) return ''
-    if (others.length > 0) {
-      const count = shown.value.length
-      return isRunning.value
-        ? t('titleBar.runningMany', { count })
-        : t('titleBar.readyMany', { count })
-    }
-    return isRunning.value ? only.title : t('titleBar.appReady', { app: only.title })
+    if (others.length === 0) return only.title
+    const count = listed.value.length
+    if (apps.value.ready.length === 0) return t('titleBar.runningMany', { count })
+    if (!isRunning.value) return t('titleBar.readyMany', { count })
+    return t('titleBar.appsMany', { count })
   })
 
   const tooltip = computed(() => {
-    const listed = [...apps.value.running, ...apps.value.ready]
-    const [only, ...others] = listed
+    const [only, ...others] = listed.value
     if (!only) return ''
     if (others.length === 0) return t('titleBar.openRunning', { app: only.title })
-    return isRunning.value ? t('titleBar.showRunning') : t('titleBar.showReady')
+    if (apps.value.ready.length === 0) return t('titleBar.showRunning')
+    if (!isRunning.value) return t('titleBar.showReady')
+    return t('titleBar.showApps')
   })
 
   function openRunning(): void {
@@ -64,6 +68,7 @@ export function useRunningApps(
   return {
     hasApps,
     isRunning,
+    readyTitle,
     runningLabel: label,
     runningTooltip: tooltip,
     openRunning

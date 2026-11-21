@@ -1372,6 +1372,10 @@ describe('TitleBarApp', () => {
       const indicator = wrapper.get('[data-testid="title-running-apps"]')
 
       expect(indicator.text()).toBe('Remove Background is ready')
+      expect(indicator.get('[data-testid="title-ready-label"] .truncate').text()).toBe(
+        'Remove Background'
+      )
+      expect(indicator.get('[data-testid="title-ready-dot"]').classes()).toContain('bg-foreground')
       expect(indicator.find('[data-testid="title-ready-dot"]').exists()).toBe(true)
       expect(indicator.find('svg').exists()).toBe(false)
       expect(indicator.attributes('aria-label')).toBe('Open Remove Background')
@@ -1380,7 +1384,7 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    it('counts two or more ready apps, and shows the spinner while any app still runs', async () => {
+    it('counts two or more ready apps, and calls a mix of running and ready apps a group', async () => {
       const running = addRunningAppsBridge()
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp)
@@ -1401,7 +1405,10 @@ describe('TitleBarApp', () => {
         cb({ running: [{ id: 'product-ads', title: 'Product Ads' }], ready })
       )
       await flushPromises()
-      expect(wrapper.get('[data-testid="title-running-apps"]').text()).toBe('Product Ads')
+      const group = wrapper.get('[data-testid="title-running-apps"]')
+      expect(group.text()).toBe('3 apps')
+      expect(group.attributes('aria-label')).toBe('Show apps')
+      expect(group.find('svg').exists()).toBe(true)
       expect(wrapper.find('[data-testid="title-ready-dot"]').exists()).toBe(false)
       wrapper.unmount()
     })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { I18nT, useI18n } from 'vue-i18n'
 import {
   ArrowDownToLine,
   Bell,
@@ -215,10 +215,8 @@ onUnmounted(() => {
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
 const runningBtnRef = useTemplateRef<HTMLButtonElement>('runningBtn')
-const { hasApps, isRunning, runningLabel, runningTooltip, openRunning } = useRunningApps(
-  bridge,
-  runningBtnRef
-)
+const { hasApps, isRunning, readyTitle, runningLabel, runningTooltip, openRunning } =
+  useRunningApps(bridge, runningBtnRef)
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 
 let unmounted = false
@@ -478,11 +476,23 @@ onUnmounted(() => {
         />
         <span
           v-else
-          class="mx-1 size-1.5 shrink-0 rounded-full bg-current"
+          class="mx-1 size-1.5 shrink-0 rounded-full bg-foreground"
           data-testid="title-ready-dot"
           aria-hidden="true"
         />
-        <span class="min-w-0 truncate">{{ runningLabel }}</span>
+        <I18nT
+          v-if="readyTitle"
+          keypath="titleBar.appReady"
+          tag="span"
+          scope="global"
+          class="min-w-0 whitespace-nowrap"
+          data-testid="title-ready-label"
+        >
+          <template #app>
+            <span class="inline-block max-w-[160px] truncate align-bottom">{{ readyTitle }}</span>
+          </template>
+        </I18nT>
+        <span v-else class="min-w-0 truncate">{{ runningLabel }}</span>
       </button>
       <button
         v-if="!isFirstUseLockdown"

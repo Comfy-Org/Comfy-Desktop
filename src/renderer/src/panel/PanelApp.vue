@@ -292,13 +292,13 @@ function showApp(app: AppCard): void {
 }
 
 async function openAppFromHome(app: AppCard): Promise<void> {
-  if (await confirmAppSwitch(app)) showApp(app)
+  if (await confirmAppSwitch(app, appInProgress.value?.id ?? null)) showApp(app)
 }
 
 async function openRunningApp(appId: string): Promise<void> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
   const app = apps.find((listed) => listed.id === appId)
-  if (!app || !(await confirmAppSwitch(app))) return
+  if (!app || !(await confirmAppSwitch(app, appInProgress.value?.id ?? null))) return
   if (activePanel.value !== 'chooser') {
     window.api.navigatePanel('apps')
     await switchPanel('chooser', 'titlebar')

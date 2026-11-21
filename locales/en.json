@@ -393,7 +393,9 @@
     "showRunning": "Show running apps",
     "appReady": "{app} is ready",
     "readyMany": "{count} ready",
-    "showReady": "Show ready apps"
+    "showReady": "Show ready apps",
+    "appsMany": "{count} apps",
+    "showApps": "Show apps"
   },
   "comfyUISettings": {
     "title": "Settings",

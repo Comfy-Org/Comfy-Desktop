@@ -190,7 +190,7 @@ function open(app: AppCard): void {
 }
 
 async function openPicked(app: AppCard): Promise<void> {
-  if (await confirmAppSwitch(app)) open(app)
+  if (await confirmAppSwitch(app, lastOpenedId)) open(app)
 }
 
 async function closeApp(): Promise<void> {
