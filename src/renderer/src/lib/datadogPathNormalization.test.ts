@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import type { RumErrorEvent } from '@datadog/browser-rum'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { datadogRum, type RumErrorEvent } from '@datadog/browser-rum'
 import {
+  flattenErrorWithCauses,
   normalizeDatadogBundlePaths,
   normalizeRumErrorEvent,
   rumBeforeSend,
@@ -110,33 +111,116 @@ describe('rumBeforeSend', () => {
   const send = (event: unknown): boolean | undefined =>
     rumBeforeSend(event as Parameters<typeof rumBeforeSend>[0], {} as never) as boolean | undefined
 
-  it('drops an error event that carries causes, since the SDK sends causes as they were', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('drops an error event that carries causes and reports it once, flattened, with its context', () => {
+    vi.useFakeTimers()
+    const addError = vi.spyOn(datadogRum, 'addError').mockImplementation(() => undefined)
     const event = {
       type: 'error',
+      context: { origin: 'renderer' },
       error: {
         message: 'wrapped',
-        source: 'custom',
-        causes: [
-          {
-            message: 'inner C:\\Users\\alice\\x',
-            source: 'custom',
-            stack: 'Error: inner\n    at /home/bob/plugins/y.js:2:2'
-          }
-        ]
+        source: 'console',
+        handling: 'unhandled',
+        causes: [{ message: 'inner C:\\Users\\alice\\x', source: 'console', type: 'Error' }]
       }
     }
 
     expect(send(event)).toBe(false)
+    expect(addError).not.toHaveBeenCalled()
+    vi.runAllTimers()
+
+    expect(addError).toHaveBeenCalledTimes(1)
+    const [reported, context] = addError.mock.calls[0] ?? []
+    expect((reported as Error).name).toBe('Error')
+    expect((reported as Error).message).toBe(
+      'wrapped\nCaused by: Error: inner C:\\Users\\[REDACTED]\\x'
+    )
+    expect(context).toEqual({
+      origin: 'renderer',
+      original_error_source: 'console',
+      original_error_handling: 'unhandled'
+    })
   })
 
-  it('scrubs and keeps an error event without causes', () => {
+  it('rewrites and scrubs the handling stack of every error', () => {
+    const event = {
+      type: 'error',
+      error: {
+        message: 'plain',
+        source: 'custom',
+        handling_stack: [
+          'Error',
+          '  at <anonymous> @ file:///C:/Users/alice/AppData/Local/Programs/ComfyUI/resources/app.asar/out/renderer/assets/rendererBootstrap-x.js:1:2',
+          '  at loadPlugin @ file:///home/bob/plugins/y.js:3:4'
+        ].join('\n')
+      }
+    }
+
+    expect(send(event)).toBe(true)
+    expect(event.error.handling_stack).toBe(
+      [
+        'Error',
+        '  at <anonymous> @ app://app/renderer/assets/rendererBootstrap-x.js:1:2',
+        '  at loadPlugin @ file:///home/[REDACTED]/plugins/y.js:3:4'
+      ].join('\n')
+    )
+  })
+
+  it('flattens an error and its causes into one scrubbed error without a cause', () => {
+    const flattened = flattenErrorWithCauses({
+      message: 'wrapped at /home/bob/a',
+      source: 'custom',
+      type: 'DesktopTelemetryError',
+      stack: 'DesktopTelemetryError: wrapped\n  at load @ app://app/renderer/x.js:1:1',
+      causes: [
+        {
+          message:
+            'fetch failed with Authorization: Bearer abcdefghijklmnop at C:\\Users\\alice\\x',
+          source: 'custom',
+          type: 'TypeError',
+          stack:
+            'TypeError: fetch failed for token=abcdefghijklmnop\n  at <anonymous> @ file:///home/bob/plugins/y.js:2:2'
+        },
+        { message: '"plain string cause"', source: 'custom' }
+      ]
+    } as RumErrorEvent['error'])
+
+    expect(flattened.message).toBe(
+      [
+        'wrapped at /home/[REDACTED]/a',
+        'Caused by: TypeError: fetch failed with Authorization: Bearer [REDACTED] at C:\\Users\\[REDACTED]\\x',
+        'Caused by: "plain string cause"'
+      ].join('\n')
+    )
+    expect(flattened.stack).toBe(
+      [
+        'DesktopTelemetryError: wrapped',
+        '  at load @ app://app/renderer/x.js:1:1',
+        'TypeError: fetch failed for token=[REDACTED]',
+        '  at <anonymous> @ file:///home/[REDACTED]/plugins/y.js:2:2'
+      ].join('\n')
+    )
+    expect(flattened.name).toBe('DesktopTelemetryError')
+    expect(flattened.cause).toBeUndefined()
+  })
+
+  it('scrubs and keeps an error event without causes, and does not report it again', () => {
+    vi.useFakeTimers()
+    const addError = vi.spyOn(datadogRum, 'addError').mockImplementation(() => undefined)
     const event = {
       type: 'error',
       error: { message: 'open C:\\Users\\alice\\x failed', source: 'custom', causes: [] }
     }
 
     expect(send(event)).toBe(true)
+    vi.runAllTimers()
     expect(event.error.message).toBe('open C:\\Users\\[REDACTED]\\x failed')
+    expect(addError).not.toHaveBeenCalled()
   })
 
   it('keeps other events as they are', () => {

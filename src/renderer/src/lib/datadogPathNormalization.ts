@@ -1,5 +1,5 @@
-import type { RumBeforeSend, RumErrorEvent } from '@datadog/browser-rum'
-import { scrubPII } from '../../../shared/piiScrub'
+import { datadogRum, type RumBeforeSend, type RumErrorEvent } from '@datadog/browser-rum'
+import { scrubPII, scrubSecrets } from '../../../shared/piiScrub'
 
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
 
@@ -37,6 +37,8 @@ export function normalizeRumErrorEvent(event: RumErrorEvent): void {
   if (event.error.stack) {
     event.error.stack = scrubRumText(event.error.stack)
   }
+  const handlingStack = normalizeDatadogBundlePaths(event.error.handling_stack)
+  if (handlingStack) event.error.handling_stack = scrubRumText(handlingStack)
   if (event.error.resource?.url) {
     event.error.resource.url =
       normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url
@@ -44,9 +46,32 @@ export function normalizeRumErrorEvent(event: RumErrorEvent): void {
   }
 }
 
+export function flattenErrorWithCauses(error: RumErrorEvent['error']): Error {
+  const scrub = (text: string): string => scrubRumText(scrubSecrets(text))
+  const causes = error.causes ?? []
+  const message = [
+    error.message,
+    ...causes.map((cause) => `Caused by: ${cause.type ? `${cause.type}: ` : ''}${cause.message}`)
+  ]
+  const flattened = new Error(scrub(message.join('\n')))
+  flattened.name = error.type ?? flattened.name
+  const stacks = [error.stack, ...causes.map((cause) => cause.stack)].filter(Boolean)
+  flattened.stack = scrub(stacks.join('\n'))
+  return flattened
+}
+
 export const rumBeforeSend: RumBeforeSend = (event) => {
   if (event.type !== 'error') return true
-  if (event.error.causes?.length) return false
+  if (event.error.causes?.length) {
+    const flattened = flattenErrorWithCauses(event.error)
+    const context = {
+      ...event.context,
+      original_error_source: event.error.source,
+      original_error_handling: event.error.handling
+    }
+    setTimeout(() => datadogRum.addError(flattened, context))
+    return false
+  }
   normalizeRumErrorEvent(event)
   return true
 }
