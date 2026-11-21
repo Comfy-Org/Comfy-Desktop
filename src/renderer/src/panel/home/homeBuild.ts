@@ -3,7 +3,7 @@ import type { LocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import type { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
-export type HomeBuildTone = 'ember' | 'iris' | 'tide'
+export type HomeBuildTone = 'iris' | 'tide'
 export type BuildDeviceKind = LocalDeviceKind | 'cloud'
 export type HomeBuildStatus = 'running' | 'starting' | 'stopping' | 'updating' | 'update' | 'ready'
 
@@ -13,12 +13,9 @@ export interface HomeBuildToneStyle {
 }
 
 export const HOME_BUILD_TONES: Record<HomeBuildTone, HomeBuildToneStyle> = {
-  ember: { glow: '#FA8746', tint: '232 126 66' },
   iris: { glow: '#989CFF', tint: '142 146 248' },
   tide: { glow: '#00C6E2', tint: '0 182 209' }
 }
-
-const LOCAL_TONES: readonly HomeBuildTone[] = ['ember', 'iris']
 
 export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
@@ -33,23 +30,8 @@ export function isComfyCloud(build: Installation): boolean {
   return build.sourceId === 'cloud'
 }
 
-function installedAt(build: Installation): number {
-  const time = Date.parse(String(build.createdAt ?? ''))
-  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time
-}
-
-export function homeBuildTones(
-  builds: readonly Installation[],
-  everyBuild: readonly Installation[] = builds
-): HomeBuildTone[] {
-  const known = new Set(everyBuild.map((build) => build.id))
-  const locals = [...everyBuild, ...builds.filter((build) => !known.has(build.id))]
-    .filter((build) => !isCloudBuild(build))
-    .sort((a, b) => installedAt(a) - installedAt(b) || a.id.localeCompare(b.id))
-  const rank = new Map(locals.map((build, index) => [build.id, index]))
-  return builds.map((build) =>
-    isCloudBuild(build) ? 'tide' : LOCAL_TONES[rank.get(build.id)! % LOCAL_TONES.length]!
-  )
+export function homeBuildTone(build: Installation): HomeBuildTone {
+  return isCloudBuild(build) ? 'tide' : 'iris'
 }
 
 export function isBuildUpdating(build: Installation, actionId: string | undefined): boolean {
