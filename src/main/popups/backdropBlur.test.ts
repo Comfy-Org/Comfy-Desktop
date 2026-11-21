@@ -60,4 +60,9 @@ describe('blur behind the popup backdrop', () => {
     expect(staysSharpBehindBackdrop('file:///app/comfyTitleBar.html')).toBe(true)
     expect(staysSharpBehindBackdrop('file:///app/panel.html')).toBe(false)
   })
+
+  it('keeps the title bar tooltip and system dialogs sharp, since they can show above the dialog', () => {
+    expect(staysSharpBehindBackdrop('file:///app/comfyTitleTooltip.html')).toBe(true)
+    expect(staysSharpBehindBackdrop('file:///app/comfySystemModal.html')).toBe(true)
+  })
 })

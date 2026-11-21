@@ -7,7 +7,13 @@ export interface BlurrableContents {
   removeInsertedCSS(key: string): Promise<void>
 }
 
-const STAYS_SHARP = ['comfyTitlePopup.html', 'comfyTitleBar.html', 'data:']
+const STAYS_SHARP = [
+  'comfyTitlePopup.html',
+  'comfyTitleBar.html',
+  'comfyTitleTooltip.html',
+  'comfySystemModal.html',
+  'data:'
+]
 
 export function staysSharpBehindBackdrop(url: string): boolean {
   return STAYS_SHARP.some((marker) => url.includes(marker))
