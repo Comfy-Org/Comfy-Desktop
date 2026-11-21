@@ -276,7 +276,7 @@ onMounted(() => {
       type="button"
       variant="muted-textonly"
       size="icon"
-      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white"
+      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--modal-surface-bg)] text-white hover:text-white"
       :aria-label="t('common.close')"
       @click="bridge?.close()"
     >
@@ -286,10 +286,10 @@ onMounted(() => {
     <Tabs
       v-model="activeTab"
       orientation="vertical"
-      class="gs-card min-w-0 flex-auto flex-row gap-0 overflow-hidden rounded-[16px] bg-neutral-900 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
+      class="gs-card min-w-0 flex-auto flex-row gap-0 overflow-hidden rounded-[16px] bg-[var(--modal-surface-bg)] [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
     >
       <div
-        class="gs-nav m-2 mr-0 flex w-50 flex-[0_0_200px] flex-col gap-4 rounded-[14px] bg-[color-mix(in_oklch,white_5%,var(--color-neutral-900))] pt-5 pr-2 pb-4 pl-4"
+        class="gs-nav m-2 mr-0 flex w-50 flex-[0_0_200px] flex-col gap-4 rounded-[14px] bg-[color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))] pt-5 pr-2 pb-4 pl-4"
       >
         <h2
           class="gs-title m-0 px-2 font-sans text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"

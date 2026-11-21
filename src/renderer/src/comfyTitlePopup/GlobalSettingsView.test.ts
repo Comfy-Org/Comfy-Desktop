@@ -204,6 +204,14 @@ describe('GlobalSettingsView', () => {
     expect(background('.gs-nav'), 'the tab list sits on a panel').not.toBe(transparent)
     expect(background('.gs-nav')).not.toBe(background('.gs-card'))
     expect(background('.gs-pane'), 'the settings sit on the card itself').toBe(transparent)
+    const surface = document.createElement('div')
+    surface.className = 'bg-[var(--modal-surface-bg)]'
+    document.body.append(surface)
+    const modalSurface = getComputedStyle(surface).backgroundColor
+    surface.remove()
+    expect(background('.gs-card'), 'the card uses the same surface as build settings').toBe(
+      modalSurface
+    )
   })
 
   it('groups Language under General, ahead of the other Preferences groups', async () => {
