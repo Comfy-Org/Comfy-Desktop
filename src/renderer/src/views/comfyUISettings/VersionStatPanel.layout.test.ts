@@ -28,13 +28,28 @@ function background(el: Element): string {
   return getComputedStyle(el).backgroundColor
 }
 
+async function hoverAndSettle(el: HTMLElement): Promise<void> {
+  await userEvent.hover(el)
+  await Promise.all(el.getAnimations().map((animation) => animation.finished))
+}
+
+function foregroundFill(): string {
+  const probe = document.createElement('div')
+  probe.className = 'bg-foreground'
+  document.body.append(probe)
+  const fill = background(probe)
+  probe.remove()
+  return fill
+}
+
 describe('VersionStatPanel primary action', () => {
   it('keeps a disabled primary action white on hover', async () => {
     const button = mountPanel(false)
     expect(button.disabled).toBe(true)
     const resting = background(button)
+    expect(resting, 'a disabled primary action rests on the white fill').toBe(foregroundFill())
 
-    await userEvent.hover(button)
+    await hoverAndSettle(button)
 
     expect(background(button)).toBe(resting)
   })
@@ -52,8 +67,9 @@ describe('VersionStatPanel primary action', () => {
     const button = document.querySelector<HTMLButtonElement>('.version-stat-action')!
     expect(button.disabled).toBe(true)
     const resting = background(button)
+    expect(resting, 'a running primary action rests on the white fill').toBe(foregroundFill())
 
-    await userEvent.hover(button)
+    await hoverAndSettle(button)
 
     expect(background(button)).toBe(resting)
   })
@@ -62,7 +78,7 @@ describe('VersionStatPanel primary action', () => {
     const button = mountPanel(true)
     const resting = background(button)
 
-    await userEvent.hover(button)
+    await hoverAndSettle(button)
 
     expect(background(button)).not.toBe(resting)
   })
@@ -81,7 +97,7 @@ describe('VersionStatPanel secondary action', () => {
     const button = document.querySelector<HTMLButtonElement>('.version-stat-action')!
     const resting = background(button)
 
-    await userEvent.hover(button)
+    await hoverAndSettle(button)
 
     expect(background(button)).toBe(resting)
   })
