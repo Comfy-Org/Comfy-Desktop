@@ -286,16 +286,19 @@ const listedApps = ref<AppCard[] | null>(null)
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
-async function openAppFromHome(app: AppCard): Promise<void> {
-  if (!(await confirmAppSwitch(app))) return
+function showApp(app: AppCard): void {
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
+}
+
+async function openAppFromHome(app: AppCard): Promise<void> {
+  if (await confirmAppSwitch(app)) showApp(app)
 }
 
 async function openRunningApp(appId: string): Promise<void> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
   const app = apps.find((listed) => listed.id === appId)
-  if (!app) return
+  if (!app || !(await confirmAppSwitch(app))) return
   if (activePanel.value !== 'chooser') {
     window.api.navigatePanel('apps')
     await switchPanel('chooser', 'titlebar')
@@ -303,7 +306,7 @@ async function openRunningApp(appId: string): Promise<void> {
   }
   closeBuildDetails()
   assetsFocusName.value = null
-  await openAppFromHome(app)
+  showApp(app)
 }
 
 async function confirmLeavingRuns(): Promise<boolean> {

@@ -50,6 +50,7 @@
     "switchWhileRunning": {
       "title": "Switch to {app}?",
       "body": "{current} is still making something. {count} other apps are already running, so switching stops it.",
+      "bodyUnsure": "Desktop could not check whether an app is still making something. Switching may stop it.",
       "switch": "Switch",
       "stay": "Stay"
     },
