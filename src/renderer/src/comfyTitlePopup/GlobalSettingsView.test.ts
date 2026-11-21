@@ -227,6 +227,19 @@ describe('GlobalSettingsView', () => {
     expect(sections[0]!.find('.gs-language').exists(), 'Language sits in General').toBe(true)
   })
 
+  it('lays out the Community link as a settings row, lined up with the labels above', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    installMockBridge()
+    const wrapper = mountView()
+    await flushPromises()
+    const link = wrapper.get('.github-link-card').element.getBoundingClientRect()
+    const toggleRow = wrapper.get('.settings-v2-boolean-row').element.getBoundingClientRect()
+    const icon = wrapper.get('.github-link-main svg').element.getBoundingClientRect()
+
+    expect(icon.left, 'the GitHub icon starts where the row labels start').toBe(toggleRow.left)
+    expect(link.height, 'as tall as a toggle row').toBeLessThanOrEqual(toggleRow.height)
+  })
+
   it('keeps the Language menu as short as a toggle row', async () => {
     document.documentElement.setAttribute('data-theme', 'dark')
     installMockBridge()

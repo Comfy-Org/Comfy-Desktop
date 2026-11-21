@@ -4,6 +4,7 @@ import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
 import type { PopupTheme, TitlePopupKind, TitlePopupMenuItem } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
+import { blurContentsBehindBackdrop, type BlurrableContents } from './backdropBlur'
 import {
   cancelModelDownload,
   clearFinishedDownloads,
@@ -365,6 +366,7 @@ async function refreshCachedInstallsForPicker(): Promise<void> {
 interface PopupBackdropEntry {
   view: WebContentsView
   visible: boolean
+  unblur: (() => void) | null
 }
 const popupBackdropsByParent = new Map<number, PopupBackdropEntry>()
 const popupBackdropsByWebContents = new Map<number, number>()
@@ -400,7 +402,7 @@ function ensurePopupBackdrop(parent: BrowserWindow): PopupBackdropEntry {
   void view.webContents
     .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(POPUP_BACKDROP_HTML)}`)
     .catch(() => {})
-  const entry: PopupBackdropEntry = { view, visible: false }
+  const entry: PopupBackdropEntry = { view, visible: false, unblur: null }
   popupBackdropsByParent.set(parent.id, entry)
   popupBackdropsByWebContents.set(view.webContents.id, parent.id)
   parent.on('resize', () => {
@@ -440,12 +442,22 @@ function showPopupBackdrop(parent: BrowserWindow): void {
   } catch {}
   entry.view.setVisible(true)
   entry.visible = true
+  entry.unblur?.()
+  entry.unblur = blurContentsBehindBackdrop(viewsBehind(parent, entry.view))
+}
+
+function viewsBehind(parent: BrowserWindow, backdrop: WebContentsView): BlurrableContents[] {
+  return parent.contentView.children
+    .filter((child): child is WebContentsView => child !== backdrop && 'webContents' in child)
+    .map((child) => child.webContents)
 }
 
 function hidePopupBackdrop(parent: BrowserWindow): void {
   const entry = popupBackdropsByParent.get(parent.id)
   if (!entry || !entry.visible) return
   entry.visible = false
+  entry.unblur?.()
+  entry.unblur = null
   if (entry.view.webContents.isDestroyed()) return
   entry.view.setVisible(false)
   if (!parent.isDestroyed()) {
