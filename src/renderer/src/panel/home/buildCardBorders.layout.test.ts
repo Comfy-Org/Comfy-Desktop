@@ -116,7 +116,9 @@ describe('build cards have a glass surface', () => {
   })
 
   it.each(['--build-card-sheen', '--build-card-hover'])('%s is a visible color', (token) => {
-    expect(tokenStyle(`color: var(${token})`).color).not.toBe('rgba(0, 0, 0, 0)')
+    expect(tokenStyle(`background-color: var(${token})`).backgroundColor).not.toBe(
+      'rgba(0, 0, 0, 0)'
+    )
   })
 
   it('the highlight token is a visible inset line', () => {
