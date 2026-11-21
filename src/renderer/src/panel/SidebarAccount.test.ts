@@ -176,7 +176,7 @@ describe('SidebarAccount', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="sidebar-signin-body"]').text()).toBe(
-      'Free credits to try Comfy Cloud'
+      'Get free Comfy Cloud credits'
     )
     expect(
       wrapper.get('[data-testid="devplatform-account-signin"]').attributes('disabled')
