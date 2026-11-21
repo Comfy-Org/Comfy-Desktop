@@ -76,6 +76,18 @@ interface ActiveOperation {
 }
 
 const _activeActions = new Map<string, ActiveOperation>()
+const _actionReady = new WeakMap<ActiveOperation, Promise<void>>()
+
+export interface SessionActionObserver {
+  before(installationId: string, actionId: string): Promise<void>
+  after(installationId: string, actionId: string): void
+}
+
+let observer: SessionActionObserver | null = null
+
+export function setSessionActionObserver(next: SessionActionObserver | null): void {
+  observer = next
+}
 
 export function _getActiveOperations(): ({ installationId: string } & ActiveOperation)[] {
   return Array.from(_activeActions, ([installationId, entry]) => ({ installationId, ...entry }))
@@ -96,6 +108,11 @@ export async function dispatchSessionAction(
     _broadcastToRenderer('operation-changed', { installationId, ...entry, active: true })
   }
   try {
+    const before = owned ? observer?.before(installationId, actionId).catch(() => {}) : undefined
+    if (before) _actionReady.set(entry, before)
+    const holder = owned ? entry : running
+    const ready = holder && _actionReady.get(holder)
+    if (ready) await ready
     if (isSessionActionId(actionId)) {
       return await dispatchToSessionHandler(ctx, actionId)
     }
@@ -105,5 +122,6 @@ export async function dispatchSessionAction(
       _activeActions.delete(installationId)
       _broadcastToRenderer('operation-changed', { installationId, ...entry, active: false })
     }
+    if (owned) observer?.after(installationId, actionId)
   }
 }

@@ -15,6 +15,7 @@ export type {
   LocalAssetPageRequest,
   OutputFolderPaths,
   CatalogWorkflow,
+  TemplateSearchAvailability,
   CloudAssetLookup,
   Unsubscribe,
   BetaActivationNotice,
