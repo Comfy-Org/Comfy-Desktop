@@ -54,6 +54,8 @@ import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
+import { runningAppIds, watchAppRuns } from './appRuns'
+import { useAppSwitchConfirm } from './useAppSwitchConfirm'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -86,10 +88,18 @@ function showHomePage(): void {
 }
 
 let unsubShowHomePage: (() => void) | null = null
+let stopWatchingAppRuns: (() => void) | null = null
+let unsubOpenRunningApp: (() => void) | null = null
 onMounted(() => {
   unsubShowHomePage = window.api.onShowHomePage(showHomePage)
+  stopWatchingAppRuns = watchAppRuns()
+  unsubOpenRunningApp = window.api.onOpenRunningApp((appId) => void openRunningApp(appId))
 })
-onUnmounted(() => unsubShowHomePage?.())
+onUnmounted(() => {
+  unsubShowHomePage?.()
+  stopWatchingAppRuns?.()
+  unsubOpenRunningApp?.()
+})
 
 const installation = computed<Installation | null>(() =>
   installationId ? (installationStore.getById(installationId) ?? null) : null
@@ -276,7 +286,9 @@ const appPickedOnHome = ref<AppCard | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
 
-function openAppFromHome(app: AppCard): void {
+const confirmAppSwitch = useAppSwitchConfirm()
+
+function showApp(app: AppCard): void {
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
 }
@@ -286,21 +298,45 @@ watch([sidebarPage, appInProgress, appsVisits], () => {
   navigation += 1
 })
 
-async function switchApp(app: AppCard): Promise<void> {
-  const current = appInProgress.value
+async function switchStillWanted(app: AppCard): Promise<boolean> {
   const started = ++navigation
-  const busy = current !== null && (await window.api.isAppPageBusy().catch(() => false))
-  if (started !== navigation) return
-  if (current && busy) {
-    const choice = await dialogs.confirm({
-      title: t('apps.switchWhileRunning.title', { app: app.title }),
-      message: t('apps.switchWhileRunning.body', { current: current.title }),
-      confirmLabel: t('apps.switchWhileRunning.switch'),
-      cancelLabel: t('apps.switchWhileRunning.stay')
-    })
-    if (choice !== 'primary' || started !== navigation) return
+  const stillCurrent = () => started === navigation
+  const confirmed = await confirmAppSwitch(app, appInProgress.value?.id ?? null, stillCurrent)
+  return confirmed && stillCurrent()
+}
+
+async function openAppFromHome(app: AppCard): Promise<void> {
+  if (await switchStillWanted(app)) showApp(app)
+}
+
+async function openRunningApp(appId: string): Promise<void> {
+  const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
+  const app = apps.find((listed) => listed.id === appId)
+  if (!app || !(await switchStillWanted(app))) return
+  if (activePanel.value !== 'chooser') {
+    window.api.navigatePanel('apps')
+    await switchPanel('chooser', 'titlebar')
+    await nextTick()
   }
-  openAppFromHome(app)
+  closeBuildDetails()
+  assetsFocusName.value = null
+  showApp(app)
+}
+
+async function confirmLeavingRuns(): Promise<boolean> {
+  const running = [...runningAppIds.value]
+  if (running.length === 0) return true
+  const onlyApp =
+    running.length === 1 ? listedApps.value?.find((app) => app.id === running[0]) : null
+  const choice = await dialogs.confirm({
+    title: t('apps.closeWhileRunning.title'),
+    message: onlyApp
+      ? t('apps.closeWhileRunning.bodyOne', { app: onlyApp.title })
+      : t('apps.closeWhileRunning.bodyMany', { count: running.length }, running.length),
+    confirmLabel: t('apps.closeWhileRunning.close'),
+    cancelLabel: t('apps.closeWhileRunning.cancel')
+  })
+  return choice === 'primary'
 }
 
 const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
@@ -321,7 +357,7 @@ function returnToApp(app: AppCard): void {
   })
   closeBuildDetails()
   assetsFocusName.value = null
-  openAppFromHome(app)
+  void openAppFromHome(app)
 }
 
 function viewInAssets(name: string): void {
@@ -491,7 +527,8 @@ onMounted(async () => {
   unsubCloseRequest = window.api.onCloseRequest(({ requestId }) => {
     window.api.ackCloseRequest({ requestId })
     void (async () => {
-      window.api.respondCloseRequest({ requestId, ...(await answerCloseRequest()) })
+      const answer = (await confirmLeavingRuns()) ? await answerCloseRequest() : { cleared: false }
+      window.api.respondCloseRequest({ requestId, ...answer })
     })()
   })
 
@@ -609,7 +646,7 @@ onUnmounted(() => {
         :apps="listedApps"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
-        @switch-app="switchApp"
+        @switch-app="openAppFromHome"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />

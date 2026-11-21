@@ -127,6 +127,8 @@ import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
+import { runningAppCount, runningApps } from './apps/appPageView'
+import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
 import { appsEnabledAtStart } from './apps/appsConfig'
 import { runningPortOf } from './apps/localBuild'
 import {
@@ -257,7 +259,21 @@ function updateTrayMenu(): void {
   tray.setContextMenu(contextMenu)
 }
 
+function confirmQuitStopsAppRuns(): boolean {
+  const [only] = Array.from(comfyWindows.keys()).flatMap((windowKey) => runningApps(windowKey))
+  const prompt = appsQuitPrompt(
+    {
+      running: runningAppCount(),
+      onlyTitle: only?.title ?? null,
+      downloading: hasActiveTemplateDownloads()
+    },
+    i18n.t
+  )
+  return prompt === null || dialog.showMessageBoxSync(prompt) === QUIT_BUTTON
+}
+
 function quitApp(): void {
+  if (!confirmQuitStopsAppRuns()) return
   setQuitReason('user-quit')
   ipc.cancelAll()
   for (const [, entry] of comfyWindows) {
@@ -1610,7 +1626,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', (event) => {
-    if (!isQuitInProgress() && hasActiveTemplateDownloads()) {
+    const asksAboutRuns = !isQuitInProgress() && runningAppCount() > 0
+    if (asksAboutRuns && !confirmQuitStopsAppRuns()) {
+      event.preventDefault()
+      return
+    }
+    if (!isQuitInProgress() && !asksAboutRuns && hasActiveTemplateDownloads()) {
       const choice = dialog.showMessageBoxSync({
         type: 'warning',
         buttons: [i18n.t('templateQuit.quit'), i18n.t('templateQuit.cancel')],

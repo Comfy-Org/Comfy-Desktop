@@ -49,7 +49,8 @@
     "allApps": "All apps",
     "switchWhileRunning": {
       "title": "Switch to {app}?",
-      "body": "{current} is still making something.",
+      "body": "{current} is still making something. {count} other apps are already running, so switching stops it.",
+      "bodyUnsure": "Desktop could not check whether an app is still making something. Switching may stop it.",
       "switch": "Switch",
       "stay": "Stay"
     },
@@ -88,6 +89,17 @@
       "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
       "openUnreadable": "Comfy Desktop could not read this file. Try again.",
       "openNotTaken": "ComfyUI did not open the workflow."
+    },
+    "closeWhileRunning": {
+      "title": "Close anyway?",
+      "bodyOne": "{app} is still making something. Closing stops it.",
+      "bodyMany": "{count} app is still making something. Closing stops it. | {count} apps are still making something. Closing stops them.",
+      "close": "Close",
+      "cancel": "Cancel"
+    },
+    "rail": {
+      "running": "{app}, making something",
+      "finished": "{app}, ready"
     }
   },
   "assets": {
@@ -383,7 +395,16 @@
     "betaNoticeOffTitleNamed": "The {feature} beta is off",
     "betaNoticeOffBodyNamed": "We've turned the {feature} beta off for this build. You can manage beta features in Settings.",
     "betaNoticeDismiss": "Got it",
-    "betaNoticeSettings": "Settings"
+    "betaNoticeSettings": "Settings",
+    "runningMany": "{count} running",
+    "openRunning": "Open {app}",
+    "showRunning": "Show running apps",
+    "appReady": "{app} is ready",
+    "ready": "Ready",
+    "readyMany": "{count} apps are ready",
+    "showReady": "Show ready apps",
+    "appsMany": "{count} apps",
+    "showApps": "Show apps"
   },
   "comfyUISettings": {
     "title": "Settings",
@@ -2205,5 +2226,12 @@
     "label": "While you wait",
     "cloudFailedTitle": "Couldn't open Comfy Cloud",
     "cloudFailedMessage": "Check your connection and try again from Home."
+  },
+  "appsQuit": {
+    "message": "Quit anyway?",
+    "detailOne": "{app} is still making something. Quitting stops it.",
+    "detailMany": "{count} apps are still making something. Quitting stops them.",
+    "quit": "Quit",
+    "cancel": "Cancel"
   }
 }

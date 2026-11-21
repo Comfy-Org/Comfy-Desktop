@@ -159,6 +159,7 @@ function openDesktop(installations: Installation[]): Desktop {
       new Promise<{ ok: boolean }>((resolve) => {
         desktop.portKills.push({ port, resolve })
       }),
+    getAppRuns: async () => [],
     onCloseRequest: subscribe(closeListeners),
     ackCloseRequest: () => {},
     respondCloseRequest: ({

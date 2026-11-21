@@ -2,11 +2,12 @@
 import { computed, nextTick, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePreferredReducedMotion } from '@vueuse/core'
-import { AppWindow } from '@lucide/vue'
+import { AppWindow, LoaderCircle } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Tooltip from '../components/ui/Tooltip.vue'
 import CoverRotation from '../components/CoverRotation.vue'
-import { stillsOf } from '../lib/appStills'
+import { stillsOf } from '../../../shared/appStills'
+import { finishedAppIds, runningAppIds } from './appRuns'
 import type { AppCard } from '../types/ipc'
 
 const { currentApp, apps } = defineProps<{
@@ -32,6 +33,20 @@ const listedApps = computed(() => {
 
 function isCurrent(app: AppCard): boolean {
   return app.id === currentApp?.id
+}
+
+function isRunning(app: AppCard): boolean {
+  return runningAppIds.value.has(app.id)
+}
+
+function isFinished(app: AppCard): boolean {
+  return !isRunning(app) && finishedAppIds.value.has(app.id)
+}
+
+function labelOf(app: AppCard): string {
+  if (isRunning(app)) return t('apps.rail.running', { app: app.title })
+  if (isFinished(app)) return t('apps.rail.finished', { app: app.title })
+  return app.title
 }
 
 function stillOf(app: AppCard): string | undefined {
@@ -67,7 +82,7 @@ watch(
 
 <template>
   <nav
-    class="-mx-3 mt-2 flex min-h-0 flex-1 scrollbar-hide flex-col overflow-x-hidden overflow-y-auto px-3"
+    class="-mx-3 mt-0.5 flex min-h-0 flex-1 scrollbar-hide flex-col overflow-x-hidden overflow-y-auto px-3 pt-1.5"
     :aria-label="t('sidebar.apps')"
     data-testid="app-sidebar-app-rail"
   >
@@ -87,45 +102,67 @@ watch(
           "
           aria-hidden="true"
         />
-        <Tooltip :text="app.title" side="right" :delay-ms="0" class="ml-1 size-8">
-          <Button
-            variant="textonly"
-            size="unset"
-            class="size-full overflow-hidden rounded-lg p-0 transition-[scale,opacity] duration-150 ease-out hover:bg-transparent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring active:scale-94 motion-reduce:transition-none"
-            :class="isCurrent(app) ? 'opacity-100' : 'opacity-70 hover:opacity-100'"
-            :aria-label="app.title"
-            :aria-current="isCurrent(app) ? 'page' : undefined"
-            :data-testid="`app-sidebar-app-${app.id}`"
-            @click="pick(app)"
-          >
-            <img
-              v-if="stillOf(app)"
-              :src="stillOf(app)"
-              alt=""
-              class="size-full object-cover"
-              draggable="false"
-              @error="brokenStills.add(app.id)"
-            />
-            <span
-              v-else
-              class="grid size-full place-items-center bg-secondary text-muted-foreground"
+        <span
+          class="relative ml-1 flex size-8"
+          :class="{ 'animate-rail-thumb-bounce motion-reduce:animate-none': isFinished(app) }"
+          :data-testid="isFinished(app) ? `app-sidebar-app-finished-${app.id}` : undefined"
+        >
+          <Tooltip :text="app.title" side="right" :delay-ms="0" class="size-8">
+            <Button
+              variant="textonly"
+              size="unset"
+              class="relative size-full overflow-hidden rounded-lg p-0 transition-[scale,opacity] duration-150 ease-out hover:bg-transparent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring active:scale-94 motion-reduce:transition-none"
+              :class="isCurrent(app) ? 'opacity-100' : 'opacity-70 hover:opacity-100'"
+              :aria-label="labelOf(app)"
+              :aria-current="isCurrent(app) ? 'page' : undefined"
+              :data-testid="`app-sidebar-app-${app.id}`"
+              @click="pick(app)"
             >
-              <AppWindow :size="15" aria-hidden="true" />
-            </span>
-          </Button>
-          <template #content>
-            <span class="flex w-[200px] flex-col gap-1.5 py-1">
+              <img
+                v-if="stillOf(app)"
+                :src="stillOf(app)"
+                alt=""
+                class="size-full object-cover"
+                draggable="false"
+                @error="brokenStills.add(app.id)"
+              />
               <span
-                v-if="showsCover(app)"
-                class="relative block aspect-[4/3] w-full overflow-hidden rounded-[5px]"
-                data-testid="app-sidebar-app-preview"
+                v-else
+                class="grid size-full place-items-center bg-secondary text-muted-foreground"
               >
-                <CoverRotation :pictures="app.covers" @broken="brokenCovers.add(app.id)" />
+                <AppWindow :size="15" aria-hidden="true" />
               </span>
-              <span>{{ app.title }}</span>
-            </span>
-          </template>
-        </Tooltip>
+              <span
+                v-if="isRunning(app)"
+                class="absolute inset-0 grid place-items-center bg-background/60 text-foreground"
+                :data-testid="`app-sidebar-app-running-${app.id}`"
+                aria-hidden="true"
+              >
+                <LoaderCircle
+                  :size="14"
+                  class="animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                />
+              </span>
+            </Button>
+            <template #content>
+              <span class="flex w-[200px] flex-col gap-1.5 py-1">
+                <span
+                  v-if="showsCover(app)"
+                  class="relative block aspect-[4/3] w-full overflow-hidden rounded-[5px]"
+                  data-testid="app-sidebar-app-preview"
+                >
+                  <CoverRotation :pictures="app.covers" @broken="brokenCovers.add(app.id)" />
+                </span>
+                <span>{{ app.title }}</span>
+              </span>
+            </template>
+          </Tooltip>
+          <span
+            v-if="isFinished(app)"
+            class="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-foreground ring-2 ring-sidebar-background"
+            aria-hidden="true"
+          />
+        </span>
       </li>
     </ul>
   </nav>

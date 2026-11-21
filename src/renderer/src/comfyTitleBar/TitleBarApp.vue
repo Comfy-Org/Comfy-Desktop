@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ArrowDownToLine, Bell, House, Menu as MenuIcon, RotateCw, ZoomIn } from '@lucide/vue'
+import { I18nT, useI18n } from 'vue-i18n'
+import {
+  ArrowDownToLine,
+  Bell,
+  House,
+  LoaderCircle,
+  Menu as MenuIcon,
+  RotateCw,
+  ZoomIn
+} from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
+import { useRunningApps } from './useRunningApps'
+import type { TitleBarApps } from '../types/ipc'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
@@ -90,6 +100,8 @@ interface Bridge {
   clickInstallUpdatePill: () => void
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
+  onAppsRunningChanged?: (cb: (apps: TitleBarApps) => void) => () => void
+  clickRunningApps?: (anchor: MenuAnchor) => void
   clickFeedback: () => void
   openWhatsNewMenu: (anchor: { x: number; y: number }) => void
   clickRefreshInstance: () => void
@@ -202,6 +214,9 @@ onUnmounted(() => {
 
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
+const runningBtnRef = useTemplateRef<HTMLButtonElement>('runningBtn')
+const { hasApps, isRunning, hasReady, readyTitle, runningLabel, runningTooltip, openRunning } =
+  useRunningApps(bridge, runningBtnRef)
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 
 let unmounted = false
@@ -442,6 +457,42 @@ onUnmounted(() => {
         @click="handleRefreshInstance"
       >
         <RotateCw :size="16" />
+      </button>
+      <button
+        v-if="hasApps"
+        ref="runningBtn"
+        type="button"
+        class="title-running-apps inline-flex max-w-[260px] items-center gap-1.5 text-[12px] leading-4"
+        :class="titleMenuButtonClass"
+        data-testid="title-running-apps"
+        v-bind="tooltipAttrs(runningTooltip)"
+        @click="openRunning"
+      >
+        <LoaderCircle
+          v-if="isRunning"
+          :size="14"
+          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <span
+          v-if="hasReady"
+          class="mx-1 size-1.5 shrink-0 rounded-full bg-current"
+          data-testid="title-ready-dot"
+          aria-hidden="true"
+        />
+        <I18nT
+          v-if="readyTitle"
+          keypath="titleBar.appReady"
+          tag="span"
+          scope="global"
+          class="min-w-0 whitespace-nowrap"
+          data-testid="title-ready-label"
+        >
+          <template #app>
+            <span class="inline-block max-w-[160px] truncate align-bottom">{{ readyTitle }}</span>
+          </template>
+        </I18nT>
+        <span v-else class="min-w-0 truncate">{{ runningLabel }}</span>
       </button>
       <button
         v-if="!isFirstUseLockdown"
