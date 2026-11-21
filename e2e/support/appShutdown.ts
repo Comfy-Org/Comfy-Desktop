@@ -204,12 +204,19 @@ export function createShutdown(
     }
   }
 
+  let lastKnownHelpers: number[] = []
+
+  const shutdownDeadlinePassed = (): boolean =>
+    shutdownStopBy !== undefined && Date.now() >= shutdownStopBy
+
   const liveHelpers = (): number[] => {
     if (!helpersAreTracked || helpers.size === 0) return []
+    if (shutdownDeadlinePassed()) return lastKnownHelpers
     const processes = listProcesses(queryTimeoutMs())
-    return [...helpers]
+    lastKnownHelpers = [...helpers]
       .filter(([pid, startTime]) => processes.get(pid)?.startTime === startTime)
       .map(([pid]) => pid)
+    return lastKnownHelpers
   }
 
   const livePids = (): number[] => {
@@ -260,6 +267,7 @@ export function createShutdown(
   const run = async (stopBy: number): Promise<void> => {
     shutdownStopBy = stopBy
     lastKnownAlive = []
+    lastKnownHelpers = []
     forgetAppIfItsPidWasReused()
     trackHelpers()
     let quitOnItsOwn = true
