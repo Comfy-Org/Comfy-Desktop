@@ -107,6 +107,7 @@ export function usePortConflictPrompt(
         title,
         message,
         confirmLabel: onlyNext ? useNextLabel : stopLabel,
+        confirmStyle: onlyNext || conflict.priorBusy ? 'primary' : 'danger',
         testIds: {
           action: onlyNext ? TID.progressPortConflictUsePort : TID.progressPortConflictKill
         }
