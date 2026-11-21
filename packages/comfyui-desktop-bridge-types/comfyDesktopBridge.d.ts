@@ -290,11 +290,14 @@ export interface ComfyDesktopLocalBuild {
   /** True when it is running now. Absent on Desktop builds that predate it. */
   running?: boolean
   /**
-   * The app whose run this build is working on or has queued, oldest first,
-   * when an app runs on it. A build runs one workflow at a time, so a new run
-   * waits in its queue until this one ends. `title` is the app's name for the
-   * person, such as `Remove Background`. Absent when the build is free, and on
-   * Desktop builds that predate it.
+   * Another app in Desktop's Apps view whose run this build is working on, or
+   * whose run is first in its queue. Never the app that asks. A build runs one
+   * workflow at a time, so a new run waits in its queue until that one ends.
+   * `title` is the app's name for the person, such as `Remove Background`, or
+   * a stand-in such as `another app` when Desktop has no name for it. Absent
+   * when no other app in the Apps view has a run on this build: the build can
+   * still be busy with a run from somewhere else, such as its ComfyUI window.
+   * Absent on Desktop builds that predate it.
    */
   busyWith?: {
     appId: string
@@ -327,9 +330,10 @@ export interface ComfyDesktopHostedLocalBridge {
   /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
   localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
   /**
-   * Calls back with the builds `localBuilds` would give whenever a build
-   * becomes busy or free, such as when another app's run starts or ends.
-   * Absent on Desktop builds that predate it.
+   * Calls back with the builds `localBuilds` would give whenever a run from an
+   * app in the Apps view starts or ends on a build. Runs from anywhere else,
+   * such as a build's ComfyUI window, do not call it. Absent on Desktop builds
+   * that predate it.
    */
   onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
 }

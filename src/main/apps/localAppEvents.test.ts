@@ -794,6 +794,42 @@ describe('which app a build is busy with', () => {
     expect(busyAppOn('inst-1')).toBeNull()
   })
 
+  it('names the app whose run is working, never the app that asks', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-swap'))
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
+  })
+
+  it('names the oldest queued run of another app when none is working yet', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 3)
+
+    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-ads')
+  })
+
+  it('names nothing when the only runs on the build are the asking app own', () => {
+    runAccepted('run-1', 'inst-1', 'remove-background', 1)
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+  })
+
+  it('tells its watchers when the oldest run is dropped to keep the list short', () => {
+    for (let index = 0; index < 200; index += 1)
+      runAccepted(`run-${index}`, 'inst-1', 'product-ads', index)
+    const watcher = vi.fn()
+    onRunsChanged(watcher)
+
+    runAccepted('run-200', 'inst-2', 'product-swap', 200)
+
+    expect(isFollowing('run-0')).toBe(false)
+    expect(watcher).toHaveBeenCalledTimes(1)
+  })
+
   it('tells its watchers when a run starts or ends', () => {
     const watcher = vi.fn()
     const stop = onRunsChanged(watcher)

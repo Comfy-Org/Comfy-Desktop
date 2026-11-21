@@ -209,6 +209,25 @@ describe('telling app pages that a build became busy or free', () => {
     expect(page.send.mock.calls).toEqual([[APPS_LOCAL_CHANNELS.buildsChanged, BUILDS]])
   })
 
+  it('asks for the builds as each page sees them, so a page is never told it waits for itself', async () => {
+    mocks.pages = [{ send: vi.fn(), isDestroyed: () => false }]
+
+    await runsChange()
+
+    expect(mocks.localBuilds).toHaveBeenCalledWith('product-ads')
+  })
+
+  it('tells no page once Apps is turned off', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    mocks.pages = [page]
+    mocks.appsEnabled = false
+
+    await runsChange()
+
+    expect(page.send).not.toHaveBeenCalled()
+    expect(mocks.localBuilds).not.toHaveBeenCalled()
+  })
+
   it('does not look up the builds when no app page is open', async () => {
     await runsChange()
 

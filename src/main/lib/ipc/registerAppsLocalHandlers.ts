@@ -30,12 +30,16 @@ let latestAnnouncement = 0
 
 async function announceBuilds(): Promise<void> {
   const announcement = ++latestAnnouncement
-  if (liveAppsPages().length === 0) return
-  const builds = await localBuilds().catch(() => null)
-  if (!builds || announcement !== latestAnnouncement) return
-  for (const page of liveAppsPages()) {
-    if (!page.isDestroyed()) page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
-  }
+  if (liveAppsPages().length === 0 || !(await areAppsEnabled())) return
+  const pages = liveAppsPages()
+  const lists = await Promise.all(
+    pages.map((page) => localBuilds(loadedAppPage(page)?.appId ?? null).catch(() => null))
+  )
+  if (announcement !== latestAnnouncement) return
+  pages.forEach((page, index) => {
+    const builds = lists[index]
+    if (builds && !page.isDestroyed()) page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
+  })
 }
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
@@ -96,7 +100,7 @@ export function registerAppsLocalHandlers(): void {
   )
 
   ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> =>
-    (await isFromAppsPage(event)) ? localBuilds() : []
+    (await isFromAppsPage(event)) ? localBuilds(loadedAppPage(event.sender)?.appId ?? null) : []
   )
 
   onRunsChanged(() => void announceBuilds())

@@ -569,6 +569,16 @@ describe('the builds a page can pick from', () => {
     ])
   })
 
+  it('give a stand-in name for an app the catalog has no name for, and never name the asking app', async () => {
+    runAccepted('run-1', STUDIO.id, 'unlisted-app', 1)
+    runAccepted('run-2', LAB.id, 'remove-background', 2)
+
+    const builds = await localBuilds('remove-background')
+
+    expect(builds[0]?.busyWith).toEqual({ appId: 'unlisted-app', title: 'apps.local.otherApp' })
+    expect(builds[1]).not.toHaveProperty('busyWith')
+  })
+
   it('show a build as free again once its run ends', async () => {
     runAccepted('run-1', STUDIO.id, 'remove-background', 1)
     finishRun('run-1', { outcome: 'success', at: 2 })

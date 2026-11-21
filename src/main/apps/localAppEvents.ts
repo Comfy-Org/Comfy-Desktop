@@ -229,11 +229,15 @@ export function unstartedRunsOn(buildId: string): string[] {
   return runsOn(buildId).filter((promptId) => runs.get(promptId)?.startedAt === undefined)
 }
 
-export function busyAppOn(buildId: string): string | null {
-  for (const run of runs.values()) {
-    if (run.buildId === buildId && run.appId !== null) return run.appId
-  }
-  return null
+export function busyAppOn(buildId: string, askingAppId: string | null = null): string | null {
+  const others = [...runs.values()].filter(
+    (run): run is Run & { appId: string } =>
+      run.buildId === buildId && run.appId !== null && run.appId !== askingAppId
+  )
+  const working = others.find((run) => run.startedAt !== undefined)
+  if (working) return working.appId
+  const [firstInQueue] = others.sort((a, b) => a.submittedAt - b.submittedAt)
+  return firstInQueue?.appId ?? null
 }
 
 export function isFollowing(promptId: string): boolean {
