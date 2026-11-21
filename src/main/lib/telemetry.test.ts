@@ -356,6 +356,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
   posthogClientMock.failNextCaptures = 0
