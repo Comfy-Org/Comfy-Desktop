@@ -605,15 +605,13 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       workspaceBuilds.value.length === 0
     ) {
       workspaceInstallMode.value = 'public'
-      await initializeInstallMode(gen)
+      await initializeInstallMode(gen, false, undefined, true)
     }
     if (opts.restore && gen === modeGeneration) {
       instName.value = opts.restore.instName
       await restoreNewInstallSetup(
         opts.installRoot ? { ...opts.restore, instPath: opts.installRoot } : opts.restore
       )
-    } else if (opts.installRoot && gen === modeGeneration) {
-      instPath.value = opts.installRoot
     }
   } finally {
     if (gen === modeGeneration) initializing.value = false

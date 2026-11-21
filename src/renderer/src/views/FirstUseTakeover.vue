@@ -445,6 +445,7 @@ watch(
 )
 
 onUnmounted(() => {
+  openGeneration += 1
   if (!completedFired) {
     emitTelemetryAction('comfy.desktop.first_use.abandoned', {
       step: step.value,

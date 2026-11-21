@@ -572,6 +572,28 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.get('.config-summary-location').text()).toContain('/home/user/Picked')
   })
 
+  it('keeps a folder browsed while the setup is still loading', async () => {
+    let finishSources: (sources: unknown[]) => void = () => {}
+    const sources = (window.api.getSources as ReturnType<typeof vi.fn>).getMockImplementation()
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSources = (value) => resolve(value)
+        })
+    )
+    const wrapper = mountModal()
+    const opening = wrapper.vm.open({ installRoot: '/Volumes/Big/ComfyUI' })
+    await flushPromises()
+
+    await wrapper.get('.config-path-browse').trigger('click')
+    await flushPromises()
+    finishSources(((await sources?.()) as unknown[]) ?? [])
+    await opening
+    await flushPromises()
+
+    expect(wrapper.get('.config-summary-location').text()).toContain('/home/user/Picked')
+  })
+
   it('shows signed-out local fields directly like the Public workspace tab', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {

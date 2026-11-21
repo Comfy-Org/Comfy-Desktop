@@ -348,6 +348,26 @@ describe('Set up, the first screen', () => {
     expect(plan.installRoot).toBe('/Volumes/Big/ComfyUI')
   })
 
+  it('drops a pending folder check once the takeover unmounts', async () => {
+    let finishCheck: (issues: string[]) => void = () => {}
+    Object.assign(window.api, {
+      browseFolder: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs/Studio/inner'),
+      validateInstallPath: vi.fn(() => new Promise<string[]>((resolve) => (finishCheck = resolve)))
+    })
+    const w = await mountSetup()
+    const picking = (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await flushPromises()
+    w.unmount()
+    finishCheck(['insideExistingInstall'])
+    await picking
+    await flushPromises()
+
+    expect(useModal().state.visible).toBe(false)
+    expect(w.emitted('location-change')).toBeUndefined()
+  })
+
   it('keeps the old folder when a refused folder is closed with the ×', async () => {
     Object.assign(window.api, {
       browseFolder: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs/Studio/inner'),
