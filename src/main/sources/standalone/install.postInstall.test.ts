@@ -141,6 +141,14 @@ describe('standalone postInstall ComfyUI update', () => {
     expect(depsSyncRows()).toEqual(['start', 'end'])
   })
 
+  it('writes no frontend settings, so a migration that runs it keeps the settings it copies', async () => {
+    vi.mocked(runComfyUIUpdate).mockResolvedValue({ ok: true, installation })
+
+    await run()
+
+    expect(fs.existsSync(path.join(root, 'ComfyUI', 'user'))).toBe(false)
+  })
+
   it('counts nothing when the update applies', async () => {
     vi.mocked(runComfyUIUpdate).mockResolvedValue({ ok: true, installation })
 

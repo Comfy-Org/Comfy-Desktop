@@ -13,13 +13,13 @@ import { formatLastUsed } from '../../lib/datetime'
 import { lastUsedAt } from '../../../../shared/lastUsed'
 import {
   HOME_BUILD_TONES,
+  homeBuildTone,
   isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
   isCloudBuild,
   isComfyCloud,
-  type HomeBuildStatus,
-  type HomeBuildTone
+  type HomeBuildStatus
 } from './homeBuild'
 import {
   buildFailure,
@@ -36,13 +36,11 @@ import type { Installation } from '../../types/ipc'
 const {
   build,
   status,
-  tone,
   autoStart = false,
   loggedOut = false
 } = defineProps<{
   build: Installation
   status: HomeBuildStatus
-  tone: HomeBuildTone
   autoStart?: boolean
   loggedOut?: boolean
 }>()
@@ -82,7 +80,7 @@ const startFailedLogs = computed(
   () => build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id)
 )
 
-const toneStyle = computed(() => HOME_BUILD_TONES[tone])
+const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(build)])
 const needsLogIn = computed(() => loggedOut && isCloudBuild(build))
 const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() =>
@@ -182,8 +180,8 @@ function openContextMenu(event: MouseEvent): void {
 
 <template>
   <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
-    :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] px-[18px] text-left transition-colors"
+    :class="canOpen && 'cursor-pointer hover:bg-(--build-card-hover)'"
     :data-testid="testId"
     :data-build-id="build.id"
     :data-home-tour="homeTourAnchor"
