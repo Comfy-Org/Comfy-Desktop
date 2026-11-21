@@ -25,10 +25,12 @@ async function mountTrailingOnly(): Promise<VueWrapper> {
         })
       ])
   })
-  await document.fonts.ready
+  await document.fonts.load('12px Inter')
   const wrapper = mount(Host, { attachTo: document.body })
   mounted.push(wrapper)
   await flushPromises()
+  await document.fonts.ready
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   return wrapper
 }
 
