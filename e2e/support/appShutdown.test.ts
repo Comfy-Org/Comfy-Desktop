@@ -8,6 +8,7 @@ import {
   EXIT_SETTLE_MS,
   isPidAlive,
   killProcessTrees,
+  LATE_RECOVERY_MS,
   listProcesses,
   MIN_PROCESS_QUERY_MS,
   ProcessLookupError,
@@ -309,6 +310,80 @@ describe('app shutdown', () => {
       expect(helpers.filter(isPidAlive), 'no helper outlives the shutdown').toEqual([])
     }
   )
+
+  it.skipIf(process.platform === 'win32')(
+    'stops a helper it only finds after the deadline ran out',
+    async () => {
+      const { launcher, appPid } = await launchShellAndApp(
+        LAUNCHER_THAT_STARTS_AN_APP_WITH_A_HELPER
+      )
+      await vi.waitFor(() => expect(descendantsOf([appPid]).size).toBe(1))
+      const [helperPid] = [...descendantsOf([appPid]).keys()]
+      started.push(helperPid!)
+      const killed: number[] = []
+      let lookups = 0
+      await createShutdown(
+        {
+          launcher,
+          appPid,
+          appStartTime: 'the start time recorded at launch',
+          closeGracefully: never,
+          connectionClosed: () => false
+        },
+        {
+          gracefulCloseMs: 50,
+          forcedExitMs: 200,
+          log: () => {},
+          readStartTime: (_pid, timeoutMs) => {
+            lookups += 1
+            if (lookups === 1) blockFor(timeoutMs + 50)
+            return 'the start time recorded at launch'
+          },
+          forceKill: (pids, timeoutMs) => {
+            killed.push(...pids)
+            killProcessTrees(pids, timeoutMs)
+          }
+        }
+      ).shutdown()
+
+      expect(killed, 'the late helper was part of the forced kill').toContain(helperPid)
+      expect(isPidAlive(helperPid!)).toBe(false)
+    }
+  )
+
+  it('keeps late recovery work within LATE_RECOVERY_MS past the deadline', async () => {
+    const { launcher, appPid } = await launchShellAndApp()
+    const gracefulCloseMs = 50
+    const forcedExitMs = 200
+    const shutdownMs = gracefulCloseMs + EXIT_SETTLE_MS + forcedExitMs
+    const lookupBudgets: number[] = []
+    const startedAt = Date.now()
+    await createShutdown(
+      {
+        launcher,
+        appPid,
+        appStartTime: 'the start time recorded at launch',
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
+      {
+        gracefulCloseMs,
+        forcedExitMs,
+        log: () => {},
+        readStartTime: (_pid, timeoutMs) => {
+          lookupBudgets.push(timeoutMs)
+          blockFor(timeoutMs)
+          return 'the start time recorded at launch'
+        }
+      }
+    ).shutdown()
+
+    expect(lookupBudgets.slice(1).every((budget) => budget <= LATE_RECOVERY_MS)).toBe(true)
+    expect(Date.now() - startedAt, 'late recovery stays inside its bound').toBeLessThan(
+      shutdownMs + LATE_RECOVERY_MS + 500
+    )
+    expect(isPidAlive(appPid)).toBe(false)
+  })
 
   it('leaves alone a process that took over the app pid after the app exited', async () => {
     const { appPid } = await launchShellAndApp()

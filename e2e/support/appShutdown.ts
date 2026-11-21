@@ -6,6 +6,7 @@ export const FORCED_EXIT_DEADLINE_MS = 10_000
 const EXIT_POLL_MS = 100
 export const EXIT_SETTLE_MS = 2_000
 export const MIN_PROCESS_QUERY_MS = 500
+export const LATE_RECOVERY_MS = 2_000
 
 export interface ShutdownTarget {
   launcher: ChildProcess | undefined
@@ -181,12 +182,14 @@ export function createShutdown(
   let appPid = target.appPid !== launcher?.pid ? target.appPid : undefined
   const helpers = new Map<number, string>()
   let shutdownStopBy: number | undefined
+  let recoveryStopBy: number | undefined
   let lastKnownAlive: number[] = []
+  let lastKnownHelpers: number[] = []
 
   const queryTimeoutMs = (): number =>
-    shutdownStopBy === undefined
+    shutdownStopBy === undefined || recoveryStopBy === undefined
       ? FORCED_EXIT_DEADLINE_MS
-      : Math.max(MIN_PROCESS_QUERY_MS, msUntil(shutdownStopBy))
+      : Math.min(Math.max(MIN_PROCESS_QUERY_MS, msUntil(shutdownStopBy)), msUntil(recoveryStopBy))
 
   const rootPids = (): number[] => {
     const pids: number[] = []
@@ -195,30 +198,35 @@ export function createShutdown(
     return pids
   }
 
+  const helpersListedIn = (processes: Map<number, ListedProcess>): number[] =>
+    [...helpers]
+      .filter(([pid, startTime]) => processes.get(pid)?.startTime === startTime)
+      .map(([pid]) => pid)
+
   const trackHelpers = (): void => {
     if (!helpersAreTracked) return
     const processes = listProcesses(queryTimeoutMs())
     const roots = rootPids()
     for (const [pid, startTime] of descendantsOf(roots, processes)) helpers.set(pid, startTime)
-    if (!target.profileDir) return
-    for (const [pid, listed] of processes) {
-      if (roots.includes(pid) || pid === process.pid) continue
-      if (listed.command.includes(target.profileDir)) helpers.set(pid, listed.startTime)
+    if (target.profileDir) {
+      for (const [pid, listed] of processes) {
+        if (roots.includes(pid) || pid === process.pid) continue
+        if (listed.command.includes(target.profileDir)) helpers.set(pid, listed.startTime)
+      }
     }
+    lastKnownHelpers = helpersListedIn(processes)
   }
-
-  let lastKnownHelpers: number[] = []
 
   const shutdownDeadlinePassed = (): boolean =>
     shutdownStopBy !== undefined && Date.now() >= shutdownStopBy
 
+  const lateRecoveryPassed = (): boolean =>
+    recoveryStopBy !== undefined && Date.now() >= recoveryStopBy
+
   const liveHelpers = (): number[] => {
     if (!helpersAreTracked || helpers.size === 0) return []
-    if (shutdownDeadlinePassed()) return lastKnownHelpers
-    const processes = listProcesses(queryTimeoutMs())
-    lastKnownHelpers = [...helpers]
-      .filter(([pid, startTime]) => processes.get(pid)?.startTime === startTime)
-      .map(([pid]) => pid)
+    if (lateRecoveryPassed()) return lastKnownHelpers
+    lastKnownHelpers = helpersListedIn(listProcesses(queryTimeoutMs()))
     return lastKnownHelpers
   }
 
@@ -277,6 +285,7 @@ export function createShutdown(
 
   const run = async (stopBy: number): Promise<void> => {
     shutdownStopBy = stopBy
+    recoveryStopBy = stopBy + LATE_RECOVERY_MS
     lastKnownAlive = []
     lastKnownHelpers = []
     forgetAppIfItsPidWasReused()
@@ -299,7 +308,10 @@ export function createShutdown(
     const killedAt = Date.now()
     const forcedBy = phaseEnd(stopBy, forcedExitMs)
     forceKill(doomed, forcedBy - Date.now())
-    const confirmBy = Math.max(forcedBy, Date.now() + MIN_PROCESS_QUERY_MS)
+    const confirmBy = Math.min(
+      Math.max(forcedBy, Date.now() + MIN_PROCESS_QUERY_MS),
+      stopBy + LATE_RECOVERY_MS
+    )
     const survivors = await survivorsIncludingNewHelpersAt(confirmBy, forcedBy)
     if (survivors.length === 0) return
     throw new Error(
