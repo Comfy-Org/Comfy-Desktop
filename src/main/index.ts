@@ -51,9 +51,11 @@ import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
 import {
   clearQuitReason,
   isQuitInProgress,
+  isUpdateInstallQuit,
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
+import { createWillQuitHandler } from './lib/quitWork'
 import {
   postponeQuitWhileDestroyedWindowsHaveLiveWebContents,
   trackWindowWebContents
@@ -1648,17 +1650,17 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     stopAgentPrefetches()
   })
 
-  let quitWorkSettled = false
-  app.on('will-quit', (event) => {
-    if (quitWorkSettled) return
-    const quitWork: Promise<unknown>[] = []
-    if (hasActiveModelTransfers()) quitWork.push(suspendActiveModelDownloadsForQuit())
-    if (ipc.hasPendingStopStamps()) quitWork.push(ipc.settleStopStamps(STOP_STAMP_QUIT_WAIT_MS))
-    if (quitWork.length === 0) return
-    quitWorkSettled = true
-    event.preventDefault()
-    void Promise.allSettled(quitWork).finally(() => app.quit())
-  })
+  app.on(
+    'will-quit',
+    createWillQuitHandler({
+      quit: () => app.quit(),
+      hasActiveModelTransfers,
+      suspendActiveModelDownloadsForQuit,
+      hasPendingStopStamps: ipc.hasPendingStopStamps,
+      settleStopStamps: () => ipc.settleStopStamps(STOP_STAMP_QUIT_WAIT_MS),
+      isUpdateInstallQuit
+    })
+  )
 
   powerMonitor.on('suspend', () => {
     suspendActiveModelDownloadsForSleep()

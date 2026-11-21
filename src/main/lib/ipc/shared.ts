@@ -1578,6 +1578,7 @@ export function _test_addRunningSession(
 export function _test_clearRunningSessions(): void {
   const ids = Array.from(_runningSessions.keys())
   _runningSessions.clear()
+  _pendingStopStamps.clear()
   for (const id of ids) {
     _broadcastToRenderer('instance-stopped', { installationId: id })
   }
