@@ -49,9 +49,9 @@ defineEmits<{ browse: []; open: [] }>()
       >
       <Button
         size="sm"
-        variant="textonly"
+        variant="secondary"
         type="button"
-        class="config-path-browse flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+        class="config-path-browse flex-none rounded-lg px-3"
         :data-testid="browseTestId"
         @click="$emit('browse')"
       >
