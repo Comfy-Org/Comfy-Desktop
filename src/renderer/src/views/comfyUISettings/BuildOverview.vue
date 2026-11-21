@@ -107,6 +107,7 @@ const checkRunning = computed(
   () => !!model.checkAction && runningActionIds.has(model.checkAction.id)
 )
 
+const pythonVersion = computed(() => model.facts.python?.value ?? '—')
 const torchVersion = computed(() => model.torch?.current || model.facts.pytorch?.value || '—')
 const torchGroups = computed(() => model.torch?.groups ?? [])
 const showTorchGroupLabels = computed(() => torchGroups.value.length > 1)
@@ -319,64 +320,129 @@ function openLocation(): void {
 
       <div class="build-overview-facts grid grid-cols-3 gap-2.5 self-start">
         <section
-          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
-          aria-labelledby="build-overview-pytorch"
-          data-testid="build-overview-pytorch"
+          class="build-overview-card col-span-2 grid min-w-0 grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-5 rounded-[14px] bg-card px-[18px] py-4"
+          aria-labelledby="build-overview-python build-overview-pytorch"
+          data-testid="build-overview-runtime"
         >
-          <span id="build-overview-pytorch" class="text-[12px]/4 text-muted-foreground">{{
-            model.torch?.label ?? t('buildOverview.pytorch')
-          }}</span>
-          <span
-            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-            >{{ torchVersion }}</span
-          >
           <div
-            class="mt-auto flex min-w-0 items-center justify-between gap-2"
-            :class="torchGroups.length > 0 && '-mr-2'"
+            class="flex min-w-0 flex-col gap-1"
+            role="group"
+            aria-labelledby="build-overview-python"
+            data-testid="build-overview-python"
           >
+            <span id="build-overview-python" class="text-[12px]/4 text-muted-foreground">{{
+              t('buildOverview.python')
+            }}</span>
             <span
-              class="min-w-0 truncate text-[12px]/4 text-muted-foreground"
-              :title="model.facts.variant?.value"
-              data-testid="build-overview-variant"
-              >{{ model.facts.variant?.value }}</span
+              class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+              :title="pythonVersion"
+              >{{ pythonVersion }}</span
             >
-            <Menu
-              v-if="torchGroups.length > 0"
-              :modal="false"
-              align="end"
-              :side-offset="6"
-              class="z-20 max-w-80 min-w-64"
-              :aria-label="model.torch?.label"
+            <span
+              class="mt-auto truncate text-[12px]/4 text-muted-foreground"
+              :title="installation.sourceLabel"
+              >{{ installation.sourceLabel }}</span
             >
-              <template #trigger>
-                <Button
-                  type="button"
-                  variant="muted-textonly"
-                  size="sm"
-                  class="-my-1.5 h-7 shrink-0 gap-0.5 text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
-                  :data-testid="TID.buildOverviewPytorchChange"
-                >
-                  {{ t('buildOverview.change') }}
-                  <ChevronDown :size="13" aria-hidden="true" />
-                </Button>
-              </template>
-              <template v-for="group in torchGroups" :key="group.id">
-                <DropdownMenuLabel
-                  v-if="showTorchGroupLabels || group === torchGroups[0]"
-                  class="px-3 pt-1.5 pb-1"
-                  :class="SECTION_TITLE_CLASS"
-                >
-                  {{ showTorchGroupLabels ? group.label : model.torch?.label }}
-                </DropdownMenuLabel>
-                <div class="flex flex-col gap-0.5">
-                  <template v-for="v in group.versions" :key="v.value">
-                    <MenuSub v-if="v.actions.length > 0">
-                      <MenuSubTrigger
+          </div>
+          <div
+            class="flex min-w-0 flex-col gap-1"
+            role="group"
+            aria-labelledby="build-overview-pytorch"
+            data-testid="build-overview-pytorch"
+          >
+            <span id="build-overview-pytorch" class="text-[12px]/4 text-muted-foreground">{{
+              model.torch?.label ?? t('buildOverview.pytorch')
+            }}</span>
+            <span
+              class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+              :title="torchVersion"
+              >{{ torchVersion }}</span
+            >
+            <div
+              class="mt-auto flex min-w-0 items-center justify-between gap-2"
+              :class="torchGroups.length > 0 && '-mr-2'"
+            >
+              <span
+                class="min-w-0 truncate text-[12px]/4 text-muted-foreground"
+                :title="model.facts.variant?.value"
+                data-testid="build-overview-variant"
+                >{{ model.facts.variant?.value }}</span
+              >
+              <Menu
+                v-if="torchGroups.length > 0"
+                :modal="false"
+                align="end"
+                :side-offset="6"
+                class="z-20 max-w-80 min-w-64"
+                :aria-label="model.torch?.label"
+              >
+                <template #trigger>
+                  <Button
+                    type="button"
+                    variant="muted-textonly"
+                    size="sm"
+                    class="-my-1.5 h-7 shrink-0 gap-0.5 text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                    :data-testid="TID.buildOverviewPytorchChange"
+                  >
+                    {{ t('buildOverview.change') }}
+                    <ChevronDown :size="13" aria-hidden="true" />
+                  </Button>
+                </template>
+                <template v-for="group in torchGroups" :key="group.id">
+                  <DropdownMenuLabel
+                    v-if="showTorchGroupLabels || group === torchGroups[0]"
+                    class="px-3 pt-1.5 pb-1"
+                    :class="SECTION_TITLE_CLASS"
+                  >
+                    {{ showTorchGroupLabels ? group.label : model.torch?.label }}
+                  </DropdownMenuLabel>
+                  <div class="flex flex-col gap-0.5">
+                    <template v-for="v in group.versions" :key="v.value">
+                      <MenuSub v-if="v.actions.length > 0">
+                        <MenuSubTrigger
+                          class="h-auto items-start py-1.5"
+                          :data-testid="TID.buildOverviewPytorchOption(v.value)"
+                        >
+                          <span class="flex min-w-0 flex-col text-left">
+                            <span>{{ v.version }}</span>
+                            <span
+                              v-if="v.description"
+                              class="line-clamp-2 text-[12px]/4 text-muted-foreground"
+                              :title="v.description"
+                              >{{ v.description }}</span
+                            >
+                          </span>
+                        </MenuSubTrigger>
+                        <MenuSubContent class="z-20 min-w-48">
+                          <Tooltip
+                            v-for="a in v.actions"
+                            :key="a.id"
+                            :text="a.tooltip"
+                            side="right"
+                          >
+                            <MenuItem
+                              class="w-full pr-5"
+                              :disabled="a.enabled === false"
+                              :data-testid="TID.updateActionButton(a.id)"
+                              @select="run(a)"
+                            >
+                              {{ a.label }}
+                            </MenuItem>
+                          </Tooltip>
+                        </MenuSubContent>
+                      </MenuSub>
+                      <MenuItem
+                        v-else
                         class="h-auto items-start py-1.5"
+                        :class="v.current && 'bg-muted data-highlighted:bg-muted'"
                         :data-testid="TID.buildOverviewPytorchOption(v.value)"
+                        @select.prevent
                       >
                         <span class="flex min-w-0 flex-col text-left">
                           <span>{{ v.version }}</span>
+                          <span v-if="v.current" class="text-[12px]/4 text-muted-foreground">{{
+                            t('buildOverview.inUse')
+                          }}</span>
                           <span
                             v-if="v.description"
                             class="line-clamp-2 text-[12px]/4 text-muted-foreground"
@@ -384,44 +450,12 @@ function openLocation(): void {
                             >{{ v.description }}</span
                           >
                         </span>
-                      </MenuSubTrigger>
-                      <MenuSubContent class="z-20 min-w-48">
-                        <Tooltip v-for="a in v.actions" :key="a.id" :text="a.tooltip" side="right">
-                          <MenuItem
-                            class="w-full pr-5"
-                            :disabled="a.enabled === false"
-                            :data-testid="TID.updateActionButton(a.id)"
-                            @select="run(a)"
-                          >
-                            {{ a.label }}
-                          </MenuItem>
-                        </Tooltip>
-                      </MenuSubContent>
-                    </MenuSub>
-                    <MenuItem
-                      v-else
-                      class="h-auto items-start py-1.5"
-                      :class="v.current && 'bg-muted data-highlighted:bg-muted'"
-                      :data-testid="TID.buildOverviewPytorchOption(v.value)"
-                      @select.prevent
-                    >
-                      <span class="flex min-w-0 flex-col text-left">
-                        <span>{{ v.version }}</span>
-                        <span v-if="v.current" class="text-[12px]/4 text-muted-foreground">{{
-                          t('buildOverview.inUse')
-                        }}</span>
-                        <span
-                          v-if="v.description"
-                          class="line-clamp-2 text-[12px]/4 text-muted-foreground"
-                          :title="v.description"
-                          >{{ v.description }}</span
-                        >
-                      </span>
-                    </MenuItem>
-                  </template>
-                </div>
-              </template>
-            </Menu>
+                      </MenuItem>
+                    </template>
+                  </div>
+                </template>
+              </Menu>
+            </div>
           </div>
         </section>
 
@@ -439,23 +473,6 @@ function openLocation(): void {
           >
           <span v-if="diskFree" class="truncate text-[12px]/4 text-muted-foreground">{{
             t('buildOverview.free', { size: diskFree })
-          }}</span>
-        </section>
-
-        <section
-          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
-          aria-labelledby="build-overview-python"
-          data-testid="build-overview-python"
-        >
-          <span id="build-overview-python" class="text-[12px]/4 text-muted-foreground">{{
-            t('buildOverview.python')
-          }}</span>
-          <span
-            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-            >{{ model.facts.python?.value ?? '—' }}</span
-          >
-          <span class="truncate text-[12px]/4 text-muted-foreground">{{
-            installation.sourceLabel
           }}</span>
         </section>
 

@@ -238,6 +238,14 @@ describe('BuildOverview — ComfyUI card', () => {
 })
 
 describe('BuildOverview — PyTorch card', () => {
+  it('groups Python and PyTorch in one card, Python first', () => {
+    const card = mountOverview().get('[data-testid="build-overview-runtime"]')
+    const blocks = card.findAll('[role="group"]').map((g) => g.attributes('data-testid'))
+    expect(blocks).toEqual(['build-overview-python', 'build-overview-pytorch'])
+    expect(card.text()).toContain('3.12.9')
+    expect(card.text()).toContain('2.8.0+cu128')
+  })
+
   it('shows the version in use and the build variant', () => {
     const card = mountOverview().get('[data-testid="build-overview-pytorch"]').text()
     expect(card).toContain('2.8.0+cu128')
