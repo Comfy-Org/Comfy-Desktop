@@ -594,6 +594,49 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.get('.config-summary-location').text()).toContain('/home/user/Picked')
   })
 
+  it('keeps a folder browsed while a saved setup is still being restored', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const first = mountModal({ hideBackToDashboard: true })
+    await first.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
+    await flushPromises()
+    await pickHardware(first, 'CPU')
+    await first.get('#inst-name-standalone').setValue('Studio')
+    await first.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    const [saved] = savedSetups(first)
+    first.unmount()
+    if (!saved) throw new Error('Save changes emitted nothing')
+
+    let finishSources: (sources: unknown[]) => void = () => {}
+    const sources = (window.api.getSources as ReturnType<typeof vi.fn>).getMockImplementation()
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSources = (value) => resolve(value)
+        })
+    )
+    const again = mountModal()
+    const opening = again.vm.open({ restore: saved.draft, installRoot: '/Volumes/Big/ComfyUI' })
+    await flushPromises()
+
+    await again.get('.config-path-browse').trigger('click')
+    await flushPromises()
+    finishSources(((await sources?.()) as unknown[]) ?? [])
+    await opening
+    await flushPromises()
+
+    expect(again.get('.config-summary-location').text()).toContain('/home/user/Picked')
+  })
+
   it('shows signed-out local fields directly like the Public workspace tab', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {

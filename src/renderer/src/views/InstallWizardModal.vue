@@ -540,6 +540,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
   changeSetupSession++
   setupInstallRoot = opts.installRoot ?? ''
+  folderBrowsedWhileOpening = null
   const gen = ++modeGeneration
   instName.value = ''
   workspaceId.value = opts.workspaceId?.trim() || PERSONAL_WORKSPACE_ID
@@ -609,9 +610,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     }
     if (opts.restore && gen === modeGeneration) {
       instName.value = opts.restore.instName
-      await restoreNewInstallSetup(
-        opts.installRoot ? { ...opts.restore, instPath: opts.installRoot } : opts.restore
-      )
+      const restoredPath = folderBrowsedWhileOpening || opts.installRoot || opts.restore.instPath
+      await restoreNewInstallSetup({ ...opts.restore, instPath: restoredPath })
     }
   } finally {
     if (gen === modeGeneration) initializing.value = false
@@ -994,9 +994,13 @@ function handleTextAction(field: SourceField): void {
   }
 }
 
+let folderBrowsedWhileOpening: string | null = null
+
 async function handleBrowse(): Promise<void> {
   const chosen = await window.api.browseFolder(instPath.value)
-  if (chosen) instPath.value = chosen
+  if (!chosen) return
+  instPath.value = chosen
+  if (initializing.value) folderBrowsedWhileOpening = chosen
 }
 
 function handleOpenInstPath(): void {
