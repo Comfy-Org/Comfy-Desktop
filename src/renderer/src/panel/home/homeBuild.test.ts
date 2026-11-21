@@ -78,6 +78,10 @@ describe('buildUsageLabel', () => {
     expect(buildUsageLabel(used('local'), NOW, t, 'en')).toBe('Never used')
   })
 
+  it('says Never used on a remote server that was never opened', () => {
+    expect(buildUsageLabel(used('remote'), NOW, t, 'en')).toBe('Never used')
+  })
+
   it('says when an opened Comfy Cloud was last used', () => {
     expect(buildUsageLabel(used('cloud', NOW - 2 * 60 * 60_000), NOW, t, 'en')).toBe('Used 2h ago')
   })

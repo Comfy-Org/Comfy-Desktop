@@ -18,7 +18,6 @@ import {
   buildDeviceKind,
   buildUsageLabel,
   isCloudBuild,
-  isComfyCloud,
   type HomeBuildStatus
 } from './homeBuild'
 import {
@@ -116,7 +115,7 @@ const statusLabel = computed(() => {
   }
 })
 const detail = computed(() =>
-  isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
+  isCloudBuild(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
 const isRunning = computed(() => status === 'running')
 const resting = computed(() => status === 'ready' || status === 'update')

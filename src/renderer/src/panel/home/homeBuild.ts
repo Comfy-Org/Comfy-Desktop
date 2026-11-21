@@ -28,10 +28,6 @@ export function buildDeviceKind(build: Installation, localKind: LocalDeviceKind)
   return build.sourceCategory === 'remote' ? 'monitor' : localKind
 }
 
-export function isComfyCloud(build: Installation): boolean {
-  return build.sourceId === 'cloud'
-}
-
 export function homeBuildTone(build: Installation): HomeBuildTone {
   return isCloudBuild(build) ? 'tide' : 'iris'
 }
