@@ -46,9 +46,13 @@ import type {
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import {
   INSTALL_SPACE_FACTOR,
+  defaultFieldOption,
   downloadBytesOf,
+  hardwareNoteKey,
   isCpuVariant,
+  isDefaultPick,
   machineName,
+  versionText,
   type ChangeSetupDraft,
   type NewInstallSetup,
   type SavedSetup,
@@ -128,6 +132,7 @@ const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
 const localDeviceKind = useLocalDeviceKind()
 const hardwareWarning = ref('')
+const hardwarePickedByHand = ref(false)
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
@@ -569,6 +574,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   changeSetupDraft = null
   hardwareValidation = null
   hardwareWarning.value = ''
+  hardwarePickedByHand.value = false
   resetDiskSpace()
   sourceError.value = ''
   authorizingWorkspace.value = false
@@ -886,10 +892,9 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     heldFields.value.delete(field.id)
 
     if (options.length > 0) {
-      let defaultIndex = options.findIndex((opt) => opt.recommended)
-      if (defaultIndex < 0) defaultIndex = 0
-      const defaultOption = options[defaultIndex]
+      const defaultOption = defaultFieldOption(options)
       if (defaultOption) selections.value[field.id] = defaultOption
+      if (field.id === 'variant') hardwarePickedByHand.value = false
     } else {
       delete selections.value[field.id]
     }
@@ -952,6 +957,9 @@ function supersedeFieldLoads(fromIndex: number): void {
 function selectCardOption(field: SourceField, fieldIndex: number, option: FieldOption): void {
   selections.value[field.id] = option
   if (field.id === 'variant') {
+    if (!isDefaultPick(option, fieldOptions.value.get(field.id) ?? [])) {
+      hardwarePickedByHand.value = true
+    }
     emitTelemetryAction('comfy.desktop.install.variant.selected', {
       variant_bucket: toVariantBucket(
         (option.data?.variantId as string | undefined) || option.value
@@ -1264,7 +1272,8 @@ function captureNewInstallSetup(): NewInstallSetup {
     sourceError: sourceError.value,
     instPath: instPath.value,
     selectedBuildId: selectedBuildId.value,
-    selectedBuildTargetId: selectedBuildTargetId.value
+    selectedBuildTargetId: selectedBuildTargetId.value,
+    hardwarePickedByHand: hardwarePickedByHand.value
   }
 }
 
@@ -1299,6 +1308,12 @@ function workspaceBuildPlan(build: Build): SetupPlan {
   }
 }
 
+function isDetectedHardware(variant: FieldOption | undefined): boolean {
+  return (
+    !hardwarePickedByHand.value && isDefaultPick(variant, fieldOptions.value.get('variant') ?? [])
+  )
+}
+
 function sourcePlan(source: Source): SetupPlan {
   const picked = rawSelections()
   return {
@@ -1307,6 +1322,7 @@ function sourcePlan(source: Source): SetupPlan {
     installRoot: instPath.value,
     downloadBytes: downloadBytesOf(picked.variant),
     requiredBytes: estimatedInstallSize.value,
+    hardwareDetected: isDetectedHardware(picked.variant),
     ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
     ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   }
@@ -1392,6 +1408,7 @@ async function restoreNewInstallSetup(setup: NewInstallSetup): Promise<void> {
   loadGeneration++
   heldFields.value.clear()
   selections.value = { ...setup.selections }
+  hardwarePickedByHand.value = setup.hardwarePickedByHand ?? false
   fieldOptions.value = new Map(setup.fieldOptions)
   fieldLoading.value = new Map(setup.fieldLoading)
   fieldErrors.value = new Map(setup.fieldErrors)
@@ -1641,7 +1658,11 @@ interface SummaryRow {
   label: string
   value: string
   meta?: string
+  metaTitle?: string
+  metaWarning?: boolean
 }
+
+const LOCATION_ROW_KEY = 'location'
 
 function fieldSummaryValue(field: SourceField): string {
   if (field.type === 'text') return textFieldValues.value.get(field.id) ?? ''
@@ -1649,7 +1670,47 @@ function fieldSummaryValue(field: SourceField): string {
   return selections.value[field.id]?.label ?? getSelectPlaceholder(field)
 }
 
-const summaryRows = computed<SummaryRow[]>(() => {
+function hardwarePlaceholder(): string {
+  const field = currentSource.value?.fields.find((candidate) => candidate.id === 'variant')
+  const settled =
+    !!field &&
+    !fieldLoading.value.get(field.id) &&
+    (fieldOptions.value.has(field.id) || fieldErrors.value.has(field.id))
+  return settled ? getSelectPlaceholder(field) : t('setup.checking')
+}
+
+function standaloneHardwareRow(): SummaryRow {
+  const variant = selections.value.variant
+  const note = hardwareNoteKey({
+    unsupported: !!unsupportedReason.value,
+    cpuOnly: isCpuVariant(variant),
+    detected: isDetectedHardware(variant)
+  })
+  const caution = unsupportedReason.value || hardwareWarning.value
+  return {
+    key: 'standalone-hardware',
+    icon: Zap,
+    label: t('setup.hardware'),
+    value: variant?.label ?? hardwarePlaceholder(),
+    meta: note ? t(note) : undefined,
+    metaTitle: caution || undefined,
+    metaWarning: !!caution
+  }
+}
+
+function standaloneVersionRow(): SummaryRow {
+  const loading = fieldLoading.value.get('release') || fieldLoading.value.get('comfyVersion')
+  const text = versionText(selections.value)
+  return {
+    key: 'standalone-version',
+    icon: Package,
+    label: t('setup.version'),
+    value: loading ? t('newInstall.loading') : t(text.key, text.params),
+    meta: selections.value.release?.label
+  }
+}
+
+const fieldSummaryRows = computed<SummaryRow[]>(() => {
   if (managedBuildMode.value) {
     const rows: SummaryRow[] = [
       {
@@ -1676,6 +1737,7 @@ const summaryRows = computed<SummaryRow[]>(() => {
   }
   const source = currentSource.value
   if (!source) return []
+  if (source.id === 'standalone') return [standaloneHardwareRow(), standaloneVersionRow()]
   return source.fields
     .filter((field) => !isHiddenWhenEmpty(field))
     .map((field) => ({
@@ -1688,6 +1750,12 @@ const summaryRows = computed<SummaryRow[]>(() => {
 })
 
 const showLocation = computed(() => !currentSource.value?.skipInstall)
+
+const summaryRows = computed<SummaryRow[]>(() => {
+  const rows = fieldSummaryRows.value
+  if (!showLocation.value) return rows
+  return [...rows, { key: LOCATION_ROW_KEY, icon: HardDrive, label: '', value: '' }]
+})
 
 const trackFormRef = ref<InstanceType<typeof TrackBuildForm> | null>(null)
 const snapshotFormRef = ref<InstanceType<typeof LoadSnapshotForm> | null>(null)
@@ -1794,9 +1862,13 @@ defineExpose({ open })
       {{ sourceError }}
     </div>
 
-    <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
+    <div
+      v-if="view === 'summary'"
+      class="config-summary [--summary-label-width:132px] max-[640px]:[--summary-label-width:100px]"
+      data-testid="config-summary"
+    >
       <div
-        class="config-name-card mt-4 rounded-[14px] bg-white/5 px-5 py-3"
+        class="config-name-card mt-4 rounded-[14px] bg-white/5 py-3 pr-3 pl-5"
         :class="SUMMARY_GRID_CLASS"
       >
         <label
@@ -1813,7 +1885,7 @@ defineExpose({ open })
       </div>
 
       <div
-        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] py-6 pr-5 pl-7 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
         :class="machineBlocked && 'config-machine--unsupported'"
       >
         <SetupMachineIllustration
@@ -1893,61 +1965,67 @@ defineExpose({ open })
         :class="SUMMARY_BOX_CLASS"
         :aria-label="$t('newInstall.installSummary')"
       >
-        <SetupSummaryRow
-          v-for="row in summaryRows"
-          :key="row.key"
-          class="config-summary-row"
-          :icon="row.icon"
-          :label="row.label"
-        >
-          <span class="truncate text-foreground">{{ row.value }}</span>
-          <span
-            :class="[SUMMARY_META_CLASS, 'max-w-[220px] min-w-0 truncate text-subtle-foreground']"
-            :title="row.meta"
-            >{{ row.meta }}</span
+        <template v-for="row in summaryRows" :key="row.key">
+          <SetupSummaryRow
+            v-if="row.key === LOCATION_ROW_KEY"
+            class="config-summary-row config-summary-location"
+            :icon="HardDrive"
+            :label="$t('common.location')"
           >
-        </SetupSummaryRow>
-        <SetupSummaryRow
-          v-if="showLocation"
-          class="config-summary-row config-summary-location"
-          :icon="HardDrive"
-          :label="$t('common.location')"
-        >
-          <span class="flex min-w-0" data-testid="config-summary-path">
-            <PathOpenButton
-              v-if="instPath"
-              class="leading-4"
-              :path="instPath"
-              @open="handleOpenInstPath"
-            />
-          </span>
-          <span
-            class="flex min-w-0 items-center justify-end gap-3"
-            :class="[
-              SUMMARY_META_CLASS,
-              diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
-            ]"
-          >
+            <span class="flex min-w-0" data-testid="config-summary-path">
+              <PathOpenButton
+                v-if="instPath"
+                class="leading-4"
+                :path="instPath"
+                @open="handleOpenInstPath"
+              />
+            </span>
             <span
-              class="min-w-0 truncate"
-              :class="{ 'config-path-required': diskShortLabel }"
-              :title="locationMeta || undefined"
-              >{{ locationMeta }}</span
+              class="flex min-w-0 items-center justify-end gap-3"
+              :class="[
+                SUMMARY_META_CLASS,
+                diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
+              ]"
             >
-            <Button
-              size="sm"
-              variant="secondary"
-              type="button"
-              class="config-path-browse -my-1 flex-none rounded-lg px-3"
-              data-testid="config-summary-browse"
-              @click="handleBrowse"
+              <span
+                class="min-w-0 truncate"
+                :class="{ 'config-path-required': diskShortLabel }"
+                :title="locationMeta || undefined"
+                >{{ locationMeta }}</span
+              >
+              <Button
+                size="sm"
+                variant="secondary"
+                type="button"
+                class="config-path-browse -my-1 flex-none rounded-lg px-3"
+                data-testid="config-summary-browse"
+                @click="handleBrowse"
+              >
+                {{ $t('common.browse') }}
+              </Button>
+            </span>
+          </SetupSummaryRow>
+          <SetupSummaryRow
+            v-else
+            class="config-summary-row"
+            :data-testid="`config-summary-${row.key}`"
+            :icon="row.icon"
+            :label="row.label"
+          >
+            <span class="truncate text-foreground">{{ row.value }}</span>
+            <span
+              :class="[
+                SUMMARY_META_CLASS,
+                'max-w-[220px] min-w-0 truncate',
+                row.metaWarning ? 'text-[#f0b135]' : 'text-subtle-foreground'
+              ]"
+              :title="row.metaTitle ?? row.meta"
+              >{{ row.meta }}</span
             >
-              {{ $t('common.browse') }}
-            </Button>
-          </span>
-        </SetupSummaryRow>
+          </SetupSummaryRow>
+        </template>
         <div
-          v-if="initializing && summaryRows.length === 0"
+          v-if="initializing && fieldSummaryRows.length === 0"
           class="config-loading h-4 text-[13px]/4 text-subtle-foreground"
           :class="spinnerClass"
         >

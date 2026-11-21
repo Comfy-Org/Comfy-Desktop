@@ -1051,6 +1051,7 @@
     "noGpu": "No GPU acceleration",
     "unsupported": "Not supported",
     "versionValue": "ComfyUI {version}",
+    "versionValueNightly": "ComfyUI {version} (nightly)",
     "download": "{size} download",
     "installSpaceTip": "Allow about {required} of disk space to unpack and install the {download} download.",
     "unavailable": "Couldn't reach the ComfyUI download server. Check your connection, or pick a build with Change.",
