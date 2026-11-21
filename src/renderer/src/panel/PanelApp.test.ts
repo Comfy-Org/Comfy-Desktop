@@ -1805,6 +1805,35 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="app-card-cutout"]').exists()).toBe(true)
   })
 
+  it('shows no switch warning when the person left before a full background answered', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    let answer: (stop: { appTitle: string; otherRuns: number }) => void = () => {}
+    vi.mocked(window.api.appSwitchStopsRun).mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve))
+    )
+
+    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    const appPageWentBackToAllApps = vi.mocked(window.api.onAppPageClosed).mock.calls.at(-1)![0]
+    appPageWentBackToAllApps()
+    await flushPromises()
+    answer({ appTitle: 'Upscale 4x', otherRuns: 3 })
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+  })
+
   it('opens the app picked on Home inside Desktop, on the Apps page beside the folded sidebar', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
