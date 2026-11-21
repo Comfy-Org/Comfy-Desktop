@@ -236,8 +236,7 @@ async function handleRemoveModelDir(index: number): Promise<void> {
   const ok = await modal.confirm({
     title: t('models.removeInstanceDirTitle'),
     message: t('models.removeInstanceDirConfirm'),
-    confirmLabel: t('models.removeDir'),
-    confirmStyle: 'danger'
+    confirmLabel: t('models.removeDir')
   })
   if (!ok) return
   const persistedPrimary = findField('modelDirsPrimary')?.value

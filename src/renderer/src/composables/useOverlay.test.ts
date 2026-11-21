@@ -46,8 +46,7 @@ describe('useOverlay — cancel-prompt copy', () => {
     expect(confirmMock).toHaveBeenCalledWith({
       title: 'overlay.quitSetupTitle',
       message: 'overlay.quitSetupMessage',
-      confirmLabel: 'overlay.quitSetupConfirm',
-      confirmStyle: 'danger'
+      confirmLabel: 'overlay.quitSetupConfirm'
     })
     expect(current.value).toBeNull()
   })
@@ -62,8 +61,7 @@ describe('useOverlay — cancel-prompt copy', () => {
     expect(confirmMock).toHaveBeenCalledWith({
       title: 'overlay.cancelCurrentTitle',
       message: 'overlay.cancelMessage',
-      confirmLabel: 'overlay.cancelConfirm',
-      confirmStyle: 'danger'
+      confirmLabel: 'overlay.cancelConfirm'
     })
     expect(current.value).toBeNull()
   })
@@ -113,8 +111,7 @@ describe('useOverlay — cancel-prompt copy', () => {
     expect(confirmMock).toHaveBeenCalledWith({
       title: 'overlay.discardSetupTitle',
       message: 'overlay.discardSetupMessage',
-      confirmLabel: 'overlay.discardSetupConfirm',
-      confirmStyle: 'danger'
+      confirmLabel: 'overlay.discardSetupConfirm'
     })
     expect(current.value).toBeNull()
   })

@@ -1465,6 +1465,10 @@ describe('InstallWizardModal workspace Builds', () => {
       .mockResolvedValueOnce([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     const wrapper = await openWorkspaceModal()
 
+    expect(
+      wrapper.get('.wizard-build-retry').attributes('data-variant'),
+      'Retry deletes nothing, so it is not red'
+    ).toBe('textonly')
     await wrapper.get('.wizard-build-retry').trigger('click')
     await flushPromises()
 
@@ -1488,6 +1492,9 @@ describe('InstallWizardModal workspace Builds', () => {
 
     const retry = wrapper.get('[data-testid="config-summary-build-retry"]')
     expect(retry.text()).toBe("Couldn't load builds. Retry")
+    expect(retry.attributes('data-variant'), 'Retry deletes nothing, so it is not red').toBe(
+      'textonly'
+    )
     expect(wrapper.get('.config-continue').attributes('disabled')).toBeDefined()
 
     await retry.trigger('click')

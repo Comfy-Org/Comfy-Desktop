@@ -11,6 +11,7 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { usePerformanceTestRun } from '../composables/usePerformanceTestRun'
 import { usePerformanceTestWorkflow } from '../composables/usePerformanceTestWorkflow'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
+import { useDialogs } from '../composables/useDialogs'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import {
@@ -43,6 +44,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const dialogs = useDialogs()
 const revealFolderKey = revealInFolderKey(window.api?.platform)
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
@@ -151,6 +153,20 @@ function startRun(): void {
   })
 }
 
+async function removeWorkflow(): Promise<void> {
+  if (workflow.example.download) return workflow.remove()
+  const selectedPath = workflow.filePath
+  const choice = await dialogs.confirm({
+    title: t('performanceTest.deleteWorkflowTitle', { workflow: workflow.label }),
+    message: t('performanceTest.deleteWorkflowMessage'),
+    confirmLabel: t('performanceTest.deleteWorkflow'),
+    tone: 'danger'
+  })
+  if (choice === 'primary' && selectedPath === workflow.filePath) {
+    await workflow.remove(selectedPath)
+  }
+}
+
 function openResultsFolder(): void {
   if (resultsFolder.value) void window.api.openPath(resultsFolder.value)
 }
@@ -235,7 +251,7 @@ async function exportResultsImage(): Promise<void> {
               @choose-example="workflow.example.openPicker()"
               @import="workflow.importFrom()"
               @import-file="workflow.importFile"
-              @remove="workflow.remove()"
+              @remove="removeWorkflow()"
             />
             <section class="performance-test__step flex min-w-0">
               <h2 class="sr-only">{{ t('performanceTest.measurementSettings') }}</h2>

@@ -20,6 +20,7 @@ import { useProgressStore, type Operation } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 import { performanceTestSessionKey } from '../../../../shared/performanceTestSession'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 const BUILD: Installation = {
   id: 'flux',
@@ -420,6 +421,55 @@ describe('Build menu', () => {
 
     expect(host.showProgress).not.toHaveBeenCalled()
   })
+
+  it('shows Uninstall as the one red item with its icon, and only its confirm button is filled red', async () => {
+    const tile = await mountTile('ready')
+    mountDialogs()
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+
+    const items = [...document.querySelectorAll<HTMLElement>('[data-testid^="build-menu-"]')]
+    const red = items.filter((item) => item.classList.contains('text-destructive'))
+    expect(red.map((item) => item.dataset.testid)).toEqual(['build-menu-delete'])
+    expect(red[0]!.querySelector('svg[class*="lucide-trash"]')).not.toBeNull()
+    expect([...red[0]!.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
+
+    red[0]!.click()
+    const box = await confirmBox()
+    const action = box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!
+    const cancel = box.querySelector<HTMLElement>('[data-testid="base-alert-cancel"]')!
+    expect(action.textContent?.trim()).toBe('Uninstall')
+    expect(action.classList).toContain('bg-destructive')
+    expect(cancel.classList).not.toContain('bg-destructive')
+    expect(cancel.className).not.toMatch(/text-destructive/)
+
+    cancel.click()
+    await flushPromises()
+  })
+
+  it.each(['restart', 'stop'])(
+    'shows %s of a running build as a plain item whose confirm button is white',
+    async (id) => {
+      const tile = await mountTile('running')
+      mounted.push(mount(ModalDialog, { attachTo: document.body }))
+      await tile.get('[data-testid="home-build-more"]').trigger('click')
+      await shownMenu()
+
+      const item = document.querySelector<HTMLElement>(`[data-testid="build-menu-${id}"]`)!
+      expect(item.className).not.toMatch(/destructive|danger/)
+
+      item.click()
+      const box = await confirmBox()
+      const action = box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!
+      expect(action.getAttribute('data-variant')).toBe('inverted')
+      expect(action.classList).not.toContain('bg-destructive')
+
+      useModal().dismiss()
+      await flushPromises()
+    }
+  )
 
   it.each(['Cancel', 'Escape'] as const)(
     'puts keyboard focus back on the ⋯ button after Uninstall is answered with %s',

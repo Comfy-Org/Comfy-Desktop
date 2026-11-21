@@ -80,9 +80,8 @@ export function usePerformanceTestWorkflow(context: PerformanceTestWorkflowConte
     if (sourcePath) await importFrom(sourcePath)
   }
 
-  async function remove(): Promise<void> {
-    const removing = filePath.value
-    if (!removing || isDeleting.value || isLocked.value) return
+  async function remove(removing: string | null = filePath.value): Promise<void> {
+    if (!removing || removing !== filePath.value || isDeleting.value || isLocked.value) return
     isDeleting.value = true
     error.value = null
     try {
