@@ -68,7 +68,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(wrapper.find('.downloads-clear').exists()).toBe(false)
   })
 
-  it('renders an active downloading entry with the full browser-style status line (size / speed / ETA) and an inline progress gradient', async () => {
+  it('renders an active downloading entry with what has arrived, the time left and an inline progress gradient', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const state: MockDownloadsState = {
       active: [
@@ -92,10 +92,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(item.exists()).toBe(true)
     expect(item.find('.downloads-item-name').text()).toBe('models/checkpoints / a.bin')
     const sub = item.find('.downloads-item-sub').text()
-    expect(sub).toContain('4.0 MB / 9.5 MB')
-    expect(sub).toContain('42%')
-    expect(sub).toContain('1.0 MB/s')
-    expect(sub).toContain('30s')
+    expect(sub).toBe('4.0 MB of 9.5 MB · Less than a minute left')
     const style = item.attributes('style') ?? ''
     expect(style).toContain('linear-gradient')
     expect(style).toContain('42%')
@@ -123,7 +120,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(sub).toContain('10%')
   })
 
-  it('renders a completed entry as a clickable row with a Completed subtitle, a Show in Finder action and a dismiss X', async () => {
+  it('renders a completed entry as a clickable row with a Downloaded subtitle, a Show in Finder action and a dismiss X', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const state: MockDownloadsState = {
       active: [],
@@ -143,7 +140,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(item.exists()).toBe(true)
     expect(item.classes()).toContain('is-completed')
     expect(item.classes()).toContain('is-clickable')
-    expect(item.find('.downloads-item-sub').text()).toBe('Completed')
+    expect(item.find('.downloads-item-sub').text()).toBe('Downloaded')
     const reveal = item.get('.downloads-item-reveal')
     expect(reveal.text()).toBe('')
     expect(reveal.attributes('aria-label')).toBe('Show in Finder')
@@ -246,6 +243,46 @@ describe('comfyTitlePopup/DownloadsView', () => {
       { action: 'pause', url: 'https://example.com/run.bin' },
       { action: 'resume', url: 'https://example.com/held.bin' }
     ])
+  })
+
+  it('keeps Resume and Try again in view on paused and failed rows, Pause only on hover', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state = {
+      active: [
+        {
+          url: 'https://example.com/run.bin',
+          filename: 'run.bin',
+          progress: 0.2,
+          status: 'downloading' as const
+        },
+        {
+          url: 'https://example.com/held.bin',
+          filename: 'held.bin',
+          progress: 0.41,
+          receivedBytes: 7_800_000_000,
+          totalBytes: 19_000_000_000,
+          status: 'paused' as const
+        }
+      ],
+      recent: [
+        {
+          url: 'https://example.com/full.bin',
+          filename: 'full.bin',
+          progress: 0.1,
+          status: 'error' as const,
+          error: 'Not enough disk space'
+        }
+      ]
+    }
+    const wrapper = mount(DownloadsView, { props: { state } })
+    await flushPromises()
+
+    expect(wrapper.get('.is-paused .downloads-item-sub').text()).toBe(
+      'Paused · 7.26 GB of 17.70 GB'
+    )
+    expect(wrapper.get('.is-paused .downloads-item-action').classes()).toContain('flex')
+    expect(wrapper.get('.is-error .downloads-item-action').classes()).toContain('flex')
+    expect(wrapper.get('.is-active .downloads-item-action').classes()).toContain('hidden')
   })
 
   it('leaves Pause off a download the manager cannot pause', async () => {
@@ -450,8 +487,12 @@ describe('comfyTitlePopup/DownloadsView', () => {
       expect(wrapper.get('.is-completed .downloads-item-reveal').attributes('aria-label')).toBe(
         'Show in Finder'
       )
-      expect(wrapper.get('.is-cancelled .downloads-item-action').text()).toBe('Try again')
-      expect(wrapper.get('.is-error .downloads-item-action').text()).toBe('Try again')
+      expect(wrapper.get('.is-cancelled .downloads-item-retry').attributes('aria-label')).toBe(
+        'Try again'
+      )
+      expect(wrapper.get('.is-error .downloads-item-retry').attributes('aria-label')).toBe(
+        'Try again'
+      )
     })
 
     it.each([
