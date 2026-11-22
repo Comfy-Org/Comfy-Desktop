@@ -3,9 +3,8 @@ import Button from '@comfyorg/design-system/button/Button'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseInput from '../../components/ui/BaseInput.vue'
+import type { DraftAppPasteAnswer } from '../../types/ipc'
 import GlobalSettingsMicroSection from './GlobalSettingsMicroSection.vue'
-
-type DraftAppPasteAnswer = { kind: 'asked' } | { kind: 'refused'; title: string; message: string }
 
 interface DevelopmentBridge {
   close(): void
@@ -26,17 +25,28 @@ function handleInput(value: string): void {
   refusal.value = null
 }
 
+function failedToCheck(): DraftAppPasteAnswer {
+  return {
+    kind: 'refused',
+    title: t('settings.draftAppFailedTitle'),
+    message: t('settings.draftAppFailedMessage')
+  }
+}
+
 async function handleOpen(): Promise<void> {
   if (!canOpen.value) return
+  const submitted = address.value.trim()
   opening.value = true
   refusal.value = null
   try {
-    const answer = await bridge?.globalSettingsOpenDraftApp(address.value.trim())
+    const answer = await bridge?.globalSettingsOpenDraftApp(submitted).catch(() => failedToCheck())
     if (answer?.kind === 'asked') {
       bridge?.close()
       return
     }
-    if (answer?.kind === 'refused') refusal.value = { title: answer.title, message: answer.message }
+    if (answer?.kind === 'refused' && address.value.trim() === submitted) {
+      refusal.value = { title: answer.title, message: answer.message }
+    }
   } finally {
     opening.value = false
   }

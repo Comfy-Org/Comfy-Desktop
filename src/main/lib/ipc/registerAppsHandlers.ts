@@ -80,7 +80,8 @@ export function registerAppsHandlers(): void {
 
   ipcMain.handle('apps:list', async (event) => {
     if (!isPanelSender(event.sender) || !(await areAppsEnabled())) return []
-    return [...draftCards(), ...(await listApps())]
+    const listed = await listApps()
+    return [...draftCards(), ...listed]
   })
 
   ipcMain.handle('apps:show-page', (event, appId: unknown, placement: unknown) =>

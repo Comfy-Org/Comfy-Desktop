@@ -56,12 +56,25 @@ const matchingApps = computed(() => {
   )
 })
 
+let listRequests = 0
+let shownListRequest = 0
+
+function isNewestAnswer(request: number): boolean {
+  if (request < shownListRequest) return false
+  shownListRequest = request
+  return true
+}
+
 async function loadApps(): Promise<void> {
+  const request = ++listRequests
   state.value = 'loading'
   try {
-    apps.value = await window.api.listApps()
+    const listed = await window.api.listApps()
+    if (!isNewestAnswer(request)) return
+    apps.value = listed
     state.value = 'ready'
   } catch {
+    if (!isNewestAnswer(request)) return
     apps.value = []
     state.value = 'failed'
   }
@@ -69,8 +82,9 @@ async function loadApps(): Promise<void> {
 }
 
 async function refreshApps(): Promise<void> {
+  const request = ++listRequests
   const listed = await window.api.listApps().catch(() => null)
-  if (!listed) return
+  if (!listed || !isNewestAnswer(request)) return
   apps.value = listed
   state.value = 'ready'
   emit('apps-loaded', listed)

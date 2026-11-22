@@ -761,4 +761,27 @@ describe('AppsView', () => {
     ])
     expect(wrapper.emitted('apps-loaded')?.at(-1)).toEqual([[CUTOUT]])
   })
+
+  it('keeps the newest list when an older one answers after it', async () => {
+    const draft: AppCard = { ...CUTOUT, id: 'draft-pr683-depth-swap', title: 'Depth Swap' }
+    const wrapper = await mountApps([draft, CUTOUT])
+    let answerOlder: (apps: AppCard[]) => void = () => {}
+    listApps.mockReturnValueOnce(
+      new Promise<AppCard[]>((resolve) => {
+        answerOlder = resolve
+      })
+    )
+    listApps.mockReturnValueOnce(Promise.resolve([CUTOUT]))
+
+    appsListChanged()
+    appsListChanged()
+    await flushPromises()
+    answerOlder([draft, CUTOUT])
+    await flushPromises()
+
+    expect(wrapper.findAll(APP_CARDS).map((card) => card.attributes('data-testid'))).toEqual([
+      'app-card-remove-background'
+    ])
+    expect(wrapper.emitted('apps-loaded')?.at(-1)).toEqual([[CUTOUT]])
+  })
 })

@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   acceptDraft: vi.fn(async (_sender: unknown, _token: unknown) => null),
   draftsStillAllowed: vi.fn(async () => true),
   currentDrafts: vi.fn((): readonly unknown[] => []),
+  draftCards: vi.fn((): unknown[] => []),
+  listApps: vi.fn(async (): Promise<unknown[]> => []),
   openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
   isAppsPage: true,
   titleBarEntry: null as unknown,
@@ -44,7 +46,7 @@ vi.mock('../../apps/appPageView', () => ({
 }))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/appsCatalog', () => ({
-  listApps: vi.fn(async () => []),
+  listApps: mocks.listApps,
   pictureForListedApp: (id: string) =>
     id === 'remove-background' ? 'https://comfy.org/rb.webp' : null
 }))
@@ -59,7 +61,7 @@ vi.mock('../../popups/titlePopup', () => ({
 }))
 vi.mock('../../apps/draftApps', () => ({
   currentDrafts: mocks.currentDrafts,
-  draftCards: () => []
+  draftCards: mocks.draftCards
 }))
 vi.mock('../../apps/draftLinks', () => ({
   acceptDraft: mocks.acceptDraft,
@@ -166,6 +168,35 @@ describe('pasting a draft app address in Desktop settings', () => {
     expect(await call('apps:open-pasted-draft', 'http://localhost:4321/apps/x/')).toBeNull()
     expect(mocks.canPasteDrafts).not.toHaveBeenCalled()
     expect(mocks.openPastedDraft).not.toHaveBeenCalled()
+  })
+})
+
+describe('listing apps for the panel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.isPanel = true
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('lists the drafts open when the catalog answers, not when the panel asked', async () => {
+    const dropped = { id: 'draft-dropped', title: 'Dropped' }
+    const listed = { id: 'remove-background', title: 'Remove Background' }
+    let answerCatalog: (apps: unknown[]) => void = () => {}
+    mocks.draftCards.mockReturnValue([dropped])
+    mocks.listApps.mockReturnValueOnce(
+      new Promise<unknown[]>((resolve) => {
+        answerCatalog = resolve
+      })
+    )
+
+    const answer = Promise.resolve(mocks.handlers.get('apps:list')?.({ sender: {} }))
+    await settle()
+    mocks.draftCards.mockReturnValue([])
+    answerCatalog([listed])
+
+    expect(await answer).toEqual([listed])
   })
 })
 

@@ -17,6 +17,7 @@ const PREVIEW_HOSTS = [
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const LOCAL_NETWORK_NAME = /\.local$/
 const IPV4_ADDRESS = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/
+const IPV6_UNIQUE_LOCAL_ADDRESS = /^\[f[cd][0-9a-f]{2}:[0-9a-f:.]*\]$/
 const DRAFT_PAGE_PATH = /^\/apps\/([a-z0-9][a-z0-9_-]{0,63})\/(?:desktop\.html)?$/
 const ROOT_MOUNT = '/'
 const DRAFT_MOUNT = '/apps/draft/'
@@ -85,6 +86,7 @@ function previewPrOf(page: URL): number | null {
 }
 
 function isPrivateNetworkAddress(hostname: string): boolean {
+  if (IPV6_UNIQUE_LOCAL_ADDRESS.test(hostname)) return true
   const parts = IPV4_ADDRESS.exec(hostname)
   if (!parts) return false
   const first = Number(parts[1])

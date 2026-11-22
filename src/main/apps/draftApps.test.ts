@@ -156,7 +156,8 @@ describe('parseDraftLink', () => {
     ['a page that is not on the web', 'file:///Users/me/app/index.html'],
     ['a script', 'javascript:alert(1)'],
     ['plain http to a preview', 'http://pr-683.drafts.comfy.org/apps/depth-swap/'],
-    ['plain http to another site', 'http://myapp.example/apps/depth-swap/']
+    ['plain http to another site', 'http://myapp.example/apps/depth-swap/'],
+    ['plain http to a public IPv6 address', 'http://[2001:db8::1]/apps/depth-swap/']
   ])('refuses %s', (_why, url) => {
     expect(parseDraftLink(linkTo(url))).toBeNull()
   })
@@ -169,6 +170,8 @@ describe('parseDraftLink', () => {
     'http://172.16.0.5/',
     'http://172.31.255.5/',
     'http://192.168.1.20:4321/',
+    'http://[fd00::1]:4321/apps/x/',
+    'http://[fc12:3456::7]/',
     'http://my-box.local:4321/'
   ])('takes plain http to %s, on this computer or the local network', (url) => {
     expect(parseDraftLink(linkTo(url))?.origin).toBe(new URL(url).origin)
@@ -329,6 +332,9 @@ describe('draft helpers', () => {
       '10.1.2.3',
       '172.20.0.1',
       '192.168.0.9',
+      '[fd00::1]',
+      '[fdff:ffff::ffff]',
+      '[fc00::]',
       'box.local'
     ]) {
       expect(isLocalHost(host)).toBe(true)
@@ -339,6 +345,9 @@ describe('draft helpers', () => {
       '172.32.0.1',
       '192.169.0.1',
       '11.0.0.1',
+      '[2001:db8::1]',
+      '[fd::1]',
+      '[fe00::1]',
       'local',
       'myapp.vercel.app'
     ]) {
@@ -353,6 +362,7 @@ describe('draft helpers', () => {
     ).toBe(true)
     expect(isComfyAddress(parsePastedDraft('http://localhost:4321/apps/x/')!)).toBe(true)
     expect(isComfyAddress(parsePastedDraft('http://192.168.1.20:4321/')!)).toBe(true)
+    expect(isComfyAddress(parsePastedDraft('http://[fd00::1]:4321/')!)).toBe(true)
     expect(isComfyAddress(parsePastedDraft('https://myapp.vercel.app/')!)).toBe(false)
     expect(isComfyAddress(parsePastedDraft('https://pr-683.drafts.comfy.org.evil.example/')!)).toBe(
       false

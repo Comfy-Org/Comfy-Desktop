@@ -4,6 +4,7 @@ export type {
   AppBadgeWords,
   AppCard,
   DraftAppRequest,
+  DraftAppPasteAnswer,
   AppCover,
   AppOutputAction,
   AppOutputs,

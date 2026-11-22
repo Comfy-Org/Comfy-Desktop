@@ -76,7 +76,8 @@ asks for the workspace credential with `getWorkspaceToken(workspaceId)` each
 time it calls Comfy Cloud, and starts a sign-in with `requestSignIn()`.
 `getCloudOrigin()` gives the Comfy Cloud address Desktop's account belongs to,
 such as `https://cloud.comfy.org`, so the page sends those calls to the same
-Cloud as Desktop. It cannot sign Desktop out or switch workspace.
+Cloud as Desktop. Desktop builds before it do not have it, so check for it
+first. It cannot sign Desktop out or switch workspace.
 
 For a run on this computer the page asks `getLocal({ minVersion })` which of
 the person's builds Desktop would use, starts it with `startLocal()`, and then

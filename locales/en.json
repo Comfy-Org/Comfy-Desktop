@@ -950,6 +950,8 @@
     "draftAppsTitle": "Draft apps",
     "draftAppAddress": "App address",
     "draftAppPlaceholder": "https://pr-706.drafts.comfy.org/apps/depth-swap/",
+    "draftAppFailedTitle": "Couldn't open this draft app",
+    "draftAppFailedMessage": "Comfy Desktop could not check this address. Try again.",
     "sharedFolders": "Shared folders",
     "folderKindModels": "Models",
     "folderKindInput": "Input",

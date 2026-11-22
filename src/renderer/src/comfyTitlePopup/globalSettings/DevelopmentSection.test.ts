@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
+import type { DraftAppPasteAnswer } from '../../types/ipc'
 import DevelopmentSection from './DevelopmentSection.vue'
 
-type Answer = { kind: 'asked' } | { kind: 'refused'; title: string; message: string } | null
+type Answer = DraftAppPasteAnswer | null
 
-function installBridge(answer: Answer) {
+function installBridge(answer: Answer | Promise<Answer> | Error) {
   const bridge = {
     close: vi.fn(),
-    globalSettingsOpenDraftApp: vi.fn(async (_address: string) => answer)
+    globalSettingsOpenDraftApp: vi.fn((_address: string) =>
+      answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer)
+    )
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return bridge
@@ -73,5 +76,35 @@ describe('DevelopmentSection', () => {
 
     await wrapper.get('.gs-draft-app-input input').setValue('https://pr-1.drafts.comfy.org/apps/x/')
     expect(wrapper.find('.gs-draft-app-refusal').exists(), 'editing clears the refusal').toBe(false)
+  })
+
+  it('says the address could not be checked when Desktop fails, and stays open for another try', async () => {
+    const bridge = installBridge(new Error('no grant'))
+    const wrapper = mount(DevelopmentSection, { attachTo: document.body })
+
+    await pasteAndOpen(wrapper, 'https://pr-1.drafts.comfy.org/apps/x/')
+
+    const refusal = wrapper.get('.gs-draft-app-refusal')
+    expect(refusal.text()).toContain("Couldn't open this draft app")
+    expect(refusal.text()).toContain('Comfy Desktop could not check this address. Try again.')
+    expect(bridge.close).not.toHaveBeenCalled()
+    expect(wrapper.get('.gs-draft-app-open').attributes('disabled')).toBeUndefined()
+  })
+
+  it('drops a refusal that arrives after the address was edited', async () => {
+    let answer: (refused: Answer) => void = () => {}
+    installBridge(
+      new Promise<Answer>((resolve) => {
+        answer = resolve
+      })
+    )
+    const wrapper = mount(DevelopmentSection, { attachTo: document.body })
+
+    await pasteAndOpen(wrapper, 'ftp://my.dev.box/apps/x/')
+    await wrapper.get('.gs-draft-app-input input').setValue('https://pr-1.drafts.comfy.org/apps/x/')
+    answer({ kind: 'refused', title: "Couldn't open this draft app", message: 'Not a web page.' })
+    await flushPromises()
+
+    expect(wrapper.find('.gs-draft-app-refusal').exists()).toBe(false)
   })
 })

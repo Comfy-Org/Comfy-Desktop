@@ -178,14 +178,10 @@ export interface ComfyDesktop2AuthBridge {
 export type ComfyDesktopHostedAuthBridge = Required<
   Pick<
     ComfyDesktop2AuthBridge,
-    | 'getState'
-    | 'getWorkspaceToken'
-    | 'getPartnerNodeToken'
-    | 'getCloudOrigin'
-    | 'requestSignIn'
-    | 'onChanged'
+    'getState' | 'getWorkspaceToken' | 'getPartnerNodeToken' | 'requestSignIn' | 'onChanged'
   >
->
+> &
+  Pick<ComfyDesktop2AuthBridge, 'getCloudOrigin'>
 
 /** What a hosted page needs from the ComfyUI on this computer. */
 export interface ComfyDesktopLocalRequirements {
