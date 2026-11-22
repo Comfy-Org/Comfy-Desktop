@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   isGlobalSettings: true,
   canPasteDrafts: vi.fn(async () => true),
   closeDraftPages: vi.fn(),
+  cloudIdentity: '["staff-subject","ws-1"]' as string | null,
+  draftsBelongTo: vi.fn((_identity: string | null) => true),
   openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
@@ -32,9 +34,14 @@ vi.mock('../../host/registry', () => ({ isPanelSender: () => mocks.isPanel }))
 vi.mock('../../popups/titlePopup', () => ({
   isGlobalSettingsSender: () => mocks.isGlobalSettings
 }))
+vi.mock('../../apps/draftApps', () => ({
+  draftCards: () => [],
+  draftsBelongTo: mocks.draftsBelongTo
+}))
 vi.mock('../../apps/draftLinks', () => ({
   acceptDraft: vi.fn(),
   canPasteDrafts: mocks.canPasteDrafts,
+  cloudIdentity: () => mocks.cloudIdentity,
   openPastedDraft: mocks.openPastedDraft
 }))
 vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse }))
@@ -146,11 +153,24 @@ describe('a Cloud account change', () => {
     registerAppsHandlers()
   })
 
-  it('closes every draft app, so the next account is asked again', () => {
+  it('closes every draft app when they belong to another account, so the next account is asked again', () => {
+    mocks.cloudIdentity = '["other-subject","ws-9"]'
+    mocks.draftsBelongTo.mockReturnValue(false)
     expect(mocks.closeDraftPages).not.toHaveBeenCalled()
 
     cloudAuthEvents.emit('changed')
 
+    expect(mocks.draftsBelongTo).toHaveBeenCalledExactlyOnceWith('["other-subject","ws-9"]')
     expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an open draft when the account and workspace stayed the same, as after a failed workspace switch', () => {
+    mocks.cloudIdentity = '["staff-subject","ws-1"]'
+    mocks.draftsBelongTo.mockReturnValue(true)
+
+    cloudAuthEvents.emit('changed')
+
+    expect(mocks.draftsBelongTo).toHaveBeenCalledExactlyOnceWith('["staff-subject","ws-1"]')
+    expect(mocks.closeDraftPages).not.toHaveBeenCalled()
   })
 })

@@ -2,8 +2,8 @@ import { createHash } from 'crypto'
 import { session } from 'electron'
 import type { Session } from 'electron'
 
-import { DEFAULT_APPS_URL } from '../../shared/appsLocation'
 import { CLOUD_CONFIG } from '../cloud/config'
+import { currentAppsLocation } from './appsConfig'
 import type { AppCard } from '../../types/ipc'
 
 export const DRAFT_LINK_SCHEME = 'comfy'
@@ -30,7 +30,8 @@ const TITLE_TAG = /<title[^>]*>([^<]{1,200})<\/title>/i
 const HIDDEN_CHARACTERS = /[\p{Cc}\p{Cf}]/gu
 const DOUBLE_QUOTES = /["\u201c\u201d]/g
 const SITE_TITLE_SUFFIX = /\s*[·|]\s*Comfy$/
-const SITE_ORIGIN = new URL(DEFAULT_APPS_URL).origin
+const TITLE_FETCH_TIMEOUT_MS = 5_000
+const MAX_TITLE_PAGE_BYTES = 64 * 1024
 const CLOUD_ORIGIN = new URL(CLOUD_CONFIG.issuer).origin
 
 export interface DraftLink {
@@ -43,6 +44,7 @@ export interface DraftLink {
 
 export interface DraftApp extends DraftLink {
   id: string
+  owner: string
   card: AppCard
   accepted: boolean
 }
@@ -202,9 +204,13 @@ export function draftCard(id: string, link: DraftLink, title: string): AppCard {
   }
 }
 
+function appsOrigin(): string {
+  return currentAppsLocation().origin
+}
+
 export function mapToDraftOrigin(requestUrl: string, origin: string, mount: string): string | null {
   const url = new URL(requestUrl)
-  if (url.origin !== SITE_ORIGIN) return null
+  if (url.origin !== appsOrigin()) return null
   const path = url.pathname.startsWith(mount)
     ? `/${url.pathname.slice(mount.length)}`
     : url.pathname
@@ -248,6 +254,10 @@ function sessionKeyOf(origin: string, mount: string): string {
   return mount === ROOT_MOUNT ? origin : `${origin} ${mount}`
 }
 
+function handledSchemes(): Set<string> {
+  return new Set(['https', new URL(appsOrigin()).protocol.slice(0, -1)])
+}
+
 export function draftSession(origin: string, mount: string): Session {
   const key = sessionKeyOf(origin, mount)
   const known = draftSessions.get(key)
@@ -255,40 +265,86 @@ export function draftSession(origin: string, mount: string): Session {
   const hash = createHash('sha256').update(key).digest('hex').slice(0, 16)
   const draft = session.fromPartition(`comfy-apps-draft-${hash}`)
   const tag = draftTagOf(origin)
-  draft.protocol.handle('https', (request) => {
+  const handler = (request: Request): Promise<Response> => {
     const mapped = mapToDraftOrigin(request.url, origin, mount)
     if (mapped) return forward(draft, request, mapped, sameSiteHeaders(request.headers))
     return forward(draft, request, request.url, cloudHeaders(request.url, request.headers, tag))
-  })
+  }
+  for (const scheme of handledSchemes()) draft.protocol.handle(scheme, handler)
   draftSessions.set(key, draft)
   return draft
 }
 
 function draftSourceUrl(link: DraftLink): string {
-  return mapToDraftOrigin(new URL(link.path, SITE_ORIGIN).href, link.origin, link.mount)!
+  return mapToDraftOrigin(new URL(link.path, appsOrigin()).href, link.origin, link.mount)!
 }
 
 function isSameSource(known: DraftLink, link: DraftLink): boolean {
   return known.origin === link.origin && known.path === link.path && known.mount === link.mount
 }
 
-export async function registerDraft(link: DraftLink): Promise<DraftApp> {
-  const id = draftIdOf(link)
-  let title = titleFromPage('', link.slug)
+async function readPageStart(page: Response, signal: AbortSignal): Promise<string> {
+  const reader = page.body?.getReader()
+  if (!reader) return ''
+  const stop = (): void => void reader.cancel().catch(() => {})
+  signal.addEventListener('abort', stop, { once: true })
+  const decoder = new TextDecoder()
+  let text = ''
+  let bytes = 0
   try {
-    const page = await draftSession(link.origin, link.mount).fetch(draftSourceUrl(link), {
-      bypassCustomProtocolHandlers: true
-    })
-    if (page.ok) title = titleFromPage(await page.text(), link.slug)
-  } catch {
-    title = titleFromPage('', link.slug)
+    while (bytes < MAX_TITLE_PAGE_BYTES && !TITLE_TAG.test(text)) {
+      const { done, value } = await reader.read()
+      if (done) break
+      bytes += value.byteLength
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    signal.removeEventListener('abort', stop)
+    stop()
   }
+  return text
+}
+
+async function readDraftPage(link: DraftLink, signal: AbortSignal): Promise<string> {
+  const page = await draftSession(link.origin, link.mount).fetch(draftSourceUrl(link), {
+    bypassCustomProtocolHandlers: true,
+    signal
+  })
+  return page.ok ? readPageStart(page, signal) : ''
+}
+
+async function draftPageStart(link: DraftLink): Promise<string> {
+  const deadline = new AbortController()
+  const timer = setTimeout(() => deadline.abort(), TITLE_FETCH_TIMEOUT_MS)
+  const timedOut = new Promise<string>((resolve) => {
+    deadline.signal.addEventListener('abort', () => resolve(''), { once: true })
+  })
+  try {
+    return await Promise.race([readDraftPage(link, deadline.signal), timedOut])
+  } catch {
+    return ''
+  } finally {
+    clearTimeout(timer)
+    deadline.abort()
+  }
+}
+
+export async function registerDraft(
+  link: DraftLink,
+  owner: string,
+  isStillOwner: () => boolean
+): Promise<DraftApp | null> {
+  const id = draftIdOf(link)
+  const title = titleFromPage(await draftPageStart(link), link.slug)
+  if (!isStillOwner()) return null
   const known = drafts.get(id)
   const draft: DraftApp = {
     ...link,
     id,
+    owner,
     card: draftCard(id, link, title),
-    accepted: known !== undefined && isSameSource(known, link) && known.accepted
+    accepted:
+      known !== undefined && known.owner === owner && isSameSource(known, link) && known.accepted
   }
   drafts.set(id, draft)
   return draft
@@ -307,7 +363,7 @@ export function confirmDraft(appId: string): AppCard | null {
 
 export function draftPageUrl(appId: string): string | null {
   const draft = drafts.get(appId)
-  return draft?.accepted ? new URL(draft.path, SITE_ORIGIN).href : null
+  return draft?.accepted ? new URL(draft.path, appsOrigin()).href : null
 }
 
 export function revokeDraft(appId: string): void {
@@ -317,6 +373,10 @@ export function revokeDraft(appId: string): void {
 
 export function forgetDrafts(): void {
   drafts.clear()
+}
+
+export function draftsBelongTo(owner: string | null): boolean {
+  return [...drafts.values()].every((draft) => draft.owner === owner)
 }
 
 export function draftCards(): AppCard[] {

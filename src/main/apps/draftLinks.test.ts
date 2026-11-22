@@ -20,11 +20,20 @@ vi.mock('../host/registry', () => ({
   openOrFocusHomeHostWindow: vi.fn()
 }))
 vi.mock('../lib/telemetry', () => ({ capture: mocks.capture }))
-vi.mock('./appsConfig', () => ({ areAppsEnabled: vi.fn() }))
+vi.mock('./appsConfig', () => ({
+  areAppsEnabled: vi.fn(),
+  currentAppsLocation: () => ({
+    url: 'https://comfy.org/apps/',
+    origin: 'https://comfy.org',
+    scopePath: '/apps/'
+  })
+}))
 
-import { _resetForTest, draftCards, draftPageUrl } from './draftApps'
+import { getCloudSession } from '../devplatform/session'
+import { _resetForTest, draftCards, draftOf, draftPageUrl } from './draftApps'
 import {
   acceptDraft,
+  cloudIdentity,
   DRAFT_OPENED_EVENT,
   DRAFT_REFUSED_EVENT,
   canPasteDrafts,
@@ -41,11 +50,16 @@ const ABOUT_DEPTH_SWAP =
   '"Depth Swap". It is not published, and it runs with your Comfy Cloud account.'
 const NOT_COMFY = 'This is not a Comfy address.'
 const linkTo = (page: string): string => `comfy://open-app?url=${encodeURIComponent(page)}`
+const STAFF = '["staff-subject","ws-1"]'
+const OTHER_ACCOUNT = '["other-subject","ws-9"]'
+const STAFF_ACCOUNT = { email: 'purz@comfy.org', signInProvider: 'google.com' }
+const OUTSIDER_ACCOUNT = { email: 'someone@gmail.com', signInProvider: 'google.com' }
 
 function deps(overrides: Partial<DraftLinkDeps> = {}): DraftLinkDeps {
   return {
     isPackaged: () => true,
-    signedInAccount: async () => ({ email: 'purz@comfy.org', signInProvider: 'google.com' }),
+    signedInAccount: async () => STAFF_ACCOUNT,
+    cloudIdentity: () => STAFF,
     appsEnabled: async () => true,
     homeWindow: () => ({ id: 1 }) as unknown as BrowserWindow,
     sendToPanel: vi.fn(),
@@ -203,7 +217,7 @@ describe('openPastedDraft', () => {
       title: 'Open a draft app from localhost:4321?',
       message: ABOUT_DEPTH_SWAP
     })
-    expect(acceptDraft(PANEL, 'draft-localhost-4321-depth-swap')?.kind).toBe('open')
+    expect((await acceptDraft(PANEL, 'draft-localhost-4321-depth-swap', d))?.kind).toBe('open')
     expect(draftPageUrl('draft-localhost-4321-depth-swap')).toBe(
       'https://comfy.org/apps/depth-swap/'
     )
@@ -223,7 +237,7 @@ describe('openPastedDraft', () => {
         title: 'Open a draft app from myapp.vercel.app?',
         message: `"My App". It is not published, and it runs with your Comfy Cloud account.\n${NOT_COMFY}`
       })
-      acceptDraft(PANEL, 'draft-myapp-vercel-app-draft')
+      await acceptDraft(PANEL, 'draft-myapp-vercel-app-draft', d)
       expect(draftPageUrl('draft-myapp-vercel-app-draft')).toBe(
         'https://comfy.org/apps/draft/tools/?x=1'
       )
@@ -283,9 +297,10 @@ describe('canPasteDrafts', () => {
 
 describe('acceptDraft', () => {
   it('lists and opens the draft once the person says Open', async () => {
-    await openDraftLink(LINK, deps())
+    const d = deps()
+    await openDraftLink(LINK, d)
 
-    expect(acceptDraft(PANEL, 'draft-pr683-depth-swap')).toEqual({
+    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', d)).toEqual({
       kind: 'open',
       card: expect.objectContaining({ id: 'draft-pr683-depth-swap', title: 'Depth Swap' })
     })
@@ -299,10 +314,116 @@ describe('acceptDraft', () => {
   })
 
   it('accepts only from the panel, and only a draft a link asked about', async () => {
-    await openDraftLink(LINK, deps())
-    expect(acceptDraft(PANEL, 'draft-pr999-other')).toBeNull()
+    const d = deps()
+    await openDraftLink(LINK, d)
+    expect(await acceptDraft(PANEL, 'draft-pr999-other', d)).toBeNull()
     mocks.isPanelSender.mockReturnValue(false)
-    expect(acceptDraft(PANEL, 'draft-pr683-depth-swap')).toBeNull()
+    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', d)).toBeNull()
+    expect(draftCards()).toEqual([])
+  })
+
+  it.each([
+    ['another account is now signed in', { cloudIdentity: () => OTHER_ACCOUNT }],
+    ['the account moved to another workspace', { cloudIdentity: () => '["staff-subject","ws-2"]' }],
+    ['the person signed out', { cloudIdentity: () => null, signedInAccount: async () => null }],
+    ['the account is no longer staff', { signedInAccount: async () => OUTSIDER_ACCOUNT }]
+  ] as const)('does not open a draft staff asked for when %s', async (_why, overrides) => {
+    await openDraftLink(LINK, deps())
+
+    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', deps(overrides))).toBeNull()
+    expect(draftPageUrl('draft-pr683-depth-swap')).toBeNull()
+    expect(draftCards()).toEqual([])
+    expect(mocks.capture).not.toHaveBeenCalledWith(DRAFT_OPENED_EVENT, expect.anything())
+  })
+
+  it('does not open the draft when the account changes while Desktop checks it is staff', async () => {
+    await openDraftLink(LINK, deps())
+    let identity: string = STAFF
+    const d = deps({
+      cloudIdentity: () => identity,
+      signedInAccount: async () => {
+        identity = OTHER_ACCOUNT
+        return STAFF_ACCOUNT
+      }
+    })
+
+    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', d)).toBeNull()
+    expect(draftPageUrl('draft-pr683-depth-swap')).toBeNull()
+  })
+})
+
+describe('cloudIdentity', () => {
+  function signedIn(subject: string | null, workspaceId: string | null): void {
+    vi.mocked(getCloudSession).mockReturnValue({
+      currentSubject: () => subject,
+      currentWorkspaceId: () => workspaceId
+    } as unknown as ReturnType<typeof getCloudSession>)
+  }
+
+  it('names the signed-in account and its workspace together', () => {
+    signedIn('staff-subject', 'ws-1')
+    const first = cloudIdentity()
+    signedIn('staff-subject', 'ws-2')
+    const otherWorkspace = cloudIdentity()
+    signedIn('other-subject', 'ws-1')
+
+    expect(first).not.toBeNull()
+    expect(otherWorkspace).not.toBe(first)
+    expect(cloudIdentity()).not.toBe(first)
+    signedIn('staff-subject', 'ws-1')
+    expect(cloudIdentity()).toBe(first)
+  })
+
+  it('is null when no one is signed in', () => {
+    signedIn(null, 'ws-1')
+    expect(cloudIdentity()).toBeNull()
+  })
+})
+
+describe('an account change while a draft is loading', () => {
+  function changeAccountDuringLoad(): DraftLinkDeps {
+    let identity: string | null = STAFF
+    mocks.fetch.mockImplementation(async () => {
+      identity = OTHER_ACCOUNT
+      return new Response('<title>Depth Swap</title>')
+    })
+    return deps({ cloudIdentity: () => identity })
+  }
+
+  it('drops a link that finishes loading after the account changed, and asks nothing', async () => {
+    const d = changeAccountDuringLoad()
+
+    await expect(openDraftLink(LINK, d)).resolves.toBe('account_changed')
+
+    expect(d.sendToPanel).not.toHaveBeenCalled()
+    expect(draftOf('draft-pr683-depth-swap')).toBeNull()
+    expect(mocks.capture).toHaveBeenCalledWith(DRAFT_REFUSED_EVENT, { reason: 'account_changed' })
+  })
+
+  it('tells settings to try again when a pasted address finishes loading after the account changed', async () => {
+    const homeWindow = vi.fn(() => ({ id: 1 }) as unknown as BrowserWindow)
+    const d = { ...changeAccountDuringLoad(), homeWindow }
+
+    await expect(
+      openPastedDraft('https://pr-683.drafts.comfy.org/apps/depth-swap/', d)
+    ).resolves.toEqual({
+      kind: 'refused',
+      title: "Couldn't open this draft app",
+      message: 'The Comfy Cloud account changed while the draft app was loading. Try again.'
+    })
+    expect(homeWindow).not.toHaveBeenCalled()
+    expect(d.sendToPanel).not.toHaveBeenCalled()
+    expect(draftOf('draft-pr683-depth-swap')).toBeNull()
+  })
+
+  it('leaves a later account nothing to accept', async () => {
+    await openDraftLink(LINK, changeAccountDuringLoad())
+
+    const next = deps({
+      cloudIdentity: () => OTHER_ACCOUNT,
+      signedInAccount: async () => OUTSIDER_ACCOUNT
+    })
+    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', next)).toBeNull()
     expect(draftCards()).toEqual([])
   })
 })

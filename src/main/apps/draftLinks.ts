@@ -24,7 +24,7 @@ import type { DraftLink, SignedInAccount } from './draftApps'
 export const DRAFT_OPENED_EVENT = 'comfy.desktop.apps.draft_opened'
 export const DRAFT_REFUSED_EVENT = 'comfy.desktop.apps.draft_refused'
 
-export type DraftRefusal = 'bad_link' | 'apps_off' | 'signed_out' | 'not_staff'
+export type DraftRefusal = 'bad_link' | 'apps_off' | 'signed_out' | 'not_staff' | 'account_changed'
 
 const REFUSAL_WORDS: Record<DraftRefusal, { title: string; message: string }> = {
   bad_link: {
@@ -43,6 +43,10 @@ const REFUSAL_WORDS: Record<DraftRefusal, { title: string; message: string }> = 
     title: 'Draft apps are for Comfy staff',
     message:
       'Sign in to Comfy Desktop with your @comfy.org account, through Google or your company sign-in, to open draft apps.'
+  },
+  account_changed: {
+    title: "Couldn't open this draft app",
+    message: 'The Comfy Cloud account changed while the draft app was loading. Open the link again.'
   }
 }
 
@@ -55,12 +59,17 @@ const PASTE_REFUSAL_WORDS: Record<DraftRefusal, { title: string; message: string
   signed_out: {
     title: 'Sign in to open draft apps',
     message: 'Sign in to Comfy Desktop with your @comfy.org account, then try again.'
+  },
+  account_changed: {
+    title: "Couldn't open this draft app",
+    message: 'The Comfy Cloud account changed while the draft app was loading. Try again.'
   }
 }
 
 export interface DraftLinkDeps {
   isPackaged: () => boolean
   signedInAccount: () => Promise<SignedInAccount | null>
+  cloudIdentity: () => string | null
   appsEnabled: () => Promise<boolean>
   homeWindow: () => BrowserWindow
   sendToPanel: (window: BrowserWindow, request: DraftAppRequest) => void
@@ -77,6 +86,12 @@ async function signedInAccount(): Promise<SignedInAccount | null> {
   }
 }
 
+export function cloudIdentity(): string | null {
+  const session = getCloudSession()
+  const subject = session.currentSubject()
+  return subject === null ? null : JSON.stringify([subject, session.currentWorkspaceId()])
+}
+
 function sendToPanel(window: BrowserWindow, request: DraftAppRequest): void {
   const panelView = findEntryByHostWindow(window)?.panelView
   if (panelView) sendToPanelDeferred(panelView, OPEN_DRAFT_CHANNEL, request)
@@ -85,6 +100,7 @@ function sendToPanel(window: BrowserWindow, request: DraftAppRequest): void {
 const defaultDeps: DraftLinkDeps = {
   isPackaged: () => app.isPackaged,
   signedInAccount,
+  cloudIdentity,
   appsEnabled: areAppsEnabled,
   homeWindow: openOrFocusHomeHostWindow,
   sendToPanel
@@ -115,21 +131,29 @@ export function draftQuestion(link: DraftLink, title: string): { title: string; 
 
 async function askToOpen(
   parsed: DraftLink,
-  window: BrowserWindow,
+  owner: string | null,
+  window: () => BrowserWindow,
   deps: DraftLinkDeps
-): Promise<void> {
-  const draft = await registerDraft(parsed)
-  deps.sendToPanel(window, {
+): Promise<boolean> {
+  const draft =
+    owner === null ? null : await registerDraft(parsed, owner, () => deps.cloudIdentity() === owner)
+  if (!draft) {
+    mainTelemetry.capture(DRAFT_REFUSED_EVENT, { reason: 'account_changed' })
+    return false
+  }
+  deps.sendToPanel(window(), {
     kind: 'ask',
     appId: draft.id,
     ...draftQuestion(parsed, draft.card.title)
   })
+  return true
 }
 
 export async function openDraftLink(
   link: string,
   deps: DraftLinkDeps = defaultDeps
 ): Promise<DraftRefusal | 'asked'> {
+  const owner = deps.cloudIdentity()
   const account = await deps.signedInAccount()
   if (isOtherPerson(account)) {
     mainTelemetry.capture(DRAFT_REFUSED_EVENT, { reason: 'not_staff' })
@@ -144,14 +168,14 @@ export async function openDraftLink(
     deps.sendToPanel(window, { kind: 'refused', ...REFUSAL_WORDS[reason] })
     return reason
   }
-  await askToOpen(parsed, window, deps)
-  return 'asked'
+  return (await askToOpen(parsed, owner, () => window, deps)) ? 'asked' : 'account_changed'
 }
 
 export async function openPastedDraft(
   address: unknown,
   deps: DraftLinkDeps = defaultDeps
 ): Promise<DraftAppPasteAnswer> {
+  const owner = deps.cloudIdentity()
   const parsed = parsePastedDraft(address)
   const refusal = await refusalFor(parsed, await deps.signedInAccount(), deps)
   if (refusal || !parsed) {
@@ -159,16 +183,25 @@ export async function openPastedDraft(
     mainTelemetry.capture(DRAFT_REFUSED_EVENT, { reason })
     return { kind: 'refused', ...PASTE_REFUSAL_WORDS[reason] }
   }
-  await askToOpen(parsed, deps.homeWindow(), deps)
-  return { kind: 'asked' }
+  if (await askToOpen(parsed, owner, deps.homeWindow, deps)) return { kind: 'asked' }
+  return { kind: 'refused', ...PASTE_REFUSAL_WORDS.account_changed }
 }
 
 export async function canPasteDrafts(deps: DraftLinkDeps = defaultDeps): Promise<boolean> {
   return !deps.isPackaged() || isStaffAccount(await deps.signedInAccount())
 }
 
-export function acceptDraft(sender: WebContents, appId: unknown): DraftAppRequest | null {
-  if (!isPanelSender(sender) || typeof appId !== 'string' || !draftOf(appId)) return null
+export async function acceptDraft(
+  sender: WebContents,
+  appId: unknown,
+  deps: DraftLinkDeps = defaultDeps
+): Promise<DraftAppRequest | null> {
+  if (!isPanelSender(sender) || typeof appId !== 'string') return null
+  const draft = draftOf(appId)
+  const owner = deps.cloudIdentity()
+  if (!draft || owner === null || draft.owner !== owner) return null
+  if (!isStaffAccount(await deps.signedInAccount())) return null
+  if (deps.cloudIdentity() !== owner || draftOf(appId) !== draft) return null
   const card = confirmDraft(appId)
   if (!card) return null
   mainTelemetry.capture(DRAFT_OPENED_EVENT, { app_id: appId })

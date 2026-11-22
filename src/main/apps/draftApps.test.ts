@@ -1,11 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  fetch: vi.fn(),
-  handle: vi.fn()
-}))
+const mocks = vi.hoisted(() => {
+  const comfyApps = {
+    url: 'https://comfy.org/apps/',
+    origin: 'https://comfy.org',
+    scopePath: '/apps/'
+  }
+  return {
+    fetch: vi.fn(),
+    handle: vi.fn(),
+    comfyApps,
+    appsLocation: comfyApps
+  }
+})
 
 vi.mock('../cloud/config', () => ({ CLOUD_CONFIG: { issuer: 'https://cloud.comfy.org' } }))
+vi.mock('./appsConfig', () => ({ currentAppsLocation: () => mocks.appsLocation }))
 
 vi.mock('electron', () => ({
   session: {
@@ -21,6 +31,7 @@ import {
   draftIdOf,
   draftOf,
   draftPageUrl,
+  draftsBelongTo,
   draftSourceOf,
   draftTagOf,
   findDraftLink,
@@ -36,13 +47,46 @@ import {
   sameSiteHeaders,
   titleFromPage
 } from './draftApps'
+import type { DraftApp, DraftLink } from './draftApps'
 
 const PREVIEW = 'https://pr-683.drafts.comfy.org'
+const OWNER = '["staff-subject","ws-1"]'
 const linkTo = (url: string): string => `comfy://open-app?url=${encodeURIComponent(url)}`
+const DEPTH_SWAP: DraftLink = {
+  origin: PREVIEW,
+  path: '/apps/depth-swap/',
+  slug: 'depth-swap',
+  pr: 683,
+  mount: '/'
+}
+
+async function register(
+  link: DraftLink,
+  owner = OWNER,
+  isStillOwner = (): boolean => true
+): Promise<DraftApp> {
+  const draft = await registerDraft(link, owner, isStillOwner)
+  if (!draft) throw new Error('The draft was dropped')
+  return draft
+}
+
+function pageThatNeverEnds(chunks: string[], cancel: () => void = () => {}): Response {
+  const encoder = new TextEncoder()
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+      },
+      cancel
+    })
+  )
+}
 
 afterEach(() => {
   mocks.fetch.mockReset()
   mocks.handle.mockReset()
+  mocks.appsLocation = mocks.comfyApps
+  vi.useRealTimers()
   _resetForTest()
 })
 
@@ -377,7 +421,7 @@ describe('draft helpers', () => {
 describe('registerDraft', () => {
   it('lists the draft and opens it at comfy.org only once it is accepted, serving comfy.org from the preview', async () => {
     mocks.fetch.mockResolvedValue(new Response('<title>Depth Swap</title>'))
-    const draft = await registerDraft({
+    const draft = await register({
       origin: PREVIEW,
       path: '/apps/depth-swap/desktop.html',
       slug: 'depth-swap',
@@ -402,7 +446,7 @@ describe('registerDraft', () => {
 
   it('still lists a draft whose page could not be read, titled from its address', async () => {
     mocks.fetch.mockRejectedValue(new Error('offline'))
-    const draft = await registerDraft({
+    const draft = await register({
       origin: PREVIEW,
       path: '/apps/depth-swap/',
       slug: 'depth-swap',
@@ -414,7 +458,7 @@ describe('registerDraft', () => {
 
   it('asks again next time once the person has moved on to another app', async () => {
     mocks.fetch.mockResolvedValue(new Response('<title>Depth Swap</title>'))
-    const draft = await registerDraft({
+    const draft = await register({
       origin: PREVIEW,
       path: '/apps/depth-swap/',
       slug: 'depth-swap',
@@ -427,7 +471,7 @@ describe('registerDraft', () => {
 
     expect(draftPageUrl(draft.id)).toBeNull()
     expect(draftCards()).toEqual([])
-    const again = await registerDraft({
+    const again = await register({
       origin: PREVIEW,
       path: '/apps/depth-swap/',
       slug: 'depth-swap',
@@ -443,7 +487,7 @@ describe('registerDraft', () => {
     ['another query', PREVIEW, '/apps/depth-swap/?example=3', '/']
   ])('asks again when the same draft now comes from %s', async (_why, origin, path, mount) => {
     mocks.fetch.mockResolvedValue(new Response(''))
-    const first = await registerDraft({
+    const first = await register({
       origin: PREVIEW,
       path: '/apps/depth-swap/',
       slug: 'depth-swap',
@@ -452,7 +496,7 @@ describe('registerDraft', () => {
     })
     confirmDraft(first.id)
 
-    const moved = await registerDraft({ origin, path, slug: 'depth-swap', pr: 683, mount })
+    const moved = await register({ origin, path, slug: 'depth-swap', pr: 683, mount })
 
     expect(moved.id).toBe(first.id)
     expect(moved.accepted).toBe(false)
@@ -468,14 +512,14 @@ describe('registerDraft', () => {
       pr: 683,
       mount: '/'
     }
-    confirmDraft((await registerDraft(link)).id)
+    confirmDraft((await register(link)).id)
 
-    expect((await registerDraft(link)).accepted).toBe(true)
+    expect((await register(link)).accepted).toBe(true)
   })
 
   it('forgets every draft, so none is listed and none can be accepted', async () => {
     mocks.fetch.mockResolvedValue(new Response(''))
-    const draft = await registerDraft(parsePastedDraft(`${PREVIEW}/apps/depth-swap/`)!)
+    const draft = await register(parsePastedDraft(`${PREVIEW}/apps/depth-swap/`)!)
     confirmDraft(draft.id)
 
     forgetDrafts()
@@ -487,10 +531,11 @@ describe('registerDraft', () => {
 
   it('opens a pasted page under comfy.org/apps/draft/, titled from the page on its own site', async () => {
     mocks.fetch.mockResolvedValue(new Response('<title>My App</title>'))
-    const draft = await registerDraft(parsePastedDraft('https://myapp.vercel.app/tools/?x=1')!)
+    const draft = await register(parsePastedDraft('https://myapp.vercel.app/tools/?x=1')!)
 
     expect(mocks.fetch).toHaveBeenCalledWith('https://myapp.vercel.app/tools/?x=1', {
-      bypassCustomProtocolHandlers: true
+      bypassCustomProtocolHandlers: true,
+      signal: expect.any(AbortSignal)
     })
     expect(draft.card).toMatchObject({
       id: 'draft-myapp-vercel-app-draft',
@@ -503,15 +548,130 @@ describe('registerDraft', () => {
 
   it('gives two drafts from one site their own session when they are shown at different paths', async () => {
     mocks.fetch.mockResolvedValue(new Response(''))
-    await registerDraft(parsePastedDraft('https://my.dev.box/apps/depth-swap/')!)
-    await registerDraft(parsePastedDraft('https://my.dev.box/apps/depth-swap/desktop.html')!)
+    await register(parsePastedDraft('https://my.dev.box/apps/depth-swap/')!)
+    await register(parsePastedDraft('https://my.dev.box/apps/depth-swap/desktop.html')!)
     expect(mocks.handle).toHaveBeenCalledTimes(1)
 
-    await registerDraft(parsePastedDraft('https://my.dev.box/')!)
+    await register(parsePastedDraft('https://my.dev.box/')!)
     expect(mocks.handle).toHaveBeenCalledTimes(2)
   })
 
   it('knows no page for an app that is not a draft', () => {
     expect(draftPageUrl('remove-background')).toBeNull()
+  })
+
+  it('stops reading a page that never finishes after 5 seconds, titled from its address', async () => {
+    vi.useFakeTimers()
+    const cancel = vi.fn()
+    mocks.fetch.mockResolvedValue(pageThatNeverEnds(['<html><head>'], cancel))
+
+    const registering = register(DEPTH_SWAP)
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(cancel).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect((await registering).card.title).toBe('Depth Swap')
+    expect(cancel).toHaveBeenCalled()
+  })
+
+  it('gives up on a server that never answers after 5 seconds, and aborts its request', async () => {
+    vi.useFakeTimers()
+    let signal: AbortSignal | undefined
+    mocks.fetch.mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+      signal = init.signal
+      return new Promise(() => {})
+    })
+
+    const registering = register(DEPTH_SWAP)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect((await registering).card.title).toBe('Depth Swap')
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('takes the title from a page that is still sending, without waiting for its end', async () => {
+    mocks.fetch.mockResolvedValue(pageThatNeverEnds(['<html><head><title>Depth', ' Swap</title>']))
+
+    expect((await register(DEPTH_SWAP)).card.title).toBe('Depth Swap')
+  })
+
+  it('reads no more than 64 KB of a page looking for its title', async () => {
+    let sent = 0
+    mocks.fetch.mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            sent += 1024
+            controller.enqueue(new Uint8Array(1024).fill(97))
+          }
+        })
+      )
+    )
+
+    expect((await register(DEPTH_SWAP)).card.title).toBe('Depth Swap')
+    expect(sent).toBeLessThan(80 * 1024)
+  })
+
+  it('drops a draft whose account changed while its page was loading', async () => {
+    mocks.fetch.mockResolvedValue(new Response('<title>Depth Swap</title>'))
+
+    await expect(registerDraft(DEPTH_SWAP, OWNER, () => false)).resolves.toBeNull()
+
+    expect(draftOf('draft-pr683-depth-swap')).toBeNull()
+  })
+
+  it('asks again when another account registers a draft the first account accepted', async () => {
+    mocks.fetch.mockResolvedValue(new Response(''))
+    confirmDraft((await register(DEPTH_SWAP)).id)
+
+    const again = await register(DEPTH_SWAP, '["other-subject","ws-2"]')
+
+    expect(again.accepted).toBe(false)
+    expect(draftCards()).toEqual([])
+  })
+
+  it('tells whether every draft belongs to the account and workspace now signed in', async () => {
+    expect(draftsBelongTo(null)).toBe(true)
+    mocks.fetch.mockResolvedValue(new Response(''))
+    await register(DEPTH_SWAP)
+
+    expect(draftsBelongTo(OWNER)).toBe(true)
+    expect(draftsBelongTo('["staff-subject","ws-2"]')).toBe(false)
+    expect(draftsBelongTo(null)).toBe(false)
+  })
+})
+
+describe('a draft with a developer apps address', () => {
+  const LOCAL_APPS = {
+    url: 'http://localhost:4321/apps/',
+    origin: 'http://localhost:4321',
+    scopePath: '/apps/'
+  }
+
+  it('opens at the apps address Desktop is set to, the same as a published app', async () => {
+    mocks.appsLocation = LOCAL_APPS
+    mocks.fetch.mockResolvedValue(new Response('<title>Depth Swap</title>'))
+    const draft = await register(DEPTH_SWAP)
+
+    expect(mocks.fetch).toHaveBeenCalledWith(`${PREVIEW}/apps/depth-swap/`, expect.anything())
+    confirmDraft(draft.id)
+    expect(draftPageUrl(draft.id)).toBe('http://localhost:4321/apps/depth-swap/')
+  })
+
+  it('serves the set apps address from the draft site, and no longer comfy.org', () => {
+    mocks.appsLocation = LOCAL_APPS
+    expect(mapToDraftOrigin('http://localhost:4321/apps/lib/run.js?v=2', PREVIEW, '/')).toBe(
+      `${PREVIEW}/apps/lib/run.js?v=2`
+    )
+    expect(mapToDraftOrigin('https://comfy.org/apps/lib/run.js', PREVIEW, '/')).toBeNull()
+  })
+
+  it('handles plain http requests in the draft session when the apps address is http', async () => {
+    mocks.appsLocation = LOCAL_APPS
+    mocks.fetch.mockResolvedValue(new Response(''))
+    await register(DEPTH_SWAP)
+
+    expect(mocks.handle).toHaveBeenCalledWith('https', expect.any(Function))
+    expect(mocks.handle).toHaveBeenCalledWith('http', expect.any(Function))
   })
 })
