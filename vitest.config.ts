@@ -47,6 +47,7 @@ export default defineConfig({
             'e2e/support/videoRecording.test.ts',
             'e2e/support/appShutdown.test.ts',
             'scripts/preview/**/*.test.mjs',
+            'scripts/dev-app/**/*.test.mjs',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
           exclude: ['node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]
