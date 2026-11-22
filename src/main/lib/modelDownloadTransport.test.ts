@@ -1522,4 +1522,123 @@ describe('segmented download', () => {
     })
     expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
   })
+
+  it('waits for a running range to finish before asking again for a range answered 429', async () => {
+    const { handle } = startSegmented()
+    const [, first, second] = requests
+    first!.emit('response', makeResponse(429, { 'retry-after': '0' }))
+
+    expect(first!.abort).toHaveBeenCalled()
+    expect(requests).toHaveLength(3)
+
+    const tail = rangeResponse(5, 9)
+    second!.emit('response', tail)
+    tail.emit('data', Buffer.from('56789'))
+
+    expect(requests).toHaveLength(4)
+    const again = requests[3]!
+    expect(headerCalls(again)).toMatchObject({ Range: 'bytes=0-4', 'If-Range': '"v1"' })
+    const head = rangeResponse(0, 4)
+    again.emit('response', head)
+    head.emit('data', Buffer.from('01234'))
+
+    const outcome = await handle.done
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
+
+  it('retries a range answered 503 after Retry-After when it runs alone, and keeps the bytes after the last attempt', async () => {
+    const { handle } = startSegmented()
+    const [, first, second] = requests
+    const tail = rangeResponse(5, 9)
+    second!.emit('response', tail)
+    tail.emit('data', Buffer.from('56789'))
+
+    first!.emit('response', makeResponse(503, { 'retry-after': '0' }))
+    await vi.waitFor(() => expect(requests).toHaveLength(4))
+    requests[3]!.emit('response', makeResponse(503, { 'retry-after': '0' }))
+    await vi.waitFor(() => expect(requests).toHaveLength(5))
+    requests[4]!.emit('response', makeResponse(503, { 'retry-after': '0' }))
+
+    const outcome = await handle.done
+    expect(outcome).toEqual({ outcome: 'error', error: 'Download failed: HTTP 503' })
+    expect(requests).toHaveLength(5)
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.segments).toEqual([
+      { start: 0, end: 4, done: 0 },
+      { start: 5, end: 9, done: 5 }
+    ])
+  })
+
+  it.each([
+    [
+      'a Content-Range for other bytes',
+      makeResponse(206, { 'content-range': 'bytes 1-4/10', 'content-length': '4', etag: '"v1"' })
+    ],
+    ['HTTP 416', makeResponse(416, { 'content-range': 'bytes */10' })]
+  ])(
+    'falls back to one plain stream from byte zero when a range gets %s',
+    async (_label, answer) => {
+      const { handle } = startSegmented()
+      requests[1]!.emit('response', answer)
+
+      await vi.waitFor(() => expect(requests).toHaveLength(4))
+      expect(requests[2]!.abort).toHaveBeenCalled()
+      const plain = requests[3]!
+      expect(headerCalls(plain)['Range']).toBeUndefined()
+
+      const res = makeResponse(200, probeHeaders)
+      plain.emit('response', res)
+      res.emit('data', Buffer.from('0123456789'))
+      res.emit('end')
+
+      const outcome = await handle.done
+      expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+    }
+  )
+
+  it('does not count a range as stalled while it waits for a connection and another range is receiving', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { handle } = startSegmented({ idleTimeoutMs: 20 })
+      const [, first, second] = requests
+      const tail = rangeResponse(5, 9)
+      second!.emit('response', tail)
+      tail.emit('data', Buffer.from('56'))
+      vi.advanceTimersByTime(15)
+      tail.emit('data', Buffer.from('7'))
+      vi.advanceTimersByTime(15)
+      tail.emit('data', Buffer.from('8'))
+      vi.advanceTimersByTime(15)
+
+      expect(first!.abort).not.toHaveBeenCalled()
+      expect(requests).toHaveLength(3)
+
+      tail.emit('data', Buffer.from('9'))
+      const head = rangeResponse(0, 4)
+      first!.emit('response', head)
+      head.emit('data', Buffer.from('01234'))
+
+      const outcome = await handle.done
+      expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('counts a range waiting for a connection as stalled when no other range is receiving', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      startSegmented({ idleTimeoutMs: 20 })
+      const first = requests[1]!
+      vi.advanceTimersByTime(25)
+
+      expect(first.abort).toHaveBeenCalled()
+      expect(requests.length).toBeGreaterThan(3)
+      expect(headerCalls(requests[requests.length - 1]!)['Range']).toMatch(/^bytes=/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -21,6 +21,8 @@ export const DEFAULT_SEGMENT_TUNING: SegmentTuning = {
 
 const WRITE_HIGH_WATER_BYTES = 8 * MIB
 const WRITE_LOW_WATER_BYTES = 2 * MIB
+const THROTTLE_BASE_DELAY_MS = 1000
+const THROTTLE_MAX_DELAY_MS = 30_000
 
 export function planSegments(totalBytes: number, tuning: SegmentTuning): StagedSegment[] | null {
   if (!Number.isSafeInteger(totalBytes) || totalBytes < tuning.minBytes) return null
@@ -108,6 +110,9 @@ interface SegmentState {
   tail: Promise<void>
   request: SegmentRequest | null
   idle: ReturnType<typeof setTimeout> | null
+  wait: ReturnType<typeof setTimeout> | null
+  parked: boolean
+  awaitingResponse: boolean
   failures: number
   gen: number
   networkDone: boolean
@@ -117,6 +122,19 @@ interface SegmentState {
 function headerString(value: string | string[] | undefined): string | undefined {
   if (value === undefined) return undefined
   return Array.isArray(value) ? value[0] : value
+}
+
+function isThrottled(status: number): boolean {
+  return status === 429 || status === 503
+}
+
+function throttleDelayMs(retryAfter: string | undefined, failures: number): number {
+  const seconds = retryAfter !== undefined ? Number(retryAfter.trim()) : NaN
+  const delay =
+    Number.isFinite(seconds) && seconds >= 0
+      ? seconds * 1000
+      : THROTTLE_BASE_DELAY_MS * 2 ** Math.max(0, failures - 1)
+  return Math.min(delay, THROTTLE_MAX_DELAY_MS)
 }
 
 function writeAt(fd: number, chunk: Buffer, position: number): Promise<void> {
@@ -153,6 +171,9 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     tail: Promise.resolve(),
     request: null,
     idle: null,
+    wait: null,
+    parked: false,
+    awaitingResponse: false,
     failures: 0,
     gen: 0,
     networkDone: false,
@@ -199,6 +220,10 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
 
   const dropRequest = (state: SegmentState): void => {
     clearIdle(state)
+    if (state.wait) {
+      clearTimeout(state.wait)
+      state.wait = null
+    }
     const request = state.request
     state.request = null
     if (request) {
@@ -233,10 +258,63 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     startSegment(state)
   }
 
+  const othersRunning = (state: SegmentState): boolean =>
+    states.some((other) => other !== state && other.request !== null && !other.networkDone)
+
+  const othersReceiving = (state: SegmentState): boolean =>
+    states.some(
+      (other) =>
+        other !== state && other.request !== null && !other.awaitingResponse && !other.networkDone
+    )
+
+  const throttle = (state: SegmentState, status: number, retryAfter: string | undefined): void => {
+    if (stopped || reported) return
+    dropRequest(state)
+    state.gen++
+    if (othersRunning(state)) {
+      state.parked = true
+      return
+    }
+    state.failures++
+    if (state.failures >= tuning.maxAttempts) {
+      report({ kind: 'retain', message: `Download failed: HTTP ${status}` })
+      return
+    }
+    state.wait = setTimeout(
+      () => {
+        state.wait = null
+        startSegment(state)
+      },
+      throttleDelayMs(retryAfter, state.failures)
+    )
+  }
+
+  const unparkAll = (): void => {
+    for (const state of states) {
+      if (!state.parked) continue
+      state.parked = false
+      startSegment(state)
+    }
+  }
+
+  const finishNetwork = (state: SegmentState): void => {
+    state.networkDone = true
+    clearIdle(state)
+    state.request = null
+    if (state.queued === 0) checkComplete()
+    const heir = states.find((other) => other.parked)
+    if (heir) heir.slot = state.slot
+    unparkAll()
+  }
+
   const armIdle = (state: SegmentState, gen: number): void => {
     clearIdle(state)
     state.idle = setTimeout(() => {
       if (stopped || gen !== state.gen) return
+      if (state.awaitingResponse && othersReceiving(state)) {
+        armIdle(state, gen)
+        return
+      }
       retry(state, `Download stalled: no data for ${Math.round(idleTimeoutMs / 1000)}s`)
     }, idleTimeoutMs)
   }
@@ -284,16 +362,18 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     response: SegmentResponse
   ): void => {
     const stale = (): boolean => stopped || gen !== state.gen
+    state.awaitingResponse = false
     const status = response.statusCode
     if (status === 200) {
       report({ kind: 'ranges-ignored' })
       return
     }
     if (status === 416) {
-      report({
-        kind: 'discard',
-        message: 'Download failed: server rejected a byte range (HTTP 416)'
-      })
+      report({ kind: 'ranges-ignored' })
+      return
+    }
+    if (isThrottled(status)) {
+      throttle(state, status, headerString(response.headers['retry-after']))
       return
     }
     if (status !== 206) {
@@ -312,10 +392,7 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
       Number(parsed[3]) !== totalBytes ||
       (length > 0 && length !== end - from + 1)
     ) {
-      report({
-        kind: 'discard',
-        message: `Download failed: server answered "${contentRange ?? 'none'}" for bytes ${from}-${end}/${totalBytes}`
-      })
+      report({ kind: 'ranges-ignored' })
       return
     }
     const etag = headerString(response.headers['etag'])
@@ -356,10 +433,7 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
       enqueueWrite(state, gen, response, chunk, position)
       opts.onProgress(totalReceived())
       if (state.segment.start + state.received > end) {
-        state.networkDone = true
-        clearIdle(state)
-        state.request = null
-        if (state.queued === 0) checkComplete()
+        finishNetwork(state)
       } else if (!state.backpressured) {
         armIdle(state, gen)
       }
@@ -380,12 +454,12 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     const from = state.segment.start + state.received
     const end = state.segment.end
     if (from > end) {
-      state.networkDone = true
-      if (state.queued === 0) checkComplete()
+      finishNetwork(state)
       return
     }
     const gen = ++state.gen
     const stale = (): boolean => stopped || gen !== state.gen
+    state.awaitingResponse = true
     let request: SegmentRequest
     try {
       request = opts.openRange(
