@@ -1,3 +1,4 @@
+import { isBuildInstall } from '../../devplatform/buildState'
 import { formatLastUsed } from '../../lib/datetime'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import { lastUsedAt } from '../../../../shared/lastUsed'
@@ -77,9 +78,16 @@ function hostOf(address: string): string {
   }
 }
 
-export function homeBuildDetail(build: Installation): string {
+export function homeBuildDetail(
+  build: Installation,
+  t: (key: string, params?: Record<string, unknown>) => string
+): string {
   if (build.sourceCategory === 'cloud' || build.sourceCategory === 'remote') {
     return build.listPreview ? hostOf(build.listPreview) : build.sourceLabel
   }
-  return build.version || build.sourceLabel
+  if (build.version) return build.version
+  if (!isBuildInstall(build)) return build.sourceLabel
+  return typeof build.distributionVersion === 'string' && build.distributionVersion
+    ? t('devPlatform.build.version', { version: build.distributionVersion })
+    : ''
 }
