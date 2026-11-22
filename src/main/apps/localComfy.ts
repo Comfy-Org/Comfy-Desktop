@@ -26,7 +26,7 @@ import {
   stopRunning
 } from '../lib/ipc/shared'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
-import { liveAppsPages } from './appsPages'
+import { appsPageAdmits, liveAppsPages } from './appsPages'
 import {
   _resetForTest as _resetLocalAppEventsForTest,
   buildsWithRuns,
@@ -112,6 +112,7 @@ let idleTimer: ReturnType<typeof setTimeout> | null = null
 let watchingSessions = false
 let downloadsUnderWay = 0
 const targetByPage = new WeakMap<WebContents, Target>()
+const pageSends = new WeakMap<WebContents, Promise<void>>()
 const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
 const keptRunning = new Set<string>()
@@ -135,8 +136,19 @@ function rememberBounded<T>(map: Map<string, T>, key: string, value: T, limit: n
   }
 }
 
+async function sendIfAdmitted(page: WebContents, event: ComfyDesktopLocalEvent): Promise<void> {
+  if (page.isDestroyed() || !(await appsPageAdmits(page)) || page.isDestroyed()) return
+  page.send(LOCAL_EVENT_CHANNEL, event)
+}
+
+function sendToPage(page: WebContents, event: ComfyDesktopLocalEvent): void {
+  const previous = pageSends.get(page) ?? Promise.resolve()
+  const next = previous.then(() => sendIfAdmitted(page, event)).catch(() => {})
+  pageSends.set(page, next)
+}
+
 function sendToPages(event: ComfyDesktopLocalEvent): void {
-  for (const page of liveAppsPages()) page.send(LOCAL_EVENT_CHANNEL, event)
+  for (const page of liveAppsPages()) sendToPage(page, event)
 }
 
 function relayRunUpdate(message: unknown): void {
@@ -448,7 +460,7 @@ async function chooseInstalledTarget(
   await waitForInstall(build.id, appId)
   const installed = await chooseTarget(page, want)
   if (typeof installed !== 'string' && !installed.installing) {
-    page.send(LOCAL_EVENT_CHANNEL, { type: 'setup', data: { state: 'done' } })
+    sendToPage(page, { type: 'setup', data: { state: 'done' } })
   }
   return installed
 }
