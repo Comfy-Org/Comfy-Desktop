@@ -67,7 +67,11 @@ vi.mock('./draftApps', () => ({
     const draft = mocks.drafts.get(id)
     if (draft) draft.accepted = false
   },
-  forgetDrafts: () => mocks.drafts.clear()
+  forgetDrafts: (only?: readonly unknown[]) => {
+    for (const [id, draft] of mocks.drafts) {
+      if (!only || only.includes(draft)) mocks.drafts.delete(id)
+    }
+  }
 }))
 vi.mock('./draftLinks', () => ({
   isDraftStillAllowed: async (id: string) =>
@@ -870,6 +874,31 @@ describe('staying in step with the panel', () => {
     expect(hostWindow.stack.at(-1)).toBe(hostedPage())
   })
 
+  it('closes only the drafts the account change checked, not one registered again since', async () => {
+    const page = draftPage()
+    const checked = mocks.drafts.get(DRAFT)!
+    const newer = { url: DRAFT_URL, accepted: true }
+    mocks.drafts.set(DRAFT, newer)
+
+    closeDraftPages([checked])
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(mocks.drafts.get(DRAFT)).toBe(newer)
+    expect(newer.accepted).toBe(true)
+    await expect(appsPageAdmits(page)).resolves.toBe(true)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+
+  it('closes a draft the account change checked', async () => {
+    const page = draftPage()
+
+    closeDraftPages([mocks.drafts.get(DRAFT)!])
+
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(mocks.drafts.size).toBe(0)
+    await expect(appsPageAdmits(page)).resolves.toBe(false)
+  })
+
   it('does not climb over a popup that opened above it', async () => {
     const popup = new FakeView()
     hostWindow.contentView.addChildView(popup)
@@ -894,6 +923,22 @@ describe('staying in step with the panel', () => {
     hostWindow.emit('closed')
 
     expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(liveAppsPages()).toEqual([])
+  })
+
+  it('watches its window once however many times the draft is opened and dropped', async () => {
+    for (let round = 0; round < 3; round += 1) {
+      created.at(-1)!.webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+      mocks.drafts.set(DRAFT, { url: DRAFT_URL, accepted: true })
+      expect(await openDraft()).toBe('loading')
+    }
+
+    expect(created).toHaveLength(4)
+    expect(hostWindow.listenerCount('closed')).toBe(1)
+
+    hostWindow.emit('closed')
+
+    expect(created.at(-1)!.webContents.close).toHaveBeenCalled()
     expect(liveAppsPages()).toEqual([])
   })
 })

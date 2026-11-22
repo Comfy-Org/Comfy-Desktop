@@ -391,8 +391,18 @@ export function revokeDraft(appId: string): void {
   if (draft) draft.accepted = false
 }
 
-export function forgetDrafts(): void {
-  drafts.clear()
+export function currentDrafts(): readonly DraftApp[] {
+  return [...drafts.values()]
+}
+
+export function forgetDrafts(only?: readonly DraftApp[]): void {
+  if (!only) {
+    drafts.clear()
+    return
+  }
+  for (const draft of only) {
+    if (drafts.get(draft.id) === draft) drafts.delete(draft.id)
+  }
 }
 
 export function hasDrafts(): boolean {

@@ -27,6 +27,7 @@ import {
   _resetForTest,
   cloudHeaders,
   confirmDraft,
+  currentDrafts,
   draftAskedWith,
   draftCards,
   draftIdOf,
@@ -561,13 +562,14 @@ describe('registerDraft', () => {
   it('accepts a draft only with the token its question was sent with, and only once', async () => {
     mocks.fetch.mockResolvedValue(new Response(''))
     const draft = await register(DEPTH_SWAP)
+    const token = draft.token
 
     expect(confirmDraft('')).toBeNull()
     expect(confirmDraft('a-token-never-sent')).toBeNull()
-    expect(draftAskedWith(draft.token)).toBe(draftOf(draft.id))
-    expect(confirmDraft(draft.token)?.id).toBe(draft.id)
-    expect(draftAskedWith(draft.token)).toBeNull()
-    expect(confirmDraft(draft.token)).toBeNull()
+    expect(draftAskedWith(token)).toBe(draftOf(draft.id))
+    expect(confirmDraft(token)?.id).toBe(draft.id)
+    expect(draftAskedWith(token)).toBeNull()
+    expect(confirmDraft(token)).toBeNull()
   })
 
   it('refuses the token of a question a newer registration replaced', async () => {
@@ -594,6 +596,22 @@ describe('registerDraft', () => {
     expect(draftCards()).toEqual([])
     expect(draftOf(draft.id)).toBeNull()
     expect(confirmDraft(unanswered.token)).toBeNull()
+  })
+
+  it('forgets only the drafts it is given that were not registered again since', async () => {
+    mocks.fetch.mockResolvedValue(new Response(''))
+    const replaced = await register(DEPTH_SWAP)
+    const other = await register(parsePastedDraft('https://my.dev.box/apps/x/')!)
+    const checked = currentDrafts()
+    const newer = await register({ ...DEPTH_SWAP, path: '/apps/depth-swap/?example=3' })
+    const added = await register(parsePastedDraft(`${PREVIEW}/apps/other/`)!)
+
+    forgetDrafts(checked)
+
+    expect(checked).toEqual([replaced, other])
+    expect(draftOf(other.id)).toBeNull()
+    expect(draftOf(replaced.id)).toBe(newer)
+    expect(draftOf(added.id)).toBe(added)
   })
 
   it('opens a pasted page under comfy.org/apps/draft/, titled from the page on its own site', async () => {

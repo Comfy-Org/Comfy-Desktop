@@ -3,7 +3,7 @@ import { ipcMain } from 'electron'
 import { captureAppPage, closeDraftPages, hideAppPage, showAppPage } from '../../apps/appPageView'
 import { listApps } from '../../apps/appsCatalog'
 import { areAppsEnabled } from '../../apps/appsConfig'
-import { draftCards } from '../../apps/draftApps'
+import { currentDrafts, draftCards } from '../../apps/draftApps'
 import {
   acceptDraft,
   canPasteDrafts,
@@ -19,8 +19,14 @@ const APP_REQUEST_SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
 const APP_REQUEST_QUESTION_ID = '0f16a789-5c8e-4871-b44e-ec11c54b8c9b'
 const APP_REQUEST_MAX_LENGTH = 500
 
+let authChanges = 0
+
 async function closeDraftsNoLongerAllowed(): Promise<void> {
-  if (!(await draftsStillAllowed().catch(() => false))) closeDraftPages()
+  const change = ++authChanges
+  const inspected = currentDrafts()
+  const allowed = await draftsStillAllowed().catch(() => false)
+  if (allowed || change !== authChanges) return
+  closeDraftPages(inspected)
 }
 
 export function registerAppsHandlers(): void {

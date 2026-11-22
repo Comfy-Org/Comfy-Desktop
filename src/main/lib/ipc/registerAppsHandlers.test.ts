@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   closeDraftPages: vi.fn(),
   acceptDraft: vi.fn(async (_sender: unknown, _token: unknown) => null),
   draftsStillAllowed: vi.fn(async () => true),
+  currentDrafts: vi.fn((): readonly unknown[] => []),
   openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
@@ -34,7 +35,10 @@ vi.mock('../../host/registry', () => ({ isPanelSender: () => mocks.isPanel }))
 vi.mock('../../popups/titlePopup', () => ({
   isGlobalSettingsSender: () => mocks.isGlobalSettings
 }))
-vi.mock('../../apps/draftApps', () => ({ draftCards: () => [] }))
+vi.mock('../../apps/draftApps', () => ({
+  currentDrafts: mocks.currentDrafts,
+  draftCards: () => []
+}))
 vi.mock('../../apps/draftLinks', () => ({
   acceptDraft: mocks.acceptDraft,
   canPasteDrafts: mocks.canPasteDrafts,
@@ -158,21 +162,86 @@ describe('accepting a draft app', () => {
   })
 })
 
+function laterAnswer(): { promise: Promise<boolean>; resolve: (allowed: boolean) => void } {
+  let resolve: (allowed: boolean) => void = () => {}
+  const promise = new Promise<boolean>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 describe('a Cloud account change', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.currentDrafts.mockReset().mockReturnValue([])
+    mocks.draftsStillAllowed.mockReset().mockResolvedValue(true)
     mocks.handlers.clear()
     cloudAuthEvents.removeAllListeners()
     registerAppsHandlers()
   })
 
   it('closes every draft app once they are no longer allowed, so the next account is asked again', async () => {
+    const drafts = [{ id: 'draft-a' }, { id: 'draft-b' }]
+    mocks.currentDrafts.mockReturnValueOnce(drafts)
     mocks.draftsStillAllowed.mockResolvedValueOnce(false)
 
     cloudAuthEvents.emit('changed')
     await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
 
     expect(mocks.draftsStillAllowed).toHaveBeenCalledOnce()
+    expect(mocks.closeDraftPages).toHaveBeenCalledWith(drafts)
+  })
+
+  it('closes only the drafts it checked, not one opened while it was checking', async () => {
+    const checked = { id: 'draft-old-account' }
+    const opened = { id: 'draft-new-account' }
+    const answer = laterAnswer()
+    mocks.currentDrafts.mockReturnValueOnce([checked]).mockReturnValueOnce([checked, opened])
+    mocks.draftsStillAllowed.mockReturnValueOnce(answer.promise)
+
+    cloudAuthEvents.emit('changed')
+    answer.resolve(false)
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
+
+    expect(mocks.closeDraftPages).toHaveBeenCalledWith([checked])
+  })
+
+  it('drops the answer of a check that a later account change replaced', async () => {
+    const stale = laterAnswer()
+    mocks.currentDrafts.mockReturnValueOnce([{ id: 'draft-old-account' }])
+    mocks.currentDrafts.mockReturnValueOnce([{ id: 'draft-new-account' }])
+    mocks.draftsStillAllowed.mockReturnValueOnce(stale.promise)
+    mocks.draftsStillAllowed.mockResolvedValueOnce(true)
+
+    cloudAuthEvents.emit('changed')
+    cloudAuthEvents.emit('changed')
+    await settle()
+    stale.resolve(false)
+    await settle()
+
+    expect(mocks.draftsStillAllowed).toHaveBeenCalledTimes(2)
+    expect(mocks.closeDraftPages).not.toHaveBeenCalled()
+  })
+
+  it('closes the drafts the latest account change found no longer allowed', async () => {
+    const stale = laterAnswer()
+    const latest = [{ id: 'draft-old-account' }, { id: 'draft-opened-before-the-change' }]
+    mocks.currentDrafts.mockReturnValueOnce([{ id: 'draft-old-account' }])
+    mocks.currentDrafts.mockReturnValueOnce(latest)
+    mocks.draftsStillAllowed.mockReturnValueOnce(stale.promise)
+    mocks.draftsStillAllowed.mockResolvedValueOnce(false)
+
+    cloudAuthEvents.emit('changed')
+    cloudAuthEvents.emit('changed')
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
+    stale.resolve(false)
+    await settle()
+
+    expect(mocks.closeDraftPages).toHaveBeenCalledExactlyOnceWith(latest)
   })
 
   it('closes every draft app when Desktop cannot tell whether they are still allowed', async () => {

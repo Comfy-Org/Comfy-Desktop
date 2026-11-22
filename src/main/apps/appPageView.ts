@@ -17,6 +17,7 @@ import { pageUrlForListedApp } from './appsCatalog'
 import { areAppsEnabled, currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
+import type { DraftApp } from './draftApps'
 import { isDraftStillAllowed } from './draftLinks'
 
 export const APPS_PARTITION = 'persist:comfy-apps'
@@ -60,6 +61,7 @@ interface HostedPage {
   focusWhenReady: boolean
   outputs: ShownOutputs | null
   forget: () => void
+  unwatchWindow: () => void
 }
 
 interface PageHost {
@@ -261,6 +263,7 @@ function disposeHostedPage(windowKey: number): void {
   if (!hosted) return
   hostedByWindow.delete(windowKey)
   hosted.forget()
+  hosted.unwatchWindow()
   if (!hosted.view.webContents.isDestroyed()) hosted.view.webContents.close()
 }
 
@@ -293,6 +296,7 @@ function createHostedPage(
   entry.window.contentView.addChildView(view)
 
   const contents = view.webContents
+  const closeWithWindow = (): void => disposeHostedPage(windowKey)
   const hosted: HostedPage = {
     view,
     session: appsSession,
@@ -307,7 +311,8 @@ function createHostedPage(
     wanted: false,
     focusWhenReady: false,
     outputs: null,
-    forget: registerAppsPage(contents, () => admitsBridge(hosted))
+    forget: registerAppsPage(contents, () => admitsBridge(hosted)),
+    unwatchWindow: () => entry.window.removeListener('closed', closeWithWindow)
   }
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
     if (isAppsListUrl(location, url)) {
@@ -354,7 +359,7 @@ function createHostedPage(
   })
   contents.on('render-process-gone', () => fail(windowKey, hosted, 'crashed'))
   attachContextMenu(entry.window, contents)
-  entry.window.once('closed', () => disposeHostedPage(windowKey))
+  entry.window.once('closed', closeWithWindow)
 
   hostedByWindow.set(windowKey, hosted)
   return hosted
@@ -479,13 +484,15 @@ export async function showAppPage(
   return hosted.status
 }
 
-export function closeDraftPages(): void {
+export function closeDraftPages(only?: readonly DraftApp[]): void {
   for (const [windowKey, hosted] of hostedByWindow) {
     if (!showsDraftSession(hosted)) continue
+    const draft = hosted.appId === null ? null : draftOf(hosted.appId)
+    if (only && draft && !only.includes(draft)) continue
     if (hosted.appId !== null) closeForList(windowKey, hosted, false)
     disposeHostedPage(windowKey)
   }
-  forgetDrafts()
+  forgetDrafts(only)
   tellPanelsTheListChanged()
 }
 
