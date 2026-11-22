@@ -22,7 +22,7 @@ const state: PopupDownloadsState = {
     {
       id: 'cancelled',
       url: 'https://example.com/cancelled',
-      filename: 'sdxl-vae.safetensors',
+      filename: 'sdxl-vae-fp16-fix-madebyollin.safetensors',
       directory: 'models/vae',
       progress: 0.4,
       status: 'cancelled',

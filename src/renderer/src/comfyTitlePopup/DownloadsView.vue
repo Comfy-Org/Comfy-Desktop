@@ -118,10 +118,11 @@ function closeLabel(d: DownloadEntry): string {
 }
 
 function subtitle(d: DownloadEntry): string {
-  if (d.status === 'paused') {
-    return `${t('downloadsPopup.pause')} · ${statusLine(d)}`
-  }
   return statusLine(d, { completedShowsSize: true })
+}
+
+function keepsActionInView(d: DownloadEntry): boolean {
+  return hasPauseToggle(d) || d.status === 'error'
 }
 
 function canRetry(d: DownloadEntry): boolean {
@@ -271,7 +272,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
         <div
           v-if="hasPauseToggle(d) || canRetry(d) || isRowClickable(d)"
           class="downloads-item-action shrink-0 items-center"
-          :class="hasPauseToggle(d) ? 'flex' : 'hidden group-focus-within:flex group-hover:flex'"
+          :class="keepsActionInView(d) ? 'flex' : 'hidden group-focus-within:flex group-hover:flex'"
         >
           <Button
             v-if="hasPauseToggle(d)"
@@ -290,12 +291,13 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
             v-else-if="canRetry(d)"
             type="button"
             variant="secondary"
-            size="md"
+            size="icon"
             class="downloads-item-retry"
+            :title="t('downloadsPopup.retry')"
+            :aria-label="t('downloadsPopup.retry')"
             @click.stop="retry(d)"
           >
-            <RotateCcw :size="14" />
-            {{ t('downloadsPopup.retry') }}
+            <RotateCcw :size="16" aria-hidden="true" />
           </Button>
           <Button
             v-else-if="d.savePath"
