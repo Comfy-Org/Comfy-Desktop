@@ -36,10 +36,9 @@ export function registerSessionHandlers(): void {
   ipcMain.handle('get-active-operations', () => _getActiveOperations())
 
   ipcMain.handle('cancel-launch', () => {
-    for (const [_id, abort] of _operationAborts) {
+    for (const abort of _operationAborts.values()) {
       abort.abort()
     }
-    _operationAborts.clear()
   })
 
   ipcMain.handle('cancel-operation', (_event, installationId: string) => {
