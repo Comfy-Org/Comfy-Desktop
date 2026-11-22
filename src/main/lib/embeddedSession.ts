@@ -1,6 +1,7 @@
 import type { WebContents, WebFrameMain } from 'electron'
 
 import { identityOf } from '../cloud/claims'
+import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import { isLocalInstall } from '../host/localInstall'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
@@ -14,7 +15,7 @@ import type {
   ComfyDesktop2BillingHandoffReceiver
 } from '../../types/comfyDesktopBridge'
 import { areAppsEnabled } from '../apps/appsConfig'
-import { isAppsPageSender, liveAppsPages } from '../apps/appsPages'
+import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../apps/appsPages'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 import * as mainTelemetry from './telemetry'
 import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
@@ -25,6 +26,7 @@ export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
   getWorkspaceToken: 'desktop2-auth:get-workspace-token',
   getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
+  getCloudOrigin: 'desktop2-auth:get-cloud-origin',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   switchWorkspace: 'desktop2-auth:switch-workspace',
@@ -109,9 +111,13 @@ async function sessionState(
 
 type SessionGate = () => Promise<boolean>
 
+function appsPageGate(page: WebContents): SessionGate {
+  return async () => (await areAppsEnabled()) && (await appsPageAdmits(page))
+}
+
 function gateForSender(event: EmbeddedSessionSender): SessionGate | null {
   if (isTrustedSender(event)) return enabledForLocalView
-  if (isAppsPageSender(event.sender, event.senderFrame)) return areAppsEnabled
+  if (isAppsPageSender(event.sender, event.senderFrame)) return appsPageGate(event.sender)
   return null
 }
 
@@ -120,6 +126,12 @@ export async function stateForSender(
 ): Promise<ComfyDesktop2AuthState> {
   const gate = gateForSender(event)
   return gate ? sessionState(gate) : DISABLED
+}
+
+export async function cloudOriginForSender(event: EmbeddedSessionSender): Promise<string | null> {
+  const gate = gateForSender(event)
+  if (!gate || !(await gate())) return null
+  return new URL(CLOUD_CONFIG.issuer).origin
 }
 
 export async function workspaceTokenForSender(
@@ -236,9 +248,19 @@ export async function broadcastEmbeddedSessionChanged(): Promise<void> {
     }
   }
   if (appsState.status === 'disabled') return
-  for (const contents of liveAppsPages()) {
-    contents.send(EMBEDDED_SESSION_CHANNELS.changed, appsState)
-  }
+  await Promise.all(
+    liveAppsPages().map((contents) => sendWhenAdmitted(contents, appsState, generation))
+  )
+}
+
+async function sendWhenAdmitted(
+  contents: WebContents,
+  state: ComfyDesktop2AuthState,
+  generation: number
+): Promise<void> {
+  const admitted = await appsPageAdmits(contents)
+  if (!admitted || generation !== broadcastGeneration || contents.isDestroyed()) return
+  contents.send(EMBEDDED_SESSION_CHANNELS.changed, state)
 }
 
 export function _resetForTest(): void {

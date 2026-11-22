@@ -6,7 +6,13 @@ import { useDialogs } from '../composables/useDialogs'
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
 import AppPageHost from './AppPageHost.vue'
-import type { AppBadge, AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
+import type {
+  AppBadge,
+  AppCard,
+  AppPagePlacement,
+  AppPageStatus,
+  DraftClosingStop
+} from '../types/ipc'
 
 const WIDE_PAGE_WIDTH = 1172
 const MEDIUM_PAGE_WIDTH = 900
@@ -56,6 +62,7 @@ const GENJUTSU: AppCard = {
 const listApps = vi.fn<() => Promise<AppCard[]>>()
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const hideAppPage = vi.fn()
+const closeAppPage = vi.fn()
 
 const mountPointFillsThePage = document.createElement('style')
 mountPointFillsThePage.textContent =
@@ -64,6 +71,8 @@ document.head.append(mountPointFillsThePage)
 
 let page: HTMLElement
 let appPageClosed: () => void = () => {}
+let backToListAsked: (appId: string, stop: DraftClosingStop) => void = () => {}
+let appsListChanged: () => void = () => {}
 
 async function mountApps(
   apps: AppCard[] | Promise<AppCard[]> = [CUTOUT, HDR, GENJUTSU],
@@ -142,10 +151,19 @@ beforeEach(() => {
     captureAppPage: vi.fn().mockResolvedValue(null),
     appSwitchStopsRun: vi.fn().mockResolvedValue(null),
     hideAppPage,
+    closeAppPage,
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppOutputs: vi.fn(() => () => {}),
     onAppPageClosed: (listener: () => void) => {
       appPageClosed = listener
+      return () => {}
+    },
+    onAppBackToListAsked: (listener: typeof backToListAsked) => {
+      backToListAsked = listener
+      return () => {}
+    },
+    onAppsListChanged: (listener: () => void) => {
+      appsListChanged = listener
       return () => {}
     }
   }
@@ -523,6 +541,72 @@ describe('AppsView', () => {
     expect(showAppPage).not.toHaveBeenCalled()
   })
 
+  it('says the switch closes a running draft app, and stays on it when the person says so', async () => {
+    const wrapper = await mountApps()
+    vi.mocked(window.api.appSwitchStopsRun).mockResolvedValueOnce({
+      appTitle: 'Depth Swap',
+      closesDraft: true
+    })
+    const dialogs = useDialogs()
+
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
+    expect(dialogs.state.confirm.title).toBe('Switch to SDR to HDR?')
+    expect(dialogs.state.confirm.message).toBe(
+      "Depth Swap is a draft app. Switching closes it, and you won't see this run finish."
+    )
+    dialogs.cancel()
+    await flushPromises()
+
+    expect(showAppPage).not.toHaveBeenCalled()
+  })
+
+  it('asks before a running draft app goes back to all apps, and keeps it open on Stay', async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await flushPromises()
+    const dialogs = useDialogs()
+
+    backToListAsked(HDR.id, { appTitle: 'SDR to HDR', closesDraft: true })
+    await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
+    expect(dialogs.state.confirm.title).toBe('Go back to all apps?')
+    expect(dialogs.state.confirm.message).toBe(
+      "SDR to HDR is a draft app. Going back closes it, and you won't see this run finish."
+    )
+    dialogs.cancel()
+    await flushPromises()
+
+    expect(closeAppPage).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
+  })
+
+  it('closes the running draft app once the person says go back', async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await flushPromises()
+    const dialogs = useDialogs()
+
+    backToListAsked(HDR.id, { appTitle: 'SDR to HDR', closesDraft: true })
+    await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(closeAppPage).toHaveBeenCalledWith(HDR.id)
+  })
+
+  it('asks nothing about going back for an app it is not showing', async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await flushPromises()
+    const dialogs = useDialogs()
+
+    backToListAsked(CUTOUT.id, { appTitle: 'Remove Background', closesDraft: true })
+    await flushPromises()
+
+    expect(dialogs.state.open).toBe(false)
+    expect(closeAppPage).not.toHaveBeenCalled()
+  })
+
   it('asks before opening an app when Desktop cannot tell whether that stops a run', async () => {
     const wrapper = await mountApps()
     vi.mocked(window.api.appSwitchStopsRun).mockRejectedValueOnce(new Error('no answer'))
@@ -740,5 +824,43 @@ describe('AppsView', () => {
       'app-card-remove-background',
       'app-card-sdr-to-hdr'
     ])
+  })
+
+  it('lists the apps again when Desktop says the list changed, so a dropped draft goes away', async () => {
+    const draft: AppCard = { ...CUTOUT, id: 'draft-pr683-depth-swap', title: 'Depth Swap' }
+    const wrapper = await mountApps([draft, CUTOUT])
+    expect(wrapper.find('[data-testid="app-card-draft-pr683-depth-swap"]').exists()).toBe(true)
+
+    listApps.mockResolvedValue([CUTOUT])
+    appsListChanged()
+    await flushPromises()
+
+    expect(wrapper.findAll(APP_CARDS).map((card) => card.attributes('data-testid'))).toEqual([
+      'app-card-remove-background'
+    ])
+    expect(wrapper.emitted('apps-loaded')?.at(-1)).toEqual([[CUTOUT]])
+  })
+
+  it('keeps the newest list when an older one answers after it', async () => {
+    const draft: AppCard = { ...CUTOUT, id: 'draft-pr683-depth-swap', title: 'Depth Swap' }
+    const wrapper = await mountApps([draft, CUTOUT])
+    let answerOlder: (apps: AppCard[]) => void = () => {}
+    listApps.mockReturnValueOnce(
+      new Promise<AppCard[]>((resolve) => {
+        answerOlder = resolve
+      })
+    )
+    listApps.mockReturnValueOnce(Promise.resolve([CUTOUT]))
+
+    appsListChanged()
+    appsListChanged()
+    await flushPromises()
+    answerOlder([draft, CUTOUT])
+    await flushPromises()
+
+    expect(wrapper.findAll(APP_CARDS).map((card) => card.attributes('data-testid'))).toEqual([
+      'app-card-remove-background'
+    ])
+    expect(wrapper.emitted('apps-loaded')?.at(-1)).toEqual([[CUTOUT]])
   })
 })

@@ -7,11 +7,12 @@ import { vSlidingPill } from '../components/ui/vSlidingPill'
 import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FileText, Folder, RefreshCcw, Settings2, SlidersHorizontal, X } from '@lucide/vue'
+import { Code, FileText, Folder, RefreshCcw, Settings2, SlidersHorizontal, X } from '@lucide/vue'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
 import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSection.vue'
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
 import RemoveAppDataSection from './globalSettings/RemoveAppDataSection.vue'
+import DevelopmentSection from './globalSettings/DevelopmentSection.vue'
 import GitHubLinkCard from './globalSettings/GitHubLinkCard.vue'
 import SettingsSectionList from '../views/comfyUISettings/SettingsSectionList.vue'
 import StorageDirRow from '../views/comfyUISettings/StorageDirRow.vue'
@@ -80,6 +81,8 @@ interface GlobalSettingsBridge {
   globalSettingsDownloadUpdate(): Promise<void>
   globalSettingsInstallUpdate(): void
   globalSettingsSetLastCheckedAt(value: number): void
+  globalSettingsCanOpenDraftApps(): Promise<boolean>
+  onGlobalSettingsAuthChanged?(cb: () => void): () => void
 }
 
 const props = defineProps<{ snapshot: Snapshot }>()
@@ -88,9 +91,32 @@ const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge 
 
 const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
-type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
+type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | 'development'
 const activeTab = ref<TabId>('general')
 const requestedTabCount = ref(0)
+const canOpenDraftApps = ref(false)
+let draftAppsRequest = 0
+
+async function askCanOpenDraftApps(): Promise<boolean> {
+  try {
+    return (await bridge?.globalSettingsCanOpenDraftApps()) === true
+  } catch {
+    return false
+  }
+}
+
+async function refreshCanOpenDraftApps(): Promise<void> {
+  const request = ++draftAppsRequest
+  const allowed = await askCanOpenDraftApps()
+  if (request !== draftAppsRequest) return
+  canOpenDraftApps.value = allowed
+  if (!allowed && activeTab.value === 'development') activeTab.value = 'general'
+}
+
+const stopAuthChanged = bridge?.onGlobalSettingsAuthChanged?.(() => {
+  void refreshCanOpenDraftApps()
+})
+onUnmounted(() => stopAuthChanged?.())
 
 watch(
   () => props.snapshot,
@@ -100,6 +126,7 @@ watch(
       requestedTabCount.value++
     }
     if (snap.highlightFieldId) void flashField(snap.highlightFieldId)
+    void refreshCanOpenDraftApps()
   },
   { immediate: true }
 )
@@ -142,7 +169,10 @@ const tabs = computed(() => [
   { id: 'updates' as const, label: props.snapshot.i18n.updates, icon: RefreshCcw },
   { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: Folder },
   { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal },
-  { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText }
+  { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText },
+  ...(canOpenDraftApps.value
+    ? [{ id: 'development' as const, label: t('settings.developmentTab'), icon: Code }]
+    : [])
 ])
 
 const storageSnapshot = computed(() => ({
@@ -411,6 +441,10 @@ onMounted(() => {
               <span>{{ t('settings.openLogsFolder') }}</span>
             </Button>
           </GlobalSettingsMicroSection>
+        </template>
+
+        <template v-else-if="activeTab === 'development' && canOpenDraftApps">
+          <DevelopmentSection />
         </template>
       </TabsContent>
     </Tabs>

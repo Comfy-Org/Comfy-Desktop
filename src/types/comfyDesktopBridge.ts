@@ -141,6 +141,10 @@ export interface ComfyDesktop2AuthBridge {
    *  as `getWorkspaceToken`. Desktop mints and renews it; null means use the
    *  workspace token. Absent on Desktop builds before it. */
   getPartnerNodeToken?(workspaceId: string): Promise<string | null>
+  /** The Comfy Cloud origin Desktop's account belongs to, such as
+   *  `https://cloud.comfy.org`; send the workspace token's calls there. Null
+   *  when the session is disabled. Absent on Desktop builds before it. */
+  getCloudOrigin?(): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
   /** Signs Desktop out of its account (every view follows) and resolves with
@@ -176,7 +180,8 @@ export type ComfyDesktopHostedAuthBridge = Required<
     ComfyDesktop2AuthBridge,
     'getState' | 'getWorkspaceToken' | 'getPartnerNodeToken' | 'requestSignIn' | 'onChanged'
   >
->
+> &
+  Pick<ComfyDesktop2AuthBridge, 'getCloudOrigin'>
 
 /** What a hosted page needs from the ComfyUI on this computer. */
 export interface ComfyDesktopLocalRequirements {

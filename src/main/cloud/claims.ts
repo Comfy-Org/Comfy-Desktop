@@ -10,6 +10,7 @@ interface AccessTokenClaims {
   workspace_type?: string
   role?: string
   scope?: string
+  sign_in_provider?: string
   fam?: unknown
   iat?: unknown
   exp?: unknown
@@ -69,6 +70,11 @@ export function grantFamilyOf(accessToken: string): string | null {
 
 export function subjectOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.sub ?? null
+}
+
+export function signInProviderOf(accessToken: string): string | null {
+  const provider = decodeJwtPayload(accessToken)?.sign_in_provider
+  return typeof provider === 'string' ? provider : null
 }
 
 export interface TokenIdentity {

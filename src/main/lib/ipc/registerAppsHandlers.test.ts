@@ -6,6 +6,15 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   listeners: new Map<string, Handler>(),
   isPanel: true,
+  isGlobalSettings: true,
+  canPasteDrafts: vi.fn(async () => true),
+  closeDraftPages: vi.fn(),
+  acceptDraft: vi.fn(async (_sender: unknown, _token: unknown) => null),
+  draftsStillAllowed: vi.fn(async () => true),
+  currentDrafts: vi.fn((): readonly unknown[] => []),
+  draftCards: vi.fn((): unknown[] => []),
+  listApps: vi.fn(async (): Promise<unknown[]> => []),
+  openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
   isAppsPage: true,
   titleBarEntry: null as unknown,
   running: [] as { id: string; title: string }[],
@@ -13,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   noteAppPageRunning: vi.fn(),
   appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
   appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
+  closeAppPage: vi.fn(),
   openRunningAppsMenu: vi.fn(),
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
@@ -29,6 +39,8 @@ vi.mock('../../apps/appPageView', () => ({
   appRuns: mocks.appRuns,
   appSwitchStopsRun: mocks.appSwitchStopsRun,
   captureAppPage: vi.fn(),
+  closeAppPage: mocks.closeAppPage,
+  closeDraftPages: mocks.closeDraftPages,
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
   showAppPage: vi.fn(),
@@ -36,18 +48,32 @@ vi.mock('../../apps/appPageView', () => ({
 }))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/appsCatalog', () => ({
-  listApps: vi.fn(async () => []),
+  listApps: mocks.listApps,
   pictureForListedApp: (id: string) =>
     id === 'remove-background' ? 'https://comfy.org/rb.webp' : null
 }))
-vi.mock('../../popups/titlePopup', () => ({ openRunningAppsMenu: mocks.openRunningAppsMenu }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: vi.fn(async () => true) }))
 vi.mock('../../host/registry', () => ({
   isPanelSender: () => mocks.isPanel,
   findEntryByTitleBarSender: () => mocks.titleBarEntry
 }))
+vi.mock('../../popups/titlePopup', () => ({
+  isGlobalSettingsSender: () => mocks.isGlobalSettings,
+  openRunningAppsMenu: mocks.openRunningAppsMenu
+}))
+vi.mock('../../apps/draftApps', () => ({
+  currentDrafts: mocks.currentDrafts,
+  draftCards: mocks.draftCards
+}))
+vi.mock('../../apps/draftLinks', () => ({
+  acceptDraft: mocks.acceptDraft,
+  canPasteDrafts: mocks.canPasteDrafts,
+  draftsStillAllowed: mocks.draftsStillAllowed,
+  openPastedDraft: mocks.openPastedDraft
+}))
 vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse }))
 
+import { cloudAuthEvents } from '../cloudAuthEvents'
 import { registerAppsHandlers } from './registerAppsHandlers'
 import { OPEN_RUNNING_APP_CHANNEL } from '../../../types/ipc'
 
@@ -65,6 +91,7 @@ describe('apps:send-request', () => {
     vi.clearAllMocks()
     mocks.handlers.clear()
     mocks.isPanel = true
+    cloudAuthEvents.removeAllListeners()
     mocks.sendSurveyResponse.mockResolvedValue(true)
     registerAppsHandlers()
   })
@@ -111,6 +138,188 @@ describe('apps:send-request', () => {
   })
 })
 
+describe('pasting a draft app address in Desktop settings', () => {
+  function call(channel: string, ...args: unknown[]): Promise<unknown> {
+    const handler = mocks.handlers.get(channel)
+    if (!handler) throw new Error(`No handler for ${channel}`)
+    return Promise.resolve(handler({ sender: {} }, ...args))
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.isGlobalSettings = true
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('tells Desktop settings whether it takes a pasted address', async () => {
+    expect(await call('apps:can-paste-draft')).toBe(true)
+  })
+
+  it('opens the pasted address through the draft link checks', async () => {
+    const address = 'http://localhost:4321/apps/depth-swap/'
+    expect(await call('apps:open-pasted-draft', address)).toEqual({ kind: 'asked' })
+    expect(mocks.openPastedDraft).toHaveBeenCalledExactlyOnceWith(address)
+  })
+
+  it('answers nothing to a page other than Desktop settings', async () => {
+    mocks.isGlobalSettings = false
+
+    expect(await call('apps:can-paste-draft')).toBe(false)
+    expect(await call('apps:open-pasted-draft', 'http://localhost:4321/apps/x/')).toBeNull()
+    expect(mocks.canPasteDrafts).not.toHaveBeenCalled()
+    expect(mocks.openPastedDraft).not.toHaveBeenCalled()
+  })
+})
+
+describe('listing apps for the panel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.isPanel = true
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('lists the drafts open when the catalog answers, not when the panel asked', async () => {
+    const dropped = { id: 'draft-dropped', title: 'Dropped' }
+    const listed = { id: 'remove-background', title: 'Remove Background' }
+    let answerCatalog: (apps: unknown[]) => void = () => {}
+    mocks.draftCards.mockReturnValue([dropped])
+    mocks.listApps.mockReturnValueOnce(
+      new Promise<unknown[]>((resolve) => {
+        answerCatalog = resolve
+      })
+    )
+
+    const answer = Promise.resolve(mocks.handlers.get('apps:list')?.({ sender: {} }))
+    await settle()
+    mocks.draftCards.mockReturnValue([])
+    answerCatalog([listed])
+
+    expect(await answer).toEqual([listed])
+  })
+})
+
+describe('accepting a draft app', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('passes the token of the question the person answered', async () => {
+    const sender = { id: 'panel' }
+    await mocks.handlers.get('apps:accept-draft')?.({ sender }, 'question-1')
+
+    expect(mocks.acceptDraft).toHaveBeenCalledExactlyOnceWith(sender, 'question-1')
+  })
+})
+
+function laterAnswer(): { promise: Promise<boolean>; resolve: (allowed: boolean) => void } {
+  let resolve: (allowed: boolean) => void = () => {}
+  const promise = new Promise<boolean>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+describe('a Cloud account change', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.currentDrafts.mockReset().mockReturnValue([])
+    mocks.draftsStillAllowed.mockReset().mockResolvedValue(true)
+    mocks.handlers.clear()
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('closes every draft app once they are no longer allowed, so the next account is asked again', async () => {
+    const drafts = [{ id: 'draft-a' }, { id: 'draft-b' }]
+    mocks.currentDrafts.mockReturnValueOnce(drafts)
+    mocks.draftsStillAllowed.mockResolvedValueOnce(false)
+
+    cloudAuthEvents.emit('changed')
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
+
+    expect(mocks.draftsStillAllowed).toHaveBeenCalledOnce()
+    expect(mocks.closeDraftPages).toHaveBeenCalledWith(drafts)
+  })
+
+  it('closes only the drafts it checked, not one opened while it was checking', async () => {
+    const checked = { id: 'draft-old-account' }
+    const opened = { id: 'draft-new-account' }
+    const answer = laterAnswer()
+    mocks.currentDrafts.mockReturnValueOnce([checked]).mockReturnValueOnce([checked, opened])
+    mocks.draftsStillAllowed.mockReturnValueOnce(answer.promise)
+
+    cloudAuthEvents.emit('changed')
+    answer.resolve(false)
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
+
+    expect(mocks.closeDraftPages).toHaveBeenCalledWith([checked])
+  })
+
+  it('drops the answer of a check that a later account change replaced', async () => {
+    const stale = laterAnswer()
+    mocks.currentDrafts.mockReturnValueOnce([{ id: 'draft-old-account' }])
+    mocks.currentDrafts.mockReturnValueOnce([{ id: 'draft-new-account' }])
+    mocks.draftsStillAllowed.mockReturnValueOnce(stale.promise)
+    mocks.draftsStillAllowed.mockResolvedValueOnce(true)
+
+    cloudAuthEvents.emit('changed')
+    cloudAuthEvents.emit('changed')
+    await settle()
+    stale.resolve(false)
+    await settle()
+
+    expect(mocks.draftsStillAllowed).toHaveBeenCalledTimes(2)
+    expect(mocks.closeDraftPages).not.toHaveBeenCalled()
+  })
+
+  it('closes the drafts the latest account change found no longer allowed', async () => {
+    const stale = laterAnswer()
+    const latest = [{ id: 'draft-old-account' }, { id: 'draft-opened-before-the-change' }]
+    mocks.currentDrafts.mockReturnValueOnce([{ id: 'draft-old-account' }])
+    mocks.currentDrafts.mockReturnValueOnce(latest)
+    mocks.draftsStillAllowed.mockReturnValueOnce(stale.promise)
+    mocks.draftsStillAllowed.mockResolvedValueOnce(false)
+
+    cloudAuthEvents.emit('changed')
+    cloudAuthEvents.emit('changed')
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
+    stale.resolve(false)
+    await settle()
+
+    expect(mocks.closeDraftPages).toHaveBeenCalledExactlyOnceWith(latest)
+  })
+
+  it('closes every draft app when Desktop cannot tell whether they are still allowed', async () => {
+    mocks.draftsStillAllowed.mockRejectedValueOnce(new Error('offline'))
+
+    cloudAuthEvents.emit('changed')
+
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps an open draft while it is still allowed, as after a failed workspace switch', async () => {
+    mocks.draftsStillAllowed.mockResolvedValueOnce(true)
+
+    cloudAuthEvents.emit('changed')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mocks.draftsStillAllowed).toHaveBeenCalledOnce()
+
+    expect(mocks.closeDraftPages).not.toHaveBeenCalled()
+  })
+})
+
 describe('runs of apps kept open', () => {
   const panelSend = vi.fn()
   const hostWindow = { isDestroyed: () => false }
@@ -131,6 +340,7 @@ describe('runs of apps kept open', () => {
     vi.clearAllMocks()
     mocks.handlers.clear()
     mocks.listeners.clear()
+    cloudAuthEvents.removeAllListeners()
     mocks.isPanel = true
     mocks.isAppsPage = true
     mocks.running = []
@@ -166,6 +376,17 @@ describe('runs of apps kept open', () => {
     expect(mocks.appSwitchStopsRun).toHaveBeenCalledWith(sender, 'sdr-to-hdr')
     mocks.isPanel = false
     expect(await handler?.({ sender }, 'sdr-to-hdr')).toBeNull()
+  })
+
+  it('closes an app page when the panel says go back to all apps, for the panel only', () => {
+    const sender = {}
+
+    listener('apps:close-page')({ sender }, 'depth-swap')
+    expect(mocks.closeAppPage).toHaveBeenCalledWith(sender, 'depth-swap')
+
+    mocks.isPanel = false
+    listener('apps:close-page')({ sender }, 'depth-swap')
+    expect(mocks.closeAppPage).toHaveBeenCalledTimes(1)
   })
 
   it('takes a run report only from an app page', () => {

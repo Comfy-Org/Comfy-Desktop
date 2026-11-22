@@ -35,6 +35,7 @@ import {
   buildTitlePopupMenuItems,
   buildWhatsNewMenuItems,
   computePopupHeight,
+  isGlobalSettingsSender,
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
@@ -45,6 +46,7 @@ import {
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
+import { cloudAuthEvents } from '../lib/cloudAuthEvents'
 import * as settings from '../settings'
 
 beforeEach(() => {
@@ -1135,6 +1137,77 @@ describe('global settings remove app data', () => {
     vi.stubGlobal('process', { ...process, platform: 'darwin' })
     removeAppData(openPopup('menu'), { deleteInstances: true, deleteModels: true })
     expect(removeAppDataAndQuit).not.toHaveBeenCalled()
+  })
+})
+
+describe('isGlobalSettingsSender', () => {
+  const POPUP_WEB_CONTENTS_ID = 407
+
+  afterEach(() => {
+    _test_deleteTitlePopupEntry(POPUP_WEB_CONTENTS_ID)
+  })
+
+  function sender(): Electron.WebContents {
+    return { id: POPUP_WEB_CONTENTS_ID } as Electron.WebContents
+  }
+
+  it('knows the Desktop settings popup', () => {
+    _test_setTitlePopupEntry(POPUP_WEB_CONTENTS_ID, {
+      kind: 'global-settings'
+    } as unknown as TitlePopupEntry)
+    expect(isGlobalSettingsSender(sender())).toBe(true)
+  })
+
+  it.each(['menu', 'instance-picker', 'downloads'])('turns away the %s popup', (kind) => {
+    _test_setTitlePopupEntry(POPUP_WEB_CONTENTS_ID, { kind } as unknown as TitlePopupEntry)
+    expect(isGlobalSettingsSender(sender())).toBe(false)
+  })
+
+  it('turns away a page that is not a popup', () => {
+    expect(isGlobalSettingsSender(sender())).toBe(false)
+  })
+})
+
+describe('telling Desktop settings the sign-in changed', () => {
+  const SETTINGS_ID = 408
+  const MENU_ID = 409
+
+  afterEach(() => {
+    _test_deleteTitlePopupEntry(SETTINGS_ID)
+    _test_deleteTitlePopupEntry(MENU_ID)
+    cloudAuthEvents.removeAllListeners()
+  })
+
+  function popupEntry(kind: string, isDestroyed = false) {
+    const send = vi.fn()
+    const entry = {
+      kind,
+      view: { popup: { webContents: { isDestroyed: () => isDestroyed, send } } }
+    } as unknown as TitlePopupEntry
+    return { entry, send }
+  }
+
+  it('sends auth-changed to the Desktop settings popup only', () => {
+    const settingsPopup = popupEntry('global-settings')
+    const menuPopup = popupEntry('menu')
+    _test_setTitlePopupEntry(SETTINGS_ID, settingsPopup.entry)
+    _test_setTitlePopupEntry(MENU_ID, menuPopup.entry)
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+
+    cloudAuthEvents.emit('changed')
+
+    expect(settingsPopup.send).toHaveBeenCalledWith('comfy-titlepopup:auth-changed')
+    expect(menuPopup.send).not.toHaveBeenCalled()
+  })
+
+  it('skips a settings popup that is already gone', () => {
+    const gone = popupEntry('global-settings', true)
+    _test_setTitlePopupEntry(SETTINGS_ID, gone.entry)
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+
+    cloudAuthEvents.emit('changed')
+
+    expect(gone.send).not.toHaveBeenCalled()
   })
 })
 

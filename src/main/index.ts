@@ -130,6 +130,8 @@ import { initAppsFlag } from './apps/appsFlag'
 import { runningAppCount, runningApps } from './apps/appPageView'
 import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
 import { appsEnabledAtStart } from './apps/appsConfig'
+import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
+import { openDraftLink } from './apps/draftLinks'
 import { runningPortOf } from './apps/localBuild'
 import {
   isRunningForAppsOnly,
@@ -896,10 +898,26 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   const sacStateRead = readSmartAppControlState()
 
   if (app.isPackaged) {
-    app.on('second-instance', () => {
-      hostReentryGate.runOrQueue(() => openOrFocusAnyHostWindow())
+    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME)
+    app.on('second-instance', (_event, argv) => {
+      const draftLink = findDraftLink(argv)
+      if (draftLink) hostReentryGate.runEachWhenOpen(() => void openDraftLink(draftLink))
+      else hostReentryGate.runOrQueue(() => openOrFocusAnyHostWindow())
     })
+  } else if (process.env['COMFY_DRAFT_APP_LINKS'] === '1') {
+    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, [
+      path.resolve(process.argv[1] ?? '.')
+    ])
   }
+
+  app.on('open-url', (event, url) => {
+    if (!findDraftLink([url])) return
+    event.preventDefault()
+    hostReentryGate.runEachWhenOpen(() => void openDraftLink(url))
+  })
+
+  const startupDraftLink = findDraftLink(process.argv)
+  if (startupDraftLink) hostReentryGate.runEachWhenOpen(() => void openDraftLink(startupDraftLink))
 
   app.on('browser-window-created', (_event, window) => {
     trackWindowWebContents(window)
