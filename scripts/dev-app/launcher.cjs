@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { app } = require('electron')
 const { spawn } = require('node:child_process')
 const fs = require('node:fs')

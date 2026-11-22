@@ -43,7 +43,11 @@ export function planDraftLinkStartup({
   return { lock: 'dev-copy', registration: 'scheme-with-command', linkWithoutDevServer }
 }
 
-export function devCopyLockDir(userData: string, appPath: string, platform: NodeJS.Platform): string {
+export function devCopyLockDir(
+  userData: string,
+  appPath: string,
+  platform: NodeJS.Platform
+): string {
   const key = platform === 'win32' ? appPath.toLowerCase() : appPath
   const hash = createHash('sha256').update(key).digest('hex').slice(0, DEV_COPY_LOCK_KEY_LENGTH)
   return path.join(userData, DEV_COPY_LOCK_DIR, hash)
