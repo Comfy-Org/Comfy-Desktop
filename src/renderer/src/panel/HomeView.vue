@@ -64,12 +64,27 @@ const isInstalling = useInstallingBuilds()
 const progressStore = useProgressStore()
 const viewBuildLogs = useViewBuildLogs()
 const autoStart = useAutoStartBuild()
-const builds = computed(() =>
-  [
-    ...workspaceBuilds.value.filter((build) => isInstalling(build.id)),
-    ...workspaceBuilds.value.filter((build) => !isInstalling(build.id))
-  ].slice(0, HOME_BUILD_LIMIT)
-)
+function isInUse(build: Installation): boolean {
+  return (
+    sessionStore.isRunning(build.id) ||
+    sessionStore.isLaunching(build.id) ||
+    sessionStore.isStopping(build.id)
+  )
+}
+const builds = computed(() => {
+  const installing = workspaceBuilds.value.filter((build) => isInstalling(build.id))
+  const settled = workspaceBuilds.value.filter((build) => !isInstalling(build.id))
+  const shown = new Set(
+    [
+      ...installing,
+      ...settled.filter((build) => isInUse(build)),
+      ...settled.filter((build) => !isInUse(build))
+    ]
+      .slice(0, HOME_BUILD_LIMIT)
+      .map((build) => build.id)
+  )
+  return [...installing, ...settled].filter((build) => shown.has(build.id))
+})
 const showNewBuildSlot = computed(
   () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
 )

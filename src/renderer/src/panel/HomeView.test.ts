@@ -466,6 +466,46 @@ describe('Home builds', () => {
     ])
   })
 
+  it('keeps a running build in the row after more recently stopped builds pass it', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: true })
+    const stillRunning = build({
+      id: 'still-running',
+      name: 'ComfyUI',
+      lastLaunchedAt: NOW - 3 * HOUR_MS
+    })
+    const stoppedNightly = build({
+      id: 'nightly',
+      name: 'ComfyUI Nightly',
+      lastLaunchedAt: NOW - 4 * HOUR_MS,
+      lastStoppedAt: NOW - 2 * MINUTE_MS
+    })
+    const stoppedPrivate = build({
+      id: 'private',
+      name: 'ComfyUI Private',
+      lastLaunchedAt: NOW - 4 * HOUR_MS,
+      lastStoppedAt: NOW - 1 * MINUTE_MS
+    })
+    getInstallations.mockResolvedValue([
+      stillRunning,
+      stoppedNightly,
+      stoppedPrivate,
+      { ...CLOUD, lastLaunchedAt: NOW - 10 * MINUTE_MS }
+    ])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(stillRunning.id, {
+      installationId: stillRunning.id,
+      installationName: stillRunning.name,
+      mode: 'window'
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid="home-build-name"]').map((name) => name.text())).toEqual([
+      'ComfyUI Private',
+      'ComfyUI Nightly',
+      'ComfyUI'
+    ])
+  })
+
   it('shows Running with the green dot while Comfy Cloud is open, like a local build', async () => {
     getAuthStatus.mockResolvedValue({ signedIn: true })
     getInstallations.mockResolvedValue([CLOUD])
