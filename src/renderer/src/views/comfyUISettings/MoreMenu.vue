@@ -79,6 +79,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         :disabled="action.enabled === false"
         :class="action.style === 'danger' && DESTRUCTIVE_MENU_ITEM_CLASS"
         :text-value="action.label"
+        :title="action.enabled === false ? action.disabledMessage : undefined"
         :data-testid="TID.pinBottomAction(action.id)"
         @select="handlePick(action)"
       >

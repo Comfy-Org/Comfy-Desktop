@@ -35,13 +35,23 @@ const BUILD: Installation = {
 
 type State = 'ready' | 'starting' | 'installing' | 'running' | 'uninstalling'
 
-const REST = ['|', 'manage', 'copy-install', 'reveal-in-folder', '|', 'share', 'restore-snapshot']
+const REST = [
+  '|',
+  'manage',
+  'rename',
+  'copy-install',
+  'reveal-in-folder',
+  '|',
+  'share',
+  'restore-snapshot'
+]
+const LAST = ['|', 'untrack', 'delete']
 const EXPECTED: Record<State, string[]> = {
-  ready: ['launch', '|', 'auto-start', ...REST, '|', 'delete'],
-  starting: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
-  installing: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
-  running: ['view-logs', 'restart', 'stop', '|', 'auto-start', ...REST, '|', 'delete'],
-  uninstalling: ['cancel', '|', 'auto-start', ...REST, '|', 'delete']
+  ready: ['launch', '|', 'auto-start', ...REST, ...LAST],
+  starting: ['view-logs', 'cancel', '|', 'auto-start', ...REST, ...LAST],
+  installing: ['view-logs', 'cancel', '|', 'auto-start', ...REST, ...LAST],
+  running: ['view-logs', 'restart', 'stop', '|', 'auto-start', ...REST, ...LAST],
+  uninstalling: ['cancel', '|', 'auto-start', ...REST, ...LAST]
 }
 const OPERATIONS: Partial<Record<State, Partial<Operation>>> = {
   starting: { opKind: 'launch', flatPercent: 5 },
@@ -377,8 +387,7 @@ describe('Build menu', () => {
       'auto-start',
       ...REST,
       'promote-to-workspace',
-      '|',
-      'delete'
+      ...LAST
     ])
     expect(fromRightClick).toEqual(fromTile)
   })

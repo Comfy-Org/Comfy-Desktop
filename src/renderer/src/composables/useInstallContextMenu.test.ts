@@ -106,17 +106,26 @@ it('groups common desktop-card actions in the requested order', () => {
   expect(items.map(({ id }) => id)).toEqual([
     'manage',
     'update',
+    'rename',
     'copy-install',
     'reveal-in-folder',
     'share',
     'restore-snapshot',
     'promote-to-workspace',
+    'untrack',
     'delete'
   ])
   expect(items.filter(({ separator }) => separator).map(({ id }) => id)).toEqual([
     'share',
-    'delete'
+    'untrack'
   ])
+})
+
+it('leaves Forget out for a build adopted from an existing folder', () => {
+  const { menu } = mountHarness(makeInstall({ adopted: true }))
+
+  expect(findItem(menu.ctxMenuItems.value, 'untrack')).toBeUndefined()
+  expect(findItem(menu.ctxMenuItems.value, 'rename')).toBeDefined()
 })
 
 describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
