@@ -504,6 +504,12 @@ describe('Home builds', () => {
       'ComfyUI Nightly',
       'ComfyUI'
     ])
+    const hiddenWhenNarrow = wrapper
+      .findAll('[data-narrow-hidden="true"]')
+      .map((card) => card.get('[data-testid="home-build-name"]').text())
+    expect(hiddenWhenNarrow, 'a narrow window still shows the running build').toEqual([
+      'ComfyUI Nightly'
+    ])
   })
 
   it('shows Running with the green dot while Comfy Cloud is open, like a local build', async () => {

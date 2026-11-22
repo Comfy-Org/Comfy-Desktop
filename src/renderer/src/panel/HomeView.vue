@@ -91,7 +91,8 @@ const showNewBuildSlot = computed(
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
   if (!latest) return new Set<string>()
-  const second = rest.find((build) => isCloudBuild(build)) ?? rest[0]
+  const second =
+    rest.find((build) => isInUse(build)) ?? rest.find((build) => isCloudBuild(build)) ?? rest[0]
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
 const openableBuilds = computed(() =>
