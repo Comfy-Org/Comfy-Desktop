@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   isAppsPage: true,
   appsEnabled: true,
+  pageAdmitted: true,
   recentAssets: vi.fn(async (_page: unknown, _request: unknown): Promise<unknown> => []),
   assetFromPath: vi.fn(
     async (_page: unknown, _path: unknown, _request: unknown): Promise<unknown> => ({
@@ -26,7 +27,10 @@ vi.mock('electron', () => ({
   }
 }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
-vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
+vi.mock('../../apps/appsPages', () => ({
+  appsPageAdmits: async () => mocks.pageAdmitted,
+  isAppsPageSender: () => mocks.isAppsPage
+}))
 vi.mock('../../apps/appAssets', () => ({
   recentAssets: mocks.recentAssets,
   assetFromPath: mocks.assetFromPath,
@@ -50,6 +54,7 @@ beforeEach(() => {
   mocks.handlers.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
+  mocks.pageAdmitted = true
   registerAppsAssetsHandlers()
 })
 
@@ -86,8 +91,9 @@ describe('the app page assets channels', () => {
 
   it('answer nothing to a sender that is not the hosted Apps page, or while Apps is off', async () => {
     for (const state of [
-      { isAppsPage: false, appsEnabled: true },
-      { isAppsPage: true, appsEnabled: false }
+      { isAppsPage: false, appsEnabled: true, pageAdmitted: true },
+      { isAppsPage: true, appsEnabled: false, pageAdmitted: true },
+      { isAppsPage: true, appsEnabled: true, pageAdmitted: false }
     ]) {
       Object.assign(mocks, state)
 
