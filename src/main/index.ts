@@ -917,12 +917,16 @@ function holdsInstanceLock(lock: InstanceLock): boolean {
 }
 
 function registerDraftLinkScheme(registration: LinkRegistration): void {
+  const commandArgs = [path.resolve(process.argv[1] ?? '.')]
   if (registration === 'scheme') {
     app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME)
   } else if (registration === 'scheme-with-command') {
-    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, [
-      path.resolve(process.argv[1] ?? '.')
-    ])
+    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, commandArgs)
+  } else if (
+    registration === 'remove-own-command' &&
+    app.isDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, commandArgs)
+  ) {
+    app.removeAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, commandArgs)
   }
 }
 

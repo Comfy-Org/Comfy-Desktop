@@ -1,27 +1,22 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
-const { app } = require('electron')
-const { spawn } = require('node:child_process')
-const fs = require('node:fs')
-const path = require('node:path')
-const { pathToFileURL } = require('node:url')
+import { app } from 'electron'
+import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const LINK_WAIT_MS = 500
-const bundleDir = path.resolve(__dirname, '..', '..', '..')
+const launcherDir = path.dirname(fileURLToPath(import.meta.url))
+const bundleDir = path.resolve(launcherDir, '..', '..', '..')
 const launchFile = path.join(path.dirname(bundleDir), 'launch.json')
 
 function startedWithEntry(argv) {
   return argv.slice(1).some((arg) => !arg.startsWith('-'))
 }
 
-function runDefaultApp() {
-  const defaultApp = path.join(process.resourcesPath, 'default_app.asar', 'main.js')
-  return import(pathToFileURL(defaultApp).href)
-}
-
-function startDevServer(launch, links) {
+function startDevServer(launch, link) {
   const log = fs.openSync(launch.log, 'w')
   const [command, ...args] = launch.command
-  spawn(command, [...args, ...links], {
+  spawn(command, link ? [...args, link] : args, {
     cwd: launch.cwd,
     env: { ...process.env, ...launch.env },
     detached: true,
@@ -32,15 +27,15 @@ function startDevServer(launch, links) {
 function coldStart() {
   const launch = JSON.parse(fs.readFileSync(launchFile, 'utf-8'))
   app.setPath('userData', launch.userData)
-  const links = []
+  let firstLink = null
   app.on('open-url', (event, url) => {
     event.preventDefault()
-    links.push(url)
+    firstLink ??= url
   })
   app.whenReady().then(() => {
     setTimeout(() => {
       try {
-        startDevServer(launch, links)
+        startDevServer(launch, firstLink)
       } finally {
         app.quit()
       }
@@ -49,7 +44,8 @@ function coldStart() {
 }
 
 if (startedWithEntry(process.argv)) {
-  void runDefaultApp()
+  const defaultApp = path.join(process.resourcesPath, 'default_app.asar', 'main.js')
+  await import(pathToFileURL(defaultApp).href)
 } else {
   coldStart()
 }

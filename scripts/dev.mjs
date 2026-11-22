@@ -51,6 +51,12 @@ const child = spawn(process.execPath, [electronViteCli(), 'dev', ...process.argv
   stdio: 'inherit',
   env: { ...process.env, ...devAppEnv() }
 })
-process.on('SIGINT', () => {})
-process.on('SIGTERM', () => child.kill('SIGTERM'))
+const FORWARDED_SIGNALS =
+  process.platform === 'win32' ? ['SIGINT', 'SIGTERM'] : ['SIGINT', 'SIGTERM', 'SIGHUP']
+for (const signal of FORWARDED_SIGNALS) {
+  process.on(signal, () => {
+    if (child.exitCode !== null || child.signalCode !== null) return
+    child.kill(signal)
+  })
+}
 child.on('close', (code, signal) => process.exit(code ?? (signal ? 1 : 0)))

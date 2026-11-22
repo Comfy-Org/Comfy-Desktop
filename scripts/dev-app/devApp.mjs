@@ -16,10 +16,10 @@ export const DEV_APP_BUNDLE_ENV = 'COMFY_DEV_APP_BUNDLE'
 
 const LSREGISTER =
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
-const LAUNCHER_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'launcher.cjs')
+const LAUNCHER_SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'launcher.mjs')
 const STAMP_FILE = 'dev-app.json'
 const LAUNCH_FILE = 'launch.json'
-const LAUNCHER_PACKAGE = { name: 'electron', productName: 'Electron', main: 'launcher.cjs' }
+const LAUNCHER_PACKAGE = { name: 'electron', productName: 'Electron', main: 'launcher.mjs' }
 
 export function devAppLinksWanted(platform, env) {
   return platform === 'darwin' && env['COMFY_DRAFT_APP_LINKS'] !== '0' && env['E2E'] !== '1'
@@ -99,7 +99,7 @@ function buildBundle({ electronApp, paths, name, bundleId, scheme, launcherSourc
     execFileSync('plutil', ['-replace', key, type, value, paths.plist])
   }
   fs.mkdirSync(paths.launcherDir, { recursive: true })
-  fs.writeFileSync(path.join(paths.launcherDir, 'launcher.cjs'), launcherSource)
+  fs.writeFileSync(path.join(paths.launcherDir, 'launcher.mjs'), launcherSource)
   fs.writeFileSync(
     path.join(paths.launcherDir, 'package.json'),
     `${JSON.stringify(LAUNCHER_PACKAGE, null, 2)}\n`

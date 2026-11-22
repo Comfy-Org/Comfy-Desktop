@@ -7,7 +7,7 @@ const DEV_COPY_LOCK_DIR = 'dev-copy-lock'
 const DEV_COPY_LOCK_KEY_LENGTH = 16
 
 export type InstanceLock = 'app' | 'dev-copy' | 'none'
-export type LinkRegistration = 'scheme' | 'scheme-with-command' | 'none'
+export type LinkRegistration = 'scheme' | 'scheme-with-command' | 'remove-own-command' | 'none'
 
 export interface DraftLinkStartupInput {
   isPackaged: boolean
@@ -29,8 +29,13 @@ export function planDraftLinkStartup({
   startupLink
 }: DraftLinkStartupInput): DraftLinkStartup {
   if (isPackaged) return { lock: 'app', registration: 'scheme', linkWithoutDevServer: false }
-  if (env['COMFY_DRAFT_APP_LINKS'] === '0' || env['E2E'] === '1') {
-    return { lock: 'none', registration: 'none', linkWithoutDevServer: false }
+  if (env['E2E'] === '1') return { lock: 'none', registration: 'none', linkWithoutDevServer: false }
+  if (env['COMFY_DRAFT_APP_LINKS'] === '0') {
+    return {
+      lock: 'none',
+      registration: platform === 'win32' ? 'remove-own-command' : 'none',
+      linkWithoutDevServer: false
+    }
   }
   const linkWithoutDevServer = startupLink !== null && !env['ELECTRON_RENDERER_URL']
   if (platform === 'darwin') {

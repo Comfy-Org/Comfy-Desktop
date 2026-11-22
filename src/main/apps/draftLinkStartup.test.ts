@@ -42,14 +42,27 @@ describe('planDraftLinkStartup', () => {
     ).toEqual({ lock: 'dev-copy', registration: 'scheme', linkWithoutDevServer: false })
   })
 
-  it.each([{ COMFY_DRAFT_APP_LINKS: '0' }, { E2E: '1' }])(
-    'turns links, the lock and registration off with %o',
-    (env) => {
-      expect(plan({ env: { ...DEV_SERVER, ...env }, startupLink: LINK })).toEqual({
-        lock: 'none',
-        registration: 'none',
-        linkWithoutDevServer: false
-      })
+  it.each(['win32', 'linux', 'darwin'] as const)(
+    'turns links, the lock and registration off for e2e runs on %s',
+    (platform) => {
+      expect(
+        plan({ platform, env: { ...DEV_SERVER, E2E: '1', COMFY_DRAFT_APP_LINKS: '0' } })
+      ).toEqual({ lock: 'none', registration: 'none', linkWithoutDevServer: false })
+    }
+  )
+
+  it('hands links back on Windows when links are turned off', () => {
+    expect(plan({ env: { ...DEV_SERVER, COMFY_DRAFT_APP_LINKS: '0' }, startupLink: LINK })).toEqual(
+      { lock: 'none', registration: 'remove-own-command', linkWithoutDevServer: false }
+    )
+  })
+
+  it.each(['linux', 'darwin'] as const)(
+    'leaves the registration alone on %s when links are turned off',
+    (platform) => {
+      expect(
+        plan({ platform, env: { ...DEV_SERVER, COMFY_DRAFT_APP_LINKS: '0' }, startupLink: LINK })
+      ).toEqual({ lock: 'none', registration: 'none', linkWithoutDevServer: false })
     }
   )
 
