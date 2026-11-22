@@ -2195,7 +2195,7 @@
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
     "progressCancelled": "已取消",
-    "restartToApply": "重启以应用更改"
+    "restartToApply": "重启以应用"
   },
   "installShowcase": {
     "cloud": {

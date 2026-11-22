@@ -693,7 +693,7 @@ describe('ComfyUISettingsContent', () => {
           '[data-testid="picker-open-beside-restart"]'
         )!
 
-        expect(primary.textContent?.trim()).toBe('Restart to apply changes')
+        expect(primary.textContent?.trim()).toBe('Restart to apply')
         expect(open.textContent?.trim()).toBe('Open')
 
         primary.click()
@@ -740,7 +740,7 @@ describe('ComfyUISettingsContent', () => {
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
 
-    it('labels "Restart to apply changes" on the dashboard when a build starting with no window has edited args', async () => {
+    it('labels "Restart to apply" on the dashboard when a build starting with no window has edited args', async () => {
       useSessionStore().launchingInstances.set('inst-1', { installationName: 'X' })
       useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
       try {
@@ -750,7 +750,7 @@ describe('ComfyUISettingsContent', () => {
           activeInstallationId: null,
           startingWithoutWindow: true
         })
-        expect(w.find('.settings-v2-relaunch').text()).toBe('Restart to apply changes')
+        expect(w.find('.settings-v2-relaunch').text()).toBe('Restart to apply')
         await w.find('.settings-v2-relaunch').trigger('click')
         expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
       } finally {
