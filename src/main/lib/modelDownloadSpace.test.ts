@@ -2,6 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { bucketError } from '../../shared/errorBucket'
 import { DISK_SPACE_RESERVE_BYTES, diskSpaceShortfall } from './modelDownloadSpace'
 
 let tmpDir: string
@@ -27,11 +28,16 @@ describe('diskSpaceShortfall', () => {
     expect(diskSpaceShortfall(stagingPath, 3_000_000_000)).toBeNull()
   })
 
-  it('names what the download needs and what the drive has', () => {
+  it('says how much space to free, counting the reserve and rounding up', () => {
     freeBytes(2_000_000_000)
     expect(diskSpaceShortfall(stagingPath, 20_500_000_000)).toBe(
-      'Not enough disk space: this download needs 21.0 GB free and the drive has 2.0 GB'
+      'Free up 19.1 GB of space, then try again'
     )
+  })
+
+  it('words the shortfall so download telemetry counts it as a disk error', () => {
+    freeBytes(0)
+    expect(bucketError(diskSpaceShortfall(stagingPath, 1_000_000_000))).toBe('disk')
   })
 
   it('subtracts bytes already staged', () => {
@@ -52,7 +58,9 @@ describe('diskSpaceShortfall', () => {
       fs.writeFileSync(stagingPath, '')
       fs.truncateSync(stagingPath, 1_000_000_000)
       freeBytes(DISK_SPACE_RESERVE_BYTES)
-      expect(diskSpaceShortfall(stagingPath, 1_000_000_000)).toMatch(/^Not enough disk space: /)
+      expect(diskSpaceShortfall(stagingPath, 1_000_000_000)).toMatch(
+        /^Free up \d+\.\d GB of space, then try again$/
+      )
     }
   )
 

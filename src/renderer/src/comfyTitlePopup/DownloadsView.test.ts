@@ -248,6 +248,37 @@ describe('comfyTitlePopup/DownloadsView', () => {
     ])
   })
 
+  it('shows Pause and Resume without hover, and keeps the same button when a download pauses', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const running: MockDownloadsState = {
+      active: [
+        {
+          url: 'https://example.com/run.bin',
+          filename: 'run.bin',
+          progress: 0.2,
+          status: 'downloading'
+        }
+      ],
+      recent: []
+    }
+    const wrapper = mount(DownloadsView, { props: { state: running } })
+    await flushPromises()
+
+    const action = wrapper.get('.is-active .downloads-item-action')
+    expect(action.classes()).toContain('flex')
+    expect(action.classes()).not.toContain('hidden')
+    const button = wrapper.get('.downloads-item-pause').element
+
+    await wrapper.setProps({
+      state: { active: [{ ...running.active[0]!, status: 'paused' as const }], recent: [] }
+    })
+
+    const resume = wrapper.get('.is-paused .downloads-item-resume')
+    expect(resume.element).toBe(button)
+    expect(resume.attributes('aria-label')).toBe('Resume')
+    expect(wrapper.get('.is-paused .downloads-item-action').classes()).not.toContain('hidden')
+  })
+
   it('leaves Pause off a download the manager cannot pause', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const state = {

@@ -22,8 +22,8 @@ function stagedBytesOnDisk(stagingPath: string): number {
   }
 }
 
-function gigabytes(bytes: number): string {
-  return (bytes / 1e9).toFixed(1)
+function gigabytesRoundedUp(bytes: number): string {
+  return (Math.ceil(bytes / 1e8) / 10).toFixed(1)
 }
 
 export function diskSpaceShortfall(stagingPath: string, totalBytes: number): string | null {
@@ -34,5 +34,5 @@ export function diskSpaceShortfall(stagingPath: string, totalBytes: number): str
   if (free === null) return null
   const needed = remaining + DISK_SPACE_RESERVE_BYTES
   if (needed <= free) return null
-  return `Not enough disk space: this download needs ${gigabytes(needed)} GB free and the drive has ${gigabytes(free)} GB`
+  return `Free up ${gigabytesRoundedUp(needed - free)} GB of space, then try again`
 }

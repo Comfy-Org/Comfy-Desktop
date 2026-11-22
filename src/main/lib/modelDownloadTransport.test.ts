@@ -1780,8 +1780,7 @@ describe('disk space', () => {
     vi.spyOn(fs, 'statfsSync').mockReturnValue({ bavail: bytes, bsize: 1 } as never)
   }
 
-  const shortfall =
-    'Not enough disk space: this download needs 0.5 GB free and the drive has 0.0 GB'
+  const shortfall = 'Free up 0.6 GB of space, then try again'
 
   it('stops before writing when the drive cannot hold the file', async () => {
     freeBytes(100)
@@ -1820,7 +1819,7 @@ describe('disk space', () => {
     const handle = startModelTransfer(baseOpts({ segmentTuning: tuning }))
     const outcome = await handle.done
     expect(outcome).toMatchObject({ outcome: 'error' })
-    expect((outcome as { error: string }).error).toMatch(/^Not enough disk space: /)
+    expect((outcome as { error: string }).error).toBe(shortfall)
     expect(requests).toHaveLength(0)
     expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(10)
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.segments).toEqual(segments)
