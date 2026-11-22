@@ -553,7 +553,7 @@ describe('AppsView', () => {
     await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
     expect(dialogs.state.confirm.title).toBe('Switch to SDR to HDR?')
     expect(dialogs.state.confirm.message).toBe(
-      'Depth Swap is a draft app. Switching closes it and stops its run.'
+      "Depth Swap is a draft app. Switching closes it, and you won't see this run finish."
     )
     dialogs.cancel()
     await flushPromises()
@@ -571,7 +571,7 @@ describe('AppsView', () => {
     await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
     expect(dialogs.state.confirm.title).toBe('Go back to all apps?')
     expect(dialogs.state.confirm.message).toBe(
-      'SDR to HDR is a draft app. Going back closes it and stops its run.'
+      "SDR to HDR is a draft app. Going back closes it, and you won't see this run finish."
     )
     dialogs.cancel()
     await flushPromises()

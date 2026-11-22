@@ -51,13 +51,13 @@
       "title": "切换到{app}？",
       "body": "{current}仍在生成。已有 {count} 个其他应用在运行，切换会停止它。",
       "bodyUnsure": "Desktop 无法确认是否有应用仍在生成。切换可能会停止它。",
-      "bodyDraft": "{current}是草稿应用。切换会关闭它并停止生成。",
+      "bodyDraft": "{current}是草稿应用。切换会关闭它，你将看不到这次生成完成。",
       "switch": "切换",
       "stay": "留在这里"
     },
     "backWhileRunning": {
       "title": "返回全部应用？",
-      "bodyDraft": "{current}是草稿应用。返回会关闭它并停止生成。",
+      "bodyDraft": "{current}是草稿应用。返回会关闭它，你将看不到这次生成完成。",
       "back": "返回"
     },
     "request": {
