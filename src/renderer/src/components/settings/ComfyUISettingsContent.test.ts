@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { computed, ref, nextTick } from 'vue'
@@ -1465,6 +1465,81 @@ describe('ComfyUISettingsContent', () => {
       await flushPromises()
 
       expect(document.activeElement).toBe(target.querySelector('.build-details-title-name'))
+
+      w.unmount()
+      target.remove()
+    })
+    it('keeps the source Uninstall for a build whose install failed', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'remove', label: 'Forget' },
+        { id: 'delete', label: 'Uninstall' }
+      ]
+      const target = document.createElement('div')
+      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(target)
+      const w = await mountContent({
+        installation: { ...SAMPLE_INSTALL, status: 'failed', installPath: '/builds/failed' },
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
+      await flushPromises()
+
+      const actions = pageMenu(w).props('actions') as { id: string; style?: string }[]
+      expect(actions.at(-1)).toMatchObject({ id: 'delete', style: 'danger' })
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('forgets a build when Forget was picked from the sidebar', async () => {
+      useComfyUISettingsState.runActionStub.mockClear()
+      const sectionsBefore = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        ...sectionsBefore,
+        { pinBottom: true, actions: [{ id: 'remove', label: 'Forget' }] }
+      ]
+      onTestFinished(() => {
+        useComfyUISettingsState.sections.value = sectionsBefore
+      })
+      const { w, target } = await mountRunningPage({ autoAction: 'remove', autoActionNonce: 1 })
+      await flushPromises()
+
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'remove' })
+      )
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('does not forget a build from the sidebar while an operation runs on it', async () => {
+      useComfyUISettingsState.runActionStub.mockClear()
+      const sectionsBefore = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        ...sectionsBefore,
+        { pinBottom: true, actions: [{ id: 'remove', label: 'Forget' }] }
+      ]
+      onTestFinished(() => {
+        useComfyUISettingsState.sections.value = sectionsBefore
+      })
+      const { w, target } = await mountRunningPage({
+        autoAction: 'remove',
+        autoActionNonce: 1,
+        activeOperation: {
+          percent: 10,
+          status: 'Updating',
+          done: false,
+          ok: null,
+          error: null,
+          cancellable: true,
+          title: 'Updating',
+          actionId: 'update-comfyui'
+        }
+      })
+      await flushPromises()
+
+      expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
 
       w.unmount()
       target.remove()

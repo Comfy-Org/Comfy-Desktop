@@ -93,6 +93,10 @@ export function useInstallContextMenu(
     return inst.sourceCategory !== 'cloud'
   }
 
+  function hasTaskRunning(inst: Installation): boolean {
+    return progressStore.getProgressInfo(inst.id) !== null
+  }
+
   function isAdopted(inst: Installation): boolean {
     return inst.adopted === true
   }
@@ -237,7 +241,14 @@ export function useInstallContextMenu(
       cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop })
     }
     if (opts.onManage && isLocalLikeInstall(inst) && !isAdopted(inst)) {
-      cluster.push({ id: 'untrack', label: t('actions.untrack'), icon: EyeOff })
+      const taskRunning = hasTaskRunning(inst)
+      cluster.push({
+        id: 'untrack',
+        label: t('actions.untrack'),
+        icon: EyeOff,
+        disabled: taskRunning,
+        title: taskRunning ? t('chooser.busyActionGatedReason') : undefined
+      })
     }
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
@@ -370,6 +381,7 @@ export function useInstallContextMenu(
     } else if (id === 'rename') {
       opts.onManage?.(inst, { autoAction: 'rename' })
     } else if (id === 'untrack') {
+      if (hasTaskRunning(inst)) return
       opts.onManage?.(inst, { autoAction: 'remove' })
     } else if (id === 'delete') {
       if (opts.onShowProgress) {

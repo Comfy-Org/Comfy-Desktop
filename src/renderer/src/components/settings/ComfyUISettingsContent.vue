@@ -207,6 +207,7 @@ watch(
 
     const action = findActionById(sections.value, autoAction, currentChannelValue(sections.value))
     if (!action) return
+    if (autoAction === 'remove' && props.activeOperation?.done === false) return
 
     consumedAutoActionKey.value = key
     await nextTick()
@@ -727,6 +728,10 @@ const pageMenuActions = computed<MenuAction[]>(() => {
     'ends-the-group-before'
   )
   menu = insertBefore(menu, untrack ? [pageMenuAction(untrack)] : [], ['delete'], 'heads-the-group')
+  const sourceUninstall = pageActions.get('delete')
+  if (sourceUninstall && !menu.some((action) => action.id === 'delete')) {
+    menu = [...menu, { ...pageMenuAction(sourceUninstall), separator: menu.length > 0 && !untrack }]
+  }
   return menu
 })
 

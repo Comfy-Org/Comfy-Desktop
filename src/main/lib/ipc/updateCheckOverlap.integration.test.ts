@@ -153,4 +153,16 @@ describe('acting on a build while one of its own actions is still running', () =
     finishSourceAction({ ok: true })
     expect(await update).toEqual({ ok: true })
   })
+  it('refuses to forget the build while an update is being applied to it', async () => {
+    const update = runAction('update-comfyui')
+    await sourceActionStarted()
+
+    const refused = await runAction('remove')
+
+    expect(refused.ok).toBe(false)
+    expect(refused.message).toContain('errors.operationInProgress')
+    expect(installationsStore.has(BUILD_ID), 'the build is kept').toBe(true)
+    finishSourceAction({ ok: true })
+    expect(await update).toEqual({ ok: true })
+  })
 })

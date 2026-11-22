@@ -128,6 +128,32 @@ it('leaves Forget out for a build adopted from an existing folder', () => {
   expect(findItem(menu.ctxMenuItems.value, 'rename')).toBeDefined()
 })
 
+it('turns Forget off while a task runs on the build', () => {
+  const inst = makeInstall()
+  const { menu } = mountHarness(inst, ({ progress }) => {
+    progress.operations.set(inst.id, {
+      title: 'Updating...',
+      steps: null,
+      activePhase: null,
+      activePercent: 0,
+      lastStatus: {},
+      flatStatus: 'Working...',
+      flatPercent: 0.5,
+      terminalOutput: '',
+      done: false,
+      finished: false,
+      error: null,
+      cancelRequested: false,
+      result: null,
+      unsubProgress: null,
+      unsubOutput: null,
+      apiCall: null
+    } as never)
+  })
+
+  expect(findItem(menu.ctxMenuItems.value, 'untrack')).toMatchObject({ disabled: true })
+})
+
 describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
   it.each(['failed', 'partial-delete'])(
     'offers Uninstall for a managed Build in the %s state',
