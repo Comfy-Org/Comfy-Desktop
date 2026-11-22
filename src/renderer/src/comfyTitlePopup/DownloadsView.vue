@@ -8,7 +8,9 @@ import {
   CircleCheck,
   FolderOpen,
   LoaderCircle,
+  Pause,
   PauseCircle,
+  Play,
   RotateCcw,
   X
 } from '@lucide/vue'
@@ -33,6 +35,7 @@ interface DownloadEntry {
   error?: string
   createdAt?: number
   isImage?: boolean
+  canPause?: boolean
 }
 
 interface DownloadsState {
@@ -83,6 +86,12 @@ const orderedEntries = computed<DownloadEntry[]>(() =>
   )
 )
 
+function pause(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'pause', ref: d.id, url: d.url })
+}
+function resume(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'resume', ref: d.id, url: d.url })
+}
 function cancel(d: DownloadEntry): void {
   bridge?.downloadsAction({ action: 'cancel', ref: d.id, url: d.url })
 }
@@ -117,6 +126,10 @@ function subtitle(d: DownloadEntry): string {
 
 function canRetry(d: DownloadEntry): boolean {
   return d.status === 'error' || d.status === 'cancelled'
+}
+
+function canPause(d: DownloadEntry): boolean {
+  return d.status === 'downloading' && d.canPause !== false
 }
 
 function handleRowClick(d: DownloadEntry, event: MouseEvent): void {
@@ -243,11 +256,35 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           }}</span>
         </div>
         <div
-          v-if="canRetry(d) || isRowClickable(d)"
+          v-if="canPause(d) || d.status === 'paused' || canRetry(d) || isRowClickable(d)"
           class="downloads-item-action hidden shrink-0 items-center group-focus-within:flex group-hover:flex"
         >
           <Button
-            v-if="canRetry(d)"
+            v-if="canPause(d)"
+            type="button"
+            variant="secondary"
+            size="icon"
+            class="downloads-item-pause"
+            :title="t('downloadsPopup.pause')"
+            :aria-label="t('downloadsPopup.pause')"
+            @click.stop="pause(d)"
+          >
+            <Pause :size="16" aria-hidden="true" />
+          </Button>
+          <Button
+            v-else-if="d.status === 'paused'"
+            type="button"
+            variant="secondary"
+            size="icon"
+            class="downloads-item-resume"
+            :title="t('downloadsPopup.resume')"
+            :aria-label="t('downloadsPopup.resume')"
+            @click.stop="resume(d)"
+          >
+            <Play :size="16" aria-hidden="true" />
+          </Button>
+          <Button
+            v-else-if="canRetry(d)"
             type="button"
             variant="secondary"
             size="md"

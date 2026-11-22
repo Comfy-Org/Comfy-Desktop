@@ -210,6 +210,65 @@ describe('comfyTitlePopup/DownloadsView', () => {
     ])
   })
 
+  it('offers Pause on a running download and Resume on a paused one, apart from the cancel X', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state: MockDownloadsState = {
+      active: [
+        {
+          url: 'https://example.com/run.bin',
+          filename: 'run.bin',
+          progress: 0.2,
+          status: 'downloading'
+        },
+        {
+          url: 'https://example.com/held.bin',
+          filename: 'held.bin',
+          progress: 0.6,
+          status: 'paused'
+        }
+      ],
+      recent: []
+    }
+    const wrapper = mount(DownloadsView, { props: { state } })
+    await flushPromises()
+
+    const pause = wrapper.get('.is-active .downloads-item-pause')
+    const resume = wrapper.get('.is-paused .downloads-item-resume')
+    expect(pause.attributes('aria-label')).toBe('Pause')
+    expect(resume.attributes('aria-label')).toBe('Resume')
+    expect(wrapper.find('.is-active .downloads-item-resume').exists()).toBe(false)
+    expect(wrapper.find('.is-paused .downloads-item-pause').exists()).toBe(false)
+
+    await pause.trigger('click')
+    await resume.trigger('click')
+
+    expect(bridgeState.downloadsActions).toEqual([
+      { action: 'pause', url: 'https://example.com/run.bin' },
+      { action: 'resume', url: 'https://example.com/held.bin' }
+    ])
+  })
+
+  it('leaves Pause off a download the manager cannot pause', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state = {
+      active: [
+        {
+          url: 'https://example.com/fixed.bin',
+          filename: 'fixed.bin',
+          progress: 0.2,
+          status: 'downloading' as const,
+          canPause: false
+        }
+      ],
+      recent: []
+    }
+    const wrapper = mount(DownloadsView, { props: { state } })
+    await flushPromises()
+
+    expect(wrapper.find('.downloads-item-pause').exists()).toBe(false)
+    expect(wrapper.find('.downloads-item-close').exists()).toBe(true)
+  })
+
   it('clicking a completed row body opens the file location via the bridge', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const state: MockDownloadsState = {
