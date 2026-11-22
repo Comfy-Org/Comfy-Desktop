@@ -56,6 +56,7 @@ export function segmentsCoverExactly(segments: unknown, totalBytes: number): boo
 
 export function stagedProgressBytes(meta: StagedDownloadMeta, fileBytes: number): number {
   if (!meta.segments) return fileBytes
+  if (fileBytes !== meta.expectedSize) return 0
   return meta.segments.reduce((sum, segment) => sum + segment.done, 0)
 }
 

@@ -122,7 +122,7 @@ function subtitle(d: DownloadEntry): string {
 }
 
 function keepsActionInView(d: DownloadEntry): boolean {
-  return d.status === 'paused' || d.status === 'error'
+  return hasPauseToggle(d) || d.status === 'error'
 }
 
 function canRetry(d: DownloadEntry): boolean {
@@ -131,6 +131,19 @@ function canRetry(d: DownloadEntry): boolean {
 
 function canPause(d: DownloadEntry): boolean {
   return d.status === 'downloading' && d.canPause !== false
+}
+
+function hasPauseToggle(d: DownloadEntry): boolean {
+  return canPause(d) || d.status === 'paused'
+}
+
+function pauseToggleLabel(d: DownloadEntry): string {
+  return d.status === 'paused' ? t('downloadsPopup.resume') : t('downloadsPopup.pause')
+}
+
+function togglePause(d: DownloadEntry): void {
+  if (d.status === 'paused') resume(d)
+  else pause(d)
 }
 
 function handleRowClick(d: DownloadEntry, event: MouseEvent): void {
@@ -257,33 +270,22 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           }}</span>
         </div>
         <div
-          v-if="canPause(d) || d.status === 'paused' || canRetry(d) || isRowClickable(d)"
+          v-if="hasPauseToggle(d) || canRetry(d) || isRowClickable(d)"
           class="downloads-item-action shrink-0 items-center"
           :class="keepsActionInView(d) ? 'flex' : 'hidden group-focus-within:flex group-hover:flex'"
         >
           <Button
-            v-if="canPause(d)"
+            v-if="hasPauseToggle(d)"
             type="button"
             variant="secondary"
             size="icon"
-            class="downloads-item-pause"
-            :title="t('downloadsPopup.pause')"
-            :aria-label="t('downloadsPopup.pause')"
-            @click.stop="pause(d)"
+            :class="d.status === 'paused' ? 'downloads-item-resume' : 'downloads-item-pause'"
+            :title="pauseToggleLabel(d)"
+            :aria-label="pauseToggleLabel(d)"
+            @click.stop="togglePause(d)"
           >
-            <Pause :size="16" aria-hidden="true" />
-          </Button>
-          <Button
-            v-else-if="d.status === 'paused'"
-            type="button"
-            variant="secondary"
-            size="icon"
-            class="downloads-item-resume"
-            :title="t('downloadsPopup.resume')"
-            :aria-label="t('downloadsPopup.resume')"
-            @click.stop="resume(d)"
-          >
-            <Play :size="16" aria-hidden="true" />
+            <Play v-if="d.status === 'paused'" :size="16" aria-hidden="true" />
+            <Pause v-else :size="16" aria-hidden="true" />
           </Button>
           <Button
             v-else-if="canRetry(d)"

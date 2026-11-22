@@ -13,6 +13,7 @@ import {
   quarantineOrphanStagedBytes,
   readStagedMeta,
   removeStagedArtifacts,
+  revalidateStagedPair,
   scanForStagedDownloads,
   sha256File,
   stagingMetaPathFor,
@@ -234,6 +235,28 @@ describe('scanForStagedDownloads', () => {
     expect(found).toHaveLength(1)
     expect(found[0]!.stagedBytes).toBe(150)
     expect(found[0]!.meta).toEqual(meta)
+  })
+
+  it('reports no saved bytes when the .part file no longer has the size the segments need', async () => {
+    const dir = path.join(tmpDir, 'checkpoints')
+    fs.mkdirSync(dir, { recursive: true })
+    const finalPath = path.join(dir, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), Buffer.alloc(100))
+    writeStagedMeta(
+      stagingMetaPathFor(finalPath),
+      validMeta({
+        version: 3,
+        segments: [
+          { start: 0, end: 499, done: 500 },
+          { start: 500, end: 999, done: 250 }
+        ]
+      })
+    )
+
+    const { downloads: found } = await scanForStagedDownloads([tmpDir])
+    expect(found).toHaveLength(1)
+    expect(found[0]!.stagedBytes).toBe(0)
+    expect(revalidateStagedPair(finalPath)?.stagedBytes).toBe(0)
   })
 
   it('deletes a sidecar whose .part file is missing and does not report it', async () => {

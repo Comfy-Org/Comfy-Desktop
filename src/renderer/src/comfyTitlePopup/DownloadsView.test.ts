@@ -245,16 +245,41 @@ describe('comfyTitlePopup/DownloadsView', () => {
     ])
   })
 
-  it('keeps Resume and Try again in view on paused and failed rows, Pause only on hover', async () => {
+  it('shows Pause and Resume without hover, and keeps the same button when a download pauses', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
-    const state = {
+    const running: MockDownloadsState = {
       active: [
         {
           url: 'https://example.com/run.bin',
           filename: 'run.bin',
           progress: 0.2,
-          status: 'downloading' as const
-        },
+          status: 'downloading'
+        }
+      ],
+      recent: []
+    }
+    const wrapper = mount(DownloadsView, { props: { state: running } })
+    await flushPromises()
+
+    const action = wrapper.get('.is-active .downloads-item-action')
+    expect(action.classes()).toContain('flex')
+    expect(action.classes()).not.toContain('hidden')
+    const button = wrapper.get('.downloads-item-pause').element
+
+    await wrapper.setProps({
+      state: { active: [{ ...running.active[0]!, status: 'paused' as const }], recent: [] }
+    })
+
+    const resume = wrapper.get('.is-paused .downloads-item-resume')
+    expect(resume.element).toBe(button)
+    expect(resume.attributes('aria-label')).toBe('Resume')
+    expect(wrapper.get('.is-paused .downloads-item-action').classes()).not.toContain('hidden')
+  })
+
+  it('keeps Try again in view on a failed row and says how much a paused download has', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state = {
+      active: [
         {
           url: 'https://example.com/held.bin',
           filename: 'held.bin',
@@ -270,7 +295,13 @@ describe('comfyTitlePopup/DownloadsView', () => {
           filename: 'full.bin',
           progress: 0.1,
           status: 'error' as const,
-          error: 'Not enough disk space'
+          error: 'Free up 9.1 GB of space, then try again'
+        },
+        {
+          url: 'https://example.com/stopped.bin',
+          filename: 'stopped.bin',
+          progress: 0.1,
+          status: 'cancelled' as const
         }
       ]
     }
@@ -280,9 +311,8 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(wrapper.get('.is-paused .downloads-item-sub').text()).toBe(
       'Paused · 7.26 GB of 17.70 GB'
     )
-    expect(wrapper.get('.is-paused .downloads-item-action').classes()).toContain('flex')
     expect(wrapper.get('.is-error .downloads-item-action').classes()).toContain('flex')
-    expect(wrapper.get('.is-active .downloads-item-action').classes()).toContain('hidden')
+    expect(wrapper.get('.is-cancelled .downloads-item-action').classes()).toContain('hidden')
   })
 
   it('leaves Pause off a download the manager cannot pause', async () => {

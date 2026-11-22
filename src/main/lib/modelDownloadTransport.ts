@@ -127,6 +127,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     onProgress
   } = opts
   const tuning: SegmentTuning = { ...DEFAULT_SEGMENT_TUNING, ...opts.segmentTuning }
+  let knownSha256 = sha256
 
   const stagingPath = stagingPathFor(finalPath)
   const metaPath = stagingMetaPathFor(finalPath)
@@ -329,6 +330,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     void halting.then(() => {
       if (segmentsHalting === halting) segmentsHalting = null
       if (phase !== 'active') return
+      knownSha256 = knownSha256 ?? readStagedMeta(metaPath)?.sha256
       removeStagedArtifacts(finalPath)
       issueAttempt(sourceUrl)
     })
@@ -415,7 +417,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     directory,
     filename,
     installationId: installationId ?? undefined,
-    sha256: sha256 ?? base.sha256,
+    sha256: knownSha256 ?? base.sha256,
     segments,
     segmentsFromMirror: fromMirror ? true : undefined
   })
@@ -454,6 +456,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     const segments = meta.segments
     const validator = resumeValidatorFor(meta)
     if (!segments || !validator) return false
+    if (meta.segmentsFromMirror && !mirror && !(knownSha256 ?? meta.sha256)) return false
     if (expectedSize && expectedSize !== meta.expectedSize) return false
     let stagedSize = -1
     try {
@@ -484,13 +487,14 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     let resumeFrom = 0
     let existingMeta: StagedDownloadMeta | null = readStagedMeta(metaPath)
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
-    if (existingMeta && sha256 && existingMeta.sha256 && existingMeta.sha256 !== sha256) {
+    if (existingMeta && knownSha256 && existingMeta.sha256 && existingMeta.sha256 !== knownSha256) {
       removeStagedArtifacts(finalPath)
       existingMeta = null
     }
     const stagedContentMatches =
       existingMeta !== null &&
-      (existingMeta.url === url || (sha256 !== undefined && existingMeta.sha256 === sha256))
+      (existingMeta.url === url ||
+        (knownSha256 !== undefined && existingMeta.sha256 === knownSha256))
     if (existingMeta && stagedContentMatches && fs.existsSync(stagingPath)) {
       if (existingMeta.segments) {
         if (segmentsAllowed && resumeSegments(existingMeta)) return
@@ -556,7 +560,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         directory,
         filename,
         installationId: installationId ?? undefined,
-        sha256: sha256 ?? undefined
+        sha256: knownSha256 ?? undefined
       })
       if (!durable) {
         failRetaining('Download failed: cannot write staging metadata')
@@ -783,7 +787,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           directory,
           filename,
           installationId: installationId ?? undefined,
-          sha256: sha256 ?? existingMeta?.sha256
+          sha256: knownSha256 ?? existingMeta?.sha256
         }
         if (!writeStagedMeta(metaPath, meta)) {
           failRetaining('Download failed: cannot write staging metadata')
@@ -880,7 +884,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
 
   const finalizeClaimed = (finalBytes: number): void => {
     void (async () => {
-      const expectedSha256 = sha256 ?? readStagedMeta(metaPath)?.sha256
+      const expectedSha256 = knownSha256 ?? readStagedMeta(metaPath)?.sha256
       if (expectedSha256) {
         let actualSha256: string
         try {
