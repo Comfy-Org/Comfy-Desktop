@@ -37,6 +37,22 @@ describe('useModal', () => {
     })
   })
 
+  describe('notice', () => {
+    it('shows its action button and resolves true when it is pressed', async () => {
+      const promise = modal.notice({ title: 'T', message: 'M', actionLabel: 'Change location' })
+      expect(modal.state.type).toBe('alert')
+      expect(modal.state.buttonLabel).toBe('Change location')
+      modal.close(true)
+      await expect(promise).resolves.toBe(true)
+    })
+
+    it('resolves false when it is dismissed', async () => {
+      const promise = modal.notice({ title: 'T', message: 'M', actionLabel: 'Change location' })
+      modal.dismiss()
+      await expect(promise).resolves.toBe(false)
+    })
+  })
+
   describe('confirm', () => {
     it('resolves true when closed with true', async () => {
       const promise = modal.confirm({ title: 'T', message: 'M' })
@@ -71,6 +87,25 @@ describe('useModal', () => {
       modal.confirm({ title: 'T', message: 'M' })
 
       expect(modal.state.messageDetails).toEqual([])
+    })
+
+    it('is white by default because only destructive confirms are red', () => {
+      modal.confirm({ title: 'T', message: 'M' })
+
+      expect(modal.state.confirmStyle).toBe('primary')
+    })
+
+    it('is red only when the caller asks for danger', () => {
+      modal.confirm({ title: 'T', message: 'M', confirmStyle: 'danger' })
+
+      expect(modal.state.confirmStyle).toBe('danger')
+    })
+
+    it('goes back to white after a danger confirm closes', () => {
+      modal.confirm({ title: 'T', message: 'M', confirmStyle: 'danger' })
+      modal.close(false)
+
+      expect(modal.state.confirmStyle).toBe('primary')
     })
   })
 
@@ -130,6 +165,14 @@ describe('useModal', () => {
       modal.close(result)
 
       await expect(promise).resolves.toEqual(result)
+    })
+
+    it('is white by default and red only when the caller asks for danger', () => {
+      modal.confirmWithOptions({ title: 'T', message: 'M', options })
+      expect(modal.state.confirmStyle).toBe('primary')
+
+      modal.confirmWithOptions({ title: 'T', message: 'M', options, confirmStyle: 'danger' })
+      expect(modal.state.confirmStyle).toBe('danger')
     })
   })
 

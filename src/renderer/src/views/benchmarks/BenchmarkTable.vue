@@ -22,6 +22,7 @@ import {
 } from '../../lib/benchmarkTable'
 import BenchmarkSessionName from './BenchmarkSessionName.vue'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 const props = defineProps<{
   table: BenchmarkTableModel
@@ -666,7 +667,8 @@ function toggleBaseline(id: string): void {
                   </MenuItem>
                   <MenuSeparator />
                   <MenuItem
-                    class="benchmarks__delete-record text-destructive data-highlighted:bg-destructive/12 data-highlighted:text-destructive"
+                    class="benchmarks__delete-record"
+                    :class="DESTRUCTIVE_MENU_ITEM_CLASS"
                     :aria-label="
                       t('benchmarks.deleteRecord', { workflow: row.benchmark.workflowName })
                     "

@@ -690,10 +690,17 @@ describe('StoragePane', () => {
       await flushPromises()
       const items = menuItems()
       const removeItem = items.find((i) => i.text().includes('Remove'))!
+      expect(removeItem.classes(), 'removing a folder keeps its files').not.toContain(
+        'text-destructive'
+      )
       await removeItem.trigger('click')
       await flushPromises()
       const modal = useModal()
       expect(modal.state.visible).toBe(true)
+      expect(modal.state.message).toBe(
+        "This won't delete any files. You can re-add the directory later from this list."
+      )
+      expect(modal.state.confirmStyle, 'removing a folder keeps its files').toBe('primary')
       modal.close(true)
       await flushPromises()
       const emitted = wrapper.emitted('update-field')!

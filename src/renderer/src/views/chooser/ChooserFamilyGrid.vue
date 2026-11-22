@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUpdate, useTemplateRef, type ComponentPublicInstance } from 'vue'
+import { onBeforeUpdate, useTemplateRef, type ComponentPublicInstance } from 'vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
-import { homeBuildTones } from '../../panel/home/homeBuild'
-import { useInstallationStore } from '../../stores/installationStore'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import type { Installation } from '../../types/ipc'
 
@@ -26,8 +24,6 @@ const emit = defineEmits<{
   'why-cloud': []
 }>()
 
-const installationStore = useInstallationStore()
-const tones = computed(() => homeBuildTones(props.installations, installationStore.installations))
 const autoStart = useAutoStartBuild()
 
 interface TileBox {
@@ -96,10 +92,9 @@ function unlockTileSize(el: Element): void {
       @leave-cancelled="unlockTileSize"
     >
       <ChooserInstallTile
-        v-for="(installation, index) in props.installations"
+        v-for="installation in props.installations"
         :key="`install:${installation.id}`"
         :installation="installation"
-        :tone="tones[index]"
         :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
         :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
         :auto-start="autoStart.startsOnOpen(installation.id)"

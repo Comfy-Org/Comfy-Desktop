@@ -4,9 +4,10 @@ import type { IpcMainInvokeEvent } from 'electron'
 import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
-import { isAppsPageSender } from '../../apps/appsPages'
+import { isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
+import { onRunsChanged } from '../../apps/localAppEvents'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
-import { localBuilds, openInComfy } from '../../apps/openInComfy'
+import { localBuilds, localBuildsForEach, openInComfy } from '../../apps/openInComfy'
 import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopLocalComfy,
@@ -21,8 +22,28 @@ export const APPS_LOCAL_CHANNELS = {
   fetch: 'apps-local:fetch',
   download: 'apps-local:download',
   openInComfy: 'apps-local:open-in-comfy',
-  builds: 'apps-local:builds'
+  builds: 'apps-local:builds',
+  buildsChanged: 'apps-local:builds-changed'
 } as const
+
+let latestAnnouncement = 0
+
+async function announceBuilds(): Promise<void> {
+  const announcement = ++latestAnnouncement
+  if (liveAppsPages().length === 0 || !(await areAppsEnabled())) return
+  const pages = liveAppsPages()
+  const asked = pages.map((page) => loadedAppPage(page))
+  const lists = await localBuildsForEach(asked.map((loaded) => loaded?.appId ?? null)).catch(
+    () => null
+  )
+  if (!lists || announcement !== latestAnnouncement) return
+  pages.forEach((page, index) => {
+    const builds = lists[index]
+    if (!builds || page.isDestroyed()) return
+    if (!isSamePage(loadedAppPage(page), asked[index] ?? null)) return
+    page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
+  })
+}
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
   return isAppsPageSender(event.sender, event.senderFrame) && (await areAppsEnabled())
@@ -81,7 +102,10 @@ export function registerAppsLocalHandlers(): void {
         : { opened: false, error: i18n.t('apps.local.notRunning') }
   )
 
-  ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> =>
-    (await isFromAppsPage(event)) ? localBuilds() : []
-  )
+  ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> => {
+    const caller = await callerUnchanged(event)
+    return caller ? localBuilds(caller.appId) : []
+  })
+
+  onRunsChanged(() => void announceBuilds())
 }

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { deviceKindForChassis } from '../../composables/useLocalDeviceKind'
-import { buildDeviceKind, homeBuildStatus, homeBuildTones, runsOnThisComputer } from './homeBuild'
+import { createI18n } from 'vue-i18n'
+import { appI18nOptions } from '../../lib/i18nOptions'
+import {
+  buildDeviceKind,
+  buildUsageLabel,
+  homeBuildDetail,
+  homeBuildStatus,
+  homeBuildTone
+} from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const build = (sourceCategory: string): Installation =>
@@ -35,29 +43,13 @@ describe('buildDeviceKind', () => {
   })
 })
 
-describe('homeBuildTones', () => {
-  const local = (id: string, createdAt: string): Installation =>
-    ({ id, name: id, sourceCategory: 'local', createdAt }) as unknown as Installation
-  const first = local('first', '2026-01-01T00:00:00Z')
-  const second = local('second', '2026-02-01T00:00:00Z')
-  const third = local('third', '2026-03-01T00:00:00Z')
-  const cloud = { id: 'cloud', name: 'Cloud', sourceCategory: 'cloud' } as unknown as Installation
-
-  it('gives each local build the color of its install order, whatever the list order', () => {
-    expect(homeBuildTones([third, cloud, first, second])).toEqual([
-      'ember',
-      'tide',
-      'ember',
-      'iris'
-    ])
-    expect(homeBuildTones([second, first, third])).toEqual(['iris', 'ember', 'ember'])
+describe('homeBuildTone', () => {
+  it.each(['local', 'remote'] as const)('gives every %s build the same purple tone', (category) => {
+    expect(homeBuildTone(build(category))).toBe('iris')
   })
 
-  it('keeps a build its color when the list shows only some builds', () => {
-    const everyBuild = [first, second, third, cloud]
-
-    expect(homeBuildTones([second], everyBuild)).toEqual(['iris'])
-    expect(homeBuildTones([third, second], everyBuild)).toEqual(['ember', 'iris'])
+  it('gives a cloud build its own tone', () => {
+    expect(homeBuildTone(build('cloud'))).toBe('tide')
   })
 })
 
@@ -78,20 +70,60 @@ describe('homeBuildStatus', () => {
   })
 })
 
-describe('runsOnThisComputer', () => {
-  it('is true for a running local build', () => {
-    expect(runsOnThisComputer(build('local'), 'running')).toBe(true)
+describe('buildUsageLabel', () => {
+  const NOW = new Date(2026, 10, 20, 15, 0).getTime()
+  const t = createI18n(appI18nOptions).global.t
+  const used = (sourceCategory: string, lastLaunchedAt?: number): Installation =>
+    ({ ...build(sourceCategory), lastLaunchedAt }) as Installation
+
+  it('says No setup needed on a Comfy Cloud that was never opened', () => {
+    expect(buildUsageLabel(used('cloud'), NOW, t, 'en')).toBe('No setup needed')
   })
 
-  it('is false for an opened Comfy Cloud, which runs no process here', () => {
-    expect(runsOnThisComputer(build('cloud'), 'running')).toBe(false)
+  it('says Never used on a local build that was never opened', () => {
+    expect(buildUsageLabel(used('local'), NOW, t, 'en')).toBe('Never used')
   })
 
-  it('is false for an opened remote server, which runs no process here', () => {
-    expect(runsOnThisComputer(build('remote'), 'running')).toBe(false)
+  it('says Never used on a remote server that was never opened', () => {
+    expect(buildUsageLabel(used('remote'), NOW, t, 'en')).toBe('Never used')
   })
 
-  it('is false for a local build at rest', () => {
-    expect(runsOnThisComputer(build('local'), 'ready')).toBe(false)
+  it('says when an opened Comfy Cloud was last used', () => {
+    expect(buildUsageLabel(used('cloud', NOW - 2 * 60 * 60_000), NOW, t, 'en')).toBe('Used 2h ago')
+  })
+})
+
+describe('homeBuildDetail', () => {
+  const t = createI18n(appI18nOptions).global.t
+  const local = (fields: Record<string, unknown>): Installation =>
+    ({
+      id: 'b',
+      name: 'Comfy Vanilla',
+      sourceCategory: 'local',
+      sourceLabel: 'ComfyBuilder',
+      ...fields
+    }) as unknown as Installation
+
+  it('shows the build release, not the source, while a custom build installs', () => {
+    const installing = local({ sourceId: 'comfybuilder', distributionVersion: '3' })
+    expect(homeBuildDetail(installing, t)).toBe('Build v3')
+  })
+
+  it('shows the ComfyUI version once a custom build knows it', () => {
+    const installed = local({
+      sourceId: 'comfybuilder',
+      distributionVersion: '3',
+      version: 'v0.3.75'
+    })
+    expect(homeBuildDetail(installed, t)).toBe('v0.3.75')
+  })
+
+  it('never shows ComfyBuilder for a custom build without a release', () => {
+    expect(homeBuildDetail(local({ sourceId: 'comfybuilder' }), t)).toBe('')
+  })
+
+  it('keeps the install method for a standard build without a version', () => {
+    const standard = local({ sourceId: 'standalone', sourceLabel: 'Standalone' })
+    expect(homeBuildDetail(standard, t)).toBe('Standalone')
   })
 })

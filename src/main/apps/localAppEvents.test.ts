@@ -37,12 +37,14 @@ import * as telemetry from '../lib/telemetry'
 import {
   _resetForTest,
   buildsWithRuns,
+  busyAppOn,
   COMFYUI_EXITED,
   errorClassOf,
   failRunsOn,
   finishRun,
   isFollowing,
   noteRunMessage,
+  onRunsChanged,
   RUN_FINISHED_EVENT,
   runAccepted,
   runEndFromHistory,
@@ -773,5 +775,121 @@ describe('setup', () => {
     setupStarted('start', APP).finished()
 
     expect(sent(SETUP_EVENT)).toEqual([])
+  })
+})
+
+describe('which app a build is busy with', () => {
+  beforeEach(() => _resetForTest())
+
+  it('names the app of the oldest run on the build, and nothing once its runs end', () => {
+    runAccepted('run-1', 'inst-1', 'remove-background', 1)
+    runAccepted('run-2', 'inst-1', 'sdr-to-hdr', 2)
+
+    expect(busyAppOn('inst-1')).toBe('remove-background')
+    expect(busyAppOn('inst-2')).toBeNull()
+
+    finishRun('run-1', { outcome: 'success', at: 3 })
+    expect(busyAppOn('inst-1')).toBe('sdr-to-hdr')
+    finishRun('run-2', { outcome: 'success', at: 4 })
+    expect(busyAppOn('inst-1')).toBeNull()
+  })
+
+  it('names the app whose run is working, never the app that asks', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-swap'))
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-swap')).toBeNull()
+  })
+
+  it('names the oldest queued run ahead of the asking app when none is working yet', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 3)
+
+    expect(busyAppOn('inst-1', 'product-ads')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'upscale')).toBe('product-ads')
+  })
+
+  it('never names an app queued behind the asking app, even while a run from elsewhere holds the build', () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('remove-background')
+  })
+
+  it("follows ComfyUI's queue numbers, not send times, including runs sent at the same moment", () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1, 11)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2, 10)
+    runAccepted('run-ads', 'inst-1', 'product-ads', 2, 12)
+
+    expect(busyAppOn('inst-1', 'product-swap')).toBeNull()
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1')).toBe('product-swap')
+  })
+
+  it('keeps the order runs were accepted in when they were sent at the same moment with no queue number', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 5)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 5)
+
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'product-ads')).toBeNull()
+  })
+
+  it('names nothing for the app whose own run the build is working on', () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-cutout'))
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('remove-background')
+  })
+
+  it('names nothing when the only runs on the build are the asking app own', () => {
+    runAccepted('run-1', 'inst-1', 'remove-background', 1)
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+  })
+
+  it('tells its watchers when the oldest run is dropped to keep the list short', () => {
+    for (let index = 0; index < 200; index += 1)
+      runAccepted(`run-${index}`, 'inst-1', 'product-ads', index)
+    const watcher = vi.fn()
+    onRunsChanged(watcher)
+
+    runAccepted('run-200', 'inst-2', 'product-swap', 200)
+
+    expect(isFollowing('run-0')).toBe(false)
+    expect(watcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells its watchers when a queued run starts working', () => {
+    runAccepted('run-1', 'inst-1', 'product-ads', 1)
+    const watcher = vi.fn()
+    onRunsChanged(watcher)
+
+    noteRunMessage(message('execution_start', { timestamp: 2 }, 'run-1'))
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-1'))
+
+    expect(watcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells its watchers when a run starts or ends', () => {
+    const watcher = vi.fn()
+    const stop = onRunsChanged(watcher)
+
+    runAccepted('run-1', 'inst-1', 'remove-background', 1)
+    finishRun('run-1', { outcome: 'success', at: 2 })
+    expect(watcher).toHaveBeenCalledTimes(2)
+
+    stop()
+    runAccepted('run-2', 'inst-1', 'remove-background', 3)
+    expect(watcher).toHaveBeenCalledTimes(2)
   })
 })

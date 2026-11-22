@@ -180,6 +180,20 @@ describe('the script that tells whether ComfyUI has finished starting', () => {
     expect(stateOf(page(opening))).toBe('starting')
   })
 
+  it('is starting until ComfyUI has put back the tabs from the last session', () => {
+    const restoringTabs = {
+      ...app,
+      extensionManager: { spinner: false, workflow: { ...idle, tabsRestored: false } }
+    }
+    const restoredTabs = {
+      ...app,
+      extensionManager: { spinner: false, workflow: { ...idle, tabsRestored: true } }
+    }
+
+    expect(stateOf(page(restoringTabs))).toBe('starting')
+    expect(stateOf(page(restoredTabs))).toBe('ready')
+  })
+
   it('has no workflow until ComfyUI has opened its first one', () => {
     const empty = {
       ...app,

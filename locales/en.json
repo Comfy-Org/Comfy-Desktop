@@ -26,7 +26,7 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
-    "signInBody": "Sync and run on Comfy Cloud",
+    "signInBody": "Start on Comfy Cloud for free",
     "newBuild": "New build",
     "noBuilds": "No builds yet",
     "crashed": "Crashed",
@@ -47,6 +47,13 @@
     "emptyBody": "New apps will show up here.",
     "noMatchesHint": "Try another word.",
     "allApps": "All apps",
+    "switchWhileRunning": {
+      "title": "Switch to {app}?",
+      "body": "{current} is still making something. {count} other apps are already running, so switching stops it.",
+      "bodyUnsure": "Desktop could not check whether an app is still making something. Switching may stop it.",
+      "switch": "Switch",
+      "stay": "Stay"
+    },
     "request": {
       "bandTitle": "Missing an app?",
       "bandBody": "Your ideas decide which apps we build next.",
@@ -82,6 +89,17 @@
       "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
       "openUnreadable": "Comfy Desktop could not read this file. Try again.",
       "openNotTaken": "ComfyUI did not open the workflow."
+    },
+    "closeWhileRunning": {
+      "title": "Close anyway?",
+      "bodyOne": "{app} is still making something. Closing stops it.",
+      "bodyMany": "{count} app is still making something. Closing stops it. | {count} apps are still making something. Closing stops them.",
+      "close": "Close",
+      "cancel": "Cancel"
+    },
+    "rail": {
+      "running": "{app}, making something",
+      "finished": "{app}, ready"
     }
   },
   "assets": {
@@ -197,7 +215,14 @@
     "autoStartOn": "Auto start",
     "buildRunning": "Running",
     "buildStarting": "Starting",
-    "buildReady": "Ready",
+    "buildNeverUsed": "Never used",
+    "cloudNoSetupNeeded": "No setup needed",
+    "buildUsedJustNow": "Used just now",
+    "buildUsedMinutesAgo": "Used {count}m ago",
+    "buildUsedHoursAgo": "Used {count}h ago",
+    "buildUsedYesterday": "Used yesterday",
+    "buildUsedDaysAgo": "Used {count}d ago",
+    "buildUsedOnDate": "Used {date}",
     "buildLogInToUse": "Log in to use",
     "buildDidntStart": "Didn't start",
     "buildCrashed": "Crashed",
@@ -288,7 +313,8 @@
     "filterLocal": "Local",
     "filterCloud": "Cloud",
     "filterRemote": "Remote",
-    "updatePill": "Update",
+    "updateAvailableOpen": "Update available: open Update for {name}",
+    "updateShort": "Update",
     "migratePill": "Migrate",
     "openInstall": "Open",
     "manageInstall": "Manage",
@@ -297,7 +323,7 @@
     "menuMigrate": "Migrate to Standalone",
     "menuRestoreSnapshot": "Restore snapshot",
     "menuExportSnapshot": "Export snapshot",
-    "menuRevealInFolder": "Open Folder",
+    "menuRevealInFolder": "Open folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running build first.",
     "gatedReasonStopping": "Wait for the build to stop.",
@@ -369,7 +395,16 @@
     "betaNoticeOffTitleNamed": "The {feature} beta is off",
     "betaNoticeOffBodyNamed": "We've turned the {feature} beta off for this build. You can manage beta features in Settings.",
     "betaNoticeDismiss": "Got it",
-    "betaNoticeSettings": "Settings"
+    "betaNoticeSettings": "Settings",
+    "runningMany": "{count} running",
+    "openRunning": "Open {app}",
+    "showRunning": "Show running apps",
+    "appReady": "{app} is ready",
+    "ready": "Ready",
+    "readyMany": "{count} apps are ready",
+    "showReady": "Show ready apps",
+    "appsMany": "{count} apps",
+    "showApps": "Show apps"
   },
   "comfyUISettings": {
     "title": "Settings",
@@ -772,7 +807,7 @@
     "detecting": "Detecting…",
     "noDetected": "No known install detected",
     "trackInstallation": "Add build",
-    "cannotTrack": "Cannot Add Build",
+    "cannotTrack": "Couldn't add this build",
     "version": "Version",
     "repository": "Repository",
     "branch": "Branch"
@@ -785,10 +820,11 @@
     "unknownError": "An unknown error occurred",
     "completedSuccess": "Completed successfully",
     "updatedSuccess": "Updated successfully",
-    "completedError": "Operation failed",
+    "completedError": "Couldn't finish",
+    "completedErrorDetail": "Comfy Desktop stopped before this finished. The details are below.",
     "completedCancelled": "Operation was cancelled",
     "returnToDashboard": "Back to Home",
-    "reboot": "Reboot",
+    "reboot": "Try again",
     "restartComfyui": "Restart ComfyUI",
     "successChoiceGoDashboard": "Back to Home",
     "successChoiceOpen": "Open build",
@@ -865,6 +901,7 @@
     "autoUpdate": "Check for updates on startup",
     "autoInstallUpdates": "Automatically install Desktop updates",
     "appBehavior": "App behavior",
+    "generalSection": "General",
     "confirmBeforeClosingWindow": "Confirm before closing a window",
     "confirmBeforeClosingWindowDescription": "Ask before closing a window when that stops ComfyUI or quits Comfy Desktop.",
     "warnBeforeRunningMultipleInstances": "Warn before running multiple builds",
@@ -1050,6 +1087,7 @@
     "noGpu": "No GPU acceleration",
     "unsupported": "Not supported",
     "versionValue": "ComfyUI {version}",
+    "versionValueNightly": "ComfyUI {version} (nightly)",
     "download": "{size} download",
     "installSpaceTip": "Allow about {required} of disk space to unpack and install the {download} download.",
     "unavailable": "Couldn't reach the ComfyUI download server. Check your connection, or pick a build with Change.",
@@ -1146,7 +1184,8 @@
     "deleteConfirmDetail": "Other installs are not affected.",
     "untrack": "Forget",
     "untrackConfirmTitle": "Forget build",
-    "untrackConfirmMessage": "This will remove the build from the app. The files will not be deleted.",
+    "untrackConfirmMessage": "This removes the build from the app. Its folder stays on your computer, and you can add it again with Add existing build.",
+    "untrackRemoteConfirmMessage": "This removes the connection from the app. The server isn't changed, and you can connect again with Connect to a server.",
     "rename": "Rename",
     "renameTitle": "Rename build",
     "renameMessage": "Enter a new name for this build."
@@ -1734,7 +1773,12 @@
     "deleteLocked": "A file could not be deleted because it is in use by another program. Close any applications that may have files open in this directory and try again.\n{path}",
     "deleteLockedBy": "A file could not be deleted because it is in use by: {processes}. Close these applications and try again.\n{path}",
     "deleteLockedUnidentified": "A file could not be deleted because it is in use by another program, and Comfy Desktop could not identify which one. Close any applications that may have files open in this directory and try again.\n{path}",
-    "cannotAdd": "Cannot Add",
+    "cannotAdd": "Couldn't add this build",
+    "cannotAddDetail": "Something went wrong while adding it. Try again.",
+    "cannotAddLocationDetail": "Something went wrong while adding it. Check the install location, then try again.",
+    "changeLocation": "Change location",
+    "cannotUseFolder": "Couldn't use this folder",
+    "locationCheckFailed": "Couldn't check this folder. Try again, or pick another location.",
     "dirNotExist": "Directory does not exist: {path}",
     "cannotOpenDir": "Could not open directory: {error}",
     "launchCancelled": "Launch cancelled.",
@@ -1911,6 +1955,8 @@
     "preparingExampleWorkflow": "Preparing workflow and downloading required models…",
     "importFailed": "Could not import the workflow.",
     "deleteWorkflow": "Delete workflow",
+    "deleteWorkflowTitle": "Delete {workflow}?",
+    "deleteWorkflowMessage": "This removes it from Performance tests. The copy saved for Performance tests is deleted if no run has used it yet. Your original file and results from earlier runs are kept.",
     "deleteFailed": "Could not delete the workflow.",
     "run": "Run",
     "runNeedsBuild": "Select a build first.",
@@ -2180,5 +2226,12 @@
     "label": "While you wait",
     "cloudFailedTitle": "Couldn't open Comfy Cloud",
     "cloudFailedMessage": "Check your connection and try again from Home."
+  },
+  "appsQuit": {
+    "message": "Quit anyway?",
+    "detailOne": "{app} is still making something. Quitting stops it.",
+    "detailMany": "{count} apps are still making something. Quitting stops them.",
+    "quit": "Quit",
+    "cancel": "Cancel"
   }
 }

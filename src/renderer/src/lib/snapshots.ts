@@ -1,4 +1,5 @@
 import type { SnapshotDiffResult, SnapshotListData, SnapshotSummary } from '../types/ipc'
+import { formatRelativeFromMs } from './datetime'
 
 type Translator = (key: string, params?: Record<string, unknown>) => string
 
@@ -77,15 +78,7 @@ export function triggerClass(trigger: string): string {
 }
 
 export function formatRelative(iso: string, t: Translator): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return t('snapshots.timeJustNow')
-  if (mins < 60) return t('snapshots.timeMinutesAgo', { count: mins })
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return t('snapshots.timeHoursAgo', { count: hours })
-  const days = Math.floor(hours / 24)
-  if (days < 30) return t('snapshots.timeDaysAgo', { count: days })
-  return new Date(iso).toLocaleDateString()
+  return formatRelativeFromMs(new Date(iso).getTime(), t)
 }
 
 export function copyReasonLabel(reason: string, t: Translator): string {

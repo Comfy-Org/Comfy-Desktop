@@ -265,6 +265,15 @@ describe('BuildOverview — PyTorch card', () => {
 })
 
 describe('BuildOverview — facts', () => {
+  it('places Python right after PyTorch, before the size on disk', () => {
+    const sections = mountOverview().findAll('.build-overview-facts > section')
+    expect(sections.slice(0, 3).map((s) => s.attributes('data-testid'))).toEqual([
+      'build-overview-pytorch',
+      'build-overview-python',
+      'build-overview-disk'
+    ])
+  })
+
   it('shows the size on disk with the free space, and Python with its source', () => {
     const w = mountOverview()
     const disk = w.get('[data-testid="build-overview-disk"]').text()

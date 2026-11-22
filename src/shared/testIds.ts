@@ -52,12 +52,14 @@ export const TID = {
 
   lifecycleRelaunch: 'lifecycle-relaunch',
   lifecycleReturnDashboard: 'lifecycle-return-dashboard',
+  lifecycleViewLogs: 'lifecycle-view-logs',
 
   consoleTerminal: 'console-terminal',
   consoleSessionEnded: 'console-session-ended',
   consoleRestart: 'console-restart',
 
   progressErrorMessage: 'progress-error-message',
+  progressErrorDetail: 'progress-error-detail',
   progressLogs: 'progress-logs',
   progressReboot: 'progress-reboot',
   progressBack: 'progress-back',

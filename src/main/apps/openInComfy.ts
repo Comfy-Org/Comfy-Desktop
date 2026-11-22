@@ -13,6 +13,8 @@ import * as i18n from '../lib/i18n'
 import type { ActionResult } from '../lib/ipc/sessionActions/types'
 import { _hasActiveLaunch, _onLaunch, _runningSessions } from '../lib/ipc/shared'
 import type { SessionInfo } from '../lib/ipc/shared'
+import { titleForListedApp } from './appsCatalog'
+import { busyAppOn } from './localAppEvents'
 import { chooseLocalBuild, runningPortOf, usableLocalBuilds } from './localBuild'
 import type { LocalBuild } from './localBuild'
 import { launchOnce, launchQuietly, otherLaunchSettled, pageBuildId } from './localComfy'
@@ -70,15 +72,42 @@ function refusalText(refusal: OpenRefusal): string {
   }
 }
 
-export async function localBuilds(): Promise<ComfyDesktopLocalBuild[]> {
-  return (await usableLocalBuilds())
+function describeBuilds(
+  builds: LocalBuild[],
+  askingAppId: string | null
+): ComfyDesktopLocalBuild[] {
+  return [...builds]
     .sort((a, b) => b.lastLaunchedAt - a.lastLaunchedAt)
     .map((build) => ({
       id: build.id,
       name: build.name,
       ...(build.version === null ? {} : { version: build.version }),
-      running: build.port !== null
+      running: build.port !== null,
+      ...busyWithOf(build.id, askingAppId)
     }))
+}
+
+export async function localBuilds(
+  askingAppId: string | null = null
+): Promise<ComfyDesktopLocalBuild[]> {
+  return describeBuilds(await usableLocalBuilds(), askingAppId)
+}
+
+export async function localBuildsForEach(
+  askingAppIds: readonly (string | null)[]
+): Promise<ComfyDesktopLocalBuild[][]> {
+  const builds = await usableLocalBuilds()
+  return askingAppIds.map((askingAppId) => describeBuilds(builds, askingAppId))
+}
+
+function busyWithOf(
+  buildId: string,
+  askingAppId: string | null
+): Pick<ComfyDesktopLocalBuild, 'busyWith'> {
+  const appId = busyAppOn(buildId, askingAppId)
+  if (appId === null) return {}
+  const title = titleForListedApp(appId)
+  return { busyWith: title === null ? { appId } : { appId, title } }
 }
 
 function pickLocal(builds: LocalBuild[], wanted: string | null): LocalBuild | null {
