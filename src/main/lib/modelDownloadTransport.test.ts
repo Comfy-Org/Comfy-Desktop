@@ -32,6 +32,9 @@ vi.mock('../settings', () => ({
 }))
 
 vi.mock('electron', () => ({
+  session: {
+    fromPartition: vi.fn((partition: string) => ({ __partition: partition }))
+  },
   net: {
     request: vi.fn((options: { url: string } & Record<string, unknown>) => {
       const req = Object.assign(new EventEmitter(), {
@@ -1169,6 +1172,9 @@ describe('segmented download', () => {
     maxAttempts: 3
   }
 
+  const CDN_URL = 'https://cdn.example.com/signed?expires=1'
+  const callerSession = { __fake: 'caller' } as unknown as Electron.Session
+
   const probeHeaders = {
     'content-length': '10',
     'accept-ranges': 'bytes',
@@ -1363,13 +1369,14 @@ describe('segmented download', () => {
   it('retries a failed range from the original URL so an expired signed redirect is resolved again', async () => {
     const { handle } = startSegmented()
     const [, first, second] = requests
-    first!.emit('redirect', 302, 'GET', 'https://cdn.example.com/signed?expires=1')
-    expect(first!.followRedirect).toHaveBeenCalled()
-    first!.emit('response', makeResponse(403, {}))
-
+    first!.emit('redirect', 302, 'GET', CDN_URL)
     expect(requests).toHaveLength(4)
-    const retried = requests[3]!
+    requests[3]!.emit('error', new Error('net::ERR_CONNECTION_RESET'))
+
+    expect(requests).toHaveLength(5)
+    const retried = requests[4]!
     expect(retried.__url).toBe(URL_MAIN)
+    expect(retried.__options['session']).toBeUndefined()
     expect(headerCalls(retried)).toMatchObject({ Range: 'bytes=0-4', 'If-Range': '"v1"' })
 
     const head = rangeResponse(0, 4)
@@ -1383,6 +1390,101 @@ describe('segmented download', () => {
     expect(outcome.outcome).toBe('completed')
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
   })
+
+  it('fetches a part that redirects to another host on its own session without cookies', async () => {
+    const { handle } = startSegmented({ session: callerSession })
+    const [, first, second] = requests
+    expect(first!.__options['session']).toBe(callerSession)
+    expect(first!.__options['useSessionCookies']).toBe(true)
+
+    first!.emit('redirect', 302, 'GET', CDN_URL)
+    second!.emit('redirect', 302, 'GET', CDN_URL)
+
+    expect(first!.abort).toHaveBeenCalled()
+    expect(first!.followRedirect).not.toHaveBeenCalled()
+    expect(requests).toHaveLength(5)
+    const [, , , headPart, tailPart] = requests
+    expect(headPart!.__url).toBe(CDN_URL)
+    expect(headPart!.__options['session']).toEqual({ __partition: 'comfy-download-part-0' })
+    expect(headPart!.__options['useSessionCookies']).toBeUndefined()
+    expect(headPart!.__options['redirect']).toBe('manual')
+    expect(headerCalls(headPart!)).toMatchObject({ Range: 'bytes=0-4', 'If-Range': '"v1"' })
+    expect(tailPart!.__options['session']).toEqual({ __partition: 'comfy-download-part-1' })
+    expect(headerCalls(tailPart!)).toMatchObject({ Range: 'bytes=5-9', 'If-Range': '"v1"' })
+
+    const head = rangeResponse(0, 4)
+    headPart!.emit('response', head)
+    head.emit('data', Buffer.from('01234'))
+    const tail = rangeResponse(5, 9)
+    tailPart!.emit('response', tail)
+    tail.emit('data', Buffer.from('56789'))
+
+    const outcome = await handle.done
+    expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
+
+  it("keeps a part on the caller's session when it is answered by the original host", async () => {
+    const { handle } = startSegmented({ session: callerSession })
+    const [, first, second] = requests
+
+    first!.emit('redirect', 307, 'GET', 'https://example.com/api/resolve-cache/model.safetensors')
+    expect(first!.followRedirect).toHaveBeenCalled()
+    expect(requests).toHaveLength(3)
+
+    const head = rangeResponse(0, 4)
+    first!.emit('response', head)
+    head.emit('data', Buffer.from('01234'))
+    const tail = rangeResponse(5, 9)
+    second!.emit('response', tail)
+    tail.emit('data', Buffer.from('56789'))
+
+    const outcome = await handle.done
+    expect(outcome.outcome).toBe('completed')
+    expect(requests).toHaveLength(3)
+    for (const part of [first!, second!]) {
+      expect(part.__options['session']).toBe(callerSession)
+      expect(part.__options['useSessionCookies']).toBe(true)
+    }
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
+
+  it.each([401, 403])(
+    "falls back once to the caller's session when a part session gets HTTP %i",
+    async (status) => {
+      const { handle } = startSegmented({ session: callerSession })
+      const [, first, second] = requests
+      first!.emit('redirect', 302, 'GET', CDN_URL)
+      const partRequest = requests[3]!
+      partRequest.emit('response', makeResponse(status, {}))
+
+      expect(partRequest.abort).toHaveBeenCalled()
+      expect(requests).toHaveLength(5)
+      const fallback = requests[4]!
+      expect(fallback.__url).toBe(URL_MAIN)
+      expect(fallback.__options['session']).toBe(callerSession)
+      expect(fallback.__options['useSessionCookies']).toBe(true)
+      expect(headerCalls(fallback)).toMatchObject({ Range: 'bytes=0-4', 'If-Range': '"v1"' })
+
+      fallback.emit('redirect', 302, 'GET', CDN_URL)
+      expect(fallback.followRedirect).toHaveBeenCalled()
+      expect(requests).toHaveLength(5)
+
+      const head = rangeResponse(0, 4)
+      fallback.emit('response', head)
+      head.emit('data', Buffer.from('01234'))
+      second!.emit('redirect', 302, 'GET', CDN_URL)
+      expect(second!.followRedirect).toHaveBeenCalled()
+      expect(requests).toHaveLength(5)
+      const tail = rangeResponse(5, 9)
+      second!.emit('response', tail)
+      tail.emit('data', Buffer.from('56789'))
+
+      const outcome = await handle.done
+      expect(outcome.outcome).toBe('completed')
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+    }
+  )
 
   it('keeps staged segments after a range fails on every attempt', async () => {
     const { handle } = startSegmented()

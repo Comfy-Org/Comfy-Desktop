@@ -1,4 +1,4 @@
-import { net } from 'electron'
+import { net, session as electronSession } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
@@ -62,6 +62,19 @@ export interface ModelTransferHandle {
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000
 const MAX_REDIRECTS = 10
 const USER_AGENT = 'ComfyUI-Desktop-2'
+const PART_PARTITION_PREFIX = 'comfy-download-part-'
+
+function partSessionFor(slot: number): Electron.Session {
+  return electronSession.fromPartition(`${PART_PARTITION_PREFIX}${slot}`, { cache: false })
+}
+
+function originOf(value: string): string | null {
+  try {
+    return new URL(value).origin
+  } catch {
+    return null
+  }
+}
 
 function headerString(value: string | string[] | undefined): string | undefined {
   if (value === undefined) return undefined
@@ -212,45 +225,94 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
 
   let attemptGen = 0
   let segmentsAllowed = true
+  let partSessionsRefused = false
 
   const openRangeRequest =
     (sourceUrl: string) =>
-    (range: string, ifRange: string, handlers: SegmentRequestHandlers): SegmentRequest => {
-      const request = net.request({
-        url: sourceUrl,
-        ...(session ? { session, useSessionCookies: true } : {}),
-        redirect: 'manual'
-      })
+    (
+      range: string,
+      ifRange: string,
+      handlers: SegmentRequestHandlers,
+      slot: number
+    ): SegmentRequest => {
+      const sourceOrigin = originOf(sourceUrl)
       let redirectsLeft = MAX_REDIRECTS
-      request.setHeader('User-Agent', USER_AGENT)
-      request.setHeader('Range', range)
-      request.setHeader('If-Range', ifRange)
-      request.on('redirect', (_status, _method, redirectUrl) => {
-        redirectsLeft--
-        if (redirectsLeft < 0) {
-          handlers.onError(new Error('too many redirects'))
-          return
-        }
-        if (!redirectUrl) {
-          handlers.onError(new Error('empty redirect location'))
-          return
-        }
+      let current: Electron.ClientRequest | null = null
+      let closed = false
+
+      const drop = (request: Electron.ClientRequest): void => {
         try {
-          request.followRedirect()
-        } catch (err) {
-          handlers.onError(err as Error)
-        }
-      })
-      request.on('response', (response) =>
-        handlers.onResponse(response as unknown as SegmentResponse)
-      )
-      request.on('error', (err: Error) => handlers.onError(err))
-      request.end()
+          request.abort()
+        } catch {}
+      }
+
+      const send = (target: string, onPartSession: boolean): void => {
+        const request = net.request({
+          url: target,
+          ...(onPartSession
+            ? { session: partSessionFor(slot) }
+            : session
+              ? { session, useSessionCookies: true }
+              : {}),
+          redirect: 'manual'
+        })
+        current = request
+        const live = (): boolean => !closed && current === request
+        request.setHeader('User-Agent', USER_AGENT)
+        request.setHeader('Range', range)
+        request.setHeader('If-Range', ifRange)
+        request.on('redirect', (_status, _method, redirectUrl) => {
+          if (!live()) return
+          redirectsLeft--
+          if (redirectsLeft < 0) {
+            handlers.onError(new Error('too many redirects'))
+            return
+          }
+          if (!redirectUrl) {
+            handlers.onError(new Error('empty redirect location'))
+            return
+          }
+          const nextOrigin = originOf(redirectUrl)
+          if (
+            !onPartSession &&
+            !partSessionsRefused &&
+            sourceOrigin &&
+            nextOrigin &&
+            nextOrigin !== sourceOrigin
+          ) {
+            drop(request)
+            send(redirectUrl, true)
+            return
+          }
+          try {
+            request.followRedirect()
+          } catch (err) {
+            handlers.onError(err as Error)
+          }
+        })
+        request.on('response', (response) => {
+          if (!live()) return
+          if (onPartSession && (response.statusCode === 401 || response.statusCode === 403)) {
+            partSessionsRefused = true
+            drop(request)
+            redirectsLeft = MAX_REDIRECTS
+            send(sourceUrl, false)
+            return
+          }
+          handlers.onResponse(response as unknown as SegmentResponse)
+        })
+        request.on('error', (err: Error) => {
+          if (!live()) return
+          handlers.onError(err)
+        })
+        request.end()
+      }
+
+      send(sourceUrl, false)
       return {
         abort: () => {
-          try {
-            request.abort()
-          } catch {}
+          closed = true
+          if (current) drop(current)
         }
       }
     }

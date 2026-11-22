@@ -83,7 +83,12 @@ export interface SegmentedRunOptions {
   validator: SegmentValidator
   idleTimeoutMs: number
   tuning: SegmentTuning
-  openRange(range: string, ifRange: string, handlers: SegmentRequestHandlers): SegmentRequest
+  openRange(
+    range: string,
+    ifRange: string,
+    handlers: SegmentRequestHandlers,
+    slot: number
+  ): SegmentRequest
   persist(segments: StagedSegment[]): void
   onProgress(receivedBytes: number): void
   onComplete(): void
@@ -96,6 +101,7 @@ export interface SegmentedRun {
 }
 
 interface SegmentState {
+  slot: number
   segment: StagedSegment
   received: number
   queued: number
@@ -139,7 +145,8 @@ function syncData(fd: number): Promise<void> {
 
 export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
   const { fd, totalBytes, validator, idleTimeoutMs, tuning } = opts
-  const states: SegmentState[] = opts.segments.map((segment) => ({
+  const states: SegmentState[] = opts.segments.map((segment, slot) => ({
+    slot,
     segment: { ...segment },
     received: segment.done,
     queued: 0,
@@ -381,16 +388,21 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     const stale = (): boolean => stopped || gen !== state.gen
     let request: SegmentRequest
     try {
-      request = opts.openRange(`bytes=${from}-${end}`, validator.value, {
-        onResponse: (response) => {
-          if (stale()) return
-          acceptResponse(state, gen, from, response)
+      request = opts.openRange(
+        `bytes=${from}-${end}`,
+        validator.value,
+        {
+          onResponse: (response) => {
+            if (stale()) return
+            acceptResponse(state, gen, from, response)
+          },
+          onError: (err) => {
+            if (stale() || state.networkDone) return
+            retry(state, `Download failed: ${err.message}`)
+          }
         },
-        onError: (err) => {
-          if (stale() || state.networkDone) return
-          retry(state, `Download failed: ${err.message}`)
-        }
-      })
+        state.slot
+      )
     } catch (err) {
       report({ kind: 'retain', message: `Download failed: ${(err as Error).message}` })
       return
