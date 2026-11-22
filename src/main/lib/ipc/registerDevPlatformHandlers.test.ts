@@ -48,7 +48,12 @@ const mocks = vi.hoisted(() => ({
   translate: vi.fn((key: string) => key),
   endViewGrants: vi.fn(),
   allowDesktopWorkspace: vi.fn(),
-  creditBalanceAuthChanged: vi.fn()
+  creditBalanceAuthChanged: vi.fn(),
+  cloudAuthChanged: vi.fn()
+}))
+
+vi.mock('../cloudAuthEvents', () => ({
+  cloudAuthEvents: { emit: mocks.cloudAuthChanged }
 }))
 
 vi.mock('./registerCreditBalanceHandlers', () => ({
@@ -359,6 +364,16 @@ describe('registerDevPlatformHandlers', () => {
     await handler('comfybuilder:signOut')({})
 
     expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledTimes(2)
+  })
+
+  it('tells the rest of main the sign-in changed, on sign-in and on sign-out', async () => {
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'ws-1' })
+
+    await handler('comfybuilder:signIn')({})
+    expect(mocks.cloudAuthChanged).toHaveBeenCalledExactlyOnceWith('changed')
+
+    await handler('comfybuilder:signOut')({})
+    expect(mocks.cloudAuthChanged).toHaveBeenCalledTimes(2)
   })
 
   it('signOut clears the session and broadcasts signed-out', async () => {

@@ -3,12 +3,28 @@ import type { WebContents, WebFrameMain } from 'electron'
 import { isInAppsScope } from '../../shared/appsLocation'
 import { currentAppsLocation } from './appsConfig'
 
-const hostedPages = new Set<WebContents>()
+export type AppsPageAdmits = () => Promise<boolean>
 
-export function registerAppsPage(contents: WebContents): () => void {
-  hostedPages.add(contents)
+const admitsAnyPage: AppsPageAdmits = async () => true
+const hostedPages = new Map<WebContents, AppsPageAdmits>()
+
+export function registerAppsPage(
+  contents: WebContents,
+  admits: AppsPageAdmits = admitsAnyPage
+): () => void {
+  hostedPages.set(contents, admits)
   return () => {
     hostedPages.delete(contents)
+  }
+}
+
+export async function appsPageAdmits(contents: WebContents): Promise<boolean> {
+  const admits = hostedPages.get(contents)
+  if (!admits) return false
+  try {
+    return (await admits()) && hostedPages.get(contents) === admits
+  } catch {
+    return false
   }
 }
 
@@ -25,7 +41,7 @@ export function isAppsPageSender(sender: WebContents, senderFrame: WebFrameMain 
 
 export function liveAppsPages(): WebContents[] {
   const location = currentAppsLocation()
-  return [...hostedPages].filter(
+  return [...hostedPages.keys()].filter(
     (contents) => !contents.isDestroyed() && isInAppsScope(location, contents.getURL())
   )
 }

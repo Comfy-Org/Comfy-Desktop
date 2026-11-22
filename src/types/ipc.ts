@@ -176,6 +176,14 @@ export interface AppCard {
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
 
+export type DraftAppRequest =
+  | { kind: 'ask'; appId: string; token: string; title: string; message: string }
+  | { kind: 'refused'; title: string; message: string }
+  | { kind: 'open'; card: AppCard }
+
+export type DraftAppPasteAnswer =
+  { kind: 'asked' } | { kind: 'refused'; title: string; message: string }
+
 export interface AppRun {
   appId: string
   running: boolean
@@ -192,10 +200,12 @@ export interface TitleBarApps {
   ready: RunningApp[]
 }
 
-export interface AppSwitchStop {
+export interface DraftClosingStop {
   appTitle: string
-  otherRuns: number
+  closesDraft: true
 }
+
+export type AppSwitchStop = { appTitle: string; otherRuns: number } | DraftClosingStop
 
 export interface AppPagePlacement {
   x: number
@@ -1335,6 +1345,11 @@ export interface ElectronApi {
     callback: (appId: string | null, status: AppPageStatus) => void
   ): () => void
   onAppPageClosed(callback: () => void): () => void
+  onAppBackToListAsked(callback: (appId: string, stop: DraftClosingStop) => void): () => void
+  closeAppPage(appId: string): void
+  onAppsListChanged(callback: () => void): () => void
+  onOpenDraftApp(callback: (request: DraftAppRequest) => void): () => void
+  acceptDraftApp(token: string): Promise<DraftAppRequest | null>
   onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
   sendAppOutputAction(action: AppOutputAction): void
   sendAppRequest(text: string): Promise<boolean>

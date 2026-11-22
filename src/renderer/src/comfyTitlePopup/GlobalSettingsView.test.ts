@@ -25,6 +25,8 @@ interface BridgeState {
   installUpdateCalls: number
   removeAppDataCalls: RemoveAppDataOptions[]
   closeCalls: number
+  canOpenDraftApps: boolean
+  authChanged: (() => void) | null
 }
 
 function installMockBridge(): BridgeState {
@@ -39,7 +41,9 @@ function installMockBridge(): BridgeState {
     downloadUpdateCalls: 0,
     installUpdateCalls: 0,
     removeAppDataCalls: [],
-    closeCalls: 0
+    closeCalls: 0,
+    canOpenDraftApps: false,
+    authChanged: null
   }
   const bridge = {
     close: () => {
@@ -76,6 +80,13 @@ function installMockBridge(): BridgeState {
     globalSettingsSetLastCheckedAt: () => {},
     globalSettingsRemoveAppData: (options: RemoveAppDataOptions) => {
       state.removeAppDataCalls.push({ ...options })
+    },
+    globalSettingsCanOpenDraftApps: async () => state.canOpenDraftApps,
+    onGlobalSettingsAuthChanged: (cb: () => void) => {
+      state.authChanged = cb
+      return () => {
+        if (state.authChanged === cb) state.authChanged = null
+      }
     }
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
@@ -787,6 +798,97 @@ describe('GlobalSettingsView', () => {
     expect(wrapper.find('.gs-logs-btn').text()).toContain('Open logs folder')
     await wrapper.find('.gs-logs-btn').trigger('click')
     expect(bridge.openLogsFolderCalls).toBe(1)
+  })
+
+  describe('Development tab', () => {
+    const tabLabels = (wrapper: ReturnType<typeof mountView>): string[] =>
+      wrapper.findAll('.gs-tab').map((tab) => tab.text())
+
+    it('stays hidden when Desktop main does not offer it', async () => {
+      installMockBridge()
+      const wrapper = mountView()
+      await flushPromises()
+      expect(tabLabels(wrapper)).not.toContain('Development')
+    })
+
+    it('comes last, with the draft app address field, when Desktop main offers it', async () => {
+      const bridge = installMockBridge()
+      bridge.canOpenDraftApps = true
+      const wrapper = mountView()
+      await flushPromises()
+      expect(tabLabels(wrapper).at(-1)).toBe('Development')
+
+      await wrapper
+        .findAll('.gs-tab')
+        .find((tab) => tab.text() === 'Development')!
+        .trigger('keydown', { key: 'Enter' })
+      await nextTick()
+      expect(wrapper.get('.gs-micro-title').text()).toBe('Draft apps')
+      expect(wrapper.get('.gs-draft-app-label').text()).toBe('App address')
+      expect(wrapper.find('.gs-draft-app-hint').exists()).toBe(false)
+    })
+
+    it('appears once the person signs in while settings is open', async () => {
+      const bridge = installMockBridge()
+      const wrapper = mountView()
+      await flushPromises()
+      expect(tabLabels(wrapper)).not.toContain('Development')
+
+      bridge.canOpenDraftApps = true
+      bridge.authChanged?.()
+      await flushPromises()
+
+      expect(tabLabels(wrapper).at(-1)).toBe('Development')
+    })
+
+    it('goes away, back to General, once the person signs out while on it', async () => {
+      const bridge = installMockBridge()
+      bridge.canOpenDraftApps = true
+      const wrapper = mountView()
+      await flushPromises()
+      await wrapper
+        .findAll('.gs-tab')
+        .find((tab) => tab.text() === 'Development')!
+        .trigger('keydown', { key: 'Enter' })
+      await nextTick()
+
+      bridge.canOpenDraftApps = false
+      bridge.authChanged?.()
+      await flushPromises()
+
+      expect(tabLabels(wrapper)).not.toContain('Development')
+      expect(wrapper.find('.gs-tab.active').text()).toBe('General')
+    })
+
+    it('stops listening for sign-in changes once settings closes', async () => {
+      const bridge = installMockBridge()
+      const wrapper = mountView()
+      await flushPromises()
+      expect(bridge.authChanged).not.toBeNull()
+
+      wrapper.unmount()
+
+      expect(bridge.authChanged).toBeNull()
+    })
+
+    it('goes away, back to General, once a new snapshot finds it no longer offered', async () => {
+      const bridge = installMockBridge()
+      bridge.canOpenDraftApps = true
+      const wrapper = mountView()
+      await flushPromises()
+      await wrapper
+        .findAll('.gs-tab')
+        .find((tab) => tab.text() === 'Development')!
+        .trigger('keydown', { key: 'Enter' })
+      await nextTick()
+
+      bridge.canOpenDraftApps = false
+      await wrapper.setProps({ snapshot: makeSnapshot() as never })
+      await flushPromises()
+
+      expect(tabLabels(wrapper)).not.toContain('Development')
+      expect(wrapper.find('.gs-tab.active').text()).toBe('General')
+    })
   })
 
   it('close button routes to bridge.close', async () => {

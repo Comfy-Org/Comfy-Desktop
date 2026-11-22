@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   revealOutputFile: vi.fn(async (_file: string) => true),
   isAppsPage: true,
   appsEnabled: true,
+  pageAdmitted: true,
   page: { appId: 'remove-background', document: 1 } as LoadedPage | null,
   showAppOutputs: vi.fn(
     (_contents: unknown, _sentFrom: unknown, _outputs: unknown, _files: unknown) => true
@@ -31,7 +32,10 @@ vi.mock('electron', () => ({
   }
 }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
-vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
+vi.mock('../../apps/appsPages', () => ({
+  appsPageAdmits: async () => mocks.pageAdmitted,
+  isAppsPageSender: () => mocks.isAppsPage
+}))
 vi.mock('../../apps/appPageView', () => ({
   loadedAppPage: () => mocks.page,
   showAppOutputs: mocks.showAppOutputs,
@@ -75,6 +79,7 @@ beforeEach(() => {
   mocks.findFile.mockResolvedValue(null)
   mocks.isAppsPage = true
   mocks.appsEnabled = true
+  mocks.pageAdmitted = true
   mocks.page = { appId: 'remove-background', document: 1 }
   mocks.showAppOutputs.mockReturnValue(true)
   registerAppsOutputsHandlers()
@@ -177,6 +182,10 @@ describe('showOutput from the hosted Apps page', () => {
     expect(await showOutput()).toBe(false)
 
     mocks.appsEnabled = true
+    mocks.pageAdmitted = false
+    expect(await showOutput()).toBe(false)
+
+    mocks.pageAdmitted = true
     mocks.page = null
     expect(await showOutput()).toBe(false)
 

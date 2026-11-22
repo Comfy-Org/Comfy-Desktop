@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   current: 'ws-1' as string | null,
   entries: [] as unknown[],
   appsEnabled: false,
-  appsPages: [] as unknown[]
+  appsPages: [] as unknown[],
+  refusedAppsPages: [] as unknown[]
 }))
 
 vi.mock('./telemetry', () => ({ emit: vi.fn() }))
@@ -21,6 +22,8 @@ vi.mock('./embeddedSessionFlag', () => ({
 }))
 vi.mock('../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
 vi.mock('../apps/appsPages', () => ({
+  appsPageAdmits: async (page: unknown) =>
+    mocks.appsPages.includes(page) && !mocks.refusedAppsPages.includes(page),
   isAppsPageSender: (sender: unknown) => mocks.appsPages.includes(sender),
   liveAppsPages: () => mocks.appsPages
 }))
@@ -55,6 +58,7 @@ vi.mock('../host/registry', () => ({
 
 import {
   billingHandoffForSender,
+  cloudOriginForSender,
   EMBEDDED_SESSION_CHANNELS,
   EMBEDDED_SESSION_DISABLED_EVENT,
   _resetForTest as resetEmbeddedSession,
@@ -133,6 +137,7 @@ beforeEach(() => {
   mocks.entries = []
   mocks.appsEnabled = false
   mocks.appsPages = []
+  mocks.refusedAppsPages = []
   mocks.getGrantAccessToken.mockReset().mockResolvedValue(ACCESS)
   mocks.mint.mockReset().mockImplementation(async (_grant: string, workspaceId: string) => ({
     kind: 'minted',
@@ -832,6 +837,34 @@ describe('the hosted Apps page', () => {
 
     expect(page.webContents.send).toHaveBeenCalledWith(EMBEDDED_SESSION_CHANNELS.changed, SIGNED_IN)
     expect(local.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('gets nothing once its draft app is no longer allowed, while Apps stays on', async () => {
+    mocks.appsEnabled = true
+    const { event, webContents } = appsPage()
+    mocks.refusedAppsPages.push(webContents)
+
+    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(cloudOriginForSender(event)).resolves.toBeNull()
+    expect(mocks.mint).not.toHaveBeenCalled()
+    expect(mocks.partnerMint).not.toHaveBeenCalled()
+  })
+
+  it('hears nothing about the account once its draft app is no longer allowed', async () => {
+    mocks.appsEnabled = true
+    const allowed = appsPage()
+    const refused = appsPage()
+    mocks.refusedAppsPages.push(refused.webContents)
+
+    await broadcastEmbeddedSessionChanged()
+
+    expect(allowed.webContents.send).toHaveBeenCalledWith(
+      EMBEDDED_SESSION_CHANNELS.changed,
+      SIGNED_IN
+    )
+    expect(refused.webContents.send).not.toHaveBeenCalled()
   })
 
   it('hears nothing while Apps is switched off', async () => {

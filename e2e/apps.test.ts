@@ -278,6 +278,7 @@ test("The app page sees Desktop's sign-in, signed out, and none of Desktop's oth
     `Object.keys(window.comfyDesktopAuth).sort()`
   )
   expect(exposed).toEqual([
+    'getCloudOrigin',
     'getPartnerNodeToken',
     'getState',
     'getWorkspaceToken',

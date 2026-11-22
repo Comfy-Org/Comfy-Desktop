@@ -430,6 +430,10 @@ function installMockApi(initial?: {
     hideAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppBackToListAsked: vi.fn(() => () => {}),
+    onAppsListChanged: vi.fn(() => () => {}),
+    onOpenDraftApp: vi.fn(() => () => {}),
+    acceptDraftApp: vi.fn(async () => null),
     onAppOutputs: vi.fn(() => () => {}),
     refreshCreditBalance: vi.fn(async () => ({ status: 'signed_out' })),
     onCreditBalanceChanged: vi.fn(() => () => {}),
@@ -1495,6 +1499,35 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+  })
+
+  it('answers a draft app question with the token it came with, once the person says Open', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const mountedPanel = mountPanel()
+    await flushPromises()
+    const ask = vi.mocked(window.api.onOpenDraftApp).mock.calls[0]?.[0]
+    expect(ask).toBeDefined()
+
+    ask!({
+      kind: 'ask',
+      appId: 'draft-pr683-depth-swap-0a1b2c3d',
+      token: 'question-1',
+      title: 'Open a draft app from pr-683.drafts.comfy.org?',
+      message: '"Depth Swap". It is not published, and it runs with your Comfy Cloud account.'
+    })
+    const open = await vi.waitFor(() => {
+      const action = document.querySelector<HTMLElement>(
+        '[role="alertdialog"] [data-testid="base-alert-action"]'
+      )
+      if (!action) throw new Error('The draft app question is not open yet')
+      return action
+    })
+    expect(window.api.acceptDraftApp).not.toHaveBeenCalled()
+    open.click()
+    await flushPromises()
+
+    expect(window.api.acceptDraftApp).toHaveBeenCalledExactlyOnceWith('question-1')
+    mountedPanel.unmount()
   })
 
   it('opens Apps from See all apps on Home', async () => {

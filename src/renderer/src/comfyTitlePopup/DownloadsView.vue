@@ -8,7 +8,9 @@ import {
   CircleCheck,
   FolderOpen,
   LoaderCircle,
+  Pause,
   PauseCircle,
+  Play,
   RotateCcw,
   X
 } from '@lucide/vue'
@@ -33,6 +35,7 @@ interface DownloadEntry {
   error?: string
   createdAt?: number
   isImage?: boolean
+  canPause?: boolean
 }
 
 interface DownloadsState {
@@ -83,6 +86,12 @@ const orderedEntries = computed<DownloadEntry[]>(() =>
   )
 )
 
+function pause(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'pause', ref: d.id, url: d.url })
+}
+function resume(d: DownloadEntry): void {
+  bridge?.downloadsAction({ action: 'resume', ref: d.id, url: d.url })
+}
 function cancel(d: DownloadEntry): void {
   bridge?.downloadsAction({ action: 'cancel', ref: d.id, url: d.url })
 }
@@ -109,14 +118,32 @@ function closeLabel(d: DownloadEntry): string {
 }
 
 function subtitle(d: DownloadEntry): string {
-  if (d.status === 'paused') {
-    return `${t('downloadsPopup.pause')} · ${statusLine(d)}`
-  }
   return statusLine(d, { completedShowsSize: true })
+}
+
+function keepsActionInView(d: DownloadEntry): boolean {
+  return hasPauseToggle(d) || d.status === 'error'
 }
 
 function canRetry(d: DownloadEntry): boolean {
   return d.status === 'error' || d.status === 'cancelled'
+}
+
+function canPause(d: DownloadEntry): boolean {
+  return d.status === 'downloading' && d.canPause !== false
+}
+
+function hasPauseToggle(d: DownloadEntry): boolean {
+  return canPause(d) || d.status === 'paused'
+}
+
+function pauseToggleLabel(d: DownloadEntry): string {
+  return d.status === 'paused' ? t('downloadsPopup.resume') : t('downloadsPopup.pause')
+}
+
+function togglePause(d: DownloadEntry): void {
+  if (d.status === 'paused') resume(d)
+  else pause(d)
 }
 
 function handleRowClick(d: DownloadEntry, event: MouseEvent): void {
@@ -243,19 +270,34 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           }}</span>
         </div>
         <div
-          v-if="canRetry(d) || isRowClickable(d)"
-          class="downloads-item-action hidden shrink-0 items-center group-focus-within:flex group-hover:flex"
+          v-if="hasPauseToggle(d) || canRetry(d) || isRowClickable(d)"
+          class="downloads-item-action shrink-0 items-center"
+          :class="keepsActionInView(d) ? 'flex' : 'hidden group-focus-within:flex group-hover:flex'"
         >
           <Button
-            v-if="canRetry(d)"
+            v-if="hasPauseToggle(d)"
             type="button"
             variant="secondary"
-            size="md"
+            size="icon"
+            :class="d.status === 'paused' ? 'downloads-item-resume' : 'downloads-item-pause'"
+            :title="pauseToggleLabel(d)"
+            :aria-label="pauseToggleLabel(d)"
+            @click.stop="togglePause(d)"
+          >
+            <Play v-if="d.status === 'paused'" :size="16" aria-hidden="true" />
+            <Pause v-else :size="16" aria-hidden="true" />
+          </Button>
+          <Button
+            v-else-if="canRetry(d)"
+            type="button"
+            variant="secondary"
+            size="icon"
             class="downloads-item-retry"
+            :title="t('downloadsPopup.retry')"
+            :aria-label="t('downloadsPopup.retry')"
             @click.stop="retry(d)"
           >
-            <RotateCcw :size="14" />
-            {{ t('downloadsPopup.retry') }}
+            <RotateCcw :size="16" aria-hidden="true" />
           </Button>
           <Button
             v-else-if="d.savePath"
