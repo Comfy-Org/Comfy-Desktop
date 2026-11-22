@@ -90,6 +90,7 @@ beforeEach(() => {
     refreshCreditBalance,
     onCreditBalanceChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppBackToListAsked: vi.fn(() => () => {}),
     onAppsListChanged: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),

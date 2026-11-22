@@ -55,6 +55,11 @@
       "switch": "Switch",
       "stay": "Stay"
     },
+    "backWhileRunning": {
+      "title": "Go back to all apps?",
+      "bodyDraft": "{current} is a draft app. Going back closes it and stops its run.",
+      "back": "Go back"
+    },
     "request": {
       "bandTitle": "Missing an app?",
       "bandBody": "Your ideas decide which apps we build next.",

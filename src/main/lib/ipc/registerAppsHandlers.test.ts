@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   noteAppPageRunning: vi.fn(),
   appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
   appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
+  closeAppPage: vi.fn(),
   openRunningAppsMenu: vi.fn(),
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
@@ -38,6 +39,7 @@ vi.mock('../../apps/appPageView', () => ({
   appRuns: mocks.appRuns,
   appSwitchStopsRun: mocks.appSwitchStopsRun,
   captureAppPage: vi.fn(),
+  closeAppPage: mocks.closeAppPage,
   closeDraftPages: mocks.closeDraftPages,
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
@@ -374,6 +376,17 @@ describe('runs of apps kept open', () => {
     expect(mocks.appSwitchStopsRun).toHaveBeenCalledWith(sender, 'sdr-to-hdr')
     mocks.isPanel = false
     expect(await handler?.({ sender }, 'sdr-to-hdr')).toBeNull()
+  })
+
+  it('closes an app page when the panel says go back to all apps, for the panel only', () => {
+    const sender = {}
+
+    listener('apps:close-page')({ sender }, 'depth-swap')
+    expect(mocks.closeAppPage).toHaveBeenCalledWith(sender, 'depth-swap')
+
+    mocks.isPanel = false
+    listener('apps:close-page')({ sender }, 'depth-swap')
+    expect(mocks.closeAppPage).toHaveBeenCalledTimes(1)
   })
 
   it('takes a run report only from an app page', () => {

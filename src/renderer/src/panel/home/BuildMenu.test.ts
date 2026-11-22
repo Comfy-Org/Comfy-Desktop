@@ -76,6 +76,7 @@ beforeEach(() => {
     refreshCreditBalance: vi.fn().mockResolvedValue({ status: 'signed_out' }),
     onCreditBalanceChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppBackToListAsked: vi.fn(() => () => {}),
     onAppsListChanged: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),

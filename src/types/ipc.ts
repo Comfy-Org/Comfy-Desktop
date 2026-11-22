@@ -200,8 +200,12 @@ export interface TitleBarApps {
   ready: RunningApp[]
 }
 
-export type AppSwitchStop =
-  { appTitle: string; otherRuns: number } | { appTitle: string; closesDraft: true }
+export interface DraftClosingStop {
+  appTitle: string
+  closesDraft: true
+}
+
+export type AppSwitchStop = { appTitle: string; otherRuns: number } | DraftClosingStop
 
 export interface AppPagePlacement {
   x: number
@@ -1341,6 +1345,8 @@ export interface ElectronApi {
     callback: (appId: string | null, status: AppPageStatus) => void
   ): () => void
   onAppPageClosed(callback: () => void): () => void
+  onAppBackToListAsked(callback: (appId: string, stop: DraftClosingStop) => void): () => void
+  closeAppPage(appId: string): void
   onAppsListChanged(callback: () => void): () => void
   onOpenDraftApp(callback: (request: DraftAppRequest) => void): () => void
   acceptDraftApp(token: string): Promise<DraftAppRequest | null>

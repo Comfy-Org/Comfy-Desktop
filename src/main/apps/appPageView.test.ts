@@ -99,6 +99,7 @@ import {
   APP_OPENED_EVENT,
   APP_OUTPUT_ACTION_CHANNEL,
   APP_OUTPUTS_CHANNEL,
+  APP_BACK_TO_LIST_ASKED_CHANNEL,
   APP_PAGE_CLOSED_CHANNEL,
   APP_PAGE_FAILED_EVENT,
   APP_PAGE_STATUS_CHANNEL,
@@ -109,6 +110,7 @@ import {
   _resetForTest,
   appSwitchStopsRun,
   captureAppPage,
+  closeAppPage,
   closeDraftPages,
   hideAppPage,
   loadedAppPage,
@@ -501,6 +503,7 @@ describe('a draft app', () => {
   it('drops the draft from the list and closes its page when it goes back to all apps', async () => {
     hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
 
+    expect(sentToPanel(APP_BACK_TO_LIST_ASKED_CHANNEL)).toHaveLength(0)
     expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
     expect(sentToPanel(APPS_LIST_CHANGED_CHANNEL)).toHaveLength(1)
     expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
@@ -584,6 +587,64 @@ describe('a draft app', () => {
     await openDraftInAnotherWindow()
 
     expect(appSwitchStopsRun(panelContents(), CUTOUT)).toBeNull()
+  })
+
+  it('keeps a running draft open and asks the panel first when the page goes back to all apps', () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
+    noteAppPageRunning(draftPage(), true)
+    const navigation = navigationEvent()
+
+    hostedPage().webContents.emit('will-navigate', navigation, APPS_URL)
+
+    expect(navigation.preventDefault).toHaveBeenCalled()
+    expect(sentToPanel(APP_BACK_TO_LIST_ASKED_CHANNEL)).toEqual([
+      [APP_BACK_TO_LIST_ASKED_CHANNEL, DRAFT, { appTitle: 'Depth Swap', closesDraft: true }]
+    ])
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(true)
+    expect(runningAppCount()).toBe(1)
+  })
+
+  it('asks the panel first when the draft runs in another window and this page goes back', async () => {
+    const otherPage = await openDraftInAnotherWindow()
+    noteAppPageRunning(otherPage.webContents as unknown as WebContents, true)
+
+    hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+
+    expect(sentToPanel(APP_BACK_TO_LIST_ASKED_CHANNEL)).toHaveLength(1)
+    expect(otherPage.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('closes the running draft once the panel says go back', () => {
+    noteAppPageRunning(draftPage(), true)
+    hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+
+    closeAppPage(panelContents(), DRAFT)
+
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
+    expect(runningAppCount()).toBe(0)
+  })
+
+  it('leaves the page open when the go-back answer names an app the window no longer shows', () => {
+    noteAppPageRunning(draftPage(), true)
+
+    closeAppPage(panelContents(), CUTOUT)
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+
+  it('keeps a running draft and its run when the panel goes back to all apps', () => {
+    noteAppPageRunning(draftPage(), true)
+
+    hideAppPage(panelContents())
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(true)
+    expect(runningAppCount()).toBe(1)
   })
 
   it('closes the draft in another window too once one window drops it', async () => {

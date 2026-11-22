@@ -55,6 +55,11 @@
       "switch": "切换",
       "stay": "留在这里"
     },
+    "backWhileRunning": {
+      "title": "返回全部应用？",
+      "bodyDraft": "{current}是草稿应用。返回会关闭它并停止生成。",
+      "back": "返回"
+    },
     "request": {
       "bandTitle": "没有你想要的应用？",
       "bandBody": "你的想法决定我们接下来做哪些应用。",

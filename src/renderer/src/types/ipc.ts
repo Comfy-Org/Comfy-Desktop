@@ -12,6 +12,7 @@ export type {
   AppPageStatus,
   AppRun,
   AppSwitchStop,
+  DraftClosingStop,
   RunningApp,
   TitleBarApps,
   AssetKind,

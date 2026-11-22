@@ -13,8 +13,8 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { badgeDescriptionIds } from './appCardBadges'
-import { useAppSwitchConfirm } from './useAppSwitchConfirm'
-import type { AppCard } from '../types/ipc'
+import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
+import type { AppCard, DraftClosingStop } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
@@ -46,6 +46,7 @@ const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
+let stopBackToListAsks: (() => void) | null = null
 let stopListUpdates: (() => void) | null = null
 
 const matchingApps = computed(() => {
@@ -205,6 +206,7 @@ function playsCover(app: AppCard): boolean {
 }
 
 const confirmAppSwitch = useAppSwitchConfirm()
+const confirmBackToList = useBackToListConfirm()
 
 function open(app: AppCard): void {
   hoveredId.value = null
@@ -221,6 +223,11 @@ async function closeApp(): Promise<void> {
   openApp.value = null
   await nextTick()
   if (lastOpenedId) cardButtons.get(lastOpenedId)?.focus()
+}
+
+async function askBackToList(appId: string, stop: DraftClosingStop): Promise<void> {
+  if (openApp.value?.id !== appId) return
+  if (await confirmBackToList(stop)) window.api.closeAppPage(appId)
 }
 
 watch(
@@ -245,12 +252,16 @@ watch(
 
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())
+  stopBackToListAsks = window.api.onAppBackToListAsked(
+    (appId, stop) => void askBackToList(appId, stop)
+  )
   stopListUpdates = window.api.onAppsListChanged(() => void refreshApps())
   void loadApps()
 })
 
 onBeforeUnmount(() => {
   stopClosedUpdates?.()
+  stopBackToListAsks?.()
   stopListUpdates?.()
   if (openApp.value) emit('app-open-change', false)
 })

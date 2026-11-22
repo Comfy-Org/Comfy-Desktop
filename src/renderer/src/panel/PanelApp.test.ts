@@ -430,6 +430,7 @@ function installMockApi(initial?: {
     hideAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppBackToListAsked: vi.fn(() => () => {}),
     onAppsListChanged: vi.fn(() => () => {}),
     onOpenDraftApp: vi.fn(() => () => {}),
     acceptDraftApp: vi.fn(async () => null),

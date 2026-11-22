@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   AppOutputs,
   DraftAppRequest,
+  DraftClosingStop,
   AppPageStatus,
   AppRun,
   ElectronApi,
@@ -158,6 +159,13 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:page-closed', handler)
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
+    onAppBackToListAsked: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string, stop: DraftClosingStop): void =>
+        callback(appId, stop)
+      ipcRenderer.on('apps:back-to-list-asked', handler)
+      return () => ipcRenderer.removeListener('apps:back-to-list-asked', handler)
+    },
+    closeAppPage: (appId) => ipcRenderer.send('apps:close-page', appId),
     onAppsListChanged: (callback) => {
       const handler = (): void => callback()
       ipcRenderer.on('apps:list-changed', handler)

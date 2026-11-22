@@ -5,6 +5,7 @@ import {
   appRuns,
   appSwitchStopsRun,
   captureAppPage,
+  closeAppPage,
   closeDraftPages,
   hideAppPage,
   noteAppPageRunning,
@@ -117,6 +118,10 @@ export function registerAppsHandlers(): void {
   )
 
   ipcMain.on('apps:hide-page', (event) => hideAppPage(event.sender))
+
+  ipcMain.on('apps:close-page', (event, appId: unknown) => {
+    if (isPanelSender(event.sender)) closeAppPage(event.sender, appId)
+  })
 
   cloudAuthEvents.on('changed', () => void closeDraftsNoLongerAllowed())
 

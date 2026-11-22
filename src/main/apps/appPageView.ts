@@ -11,6 +11,7 @@ import type {
   AppPageStatus,
   AppRun,
   AppSwitchStop,
+  DraftClosingStop,
   RunningApp,
   TitleBarApps
 } from '../../types/ipc'
@@ -32,6 +33,7 @@ import { isDraftStillAllowed } from './draftLinks'
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
 export const APP_PAGE_CLOSED_CHANNEL = 'apps:page-closed'
+export const APP_BACK_TO_LIST_ASKED_CHANNEL = 'apps:back-to-list-asked'
 export const APPS_LIST_CHANGED_CHANNEL = 'apps:list-changed'
 export const APP_OUTPUTS_CHANNEL = 'apps:outputs'
 export const APP_OUTPUT_ACTION_CHANNEL = 'apps-outputs:action'
@@ -354,6 +356,25 @@ function dropDraft(droppedIn: number, appId: string | null): boolean {
   return true
 }
 
+function isDraftRunning(appId: string): boolean {
+  return everyPage().some((page) => page.appId === appId && page.running)
+}
+
+function titleForApp(appId: string): string {
+  return draftOf(appId)?.card.title ?? titleForListedApp(appId) ?? appId
+}
+
+function draftClosingStop(appId: string): DraftClosingStop {
+  return { appTitle: titleForApp(appId), closesDraft: true }
+}
+
+function askedBeforeClosingDraft(windowKey: number, hosted: HostedPage): boolean {
+  const appId = hosted.appId
+  if (!isDraft(appId) || !isDraftRunning(appId)) return false
+  panelOf(windowKey)?.send(APP_BACK_TO_LIST_ASKED_CHANNEL, appId, draftClosingStop(appId))
+  return true
+}
+
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
   const shown = hostedByWindow.get(windowKey) === hosted
   if (dropDraft(windowKey, hosted.appId)) {
@@ -443,7 +464,9 @@ function createHostedPage(
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
     if (isAppsListUrl(location, url)) {
       event.preventDefault()
-      closeForList(windowKey, hosted, pageStillShowsApp)
+      if (!askedBeforeClosingDraft(windowKey, hosted)) {
+        closeForList(windowKey, hosted, pageStillShowsApp)
+      }
       return
     }
     if (isInAppsScope(location, url)) return
@@ -680,6 +703,13 @@ export function closeDraftPages(only?: readonly DraftApp[]): void {
   tellPanelsTheListChanged()
 }
 
+export function closeAppPage(panel: WebContents, appId: unknown): void {
+  const host = hostOf(panel)
+  const hosted = host && hostedFor(host)
+  if (!hosted || hosted.appId === null || hosted.appId !== appId) return
+  closeForList(host.windowKey, hosted, true)
+}
+
 export function hideAppPage(panel: WebContents): void {
   const host = hostOf(panel)
   const hosted = host && hostedFor(host)
@@ -708,19 +738,12 @@ export function noteAppPageRunning(contents: WebContents, running: unknown): voi
   setRunning(hosted, running)
 }
 
-function titleForApp(appId: string): string {
-  return draftOf(appId)?.card.title ?? titleForListedApp(appId) ?? appId
-}
-
 export function appSwitchStopsRun(panel: WebContents, appId: unknown): AppSwitchStop | null {
   const host = hostOf(panel)
   const current = host && hostedFor(host)
   const shown = current?.appId ?? null
   if (!current || shown === null || shown === appId) return null
-  if (isDraft(shown)) {
-    const draftRuns = everyPage().some((page) => page.appId === shown && page.running)
-    return draftRuns ? { appTitle: titleForApp(shown), closesDraft: true } : null
-  }
+  if (isDraft(shown)) return isDraftRunning(shown) ? draftClosingStop(shown) : null
   if (!current.running) return null
   const background = [...backgroundOf(current.windowKey).values()]
   const otherRuns = background.filter((page) => page.running && page.appId !== appId).length
