@@ -615,6 +615,11 @@ export interface ComfyDesktop2Bridge {
   cancelDownload?: (url: string) => Promise<boolean>
   onDownloadProgress?: (callback: (data: ComfyDownloadProgress) => void) => () => void
   reportTheme?: (bg: string, text: string) => void
+  /** Tells Desktop whether the hosted frontend is waiting on the user, such as an agent
+   *  approval or question. While `true` and the window is not focused, Desktop flashes the
+   *  taskbar entry (Windows, Linux) or bounces the dock icon once (macOS); focusing the
+   *  window or sending `false` stops it. Absent on Desktop builds predating it. */
+  setAttentionNeeded?: (needed: boolean) => void
   Terminal?: ComfyDesktop2TerminalBridge
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge
