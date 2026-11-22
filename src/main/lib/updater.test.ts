@@ -721,6 +721,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
         triggeredAt
       }
       mockAppVersion = '1.0.1'
+      const { readShipItReport } = await import('./update-install-attempt')
+      vi.mocked(readShipItReport).mockClear()
       const updater = await bootUpdater()
 
       await updater.applyPendingUpdateOnStartup()
@@ -731,7 +733,6 @@ describe('startup update install + session-end guard (issue #1065)', () => {
         shipit_log_found: null,
         shipit_error_tail: null
       })
-      const { readShipItReport } = await import('./update-install-attempt')
       expect(readShipItReport).not.toHaveBeenCalled()
     })
 
