@@ -115,8 +115,10 @@ function emitUpdateTelemetry(
   })
 }
 
+const URL_QUERY = /(https?:\/\/[^\s?#"'<>]+)\?[^\s#"'<>]*/gi
+
 function logUpdate(level: 'info' | 'warn' | 'error', message: string): void {
-  console[level](`[app-update] ${scrubAll(message)}`)
+  console[level](`[app-update] ${scrubAll(message).replace(URL_QUERY, '$1?[query removed]')}`)
 }
 
 function currentAppLocation(): ReturnType<typeof describeAppLocation> {

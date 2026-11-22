@@ -832,7 +832,7 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       for (const cb of listeners.error || [])
         cb(
           new Error(
-            'Cannot download "https://updates.example.com/app-1.0.1.zip?token=s3cr3t-value", status 403: EACCES /Users/alice/Library/Caches/updater/pending'
+            'Cannot download "https://updates.example.com/app-1.0.1.zip?token=s3cr3t-value", redirected to https://objects.example.com/releases/app-1.0.1.zip?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=abc123sig&sig=azsig456 status 403: EACCES /Users/alice/Library/Caches/updater/pending'
           )
         )
 
@@ -844,6 +844,13 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       expect(lines[0]).toContain('failed')
       expect(lines[0]).not.toContain('s3cr3t-value')
       expect(lines[0]).not.toContain('alice')
+      expect(lines[0]).not.toContain('abc123sig')
+      expect(lines[0]).not.toContain('azsig456')
+      expect(lines[0]).not.toContain('AKIAEXAMPLE')
+      expect(lines[0]).toContain(
+        'https://objects.example.com/releases/app-1.0.1.zip?[query removed]'
+      )
+      expect(lines[0]).toContain('https://updates.example.com/app-1.0.1.zip?[query removed]')
     })
   })
 
