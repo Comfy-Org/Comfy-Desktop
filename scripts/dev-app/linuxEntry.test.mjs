@@ -5,6 +5,7 @@ import {
   LINUX_DEV_ENTRY,
   desktopEntryFileName,
   desktopEntryText,
+  devSandboxOff,
   mimeappsWithout
 } from './linuxEntry.mjs'
 
@@ -49,7 +50,7 @@ describe('desktopEntryText', () => {
       disableSandbox: true
     })
     expect(text).toContain(
-      `Exec=env ELECTRON_DISABLE_SANDBOX=1 "${ELECTRON}" "/src/Comfy-Desktop" %u`
+      `Exec=env ELECTRON_DISABLE_SANDBOX=1 "${ELECTRON}" "/src/Comfy-Desktop" --no-sandbox %u`
     )
   })
 
@@ -61,6 +62,33 @@ describe('desktopEntryText', () => {
       disableSandbox: false
     })
     expect(text).toContain(`Exec="${ELECTRON}" "/home/me/my \\\\"100%%\\\\" \\\\$work" %u`)
+  })
+})
+
+describe('devSandboxOff', () => {
+  it('is off when ELECTRON_DISABLE_SANDBOX=1 is set', () => {
+    expect(devSandboxOff({ ELECTRON_DISABLE_SANDBOX: '1' }, [])).toBe(true)
+  })
+
+  it('is off when NO_SANDBOX=1 is set', () => {
+    expect(devSandboxOff({ NO_SANDBOX: '1' }, [])).toBe(true)
+  })
+
+  it('is off when electron-vite is given --noSandbox', () => {
+    expect(devSandboxOff({}, ['--noSandbox'])).toBe(true)
+    expect(devSandboxOff({}, ['--watch', '--noSandbox=true'])).toBe(true)
+  })
+
+  it('is on otherwise', () => {
+    expect(devSandboxOff({}, [])).toBe(false)
+    expect(devSandboxOff({ ELECTRON_DISABLE_SANDBOX: '0', NO_SANDBOX: '0' }, ['--watch'])).toBe(
+      false
+    )
+    expect(devSandboxOff({}, ['--noSandbox=false'])).toBe(false)
+  })
+
+  it('ignores --noSandbox passed through to Electron after --', () => {
+    expect(devSandboxOff({}, ['--', '--noSandbox'])).toBe(false)
   })
 })
 

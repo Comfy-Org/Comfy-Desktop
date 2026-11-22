@@ -25,9 +25,32 @@ function execArg(value) {
   return quoted.replace(/\\/g, '\\\\')
 }
 
+function electronViteArgs(args) {
+  const end = args.indexOf('--')
+  return end < 0 ? args : args.slice(0, end)
+}
+
+function isNoSandboxFlag(arg) {
+  if (arg === '--noSandbox') return true
+  return arg.startsWith('--noSandbox=') && arg !== '--noSandbox=false'
+}
+
+export function devSandboxOff(env, args) {
+  if (env['ELECTRON_DISABLE_SANDBOX'] === '1' || env['NO_SANDBOX'] === '1') return true
+  return electronViteArgs(args).some(isNoSandboxFlag)
+}
+
 export function desktopEntryText({ name, scheme, executable, root, disableSandbox }) {
-  const command = [execArg(executable), execArg(root), '%u']
-  const exec = disableSandbox ? ['env', 'ELECTRON_DISABLE_SANDBOX=1', ...command] : command
+  const exec = disableSandbox
+    ? [
+        'env',
+        'ELECTRON_DISABLE_SANDBOX=1',
+        execArg(executable),
+        execArg(root),
+        '--no-sandbox',
+        '%u'
+      ]
+    : [execArg(executable), execArg(root), '%u']
   return [
     '[Desktop Entry]',
     'Type=Application',
@@ -95,14 +118,14 @@ function electronExecutable(root) {
   return path.join(electronDir, 'dist', relative)
 }
 
-export function ensureLinuxDevEntry(root, env = process.env) {
+export function ensureLinuxDevEntry(root, env = process.env, args = []) {
   const dir = applicationsDir(env)
   const fileName = desktopEntryFileName(root)
   const text = desktopEntryText({
     ...LINUX_DEV_ENTRY,
     executable: electronExecutable(root),
     root,
-    disableSandbox: env['ELECTRON_DISABLE_SANDBOX'] === '1'
+    disableSandbox: devSandboxOff(env, args)
   })
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, fileName), text)

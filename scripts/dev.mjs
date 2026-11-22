@@ -13,11 +13,14 @@ import {
 import {
   DEV_DESKTOP_ENTRY_ENV,
   LINUX_DEV_ENTRY,
+  devSandboxOff,
   ensureLinuxDevEntry,
   removeLinuxDevEntry
 } from './dev-app/linuxEntry.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const ELECTRON_VITE_ARGS = process.argv.slice(2)
+const SANDBOX_OFF = devSandboxOff(process.env, ELECTRON_VITE_ARGS)
 
 function warn(message) {
   console.warn(`\n\x1b[33m⚠ ${message}\x1b[0m\n`)
@@ -34,7 +37,7 @@ function linuxDevEntryEnv() {
   }
   if (process.env['E2E'] === '1') return {}
   try {
-    return { [DEV_DESKTOP_ENTRY_ENV]: ensureLinuxDevEntry(ROOT) }
+    return { [DEV_DESKTOP_ENTRY_ENV]: ensureLinuxDevEntry(ROOT, process.env, ELECTRON_VITE_ARGS) }
   } catch (err) {
     warn(
       `Could not set up the ${LINUX_DEV_ENTRY.name} desktop entry, so ${LINUX_DEV_ENTRY.scheme}:// links will not reach this copy. ${err.message}`
@@ -73,10 +76,10 @@ function electronViteCli() {
   return path.join(path.dirname(packageJson), bin['electron-vite'])
 }
 
-const child = spawn(process.execPath, [electronViteCli(), 'dev', ...process.argv.slice(2)], {
+const child = spawn(process.execPath, [electronViteCli(), 'dev', ...ELECTRON_VITE_ARGS], {
   cwd: ROOT,
   stdio: 'inherit',
-  env: { ...process.env, ...devAppEnv() }
+  env: { ...process.env, ...(SANDBOX_OFF ? { NO_SANDBOX: '1' } : {}), ...devAppEnv() }
 })
 const FORWARDED_SIGNALS =
   process.platform === 'win32' ? ['SIGINT', 'SIGTERM'] : ['SIGINT', 'SIGTERM', 'SIGHUP']
