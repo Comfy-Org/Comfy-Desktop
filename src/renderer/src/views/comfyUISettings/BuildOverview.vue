@@ -84,9 +84,6 @@ const checkedText = computed(() =>
       })
     : ''
 )
-const updateNote = computed(() =>
-  [t('buildOverview.savesSnapshot'), checkedText.value].filter(Boolean).join(' · ')
-)
 
 const switchHeadline = computed(() =>
   t('channelCards.switchTo', { channel: channel.value?.label ?? '' })
@@ -208,7 +205,9 @@ function openLocation(): void {
               <span class="truncate text-foreground" :title="updateHeadline">{{
                 updateHeadline
               }}</span>
-              <span class="truncate" :title="updateNote">{{ updateNote }}</span>
+              <span class="truncate" data-testid="build-overview-update-note">{{
+                t('buildOverview.savesSnapshot')
+              }}</span>
             </span>
             <SplitButton
               v-model:open="updateMenuOpen"
