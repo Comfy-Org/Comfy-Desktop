@@ -313,14 +313,13 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     )
   })
 
-  let appPid: number | undefined
   let shutdownHandle: ShutdownHandle
   try {
     await showWindowAndLogAppEvents(application)
-    appPid = await evalWithRetry(() => application.evaluate(() => globalThis.process.pid))
-    shutdownHandle = createShutdown(shutdownTarget(appPid, processStartTime(appPid)))
+    const appPid = await evalWithRetry(() => application.evaluate(() => globalThis.process.pid))
+    shutdownHandle = createShutdown(shutdownTarget(appPid, startTimeOrUnknown(appPid)))
   } catch (error) {
-    await createShutdown(shutdownTarget(appPid))
+    await createShutdown(shutdownTarget())
       .shutdown()
       .catch((stopError: unknown) => {
         console.error(`[e2e-harness] could not stop the app after a failed launch: ${stopError}`)
@@ -346,6 +345,17 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   }
 
   return { application, homeDir, cleanup }
+}
+
+function startTimeOrUnknown(appPid: number): string | undefined {
+  try {
+    return processStartTime(appPid)
+  } catch (error) {
+    console.warn(
+      `[e2e-harness] could not read the start time of app process ${appPid}, so cleanup goes through the launcher only: ${error}`
+    )
+    return undefined
+  }
 }
 
 export async function waitForAppExit(

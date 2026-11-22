@@ -179,7 +179,8 @@ export function createShutdown(
   const launcher = target.launcher
   const launcherAlive = (): boolean =>
     !!launcher && launcher.exitCode === null && launcher.signalCode === null
-  let appPid = target.appPid !== launcher?.pid ? target.appPid : undefined
+  let appPid =
+    target.appStartTime !== undefined && target.appPid !== launcher?.pid ? target.appPid : undefined
   const helpers = new Map<number, string>()
   let shutdownStopBy: number | undefined
   let recoveryStopBy: number | undefined
@@ -191,22 +192,27 @@ export function createShutdown(
       ? FORCED_EXIT_DEADLINE_MS
       : Math.min(Math.max(MIN_PROCESS_QUERY_MS, msUntil(shutdownStopBy)), msUntil(recoveryStopBy))
 
-  const rootPids = (): number[] => {
-    const pids: number[] = []
-    if (launcherAlive() && launcher?.pid !== undefined) pids.push(launcher.pid)
-    if (appPid !== undefined && isPidAliveWithin(appPid, queryTimeoutMs())) pids.push(appPid)
-    return pids
-  }
-
   const helpersListedIn = (processes: Map<number, ListedProcess>): number[] =>
     [...helpers]
       .filter(([pid, startTime]) => processes.get(pid)?.startTime === startTime)
       .map(([pid]) => pid)
 
+  const launcherPids = (): number[] =>
+    launcherAlive() && launcher?.pid !== undefined ? [launcher.pid] : []
+
+  const rootPids = (): number[] => {
+    const pids = launcherPids()
+    if (appPid !== undefined && isPidAliveWithin(appPid, queryTimeoutMs())) pids.push(appPid)
+    return pids
+  }
+
+  const isOwnedAppIn = (processes: Map<number, ListedProcess>): boolean =>
+    appPid !== undefined && processes.get(appPid)?.startTime === target.appStartTime
+
   const trackHelpers = (): void => {
     if (!helpersAreTracked) return
     const processes = listProcesses(queryTimeoutMs())
-    const roots = rootPids()
+    const roots = [...launcherPids(), ...(isOwnedAppIn(processes) ? [appPid!] : [])]
     for (const [pid, startTime] of descendantsOf(roots, processes)) helpers.set(pid, startTime)
     if (target.profileDir) {
       for (const [pid, listed] of processes) {
@@ -290,6 +296,14 @@ export function createShutdown(
     )
   }
 
+  const stopLauncherThroughItsHandle = async (stopBy: number): Promise<void> => {
+    if (!launcherAlive() || launcher?.pid === undefined) return
+    forceKill([launcher.pid], Math.max(0, stopBy - Date.now()))
+    while (launcherAlive() && Date.now() < stopBy) {
+      await wait(Math.min(EXIT_POLL_MS, msUntil(stopBy)))
+    }
+  }
+
   const runOrFailClosed = async (stopBy: number): Promise<void> => {
     try {
       await run(stopBy)
@@ -297,6 +311,29 @@ export function createShutdown(
       if (error instanceof ProcessLookupError && lateRecoveryPassed()) {
         killLauncherAndFailUnverified()
       }
+      if (error instanceof ProcessLookupError) {
+        await stopLauncherThroughItsHandle(stopBy + LATE_RECOVERY_MS)
+      }
+      throw error
+    }
+  }
+
+  const discoverBeforeClosing = (): ProcessLookupError | undefined => {
+    try {
+      forgetAppIfItsPidWasReused()
+      trackHelpers()
+      return undefined
+    } catch (error) {
+      if (error instanceof ProcessLookupError) return error
+      throw error
+    }
+  }
+
+  const mayStillRun = (): boolean => {
+    try {
+      return livePids().length > 0
+    } catch (error) {
+      if (error instanceof ProcessLookupError) return true
       throw error
     }
   }
@@ -306,16 +343,16 @@ export function createShutdown(
     recoveryStopBy = stopBy + LATE_RECOVERY_MS
     lastKnownAlive = []
     lastKnownHelpers = []
-    forgetAppIfItsPidWasReused()
-    trackHelpers()
+    const discoveryFailure = discoverBeforeClosing()
     let quitOnItsOwn = true
-    if (livePids().length > 0 && !target.connectionClosed()) {
+    if (!target.connectionClosed() && (discoveryFailure !== undefined || mayStillRun())) {
       const closeMs = Math.min(gracefulCloseMs, msUntil(stopBy))
       quitOnItsOwn = await closeWithin(target.closeGracefully, closeMs)
       if (!quitOnItsOwn) {
         log(`[e2e-harness] app did not quit within ${closeMs}ms, killing it`)
       }
     }
+    if (discoveryFailure !== undefined) throw discoveryFailure
     if (quitOnItsOwn) {
       const settled = await survivorsIncludingNewHelpersAt(phaseEnd(stopBy, EXIT_SETTLE_MS))
       if (settled.length === 0) return

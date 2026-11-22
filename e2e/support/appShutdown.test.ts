@@ -82,7 +82,13 @@ describe('app shutdown', () => {
     const { launcher, appPid } = await launchShellAndApp()
     const log = vi.fn()
     const { shutdown } = createShutdown(
-      { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+      {
+        launcher,
+        appPid,
+        appStartTime: processStartTime(appPid),
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
       { gracefulCloseMs: 100, log }
     )
 
@@ -102,6 +108,7 @@ describe('app shutdown', () => {
     await createShutdown({
       launcher,
       appPid,
+      appStartTime: processStartTime(appPid),
       closeGracefully: never,
       connectionClosed: () => true
     }).shutdown()
@@ -118,7 +125,13 @@ describe('app shutdown', () => {
     }
 
     await createShutdown(
-      { launcher, appPid, closeGracefully, connectionClosed: () => false },
+      {
+        launcher,
+        appPid,
+        appStartTime: processStartTime(appPid),
+        closeGracefully,
+        connectionClosed: () => false
+      },
       { forceKill }
     ).shutdown()
 
@@ -129,7 +142,13 @@ describe('app shutdown', () => {
   it('fails loudly within its deadline when the app survives the forced kill', async () => {
     const { launcher, appPid } = await launchShellAndApp()
     const { shutdown } = createShutdown(
-      { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+      {
+        launcher,
+        appPid,
+        appStartTime: processStartTime(appPid),
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
       { gracefulCloseMs: 50, forcedExitMs: 200, forceKill: () => {}, log: () => {} }
     )
 
@@ -144,7 +163,13 @@ describe('app shutdown', () => {
     const killBudgets: number[] = []
     const startedAt = Date.now()
     const { shutdown } = createShutdown(
-      { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+      {
+        launcher,
+        appPid,
+        appStartTime: processStartTime(appPid),
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
       {
         gracefulCloseMs,
         forcedExitMs,
@@ -171,7 +196,13 @@ describe('app shutdown', () => {
     const { launcher, appPid } = await launchShellAndApp()
     const path = process.env['PATH']
     const { shutdown } = createShutdown(
-      { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+      {
+        launcher,
+        appPid,
+        appStartTime: processStartTime(appPid),
+        closeGracefully: never,
+        connectionClosed: () => false
+      },
       {
         gracefulCloseMs: 50,
         forcedExitMs: 200,
@@ -273,7 +304,13 @@ describe('app shutdown', () => {
     const { launcher, appPid } = await launchShellAndApp()
     const closeGracefully = vi.fn(never)
     const { shutdown } = createShutdown(
-      { launcher, appPid, closeGracefully, connectionClosed: () => false },
+      {
+        launcher,
+        appPid,
+        appStartTime: processStartTime(appPid),
+        closeGracefully,
+        connectionClosed: () => false
+      },
       { gracefulCloseMs: 50, log: () => {} }
     )
 
@@ -294,7 +331,13 @@ describe('app shutdown', () => {
       started.push(...discoveredHelpers)
       const killed: number[] = []
       await createShutdown(
-        { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+        {
+          launcher,
+          appPid,
+          appStartTime: processStartTime(appPid),
+          closeGracefully: never,
+          connectionClosed: () => false
+        },
         {
           gracefulCloseMs: 50,
           log: () => {},
@@ -487,6 +530,7 @@ describe('app shutdown', () => {
       const { shutdown, trackHelpers } = createShutdown({
         launcher,
         appPid,
+        appStartTime: processStartTime(appPid),
         closeGracefully: never,
         connectionClosed: () => true
       })
@@ -528,7 +572,13 @@ describe('app shutdown', () => {
     async () => {
       const { launcher, appPid } = await launchShellAndApp()
       const { shutdown } = createShutdown(
-        { launcher, appPid, closeGracefully: never, connectionClosed: () => true },
+        {
+          launcher,
+          appPid,
+          appStartTime: processStartTime(appPid),
+          closeGracefully: never,
+          connectionClosed: () => true
+        },
         { log: () => {} }
       )
 
@@ -598,6 +648,7 @@ ${IDLE}
       const { shutdown, trackHelpers } = createShutdown({
         launcher,
         appPid,
+        appStartTime: processStartTime(appPid),
         profileDir,
         closeGracefully: never,
         connectionClosed: () => true
@@ -633,7 +684,14 @@ ${IDLE}
         await vi.waitFor(() => expect(isPidAlive(appPid)).toBe(false))
       }
       const { shutdown } = createShutdown(
-        { launcher, appPid, profileDir, closeGracefully, connectionClosed: () => false },
+        {
+          launcher,
+          appPid,
+          appStartTime: processStartTime(appPid),
+          profileDir,
+          closeGracefully,
+          connectionClosed: () => false
+        },
         { log: () => {} }
       )
 
@@ -641,6 +699,76 @@ ${IDLE}
 
       await exited(helper!)
       expect(helper!.signalCode, 'the helper was stopped by the shutdown').toBe('SIGKILL')
+    }
+  )
+  it.skipIf(process.platform === 'win32')(
+    'does not record the children of a process that took over the app pid before a helper scan',
+    async () => {
+      const { launcher, appPid } = await launchShellAndApp(
+        LAUNCHER_THAT_STARTS_AN_APP_WITH_A_HELPER
+      )
+      await vi.waitFor(() => expect(descendantsOf([appPid]).size).toBe(1))
+      const [childPid] = [...descendantsOf([appPid]).keys()]
+      started.push(childPid!)
+      launcher.kill('SIGKILL')
+      await exited(launcher)
+      const forceKill = vi.fn()
+      const { shutdown, trackHelpers } = createShutdown(
+        {
+          launcher: undefined,
+          appPid,
+          appStartTime: 'a start time from an app that is gone',
+          closeGracefully: never,
+          connectionClosed: () => true
+        },
+        { forceKill }
+      )
+
+      trackHelpers()
+      await shutdown()
+
+      expect(forceKill).not.toHaveBeenCalled()
+      expect(isPidAlive(childPid!), 'the unrelated child still runs').toBe(true)
+    }
+  )
+
+  it('never signals an app pid whose start time was not recorded', async () => {
+    const { appPid } = await launchShellAndApp()
+    const forceKill = vi.fn()
+
+    await createShutdown(
+      { launcher: undefined, appPid, closeGracefully: never, connectionClosed: () => false },
+      { gracefulCloseMs: 50, log: () => {}, forceKill }
+    ).shutdown()
+
+    expect(forceKill).not.toHaveBeenCalled()
+    expect(isPidAlive(appPid), 'the unowned pid is left alone').toBe(true)
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'closes the app and stops its launcher through the handle when processes cannot be listed',
+    async () => {
+      const { launcher, appPid } = await launchShellAndApp()
+      const closeGracefully = vi.fn(never)
+      const { shutdown } = createShutdown(
+        {
+          launcher,
+          appPid,
+          appStartTime: processStartTime(appPid),
+          closeGracefully,
+          connectionClosed: () => false
+        },
+        { gracefulCloseMs: 50, log: () => {} }
+      )
+
+      await expect(withoutProcessTools(shutdown)).rejects.toBeInstanceOf(ProcessLookupError)
+
+      expect(
+        closeGracefully,
+        'the graceful close does not wait on process discovery'
+      ).toHaveBeenCalledTimes(1)
+      await exited(launcher)
+      expect(launcher.signalCode, 'the launcher handle was stopped').toBe('SIGKILL')
     }
   )
 })
