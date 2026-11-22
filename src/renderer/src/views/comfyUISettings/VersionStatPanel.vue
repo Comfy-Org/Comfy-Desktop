@@ -30,7 +30,7 @@ const emit = defineEmits<{ action: [action: ActionDef] }>()
 
 function actionButtonClass(action: ActionDef): string {
   const base =
-    'version-stat-action inline-flex h-[30px] flex-none items-center justify-center gap-1.5 rounded-lg border border-solid bg-[var(--brand-surface-bg)] px-3.5 py-0 text-[13px] leading-none whitespace-nowrap transition-[background-color,filter] duration-100 ease-[ease] disabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:outline-none'
+    'version-stat-action inline-flex h-[30px] flex-none items-center justify-center gap-1.5 rounded-lg border border-solid px-3.5 py-0 text-[13px] leading-none whitespace-nowrap transition-[background-color,filter] duration-100 ease-[ease] enabled:focus-visible:outline-none'
   return `${base} ${isRunning(action.id) ? 'cursor-progress opacity-85 disabled:cursor-progress disabled:opacity-85' : 'disabled:cursor-default disabled:opacity-50'}`
 }
 
@@ -98,8 +98,8 @@ function isRunning(id: string): boolean {
           :button-class="actionButtonClass(action)"
           :variant-class="
             action.style === 'primary'
-              ? 'border-[var(--action)] text-background font-semibold enabled:hover:bg-[var(--accent-hover)] enabled:hover:border-[var(--accent-hover)] enabled:hover:focus-visible:bg-[var(--accent-hover)]'
-              : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium'
+              ? 'border-foreground bg-foreground text-background font-medium disabled:hover:bg-foreground enabled:hover:border-foreground/80 enabled:hover:bg-foreground/80 enabled:focus-visible:bg-foreground/80'
+              : 'border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-100 font-medium disabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:bg-[var(--brand-surface-bg-hover)]'
           "
           tooltip-class="version-stat-action-tooltip flex-none"
           spinner-class="version-stat-action-spinner flex-none animate-spin [animation-duration:0.9s]"

@@ -727,8 +727,7 @@ defineExpose({ open, resetContinue, browseInstallLocation })
             v-if="skipPick"
             type="button"
             variant="secondary"
-            size="unset"
-            class="h-9 rounded-[10px] px-4 text-[13px]/4 font-normal"
+            size="lg"
             data-testid="setup-skip"
             @click="request('skip')"
           >
@@ -737,8 +736,7 @@ defineExpose({ open, resetContinue, browseInstallLocation })
           <Button
             type="button"
             variant="inverted"
-            size="unset"
-            class="h-9 gap-2 rounded-[10px] bg-[#f1f1f3] px-4 text-[13px]/4 font-normal text-[#070709] hover:bg-white"
+            size="lg"
             :class="planChecking && 'cursor-progress'"
             :aria-disabled="installBlocked || undefined"
             :aria-busy="busy || planChecking || undefined"
@@ -773,8 +771,7 @@ defineExpose({ open, resetContinue, browseInstallLocation })
           <Button
             type="button"
             variant="secondary"
-            size="unset"
-            class="h-9 rounded-[10px] px-4 text-[13px]/4 font-normal"
+            size="lg"
             data-testid="setup-mirrors-skip"
             @click="chooseMirrors(false)"
           >
@@ -783,8 +780,7 @@ defineExpose({ open, resetContinue, browseInstallLocation })
           <Button
             type="button"
             variant="inverted"
-            size="unset"
-            class="h-9 rounded-[10px] bg-[#f1f1f3] px-4 text-[13px]/4 font-normal text-[#070709] hover:bg-white"
+            size="lg"
             data-testid="setup-mirrors-accept"
             @click="chooseMirrors(true)"
           >
