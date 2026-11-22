@@ -520,8 +520,13 @@ const isRunningInThisWindow = installCta.runningInThisWindow
 
 const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput()))
 
+const restartsFromPage = computed(() => isPage.value && installCta.runningElsewhere.value)
+
 const primaryRestartsTarget = computed(
-  () => isRunningInThisWindow.value || primaryDecision.value.verb === 'restart'
+  () =>
+    isRunningInThisWindow.value ||
+    primaryDecision.value.verb === 'restart' ||
+    restartsFromPage.value
 )
 
 const hasPendingRestart = computed(
@@ -644,12 +649,30 @@ watch(
   }
 )
 
+const RESTART_TO_APPLY: NavDecision = { verb: 'restart', primaryLabel: 'instancePicker.restart' }
+
+const showsOpenBesideRestart = computed(() => hasPendingRestart.value && restartsFromPage.value)
+
+watch(installCta.runningAnywhere, (running, wasRunning) => {
+  const id = installation.value?.id
+  if (running && !wasRunning && id && pendingRestartFieldIds.value.size > 0) clearPendingRestart(id)
+})
+
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
   if (!selectedInstall) return
+  if (showsOpenBesideRestart.value) {
+    emit('primary-action', RESTART_TO_APPLY)
+    return
+  }
   if (primaryDecision.value.verb === 'restart' && pendingRestartFieldIds.value.size > 0) {
     clearPendingRestart(selectedInstall.id)
   }
+  emit('primary-action', primaryDecision.value)
+}
+
+function handleOpenBesideRestart(): void {
+  if (!installation.value) return
   emit('primary-action', primaryDecision.value)
 }
 
@@ -1215,7 +1238,28 @@ defineExpose({
             </span>
           </Transition>
 
-          <div ref="ctaWrap" class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]">
+          <div
+            ref="ctaWrap"
+            class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto] gap-2"
+          >
+            <Button
+              v-if="showsOpenBesideRestart"
+              variant="secondary"
+              size="md"
+              type="button"
+              class="gap-1.5 px-3 text-[13px]/5"
+              :disabled="!installation || opBlocksFooter"
+              data-testid="picker-open-beside-restart"
+              @click="handleOpenBesideRestart"
+            >
+              <component
+                :is="navIconFor(primaryDecision.primaryLabel)"
+                :size="15"
+                class="shrink-0 opacity-85"
+                aria-hidden="true"
+              />
+              <span>{{ resolveNavLabel(primaryDecision.primaryLabel) }}</span>
+            </Button>
             <Button
               variant="inverted"
               size="md"

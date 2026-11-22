@@ -46,6 +46,34 @@ export function provideBuildMenuHost(host: BuildMenuHost): void {
   provide(BUILD_MENU_HOST, host)
 }
 
+export function useRestartBuild(): (inst: Installation) => Promise<void> {
+  const { t } = useI18n()
+  const host = inject(BUILD_MENU_HOST, NO_HOST)
+  const modal = useModal()
+  const sessionStore = useSessionStore()
+
+  return async function restart(inst: Installation): Promise<void> {
+    const confirmed = await modal.confirm({
+      title: t('actions.restartConfirmTitle'),
+      message: t('actions.restartConfirmMessage'),
+      confirmLabel: t('actions.restartConfirm')
+    })
+    if (!confirmed) return
+    try {
+      await window.api.stopComfyUI(inst.id)
+    } catch (err) {
+      await modal.alert({
+        title: t('actions.restart'),
+        message: (err as Error)?.message || String(err)
+      })
+      return
+    }
+    await until(() => sessionStore.isRunning(inst.id)).toBe(false, { timeout: STOP_WAIT_MS })
+    if (sessionStore.isRunning(inst.id)) return
+    await host.launch(inst, { isRestart: true })
+  }
+}
+
 function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   const [head] = entries
   if (!head) return
@@ -56,7 +84,7 @@ function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
 export function useBuildMenu(build: () => Installation, opts: { whyCloud?: () => boolean } = {}) {
   const { t } = useI18n()
   const host = inject(BUILD_MENU_HOST, NO_HOST)
-  const modal = useModal()
+  const restart = useRestartBuild()
   const sessionStore = useSessionStore()
   const progressStore = useProgressStore()
   const install = useBuildProgress(build)
@@ -173,27 +201,6 @@ export function useBuildMenu(build: () => Installation, opts: { whyCloud?: () =>
     )
     return items
   })
-
-  async function restart(inst: Installation): Promise<void> {
-    const confirmed = await modal.confirm({
-      title: t('actions.restartConfirmTitle'),
-      message: t('actions.restartConfirmMessage'),
-      confirmLabel: t('actions.restartConfirm')
-    })
-    if (!confirmed) return
-    try {
-      await window.api.stopComfyUI(inst.id)
-    } catch (err) {
-      await modal.alert({
-        title: t('actions.restart'),
-        message: (err as Error)?.message || String(err)
-      })
-      return
-    }
-    await until(() => sessionStore.isRunning(inst.id)).toBe(false, { timeout: STOP_WAIT_MS })
-    if (sessionStore.isRunning(inst.id)) return
-    await host.launch(inst, { isRestart: true })
-  }
 
   async function cancelLeftStart(inst: Installation): Promise<void> {
     await window.api.cancelOperation(inst.id)

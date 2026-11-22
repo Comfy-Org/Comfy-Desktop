@@ -26,14 +26,15 @@ const useComfyUISettingsState = {
   diskUsageItem: ref(null),
   diskSpace: ref(null),
   runActionStub: vi.fn(),
-  renameStub: vi.fn().mockResolvedValue(true)
+  renameStub: vi.fn().mockResolvedValue(true),
+  clearPendingRestartStub: vi.fn()
 }
 vi.mock('../../composables/useComfyUISettings', () => ({
   useComfyUISettings: () => ({
     ...useComfyUISettingsState,
     updateField: vi.fn(),
     renameInstallation: useComfyUISettingsState.renameStub,
-    clearPendingRestart: vi.fn(),
+    clearPendingRestart: useComfyUISettingsState.clearPendingRestartStub,
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
       computed(() =>
@@ -671,6 +672,60 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
+    })
+
+    it('on the build page, offers Restart to apply for a build running in another window, with Open beside it', async () => {
+      markRunning('inst-1')
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      const target = document.createElement('div')
+      target.id = 'restart-page-actions'
+      document.body.append(target)
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null,
+          pageActionsTarget: '#restart-page-actions'
+        })
+        await flushPromises()
+        const primary = target.querySelector<HTMLButtonElement>('.settings-v2-relaunch')!
+        const open = target.querySelector<HTMLButtonElement>(
+          '[data-testid="picker-open-beside-restart"]'
+        )!
+
+        expect(primary.textContent?.trim()).toBe('Restart to apply changes')
+        expect(open.textContent?.trim()).toBe('Open')
+
+        primary.click()
+        open.click()
+        const decisions = (w.emitted('primary-action') as unknown[][]).map((call) => call[0])
+        expect(decisions).toEqual([
+          expect.objectContaining({ verb: 'restart' }),
+          expect.objectContaining({ verb: 'focus' })
+        ])
+        w.unmount()
+      } finally {
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+        target.remove()
+      }
+    })
+
+    it('clears Restart to apply once the build starts again with the new settings', async () => {
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      useComfyUISettingsState.clearPendingRestartStub.mockClear()
+      try {
+        await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null
+        })
+        markRunning('inst-1')
+        await flushPromises()
+
+        expect(useComfyUISettingsState.clearPendingRestartStub).toHaveBeenCalledWith('inst-1')
+      } finally {
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+      }
     })
 
     it('treats a running install as "Open" on an install-less (dashboard) host', async () => {
