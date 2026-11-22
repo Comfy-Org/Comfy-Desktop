@@ -112,7 +112,7 @@ let idleTimer: ReturnType<typeof setTimeout> | null = null
 let watchingSessions = false
 let downloadsUnderWay = 0
 const targetByPage = new WeakMap<WebContents, Target>()
-const pageSends = new WeakMap<WebContents, Promise<void>>()
+const pageSends = new WeakMap<WebContents, ComfyDesktopLocalEvent[]>()
 const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
 const keptRunning = new Set<string>()
@@ -136,15 +136,27 @@ function rememberBounded<T>(map: Map<string, T>, key: string, value: T, limit: n
   }
 }
 
-async function sendIfAdmitted(page: WebContents, event: ComfyDesktopLocalEvent): Promise<void> {
+async function sendIfAdmitted(page: WebContents, batch: ComfyDesktopLocalEvent[]): Promise<void> {
   if (page.isDestroyed() || !(await appsPageAdmits(page)) || page.isDestroyed()) return
-  page.send(LOCAL_EVENT_CHANNEL, event)
+  for (const event of batch) page.send(LOCAL_EVENT_CHANNEL, event)
+}
+
+async function drainPage(page: WebContents, pending: ComfyDesktopLocalEvent[]): Promise<void> {
+  while (pending.length > 0) {
+    await sendIfAdmitted(page, pending.splice(0)).catch(() => {})
+  }
+  pageSends.delete(page)
 }
 
 function sendToPage(page: WebContents, event: ComfyDesktopLocalEvent): void {
-  const previous = pageSends.get(page) ?? Promise.resolve()
-  const next = previous.then(() => sendIfAdmitted(page, event)).catch(() => {})
-  pageSends.set(page, next)
+  const pending = pageSends.get(page)
+  if (pending) {
+    pending.push(event)
+    return
+  }
+  const fresh = [event]
+  pageSends.set(page, fresh)
+  void drainPage(page, fresh)
 }
 
 function sendToPages(event: ComfyDesktopLocalEvent): void {

@@ -854,6 +854,44 @@ describe('what ComfyUI says about a run', () => {
     ])
   })
 
+  it('asks once for all the updates that came while it was still asking, and sends them in order', async () => {
+    const answers: ((admitted: boolean) => void)[] = []
+    mocks.admits = () => new Promise((resolve) => answers.push(resolve))
+
+    mocks.hearFromComfy({ type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } })
+    await sendsArrive()
+    mocks.hearFromComfy({ type: 'executing', data: { prompt_id: RUN, node: 'cut' } })
+    mocks.hearFromComfy({
+      type: 'progress',
+      data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 }
+    })
+    mocks.hearFromComfy({
+      type: 'progress',
+      data: { prompt_id: RUN, node: 'cut', value: 5, max: 8 }
+    })
+    await sendsArrive()
+    expect(answers).toHaveLength(1)
+    expect(sentToPage()).toEqual([])
+
+    answers[0]?.(true)
+    await sendsArrive()
+    expect(answers).toHaveLength(2)
+    expect(sentToPage()).toEqual([
+      { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } }
+    ])
+
+    answers[1]?.(true)
+    await sendsArrive()
+
+    expect(answers).toHaveLength(2)
+    expect(sentToPage()).toEqual([
+      { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } },
+      { type: 'executing', data: { prompt_id: RUN, node: 'cut' } },
+      { type: 'progress', data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 } },
+      { type: 'progress', data: { prompt_id: RUN, node: 'cut', value: 5, max: 8 } }
+    ])
+  })
+
   it('does not reach a page that closed before its turn came', async () => {
     let closed = false
     page.isDestroyed = () => closed
