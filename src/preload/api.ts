@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   AppOutputs,
   AppPageStatus,
+  AppRun,
   ElectronApi,
   HomeTourReplayState,
   ResolvedTheme,
@@ -129,6 +130,18 @@ export function buildElectronApi(): ElectronApi {
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
+    getAppRuns: () => ipcRenderer.invoke('apps:get-runs'),
+    appSwitchStopsRun: (appId) => ipcRenderer.invoke('apps:switch-stops-run', appId),
+    onAppRunsChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, runs: AppRun[]): void => callback(runs)
+      ipcRenderer.on('apps:runs-changed', handler)
+      return () => ipcRenderer.removeListener('apps:runs-changed', handler)
+    },
+    onOpenRunningApp: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string): void => callback(appId)
+      ipcRenderer.on('apps:open-running-app', handler)
+      return () => ipcRenderer.removeListener('apps:open-running-app', handler)
+    },
     hideAppPage: () => ipcRenderer.send('apps:hide-page'),
     onAppPageStatusChanged: (callback) => {
       const handler = (

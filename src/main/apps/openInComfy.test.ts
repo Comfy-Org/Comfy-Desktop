@@ -44,6 +44,9 @@ vi.mock('../lib/ipc/shared', () => ({
   _hasActiveLaunch: (id: string) => mocks.launchesUnderWay.has(id),
   _runningSessions: mocks.sessions
 }))
+vi.mock('./appsCatalog', () => ({
+  titleForListedApp: (id: string) => (id === 'remove-background' ? 'Remove Background' : null)
+}))
 vi.mock('./localBuild', () => ({
   usableLocalBuilds: async () => mocks.builds,
   runningPortOf: (id: string) => (mocks.sessions.get(id)?.['port'] as number | undefined) ?? null,
@@ -63,11 +66,13 @@ import {
   _resetForTest,
   LOAD_TIMEOUT_MS,
   localBuilds,
+  localBuildsForEach,
   NO_WORKFLOW_GRACE_MS,
   openEmbeddedWorkflow,
   openInComfy,
   WINDOW_TIMEOUT_MS
 } from './openInComfy'
+import { _resetForTest as forgetRuns, finishRun, runAccepted } from './localAppEvents'
 import { COMFY_STATE_SCRIPT, MARK_PAGE_STALE_SCRIPT } from './openRequest'
 import type { ComfyPageState } from './openRequest'
 
@@ -184,6 +189,7 @@ function openWindowsOnLaunch(): void {
 beforeEach(() => {
   vi.clearAllMocks()
   _resetForTest()
+  forgetRuns()
   mocks.records = [
     { id: STUDIO.id, name: STUDIO.name, sourceId: 'standalone', status: 'installed' },
     { id: LAB.id, name: LAB.name, sourceId: 'standalone', status: 'installed' }
@@ -548,6 +554,49 @@ describe('the builds a page can pick from', () => {
       { id: STUDIO.id, name: STUDIO.name, version: '0.42.1', running: true },
       { id: LAB.id, name: LAB.name, running: false }
     ])
+  })
+
+  it('name the app a build is busy with, so the page can mark it Busy', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+
+    expect(await localBuilds()).toEqual([
+      {
+        id: STUDIO.id,
+        name: STUDIO.name,
+        running: false,
+        busyWith: { appId: 'remove-background', title: 'Remove Background' }
+      },
+      { id: LAB.id, name: LAB.name, running: false }
+    ])
+  })
+
+  it('leave the name out for an app the catalog has no name for, and never name the asking app', async () => {
+    runAccepted('run-1', STUDIO.id, 'unlisted-app', 1)
+    runAccepted('run-2', LAB.id, 'remove-background', 2)
+
+    const builds = await localBuilds('remove-background')
+
+    expect(builds[0]?.busyWith).toEqual({ appId: 'unlisted-app' })
+    expect(builds[1]).not.toHaveProperty('busyWith')
+  })
+
+  it('show a build as free again once its run ends', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+    finishRun('run-1', { outcome: 'success', at: 2 })
+
+    expect((await localBuilds())[0]).not.toHaveProperty('busyWith')
+  })
+
+  it('can be described for several asking apps with one look at the builds', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+
+    const [forCutout, forAds] = await localBuildsForEach(['remove-background', 'product-ads'])
+
+    expect(forCutout?.[0]).not.toHaveProperty('busyWith')
+    expect(forAds?.[0]?.busyWith).toEqual({
+      appId: 'remove-background',
+      title: 'Remove Background'
+    })
   })
 
   it('come most recently launched first, which the page labels Last used', async () => {

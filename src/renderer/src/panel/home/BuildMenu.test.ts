@@ -355,7 +355,7 @@ describe('Build menu', () => {
       await flushPromises()
     }
 
-    expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Ready')
+    expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Never used')
     expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(true)
   })
 
@@ -775,7 +775,7 @@ describe('Build menu', () => {
     expect(calls).toEqual(['cancel', 'stop'])
   })
 
-  it('shows that a start left running did not start when it failed, not Ready', async () => {
+  it('shows that a start left running did not start when it failed, not when it was last used', async () => {
     useSessionStore().errorInstances.set(BUILD.id, {
       installationName: BUILD.name,
       message: 'Process exited with code 1',
@@ -789,10 +789,10 @@ describe('Build menu', () => {
     await flushPromises()
 
     expect(tile.get('[data-testid="home-build"]').text()).toContain("Didn't start")
-    expect(tile.get('[data-testid="home-build"]').text()).not.toContain('Ready')
+    expect(tile.get('[data-testid="home-build"]').text()).not.toContain('Never used')
   })
 
-  it('still shows Ready after a running build crashed', async () => {
+  it('still shows when it was last used after a running build crashed', async () => {
     useSessionStore().errorInstances.set(BUILD.id, { installationName: BUILD.name, exitCode: 1 })
     const tile = mount(
       withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
@@ -801,7 +801,7 @@ describe('Build menu', () => {
     mounted.push(tile)
     await flushPromises()
 
-    expect(tile.get('[data-testid="home-build"]').text()).toContain('Ready')
+    expect(tile.get('[data-testid="home-build"]').text()).toContain('Never used')
   })
 
   function failStart(): void {

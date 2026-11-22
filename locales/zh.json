@@ -26,7 +26,7 @@
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "signInTitle": "登录 Comfy",
-    "signInBody": "在 Comfy Cloud 上同步和运行",
+    "signInBody": "免费开始使用 Comfy Cloud",
     "newBuild": "新建构建",
     "noBuilds": "还没有构建",
     "crashed": "已崩溃",
@@ -47,6 +47,13 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatchesHint": "换个关键词试试。",
     "allApps": "全部应用",
+    "switchWhileRunning": {
+      "title": "切换到{app}？",
+      "body": "{current}仍在生成。已有 {count} 个其他应用在运行，切换会停止它。",
+      "bodyUnsure": "Desktop 无法确认是否有应用仍在生成。切换可能会停止它。",
+      "switch": "切换",
+      "stay": "留在这里"
+    },
     "request": {
       "bandTitle": "没有你想要的应用？",
       "bandBody": "你的想法决定我们接下来做哪些应用。",
@@ -82,6 +89,17 @@
       "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
       "openUnreadable": "Comfy Desktop 无法读取此文件。请重试。",
       "openNotTaken": "ComfyUI 没有打开这个工作流。"
+    },
+    "closeWhileRunning": {
+      "title": "仍要关闭？",
+      "bodyOne": "{app}仍在生成。关闭会停止它。",
+      "bodyMany": "{count} 个应用仍在生成。关闭会停止它们。 | {count} 个应用仍在生成。关闭会停止它们。",
+      "close": "关闭",
+      "cancel": "取消"
+    },
+    "rail": {
+      "running": "{app}，正在生成",
+      "finished": "{app}，已完成"
     }
   },
   "assets": {
@@ -197,7 +215,14 @@
     "autoStartOn": "自动启动",
     "buildRunning": "运行中",
     "buildStarting": "启动中",
-    "buildReady": "就绪",
+    "buildNeverUsed": "从未使用",
+    "cloudNoSetupNeeded": "无需设置",
+    "buildUsedJustNow": "刚刚使用",
+    "buildUsedMinutesAgo": "{count} 分钟前使用",
+    "buildUsedHoursAgo": "{count} 小时前使用",
+    "buildUsedYesterday": "昨天使用",
+    "buildUsedDaysAgo": "{count} 天前使用",
+    "buildUsedOnDate": "{date} 使用",
     "buildLogInToUse": "登录后使用",
     "buildDidntStart": "未能启动",
     "buildCrashed": "已崩溃",
@@ -370,7 +395,16 @@
     "betaNoticeOffTitleNamed": "已关闭 {feature} Beta 功能",
     "betaNoticeOffBodyNamed": "我们已为此构建关闭了 {feature} Beta 功能。你可以在设置中管理 Beta 功能。",
     "betaNoticeDismiss": "知道了",
-    "betaNoticeSettings": "设置"
+    "betaNoticeSettings": "设置",
+    "runningMany": "{count} 个运行中",
+    "openRunning": "打开{app}",
+    "showRunning": "显示运行中的应用",
+    "appReady": "{app}已完成",
+    "ready": "已完成",
+    "readyMany": "{count} 个应用已完成",
+    "showReady": "显示已完成的应用",
+    "appsMany": "{count} 个应用",
+    "showApps": "显示应用"
   },
   "comfyUISettings": {
     "title": "设置",
@@ -2192,5 +2226,12 @@
     "label": "等待期间",
     "cloudFailedTitle": "无法打开 Comfy Cloud",
     "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
+  },
+  "appsQuit": {
+    "message": "仍要退出？",
+    "detailOne": "{app}仍在生成。退出会停止它。",
+    "detailMany": "{count} 个应用仍在生成。退出会停止它们。",
+    "quit": "退出",
+    "cancel": "取消"
   }
 }

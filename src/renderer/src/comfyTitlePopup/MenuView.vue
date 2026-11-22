@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, useTemplateRef, watch } from 'vue'
 import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChartColumn, Gauge } from '@lucide/vue'
+import { AppWindow, ChartColumn, Gauge, LoaderCircle } from '@lucide/vue'
 import type { TitlePopupMenuIcon, TitlePopupMenuItem as MenuItem } from '../../../types/ipc'
 
 const MENU_ICONS: Record<TitlePopupMenuIcon, Component> = {
@@ -20,7 +20,20 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const hasIcons = computed(() => props.items.some((item) => item.icon))
+const hasIcons = computed(() => props.items.some((item) => item.icon || item.app))
+
+const brokenPictures = reactive(new Set<string>())
+
+function pictureOf(item: MenuItem): string | null {
+  if (!item.app?.picture || brokenPictures.has(item.app.picture)) return null
+  return item.app.picture
+}
+
+function appLabelOf(item: MenuItem): string | undefined {
+  if (!item.app) return undefined
+  const key = item.app.state === 'running' ? 'apps.rail.running' : 'apps.rail.finished'
+  return t(key, { app: labelFor(item) })
+}
 
 function labelFor(item: MenuItem): string {
   if (!item.labelKey) return item.label ?? ''
@@ -121,16 +134,51 @@ onUnmounted(() => {
         :role="item.id ? 'menuitem' : 'none'"
         :data-index="idx"
         :tabindex="item.id ? -1 : undefined"
+        :aria-label="appLabelOf(item)"
+        :data-testid="item.app ? 'title-popup-app' : undefined"
         @click="handleClick(item)"
       >
+        <span
+          v-if="item.app"
+          class="grid size-5 shrink-0 place-items-center overflow-hidden rounded-sm bg-secondary text-muted-foreground"
+          aria-hidden="true"
+        >
+          <img
+            v-if="pictureOf(item)"
+            :src="pictureOf(item) ?? undefined"
+            alt=""
+            class="size-full object-cover"
+            draggable="false"
+            @error="brokenPictures.add(item.app.picture ?? '')"
+          />
+          <AppWindow v-else :size="12" />
+        </span>
         <component
           :is="MENU_ICONS[item.icon]"
-          v-if="item.icon"
+          v-else-if="item.icon"
           :size="15"
           class="item-icon shrink-0"
           aria-hidden="true"
         />
         <span class="label flex-auto overflow-hidden text-ellipsis">{{ labelFor(item) }}</span>
+        <template v-if="item.app">
+          <LoaderCircle
+            v-if="item.app.state === 'running'"
+            :size="14"
+            class="shrink-0 animate-spin text-muted-foreground [animation-duration:900ms] motion-reduce:animate-none"
+            aria-hidden="true"
+            data-testid="title-popup-app-running"
+          />
+          <span
+            v-else
+            class="flex shrink-0 items-center gap-1.5 text-muted-foreground"
+            aria-hidden="true"
+            data-testid="title-popup-app-ready"
+          >
+            <span class="size-1.5 rounded-full bg-current" />
+            {{ t('titleBar.ready') }}
+          </span>
+        </template>
       </li>
     </template>
   </ul>

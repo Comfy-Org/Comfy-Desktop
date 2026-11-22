@@ -12,9 +12,12 @@ const mocks = vi.hoisted(() => ({
   localDownload: vi.fn(),
   openInComfy: vi.fn(),
   localBuilds: vi.fn(),
+  localBuildsForEach: vi.fn(),
   loadedApp: 'product-ads' as string | null,
   document: 1,
-  whileChecking: () => {}
+  whileChecking: () => {},
+  pages: [] as { send: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }[],
+  runsChanged: null as (() => void) | null
 }))
 
 vi.mock('electron', () => ({
@@ -32,7 +35,16 @@ vi.mock('../../apps/appPageView', () => ({
   loadedAppPage: () =>
     mocks.loadedApp ? { appId: mocks.loadedApp, document: mocks.document } : null
 }))
-vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
+vi.mock('../../apps/appsPages', () => ({
+  isAppsPageSender: () => mocks.isAppsPage,
+  liveAppsPages: () => mocks.pages
+}))
+vi.mock('../../apps/localAppEvents', () => ({
+  onRunsChanged: (watcher: () => void) => {
+    mocks.runsChanged = watcher
+    return () => {}
+  }
+}))
 vi.mock('../../apps/localComfy', () => ({
   localState: mocks.localState,
   startLocal: mocks.startLocal,
@@ -41,7 +53,8 @@ vi.mock('../../apps/localComfy', () => ({
 }))
 vi.mock('../../apps/openInComfy', () => ({
   openInComfy: mocks.openInComfy,
-  localBuilds: mocks.localBuilds
+  localBuilds: mocks.localBuilds,
+  localBuildsForEach: mocks.localBuildsForEach
 }))
 vi.mock('../i18n', () => ({ t: (key: string) => key }))
 
@@ -71,12 +84,14 @@ beforeEach(() => {
   mocks.loadedApp = 'product-ads'
   mocks.document = 1
   mocks.whileChecking = () => {}
+  mocks.pages = []
   mocks.localState.mockResolvedValue({ state: 'stopped', own: true, name: 'Studio' })
   mocks.startLocal.mockResolvedValue(RUNNING)
   mocks.localFetch.mockResolvedValue({ status: 200, contentType: 'application/json', body: null })
   mocks.localDownload.mockResolvedValue({ state: 'done' })
   mocks.openInComfy.mockResolvedValue({ opened: true })
   mocks.localBuilds.mockResolvedValue(BUILDS)
+  mocks.localBuildsForEach.mockImplementation(async (askers: unknown[]) => askers.map(() => BUILDS))
   registerAppsLocalHandlers()
 })
 
@@ -160,5 +175,82 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(mocks.localDownload).not.toHaveBeenCalled()
     expect(mocks.openInComfy).not.toHaveBeenCalled()
     expect(mocks.localBuilds).not.toHaveBeenCalled()
+  })
+})
+
+describe('telling app pages that a build became busy or free', () => {
+  function runsChange(): Promise<void> {
+    mocks.runsChanged?.()
+    return new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  it('sends every open app page the builds as they are now', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    const closed = { send: vi.fn(), isDestroyed: () => true }
+    mocks.pages = [page, closed]
+
+    await runsChange()
+
+    expect(page.send).toHaveBeenCalledExactlyOnceWith(APPS_LOCAL_CHANNELS.buildsChanged, BUILDS)
+    expect(closed.send).not.toHaveBeenCalled()
+  })
+
+  it('drops an older answer that arrives after a newer one', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    mocks.pages = [page]
+    let answerFirst: (builds: unknown) => void = () => {}
+    const busy = [{ id: 'inst-1', name: 'Studio', busyWith: { appId: 'a', title: 'A' } }]
+    mocks.localBuildsForEach
+      .mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)))
+      .mockResolvedValueOnce([BUILDS])
+
+    mocks.runsChanged?.()
+    await runsChange()
+    answerFirst([busy])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(page.send.mock.calls).toEqual([[APPS_LOCAL_CHANNELS.buildsChanged, BUILDS]])
+  })
+
+  it('asks for the builds as each page sees them, so a page is never told it waits for itself', async () => {
+    mocks.pages = [{ send: vi.fn(), isDestroyed: () => false }]
+
+    await runsChange()
+
+    expect(mocks.localBuildsForEach).toHaveBeenCalledExactlyOnceWith(['product-ads'])
+  })
+
+  it('tells a page nothing when it switched to another app during the lookup', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    mocks.pages = [page]
+    let answer: (builds: unknown) => void = () => {}
+    mocks.localBuildsForEach.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve))
+    )
+
+    await runsChange()
+    expect(mocks.localBuildsForEach).toHaveBeenCalledExactlyOnceWith(['product-ads'])
+    mocks.loadedApp = 'remove-background'
+    answer([BUILDS])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(page.send).not.toHaveBeenCalled()
+  })
+
+  it('tells no page once Apps is turned off', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    mocks.pages = [page]
+    mocks.appsEnabled = false
+
+    await runsChange()
+
+    expect(page.send).not.toHaveBeenCalled()
+    expect(mocks.localBuildsForEach).not.toHaveBeenCalled()
+  })
+
+  it('does not look up the builds when no app page is open', async () => {
+    await runsChange()
+
+    expect(mocks.localBuildsForEach).not.toHaveBeenCalled()
   })
 })
