@@ -126,10 +126,10 @@ function openLocation(): void {
 <template>
   <div class="build-overview @container/overview w-full" data-testid="build-overview">
     <div
-      class="build-overview-grid grid gap-2.5 @[760px]/overview:grid-cols-[minmax(0,1.35fr)_minmax(0,3fr)]"
+      class="build-overview-grid grid gap-2.5 @[960px]/overview:grid-cols-[minmax(0,1.35fr)_minmax(0,3fr)]"
     >
       <section
-        class="build-overview-card flex min-w-0 flex-col gap-1 overflow-hidden rounded-[14px] bg-card px-[18px] py-4 @[760px]/overview:[contain:size]"
+        class="build-overview-card flex min-w-0 flex-col gap-1 overflow-hidden rounded-[14px] bg-card px-[18px] py-4 @[960px]/overview:[contain:size]"
         aria-labelledby="build-overview-comfyui"
         data-testid="build-overview-comfyui"
       >

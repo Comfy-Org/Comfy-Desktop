@@ -238,11 +238,14 @@ describe('BuildOverview columns (wide window)', () => {
   )
 })
 
-describe('BuildOverview update note (wide window)', () => {
-  it('shows the whole snapshot note beside the Update button', async () => {
-    const { root } = await measure(WIDTHS.wide, SHORT, STATES['update available'])
-    const note = root.querySelector<HTMLElement>('[data-testid="build-overview-update-note"]')!
-    expect(note.textContent?.trim()).toBe('Saves a snapshot first')
-    expect(note.scrollWidth, 'the note is cut off').toBeLessThanOrEqual(note.clientWidth)
-  })
+describe('BuildOverview update note', () => {
+  it.each([760, 900, 960, WIDTHS.wide])(
+    'shows the whole snapshot note beside the Update button at %ipx',
+    async (width) => {
+      const { root } = await measure(width, SHORT, STATES['update available'])
+      const note = root.querySelector<HTMLElement>('[data-testid="build-overview-update-note"]')!
+      expect(note.textContent?.trim()).toBe('Saves a snapshot first')
+      expect(note.scrollWidth, 'the note is cut off').toBeLessThanOrEqual(note.clientWidth)
+    }
+  )
 })
