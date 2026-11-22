@@ -46,6 +46,20 @@ export function provideBuildMenuHost(host: BuildMenuHost): void {
   provide(BUILD_MENU_HOST, host)
 }
 
+function withoutPageItems(items: BuildMenuEntry[]): BuildMenuEntry[] {
+  const kept: BuildMenuEntry[] = []
+  let pendingSeparator = false
+  for (const item of items) {
+    if (ON_PAGE_HIDDEN.has(item.id)) {
+      pendingSeparator ||= item.separator === true
+      continue
+    }
+    kept.push({ ...item, separator: kept.length > 0 && (item.separator || pendingSeparator) })
+    pendingSeparator = false
+  }
+  return kept
+}
+
 export function useRestartBuild(): (inst: Installation) => Promise<void> {
   const { t } = useI18n()
   const host = inject(BUILD_MENU_HOST, NO_HOST)
@@ -81,7 +95,13 @@ function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   items.push(...entries)
 }
 
-export function useBuildMenu(build: () => Installation, opts: { whyCloud?: () => boolean } = {}) {
+const ON_PAGE_HIDDEN = new Set(['launch', 'manage'])
+const LAST_GROUP = new Set(['untrack', 'delete'])
+
+export function useBuildMenu(
+  build: () => Installation,
+  opts: { whyCloud?: () => boolean; onPage?: boolean } = {}
+) {
   const { t } = useI18n()
   const host = inject(BUILD_MENU_HOST, NO_HOST)
   const restart = useRestartBuild()
@@ -189,17 +209,17 @@ export function useBuildMenu(build: () => Installation, opts: { whyCloud?: () =>
     )
 
     const rest = existing.filter(
-      (item) => item.id !== 'stop' && item.id !== 'delete' && item.id !== 'auto-start'
+      (item) => item.id !== 'stop' && item.id !== 'auto-start' && !LAST_GROUP.has(item.id)
     )
     if (opts.whyCloud?.()) {
       rest.push({ id: 'why-cloud', label: t('chooser.menuWhyTryCloud'), icon: Info })
     }
     startsGroup(rest, items)
     startsGroup(
-      existing.filter((item) => item.id === 'delete'),
+      existing.filter((item) => LAST_GROUP.has(item.id)),
       items
     )
-    return items
+    return opts.onPage ? withoutPageItems(items) : items
   })
 
   async function cancelLeftStart(inst: Installation): Promise<void> {
