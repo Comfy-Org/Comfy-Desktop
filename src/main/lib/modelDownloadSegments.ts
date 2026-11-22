@@ -112,11 +112,12 @@ interface SegmentState {
   idle: ReturnType<typeof setTimeout> | null
   wait: ReturnType<typeof setTimeout> | null
   parked: boolean
+  retryNotBefore: number
   awaitingResponse: boolean
   failures: number
   gen: number
   networkDone: boolean
-  backpressured: boolean
+  paused: { response: SegmentResponse; gen: number } | null
 }
 
 function headerString(value: string | string[] | undefined): string | undefined {
@@ -128,12 +129,17 @@ function isThrottled(status: number): boolean {
   return status === 429 || status === 503
 }
 
+function retryAfterMs(retryAfter: string | undefined): number | null {
+  if (retryAfter === undefined) return null
+  const value = retryAfter.trim()
+  if (/^\d+$/.test(value)) return Number(value) * 1000
+  const at = Date.parse(value)
+  if (!Number.isFinite(at)) return null
+  return Math.max(0, at - Date.now())
+}
+
 function throttleDelayMs(retryAfter: string | undefined, failures: number): number {
-  const seconds = retryAfter !== undefined ? Number(retryAfter.trim()) : NaN
-  const delay =
-    Number.isFinite(seconds) && seconds >= 0
-      ? seconds * 1000
-      : THROTTLE_BASE_DELAY_MS * 2 ** Math.max(0, failures - 1)
+  const delay = retryAfterMs(retryAfter) ?? THROTTLE_BASE_DELAY_MS * 2 ** Math.max(0, failures - 1)
   return Math.min(delay, THROTTLE_MAX_DELAY_MS)
 }
 
@@ -158,7 +164,9 @@ function writeAt(fd: number, chunk: Buffer, position: number): Promise<void> {
 }
 
 function syncData(fd: number): Promise<void> {
-  return new Promise((resolve) => fs.fdatasync(fd, () => resolve()))
+  return new Promise((resolve, reject) =>
+    fs.fdatasync(fd, (err) => (err ? reject(err) : resolve()))
+  )
 }
 
 export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
@@ -173,11 +181,12 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     idle: null,
     wait: null,
     parked: false,
+    retryNotBefore: 0,
     awaitingResponse: false,
     failures: 0,
     gen: 0,
     networkDone: false,
-    backpressured: false
+    paused: null
   }))
 
   let stopped = false
@@ -199,8 +208,8 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
 
   const persistNow = async (): Promise<void> => {
     const segments = snapshot()
-    await syncData(fd)
     try {
+      await syncData(fd)
       opts.persist(segments)
     } catch {}
   }
@@ -272,7 +281,10 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     dropRequest(state)
     state.gen++
     if (othersRunning(state)) {
+      const serverDelay = retryAfterMs(retryAfter)
       state.parked = true
+      state.retryNotBefore =
+        serverDelay === null ? 0 : Date.now() + Math.min(serverDelay, THROTTLE_MAX_DELAY_MS)
       return
     }
     state.failures++
@@ -293,7 +305,16 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     for (const state of states) {
       if (!state.parked) continue
       state.parked = false
-      startSegment(state)
+      const waitMs = state.retryNotBefore - Date.now()
+      state.retryNotBefore = 0
+      if (waitMs <= 0) {
+        startSegment(state)
+        continue
+      }
+      state.wait = setTimeout(() => {
+        state.wait = null
+        startSegment(state)
+      }, waitMs)
     }
   }
 
@@ -327,8 +348,8 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     position: number
   ): void => {
     state.queued += chunk.length
-    if (!state.backpressured && state.queued >= WRITE_HIGH_WATER_BYTES) {
-      state.backpressured = true
+    if (state.paused?.gen !== gen && state.queued >= WRITE_HIGH_WATER_BYTES) {
+      state.paused = { response, gen }
       clearIdle(state)
       response.pause()
     }
@@ -339,11 +360,12 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
         state.segment.done += chunk.length
         state.queued -= chunk.length
         bytesSincePersist += chunk.length
-        if (state.backpressured && state.queued <= WRITE_LOW_WATER_BYTES) {
-          state.backpressured = false
-          if (!stopped && gen === state.gen && !state.networkDone) {
-            response.resume()
-            armIdle(state, gen)
+        const paused = state.paused
+        if (paused && state.queued <= WRITE_LOW_WATER_BYTES) {
+          state.paused = null
+          if (!stopped && paused.gen === state.gen && !state.networkDone) {
+            paused.response.resume()
+            armIdle(state, paused.gen)
           }
         }
         maybePersist()
@@ -434,7 +456,7 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
       opts.onProgress(totalReceived())
       if (state.segment.start + state.received > end) {
         finishNetwork(state)
-      } else if (!state.backpressured) {
+      } else if (state.paused?.gen !== gen) {
         armIdle(state, gen)
       }
     })

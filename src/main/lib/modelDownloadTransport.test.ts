@@ -1630,8 +1630,8 @@ describe('segmented download', () => {
 
   it('counts a range waiting for a connection as stalled when no other range is receiving', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const { handle } = startSegmented({ idleTimeoutMs: 20 })
     try {
-      startSegmented({ idleTimeoutMs: 20 })
       const first = requests[1]!
       vi.advanceTimersByTime(25)
 
@@ -1639,8 +1639,127 @@ describe('segmented download', () => {
       expect(requests.length).toBeGreaterThan(3)
       expect(headerCalls(requests[requests.length - 1]!)['Range']).toMatch(/^bytes=/)
     } finally {
+      handle.cancel()
+      await handle.done
       vi.useRealTimers()
     }
+  })
+
+  it('waits out Retry-After before asking again for a range parked behind a running one', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const { handle } = startSegmented()
+    try {
+      const [, first, second] = requests
+      first!.emit('response', makeResponse(429, { 'retry-after': '20' }))
+      const tail = rangeResponse(5, 9)
+      second!.emit('response', tail)
+      tail.emit('data', Buffer.from('56789'))
+
+      expect(requests).toHaveLength(3)
+      vi.advanceTimersByTime(19_000)
+      expect(requests).toHaveLength(3)
+      vi.advanceTimersByTime(1_000)
+      expect(requests).toHaveLength(4)
+      expect(headerCalls(requests[3]!)).toMatchObject({ Range: 'bytes=0-4', 'If-Range': '"v1"' })
+    } finally {
+      handle.cancel()
+      await handle.done
+      vi.useRealTimers()
+    }
+  })
+
+  it('pauses a retried range that refills the write queue and resumes that same range once it drains', async () => {
+    const MIB = 1024 * 1024
+    const half = 16 * MIB
+    const total = 2 * half
+    const handle = startModelTransfer(baseOpts({ segmentTuning: tuning }))
+    requests[0]!.emit(
+      'response',
+      makeResponse(200, { 'content-length': String(total), 'accept-ranges': 'bytes', etag: '"v1"' })
+    )
+    const part = (from: number, to: number): FakeResponse =>
+      makeResponse(206, {
+        'content-range': `bytes ${from}-${to}/${total}`,
+        'content-length': String(to - from + 1),
+        etag: '"v1"'
+      })
+
+    const dropped = part(0, half - 1)
+    requests[1]!.emit('response', dropped)
+    dropped.emit('data', Buffer.alloc(9 * MIB, 1))
+    expect(dropped.pause).toHaveBeenCalled()
+    dropped.emit('error', new Error('net::ERR_CONNECTION_RESET'))
+
+    expect(requests).toHaveLength(4)
+    expect(headerCalls(requests[3]!)['Range']).toBe(`bytes=${9 * MIB}-${half - 1}`)
+    const replacement = part(9 * MIB, half - 1)
+    requests[3]!.emit('response', replacement)
+    replacement.emit('data', Buffer.alloc(MIB, 2))
+    expect(replacement.pause).toHaveBeenCalled()
+
+    await vi.waitFor(() => expect(replacement.resume).toHaveBeenCalled())
+    expect(dropped.resume).not.toHaveBeenCalled()
+    handle.cancel()
+    await handle.done
+  })
+
+  it('keeps the saved SHA-256 when a resumed range falls back to one stream', async () => {
+    fs.mkdirSync(path.dirname(finalPath), { recursive: true })
+    fs.writeFileSync(stagingPathFor(finalPath), Buffer.alloc(10))
+    writeStagedMeta(
+      stagingMetaPathFor(finalPath),
+      stagedMeta({
+        version: 3,
+        expectedSize: 10,
+        etag: '"v1"',
+        sha256: '84d89877f0d4041efb6bf91a16f0248f2fd573e6af05c19f96bedb9f882f7882',
+        segments: [
+          { start: 0, end: 4, done: 0 },
+          { start: 5, end: 9, done: 0 }
+        ]
+      })
+    )
+    const handle = startModelTransfer(baseOpts({ segmentTuning: tuning }))
+    expect(requests).toHaveLength(2)
+    requests[0]!.emit('response', makeResponse(200, probeHeaders))
+
+    await vi.waitFor(() => expect(requests).toHaveLength(3))
+    const plain = requests[2]!
+    expect(headerCalls(plain)['Range']).toBeUndefined()
+    const res = makeResponse(200, probeHeaders)
+    plain.emit('response', res)
+    res.emit('data', Buffer.from('abcdefghij'))
+    res.emit('end')
+
+    const outcome = await handle.done
+    expect(outcome).toMatchObject({ outcome: 'error', code: 'checksum-mismatch' })
+    expect(fs.existsSync(finalPath)).toBe(false)
+  })
+
+  it('starts over rather than send a mirror validator to the original URL once mirrors are off', async () => {
+    fs.mkdirSync(path.dirname(finalPath), { recursive: true })
+    fs.writeFileSync(stagingPathFor(finalPath), Buffer.alloc(10))
+    writeStagedMeta(
+      stagingMetaPathFor(finalPath),
+      stagedMeta({
+        version: 3,
+        expectedSize: 10,
+        etag: '"v1"',
+        segments: [
+          { start: 0, end: 4, done: 5 },
+          { start: 5, end: 9, done: 0 }
+        ],
+        segmentsFromMirror: true
+      })
+    )
+    const handle = startModelTransfer(baseOpts({ segmentTuning: tuning }))
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.__url).toBe(URL_MAIN)
+    expect(headerCalls(requests[0]!)['Range']).toBeUndefined()
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.segments).toBeUndefined()
+    handle.cancel()
+    await handle.done
   })
 })
 
