@@ -60,6 +60,8 @@ function withoutPageItems(items: BuildMenuEntry[]): BuildMenuEntry[] {
   return kept
 }
 
+const restartsInFlight = new Set<string>()
+
 export function useRestartBuild(): (inst: Installation) => Promise<void> {
   const { t } = useI18n()
   const host = inject(BUILD_MENU_HOST, NO_HOST)
@@ -67,6 +69,16 @@ export function useRestartBuild(): (inst: Installation) => Promise<void> {
   const sessionStore = useSessionStore()
 
   return async function restart(inst: Installation): Promise<void> {
+    if (restartsInFlight.has(inst.id)) return
+    restartsInFlight.add(inst.id)
+    try {
+      await confirmStopAndLaunch(inst)
+    } finally {
+      restartsInFlight.delete(inst.id)
+    }
+  }
+
+  async function confirmStopAndLaunch(inst: Installation): Promise<void> {
     const confirmed = await modal.confirm({
       title: t('actions.restartConfirmTitle'),
       message: t('actions.restartConfirmMessage'),

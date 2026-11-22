@@ -734,6 +734,53 @@ describe('ComfyUISettingsContent', () => {
       }
     })
 
+    it('keeps Restart to apply after switching to another build and back', async () => {
+      markRunning('inst-1')
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      useComfyUISettingsState.clearPendingRestartStub.mockClear()
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null
+        })
+        await w.setProps({ installation: { ...SAMPLE_INSTALL, id: 'stopped-build' } })
+        await flushPromises()
+        await w.setProps({ installation: SAMPLE_INSTALL })
+        await flushPromises()
+
+        expect(useComfyUISettingsState.clearPendingRestartStub).not.toHaveBeenCalled()
+      } finally {
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+      }
+    })
+
+    it('keeps Open on the build page while the build is still starting in another window', async () => {
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'X' })
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      const target = document.createElement('div')
+      target.id = 'starting-page-actions'
+      document.body.append(target)
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null,
+          pageActionsTarget: '#starting-page-actions'
+        })
+        await flushPromises()
+
+        const primary = target.querySelector<HTMLButtonElement>('.settings-v2-relaunch')!
+        expect(primary.textContent?.trim()).toBe('Open')
+        expect(target.querySelector('[data-testid="picker-open-beside-restart"]')).toBeNull()
+        w.unmount()
+      } finally {
+        useSessionStore().launchingInstances.delete('inst-1')
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+        target.remove()
+      }
+    })
+
     it('treats a running install as "Open" on an install-less (dashboard) host', async () => {
       markRunning('inst-1')
       const w = await mountContent({

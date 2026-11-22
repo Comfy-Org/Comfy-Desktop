@@ -31,6 +31,7 @@ import {
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
+import { useSessionStore } from '../../stores/sessionStore'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'
 import { decideNavigation, type NavDecision } from '../../../../shared/navigation/navDecision'
 import type { Category, ViewKind } from '../../../../shared/viewKind'
@@ -534,7 +535,14 @@ const isRunningInThisWindow = installCta.runningInThisWindow
 
 const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput()))
 
-const restartsFromPage = computed(() => isPage.value && installCta.runningElsewhere.value)
+const sessionStore = useSessionStore()
+const restartsFromPage = computed(
+  () =>
+    isPage.value &&
+    installCta.runningElsewhere.value &&
+    !!installation.value &&
+    sessionStore.isRunning(installation.value.id)
+)
 
 const primaryRestartsTarget = computed(
   () =>
@@ -785,10 +793,13 @@ const RESTART_TO_APPLY: NavDecision = { verb: 'restart', primaryLabel: 'instance
 
 const showsOpenBesideRestart = computed(() => hasPendingRestart.value && restartsFromPage.value)
 
-watch(installCta.runningAnywhere, (running, wasRunning) => {
-  const id = installation.value?.id
-  if (running && !wasRunning && id && pendingRestartFieldIds.value.size > 0) clearPendingRestart(id)
-})
+watch(
+  () => [installation.value?.id, installCta.runningAnywhere.value] as const,
+  ([id, running], [previousId, wasRunning]) => {
+    const startedAgain = id !== undefined && id === previousId && running && !wasRunning
+    if (startedAgain && pendingRestartFieldIds.value.size > 0) clearPendingRestart(id)
+  }
+)
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
