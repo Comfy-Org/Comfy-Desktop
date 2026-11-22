@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as UpdaterModule from './updater'
 import type { InstallAttemptRecord, ShipItReport } from './update-install-attempt'
+import type * as UpdateInstallAttemptModule from './update-install-attempt'
 
 let mockPlatform = 'linux'
 let mockAppImage: string | undefined
@@ -87,7 +88,7 @@ let installAttempt: InstallAttemptRecord | null = null
 let shipItReport: ShipItReport = { logFound: false, ranAfterTrigger: null, errorTail: null }
 
 vi.mock('./update-install-attempt', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./update-install-attempt')>()
+  const actual = await importOriginal<typeof UpdateInstallAttemptModule>()
   return {
     ...actual,
     writeInstallAttempt: vi.fn((record: InstallAttemptRecord) => {

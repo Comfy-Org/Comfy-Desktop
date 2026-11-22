@@ -17,11 +17,7 @@ export interface InstallAttemptRecord {
 }
 
 export type AppLocationKind =
-  | 'applications'
-  | 'user_applications'
-  | 'translocated'
-  | 'mounted_volume'
-  | 'other'
+  'applications' | 'user_applications' | 'translocated' | 'mounted_volume' | 'other'
 
 export interface AppLocation {
   bundlePath: string
