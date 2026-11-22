@@ -204,6 +204,19 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
     )
   })
 
+  it.for<{ name: string; after: ComfyDesktop2AuthState }>([
+    { name: 'still signed in', after: SIGNED_IN },
+    { name: 'refused because sharing was turned off', after: { status: 'disabled', reason: 'off' } }
+  ])('resolves a cancel with the view $name when that is its state by then', async ({ after }) => {
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValue(after)
+    mocks.signInToCloud.mockRejectedValue(new SignInFailure('access_denied', 'cancelled'))
+
+    await expect(requestSignIn()({})).resolves.toStrictEqual({
+      ...after,
+      signInFailure: 'cancelled'
+    })
+  })
+
   it('resolves a sign-in a sign-out cut short with the state the view is in by then', async () => {
     mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValue(SIGNED_OUT)
     mocks.signInToCloud.mockRejectedValue(
@@ -339,9 +352,12 @@ describe('desktop2-auth:sign-out', () => {
 
   it('does nothing for a view Desktop does not share its session with', async () => {
     mocks.isTrustedSender.mockReturnValue(false)
-    mocks.stateForSender.mockResolvedValue({ status: 'disabled' })
+    mocks.stateForSender.mockResolvedValue({ status: 'disabled', reason: 'not_local' })
 
-    await expect(signOut()({ sender: {} })).resolves.toEqual({ status: 'disabled' })
+    await expect(signOut()({ sender: {} })).resolves.toEqual({
+      status: 'disabled',
+      reason: 'not_local'
+    })
     expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
   })
 })
