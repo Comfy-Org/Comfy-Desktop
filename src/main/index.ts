@@ -904,7 +904,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       if (draftLink) hostReentryGate.runEachWhenOpen(() => void openDraftLink(draftLink))
       else hostReentryGate.runOrQueue(() => openOrFocusAnyHostWindow())
     })
-  } else if (process.env['COMFY_DRAFT_APP_LINKS'] === '1') {
+  } else if (process.env['COMFY_DRAFT_APP_LINKS'] !== '0' && process.env['E2E'] !== '1') {
     app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, [
       path.resolve(process.argv[1] ?? '.')
     ])

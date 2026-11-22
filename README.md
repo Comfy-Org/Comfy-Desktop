@@ -116,6 +116,8 @@ pnpm run dev               # Windows / macOS
 
 On Windows/macOS, set up a fresh clone and start the app in one command with `pnpm run init:dev`.
 
+A development copy opens `comfy://` links, taking them over from an installed Comfy Desktop. Start it with `COMFY_DRAFT_APP_LINKS=0` to leave links with the installed app.
+
 <details>
 <summary><b>Bootstrap Python</b> (the bundled Git backend)</summary>
 
