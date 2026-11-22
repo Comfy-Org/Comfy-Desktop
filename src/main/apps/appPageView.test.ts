@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 
 import type { AppOutputs } from '../../types/ipc'
+import type { DraftApp } from './draftApps'
 
 type PermissionCheck = (contents: unknown, permission: string, requestingOrigin: string) => boolean
 type PermissionRequest = (
@@ -610,7 +611,7 @@ describe('a draft app', () => {
     const newer = { url: DRAFT_URL, accepted: true }
     mocks.drafts.set(DRAFT, newer)
 
-    closeDraftPages([checked])
+    closeDraftPages([checked] as unknown as DraftApp[])
 
     expect(hostedPage().webContents.close).not.toHaveBeenCalled()
     expect(mocks.drafts.get(DRAFT)).toBe(newer)
@@ -622,7 +623,7 @@ describe('a draft app', () => {
   it('closes a draft the account change checked', async () => {
     const page = draftPage()
 
-    closeDraftPages([mocks.drafts.get(DRAFT)!])
+    closeDraftPages([mocks.drafts.get(DRAFT)!] as unknown as DraftApp[])
 
     expect(hostedPage().webContents.close).toHaveBeenCalled()
     expect(mocks.drafts.size).toBe(0)

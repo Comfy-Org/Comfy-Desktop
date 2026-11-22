@@ -295,7 +295,7 @@ describe('openPastedDraft', () => {
       },
       'Draft apps are for Comfy staff'
     ]
-  ] as const)(
+  ] as [string, string, Partial<DraftLinkDeps>, string][])(
     'answers settings with why when the answer is %s, and sends the home window nothing',
     async (reason, address, overrides, title) => {
       const d = deps(overrides)
@@ -319,9 +319,12 @@ describe('canPasteDrafts', () => {
   it.each([
     ['signed out', async () => null],
     ['not staff', async () => ({ email: 'someone@gmail.com', signInProvider: 'google.com' })]
-  ] as const)('hides the paste field when %s in a packaged Desktop', async (_who, account) => {
-    await expect(canPasteDrafts(deps({ signedInAccount: account }))).resolves.toBe(false)
-  })
+  ] as [string, DraftLinkDeps['signedInAccount']][])(
+    'hides the paste field when %s in a packaged Desktop',
+    async (_who, account) => {
+      await expect(canPasteDrafts(deps({ signedInAccount: account }))).resolves.toBe(false)
+    }
+  )
 
   it('shows the paste field to anyone in an unpackaged Desktop', async () => {
     const signedInAccount = vi.fn(async () => null)
@@ -394,14 +397,17 @@ describe('acceptDraft', () => {
     ['the account moved to another workspace', { cloudIdentity: () => '["staff-subject","ws-2"]' }],
     ['the person signed out', { cloudIdentity: () => null, signedInAccount: async () => null }],
     ['the account is no longer staff', { signedInAccount: async () => OUTSIDER_ACCOUNT }]
-  ] as const)('does not open a draft staff asked for when %s', async (_why, overrides) => {
-    const { appId, token } = await askedAbout(LINK)
+  ] as [string, Partial<DraftLinkDeps>][])(
+    'does not open a draft staff asked for when %s',
+    async (_why, overrides) => {
+      const { appId, token } = await askedAbout(LINK)
 
-    expect(await acceptDraft(PANEL, token, deps(overrides))).toBeNull()
-    expect(draftPageUrl(appId)).toBeNull()
-    expect(draftCards()).toEqual([])
-    expect(mocks.capture).not.toHaveBeenCalledWith(DRAFT_OPENED_EVENT, expect.anything())
-  })
+      expect(await acceptDraft(PANEL, token, deps(overrides))).toBeNull()
+      expect(draftPageUrl(appId)).toBeNull()
+      expect(draftCards()).toEqual([])
+      expect(mocks.capture).not.toHaveBeenCalledWith(DRAFT_OPENED_EVENT, expect.anything())
+    }
+  )
 
   it('does not open the draft when the account changes while Desktop checks it is staff', async () => {
     const { appId, token } = await askedAbout(LINK)
@@ -529,7 +535,7 @@ describe('a draft page asking Desktop for its Cloud account', () => {
       { signedInAccount: async () => ({ email: 'purz@comfy.org', signInProvider: 'password' }) }
     ],
     ['the account is no longer staff', { signedInAccount: async () => OUTSIDER_ACCOUNT }]
-  ] as const)('is refused when %s', async (_why, overrides) => {
+  ] as [string, Partial<DraftLinkDeps>][])('is refused when %s', async (_why, overrides) => {
     const appId = await acceptedDraft()
 
     await expect(isDraftStillAllowed(appId, deps(overrides))).resolves.toBe(false)
@@ -572,7 +578,7 @@ describe('draftsStillAllowed', () => {
       'the same account signed in again with a password',
       { signedInAccount: async () => ({ email: 'purz@comfy.org', signInProvider: 'password' }) }
     ]
-  ] as const)('drops the drafts when %s', async (_why, overrides) => {
+  ] as [string, Partial<DraftLinkDeps>][])('drops the drafts when %s', async (_why, overrides) => {
     await askedAbout(LINK)
 
     await expect(draftsStillAllowed(deps(overrides))).resolves.toBe(false)
