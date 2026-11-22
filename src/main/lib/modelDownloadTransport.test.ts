@@ -53,6 +53,7 @@ vi.mock('electron', () => ({
 
 import { startModelTransfer, type ModelTransferOptions } from './modelDownloadTransport'
 import { DEFAULT_SEGMENT_TUNING, planSegments, type SegmentTuning } from './modelDownloadSegments'
+import { DISK_SPACE_RESERVE_BYTES } from './modelDownloadSpace'
 
 interface FakeResponse extends EventEmitter {
   statusCode: number
@@ -1640,5 +1641,105 @@ describe('segmented download', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('disk space', () => {
+  const tuning: Partial<SegmentTuning> = {
+    minBytes: 8,
+    maxSegments: 2,
+    minSegmentBytes: 4,
+    persistEveryBytes: 1_000_000,
+    maxAttempts: 3
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function freeBytes(bytes: number): void {
+    vi.spyOn(fs, 'statfsSync').mockReturnValue({ bavail: bytes, bsize: 1 } as never)
+  }
+
+  const shortfall =
+    'Not enough disk space: this download needs 0.5 GB free and the drive has 0.0 GB'
+
+  it('stops before writing when the drive cannot hold the file', async () => {
+    freeBytes(100)
+    const handle = startModelTransfer(baseOpts())
+    const req = requests[0]!
+    req.emit('response', makeResponse(200, { 'content-length': '10' }))
+    expect(await handle.done).toEqual({ outcome: 'error', error: shortfall })
+    expect(req.abort).toHaveBeenCalled()
+    expect(fs.existsSync(finalPath)).toBe(false)
+  })
+
+  it('stops a parallel download before asking for any range', async () => {
+    freeBytes(100)
+    const handle = startModelTransfer(baseOpts({ segmentTuning: tuning }))
+    requests[0]!.emit(
+      'response',
+      makeResponse(200, { 'content-length': '10', 'accept-ranges': 'bytes', etag: '"v1"' })
+    )
+    expect(await handle.done).toEqual({ outcome: 'error', error: shortfall })
+    expect(requests).toHaveLength(1)
+  })
+
+  it('keeps saved ranges and asks for nothing when a resume no longer fits', async () => {
+    freeBytes(100)
+    fs.mkdirSync(path.dirname(finalPath), { recursive: true })
+    fs.writeFileSync(stagingPathFor(finalPath), '')
+    fs.truncateSync(stagingPathFor(finalPath), 10)
+    const segments = [
+      { start: 0, end: 4, done: 0 },
+      { start: 5, end: 9, done: 0 }
+    ]
+    writeStagedMeta(
+      stagingMetaPathFor(finalPath),
+      stagedMeta({ version: 3, expectedSize: 10, etag: '"v1"', segments })
+    )
+    const handle = startModelTransfer(baseOpts({ segmentTuning: tuning }))
+    const outcome = await handle.done
+    expect(outcome).toMatchObject({ outcome: 'error' })
+    expect((outcome as { error: string }).error).toMatch(/^Not enough disk space: /)
+    expect(requests).toHaveLength(0)
+    expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(10)
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.segments).toEqual(segments)
+  })
+
+  it('downloads when the drive has room', async () => {
+    freeBytes(DISK_SPACE_RESERVE_BYTES + 10)
+    const handle = startModelTransfer(baseOpts())
+    const req = requests[0]!
+    const res = makeResponse(200, { 'content-length': '10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('0123456789'))
+    res.emit('end')
+    expect(await handle.done).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+  })
+
+  it('downloads when free space cannot be read', async () => {
+    vi.spyOn(fs, 'statfsSync').mockImplementation(() => {
+      throw new Error('ENOSYS')
+    })
+    const handle = startModelTransfer(baseOpts())
+    const req = requests[0]!
+    const res = makeResponse(200, { 'content-length': '10' })
+    req.emit('response', res)
+    res.emit('data', Buffer.from('0123456789'))
+    res.emit('end')
+    expect(await handle.done).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+  })
+
+  it('does not check a download whose size the server does not give', async () => {
+    const statfs = vi.spyOn(fs, 'statfsSync')
+    const handle = startModelTransfer(baseOpts())
+    const req = requests[0]!
+    const res = makeResponse(200, {})
+    req.emit('response', res)
+    res.emit('data', Buffer.from('0123456789'))
+    res.emit('end')
+    await handle.done
+    expect(statfs).not.toHaveBeenCalled()
   })
 })

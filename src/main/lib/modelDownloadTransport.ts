@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
+import { diskSpaceShortfall } from './modelDownloadSpace'
 import {
   DEFAULT_SEGMENT_TUNING,
   planSegments,
@@ -463,6 +464,11 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
       finalize(meta.expectedSize)
       return true
     }
+    const shortfall = diskSpaceShortfall(stagingPath, meta.expectedSize)
+    if (shortfall) {
+      failRetaining(shortfall)
+      return true
+    }
     const sourceUrl = meta.segmentsFromMirror && mirror ? mirror : url
     const fd = openStagingAt(meta.expectedSize, false)
     if (fd === null) return true
@@ -731,6 +737,13 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           failDiscarding(
             `Download size mismatch: expected ${expectedSize} bytes but server reported ${totalFromHeaders}`
           )
+          return
+        }
+
+        const shortfall = diskSpaceShortfall(stagingPath, effectiveSize)
+        if (shortfall) {
+          clearIdle()
+          failRetaining(shortfall)
           return
         }
 
