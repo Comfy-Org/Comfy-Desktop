@@ -200,10 +200,8 @@ export interface TitleBarApps {
   ready: RunningApp[]
 }
 
-export interface AppSwitchStop {
-  appTitle: string
-  otherRuns: number
-}
+export type AppSwitchStop =
+  { appTitle: string; otherRuns: number } | { appTitle: string; closesDraft: true }
 
 export interface AppPagePlacement {
   x: number

@@ -528,6 +528,26 @@ describe('AppsView', () => {
     expect(showAppPage).not.toHaveBeenCalled()
   })
 
+  it('says the switch closes a running draft app, and stays on it when the person says so', async () => {
+    const wrapper = await mountApps()
+    vi.mocked(window.api.appSwitchStopsRun).mockResolvedValueOnce({
+      appTitle: 'Depth Swap',
+      closesDraft: true
+    })
+    const dialogs = useDialogs()
+
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await vi.waitFor(() => expect(dialogs.state.open).toBe(true))
+    expect(dialogs.state.confirm.title).toBe('Switch to SDR to HDR?')
+    expect(dialogs.state.confirm.message).toBe(
+      'Depth Swap is a draft app. Switching closes it and stops its run.'
+    )
+    dialogs.cancel()
+    await flushPromises()
+
+    expect(showAppPage).not.toHaveBeenCalled()
+  })
+
   it('asks before opening an app when Desktop cannot tell whether that stops a run', async () => {
     const wrapper = await mountApps()
     vi.mocked(window.api.appSwitchStopsRun).mockRejectedValueOnce(new Error('no answer'))

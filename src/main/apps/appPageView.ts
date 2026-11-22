@@ -708,14 +708,24 @@ export function noteAppPageRunning(contents: WebContents, running: unknown): voi
   setRunning(hosted, running)
 }
 
+function titleForApp(appId: string): string {
+  return draftOf(appId)?.card.title ?? titleForListedApp(appId) ?? appId
+}
+
 export function appSwitchStopsRun(panel: WebContents, appId: unknown): AppSwitchStop | null {
   const host = hostOf(panel)
   const current = host && hostedFor(host)
-  if (!current?.running || current.appId === null || current.appId === appId) return null
+  const shown = current?.appId ?? null
+  if (!current || shown === null || shown === appId) return null
+  if (isDraft(shown)) {
+    const draftRuns = everyPage().some((page) => page.appId === shown && page.running)
+    return draftRuns ? { appTitle: titleForApp(shown), closesDraft: true } : null
+  }
+  if (!current.running) return null
   const background = [...backgroundOf(current.windowKey).values()]
   const otherRuns = background.filter((page) => page.running && page.appId !== appId).length
   if (otherRuns < MAX_BACKGROUND_RUNS) return null
-  return { appTitle: titleForListedApp(current.appId) ?? current.appId, otherRuns }
+  return { appTitle: titleForApp(shown), otherRuns }
 }
 
 export function appRuns(panel: WebContents): AppRun[] {

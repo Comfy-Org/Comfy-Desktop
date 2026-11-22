@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   capture: vi.fn(),
   pages: new Map<string, string>(),
   titles: new Map<string, string>(),
-  drafts: new Map<string, { url: string; accepted: boolean }>(),
+  drafts: new Map<string, { url: string; accepted: boolean; card?: { title: string } }>(),
   draftSession: null as unknown,
   draftAccountAllowed: true
 }))
@@ -542,6 +542,48 @@ describe('a draft app', () => {
     expect(created).toHaveLength(2)
     expect(runningAppCount()).toBe(0)
     expect(sentToPanel(APP_RUNS_CHANNEL).at(-1)?.[1]).toEqual([])
+  })
+
+  async function openDraftInAnotherWindow(): Promise<FakeView> {
+    const otherWindow = new FakeWindow()
+    windowsByContentView.set(otherWindow.contentView, otherWindow)
+    const otherPanel = new FakeView()
+    otherPanel.bounds = { ...PANEL_FRAME }
+    otherWindow.contentView.addChildView(otherPanel)
+    mocks.windows.set(WINDOW_KEY + 1, { window: otherWindow, panelView: otherPanel })
+    await showAppPage(otherPanel.webContents as unknown as WebContents, DRAFT, PLACEMENT)
+    const otherPage = created.at(-1)!
+    otherPage.webContents.url = DRAFT_URL
+    otherPage.webContents.emit('did-navigate', {}, DRAFT_URL, 200)
+    otherPage.webContents.emit('dom-ready')
+    return otherPage
+  }
+
+  it('says a switch closes the draft while the draft is running', () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
+    noteAppPageRunning(draftPage(), true)
+
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toEqual({
+      appTitle: 'Depth Swap',
+      closesDraft: true
+    })
+    expect(appSwitchStopsRun(panelContents(), DRAFT)).toBeNull()
+  })
+
+  it('says a switch closes the draft while it runs in another window', async () => {
+    const otherPage = await openDraftInAnotherWindow()
+    noteAppPageRunning(otherPage.webContents as unknown as WebContents, true)
+
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toEqual({
+      appTitle: DRAFT,
+      closesDraft: true
+    })
+  })
+
+  it('says nothing about a switch while the draft is not running', async () => {
+    await openDraftInAnotherWindow()
+
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toBeNull()
   })
 
   it('closes the draft in another window too once one window drops it', async () => {
