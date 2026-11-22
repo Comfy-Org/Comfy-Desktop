@@ -118,6 +118,9 @@ On Windows/macOS, set up a fresh clone and start the app in one command with `pn
 
 A development copy opens `comfy://` links, taking them over from an installed Comfy Desktop. Start it with `COMFY_DRAFT_APP_LINKS=0` to leave links with the installed app.
 
+- On macOS, `pnpm run dev` runs the app as "Comfy Desktop Dev", a copy of Electron in `.dev-app/` (gitignored) that macOS sends `comfy://` links to. A link clicked while it is closed starts it from source, the same as `pnpm run dev`, and opens the link in it.
+- On Windows and Linux, a link clicked while the development copy runs opens in it. A link clicked while it is closed shows a message to start it with `pnpm run dev` first.
+
 <details>
 <summary><b>Bootstrap Python</b> (the bundled Git backend)</summary>
 

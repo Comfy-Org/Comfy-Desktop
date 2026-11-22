@@ -46,6 +46,7 @@ export default defineConfig({
             'scripts/eslint/**/*.test.ts',
             'e2e/support/videoRecording.test.ts',
             'scripts/preview/**/*.test.mjs',
+            'scripts/dev-app/**/*.test.mjs',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
           exclude: ['node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]

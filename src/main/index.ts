@@ -132,6 +132,12 @@ import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
 import { appsEnabledAtStart } from './apps/appsConfig'
 import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
 import { openDraftLink } from './apps/draftLinks'
+import {
+  devCopyLockDir,
+  planDraftLinkStartup,
+  type InstanceLock,
+  type LinkRegistration
+} from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
 import {
   isRunningForAppsOnly,
@@ -891,23 +897,61 @@ function findInstallationIdForWindow(win: BrowserWindow): string | undefined {
 
 const hostReentryGate = createStartupReentryGate()
 
-if (app.isPackaged && !app.requestSingleInstanceLock()) {
+const draftLinkStartup = planDraftLinkStartup({
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  env: process.env,
+  startupLink: findDraftLink(process.argv)
+})
+
+function holdsInstanceLock(lock: InstanceLock): boolean {
+  if (lock === 'none') return true
+  if (lock === 'app') return app.requestSingleInstanceLock()
+  const userData = app.getPath('userData')
+  app.setPath('userData', devCopyLockDir(userData, app.getAppPath(), process.platform))
+  try {
+    return app.requestSingleInstanceLock()
+  } finally {
+    app.setPath('userData', userData)
+  }
+}
+
+function registerDraftLinkScheme(registration: LinkRegistration): void {
+  if (registration === 'scheme') {
+    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME)
+  } else if (registration === 'scheme-with-command') {
+    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, [
+      path.resolve(process.argv[1] ?? '.')
+    ])
+  }
+}
+
+async function explainDevCopyNotRunning(): Promise<void> {
+  await app.whenReady()
+  await dialog.showMessageBox({
+    type: 'info',
+    buttons: ['OK'],
+    message: 'Comfy Desktop is not running from source',
+    detail: `This link opens the development copy in ${app.getAppPath()}. Start it there with pnpm run dev, then open the link again.`
+  })
   app.quit()
+}
+
+if (!holdsInstanceLock(draftLinkStartup.lock)) {
+  app.quit()
+} else if (draftLinkStartup.linkWithoutDevServer) {
+  void explainDevCopyNotRunning()
 } else {
   if (process.platform === 'win32') startMachineIdLookup()
   const sacStateRead = readSmartAppControlState()
 
-  if (app.isPackaged) {
-    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME)
+  registerDraftLinkScheme(draftLinkStartup.registration)
+  if (draftLinkStartup.lock !== 'none') {
     app.on('second-instance', (_event, argv) => {
       const draftLink = findDraftLink(argv)
       if (draftLink) hostReentryGate.runEachWhenOpen(() => void openDraftLink(draftLink))
       else hostReentryGate.runOrQueue(() => openOrFocusAnyHostWindow())
     })
-  } else if (process.env['COMFY_DRAFT_APP_LINKS'] !== '0' && process.env['E2E'] !== '1') {
-    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, [
-      path.resolve(process.argv[1] ?? '.')
-    ])
   }
 
   app.on('open-url', (event, url) => {
