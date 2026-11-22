@@ -133,10 +133,13 @@ import { appsEnabledAtStart } from './apps/appsConfig'
 import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
 import { openDraftLink } from './apps/draftLinks'
 import {
+  DEV_SERVER_START_DATA,
   devCopyLockDir,
+  isDevServerStart,
+  LOCK_RETRY_INTERVAL_MS,
   planDraftLinkStartup,
-  type InstanceLock,
-  type LinkRegistration
+  retryLock,
+  type DraftLinkStartup
 } from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
 import {
@@ -904,29 +907,61 @@ const draftLinkStartup = planDraftLinkStartup({
   startupLink: findDraftLink(process.argv)
 })
 
-function holdsInstanceLock(lock: InstanceLock): boolean {
-  if (lock === 'none') return true
-  if (lock === 'app') return app.requestSingleInstanceLock()
+function requestDevCopyLock(additionalData: Record<string, unknown> | undefined): boolean {
   const userData = app.getPath('userData')
   app.setPath('userData', devCopyLockDir(userData, app.getAppPath(), process.platform))
   try {
-    return app.requestSingleInstanceLock()
+    return app.requestSingleInstanceLock(additionalData)
   } finally {
     app.setPath('userData', userData)
   }
 }
 
-function registerDraftLinkScheme(registration: LinkRegistration): void {
+function holdsInstanceLockAtStart({ lock, lockTiming }: DraftLinkStartup): boolean {
+  if (lock === 'none' || lockTiming === 'ready') return true
+  if (lock === 'app') return app.requestSingleInstanceLock()
+  return requestDevCopyLock(undefined)
+}
+
+function takeDevCopyLockWhenReady({ lock, lockTiming, lockWaitMs }: DraftLinkStartup): void {
+  if (lock !== 'dev-copy' || lockTiming !== 'ready') return
+  void app.whenReady().then(() =>
+    retryLock({
+      tryLock: () => requestDevCopyLock(DEV_SERVER_START_DATA),
+      waitMs: lockWaitMs,
+      intervalMs: LOCK_RETRY_INTERVAL_MS,
+      now: Date.now,
+      schedule: (attempt, ms) => void setTimeout(attempt, ms),
+      onDone: (held) => {
+        if (held) return
+        console.warn(
+          `Another Comfy Desktop started from ${app.getAppPath()} is running, so ${DRAFT_LINK_SCHEME}:// links clicked now go to it, not to this copy.`
+        )
+      }
+    })
+  )
+}
+
+function registerDraftLinkScheme({ registration, desktopEntry }: DraftLinkStartup): void {
   const commandArgs = [path.resolve(process.argv[1] ?? '.')]
+  let registered = true
   if (registration === 'scheme') {
-    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME)
+    registered = app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME)
   } else if (registration === 'scheme-with-command') {
-    app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, commandArgs)
+    registered = app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, commandArgs)
+  } else if (registration === 'desktop-entry' && desktopEntry) {
+    app.setDesktopName(desktopEntry)
+    registered = app.setAsDefaultProtocolClient(DRAFT_LINK_SCHEME)
   } else if (
     registration === 'remove-own-command' &&
     app.isDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, commandArgs)
   ) {
     app.removeAsDefaultProtocolClient(DRAFT_LINK_SCHEME, process.execPath, commandArgs)
+  }
+  if (!registered) {
+    console.warn(
+      `Could not register ${DRAFT_LINK_SCHEME}:// links for this copy (${registration}).`
+    )
   }
 }
 
@@ -941,7 +976,7 @@ async function explainDevCopyNotRunning(): Promise<void> {
   app.quit()
 }
 
-if (!holdsInstanceLock(draftLinkStartup.lock)) {
+if (!holdsInstanceLockAtStart(draftLinkStartup)) {
   app.quit()
 } else if (draftLinkStartup.linkWithoutDevServer) {
   void explainDevCopyNotRunning()
@@ -949,9 +984,11 @@ if (!holdsInstanceLock(draftLinkStartup.lock)) {
   if (process.platform === 'win32') startMachineIdLookup()
   const sacStateRead = readSmartAppControlState()
 
-  registerDraftLinkScheme(draftLinkStartup.registration)
+  registerDraftLinkScheme(draftLinkStartup)
+  takeDevCopyLockWhenReady(draftLinkStartup)
   if (draftLinkStartup.lock !== 'none') {
-    app.on('second-instance', (_event, argv) => {
+    app.on('second-instance', (_event, argv, _workingDirectory, additionalData) => {
+      if (isDevServerStart(additionalData)) return
       const draftLink = findDraftLink(argv)
       if (draftLink) hostReentryGate.runEachWhenOpen(() => void openDraftLink(draftLink))
       else hostReentryGate.runOrQueue(() => openOrFocusAnyHostWindow())

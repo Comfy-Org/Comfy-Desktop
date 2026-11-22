@@ -10,6 +10,12 @@ import {
   ensureCloneDevApp,
   unregisterDevApp
 } from './dev-app/devApp.mjs'
+import {
+  DEV_DESKTOP_ENTRY_ENV,
+  LINUX_DEV_ENTRY,
+  ensureLinuxDevEntry,
+  removeLinuxDevEntry
+} from './dev-app/linuxEntry.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -17,7 +23,28 @@ function warn(message) {
   console.warn(`\n\x1b[33m⚠ ${message}\x1b[0m\n`)
 }
 
+function linuxDevEntryEnv() {
+  if (process.env['COMFY_DRAFT_APP_LINKS'] === '0') {
+    try {
+      removeLinuxDevEntry(ROOT)
+    } catch (err) {
+      warn(`Could not remove the ${LINUX_DEV_ENTRY.name} desktop entry: ${err.message}`)
+    }
+    return {}
+  }
+  if (process.env['E2E'] === '1') return {}
+  try {
+    return { [DEV_DESKTOP_ENTRY_ENV]: ensureLinuxDevEntry(ROOT) }
+  } catch (err) {
+    warn(
+      `Could not set up the ${LINUX_DEV_ENTRY.name} desktop entry, so ${LINUX_DEV_ENTRY.scheme}:// links will not reach this copy. ${err.message}`
+    )
+    return {}
+  }
+}
+
 function devAppEnv() {
+  if (process.platform === 'linux') return linuxDevEntryEnv()
   if (process.platform !== 'darwin') return {}
   if (process.env['COMFY_DRAFT_APP_LINKS'] === '0') {
     try {
