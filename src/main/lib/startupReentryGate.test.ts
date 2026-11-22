@@ -58,4 +58,19 @@ describe('createStartupReentryGate', () => {
 
     expect(inner).toHaveBeenCalledTimes(1)
   })
+  it('keeps every action handed to runEachWhenOpen and runs them in order after the latest queued one', () => {
+    const gate = createStartupReentryGate()
+    const order: string[] = []
+
+    gate.runEachWhenOpen(() => order.push('first link'))
+    gate.runOrQueue(() => order.push('focus'))
+    gate.runEachWhenOpen(() => order.push('second link'))
+    expect(order).toEqual([])
+
+    gate.open()
+    expect(order).toEqual(['focus', 'first link', 'second link'])
+
+    gate.runEachWhenOpen(() => order.push('after open'))
+    expect(order).toEqual(['focus', 'first link', 'second link', 'after open'])
+  })
 })

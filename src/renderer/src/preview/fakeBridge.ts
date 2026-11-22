@@ -463,6 +463,9 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
 
     onAppPageStatusChanged: listen('onAppPageStatusChanged'),
     onAppPageClosed: listen('onAppPageClosed'),
+    onAppsListChanged: listen('onAppsListChanged'),
+    onOpenDraftApp: listen('onOpenDraftApp'),
+    acceptDraftApp: async () => null,
     onAppOutputs: listen('onAppOutputs'),
     onCreditBalanceChanged: listen('onCreditBalanceChanged'),
     onFirstUseSkip: listen('onFirstUseSkip'),

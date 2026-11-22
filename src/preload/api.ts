@@ -2,6 +2,7 @@ import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
   AppOutputs,
+  DraftAppRequest,
   AppPageStatus,
   ElectronApi,
   HomeTourReplayState,
@@ -144,6 +145,18 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:page-closed', handler)
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
+    onAppsListChanged: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('apps:list-changed', handler)
+      return () => ipcRenderer.removeListener('apps:list-changed', handler)
+    },
+    onOpenDraftApp: (callback) => {
+      const handler = (_event: IpcRendererEvent, request: DraftAppRequest): void =>
+        callback(request)
+      ipcRenderer.on('apps:open-draft', handler)
+      return () => ipcRenderer.removeListener('apps:open-draft', handler)
+    },
+    acceptDraftApp: (appId) => ipcRenderer.invoke('apps:accept-draft', appId),
     onAppOutputs: (callback) => {
       const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs | null): void =>
         callback(appId, outputs)

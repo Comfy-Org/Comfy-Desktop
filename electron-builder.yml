@@ -21,6 +21,10 @@ asarUnpack:
   - node_modules/7zip-bin/**/*
   - node_modules/node-pty/**/*
 afterPack: ./scripts/afterPack.mjs
+protocols:
+  - name: Comfy Desktop
+    schemes:
+      - comfy
 publish:
   provider: github
   owner: Comfy-Org

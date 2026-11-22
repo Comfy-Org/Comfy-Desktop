@@ -63,6 +63,7 @@ document.head.append(mountPointFillsThePage)
 
 let page: HTMLElement
 let appPageClosed: () => void = () => {}
+let appsListChanged: () => void = () => {}
 
 async function mountApps(
   apps: AppCard[] | Promise<AppCard[]> = [CUTOUT, HDR, GENJUTSU],
@@ -144,6 +145,10 @@ beforeEach(() => {
     onAppOutputs: vi.fn(() => () => {}),
     onAppPageClosed: (listener: () => void) => {
       appPageClosed = listener
+      return () => {}
+    },
+    onAppsListChanged: (listener: () => void) => {
+      appsListChanged = listener
       return () => {}
     }
   }
@@ -690,6 +695,20 @@ describe('AppsView', () => {
       'app-card-genjutsu',
       'app-card-remove-background',
       'app-card-sdr-to-hdr'
+    ])
+  })
+
+  it('lists the apps again when Desktop says the list changed, so a dropped draft goes away', async () => {
+    const draft: AppCard = { ...CUTOUT, id: 'draft-pr683-depth-swap', title: 'Depth Swap' }
+    const wrapper = await mountApps([draft, CUTOUT])
+    expect(wrapper.find('[data-testid="app-card-draft-pr683-depth-swap"]').exists()).toBe(true)
+
+    listApps.mockResolvedValue([CUTOUT])
+    appsListChanged()
+    await flushPromises()
+
+    expect(wrapper.findAll(APP_CARDS).map((card) => card.attributes('data-testid'))).toEqual([
+      'app-card-remove-background'
     ])
   })
 })

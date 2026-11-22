@@ -1,9 +1,13 @@
 import { ipcMain } from 'electron'
 
-import { captureAppPage, hideAppPage, showAppPage } from '../../apps/appPageView'
+import { captureAppPage, closeDraftPages, hideAppPage, showAppPage } from '../../apps/appPageView'
 import { listApps } from '../../apps/appsCatalog'
 import { areAppsEnabled } from '../../apps/appsConfig'
+import { draftCards } from '../../apps/draftApps'
+import { acceptDraft, canPasteDrafts, openPastedDraft } from '../../apps/draftLinks'
 import { isPanelSender } from '../../host/registry'
+import { isGlobalSettingsSender } from '../../popups/titlePopup'
+import { cloudAuthEvents } from '../cloudAuthEvents'
 import { sendSurveyResponse } from '../telemetry'
 
 const APP_REQUEST_SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
@@ -15,7 +19,7 @@ export function registerAppsHandlers(): void {
 
   ipcMain.handle('apps:list', async (event) => {
     if (!isPanelSender(event.sender) || !(await areAppsEnabled())) return []
-    return listApps()
+    return [...draftCards(), ...(await listApps())]
   })
 
   ipcMain.handle('apps:show-page', (event, appId: unknown, placement: unknown) =>
@@ -24,7 +28,19 @@ export function registerAppsHandlers(): void {
 
   ipcMain.handle('apps:capture-page', (event) => captureAppPage(event.sender))
 
+  ipcMain.handle('apps:accept-draft', (event, appId: unknown) => acceptDraft(event.sender, appId))
+
+  ipcMain.handle('apps:can-paste-draft', (event) =>
+    isGlobalSettingsSender(event.sender) ? canPasteDrafts() : false
+  )
+
+  ipcMain.handle('apps:open-pasted-draft', (event, address: unknown) =>
+    isGlobalSettingsSender(event.sender) ? openPastedDraft(address) : null
+  )
+
   ipcMain.on('apps:hide-page', (event) => hideAppPage(event.sender))
+
+  cloudAuthEvents.on('changed', closeDraftPages)
 
   ipcMain.handle('apps:send-request', async (event, text: unknown) => {
     if (!isPanelSender(event.sender) || typeof text !== 'string') return false

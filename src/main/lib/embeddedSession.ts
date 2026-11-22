@@ -1,6 +1,7 @@
 import type { WebContents, WebFrameMain } from 'electron'
 
 import { identityOf } from '../cloud/claims'
+import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import { isLocalInstall } from '../host/localInstall'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
@@ -25,6 +26,7 @@ export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
   getWorkspaceToken: 'desktop2-auth:get-workspace-token',
   getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
+  getCloudOrigin: 'desktop2-auth:get-cloud-origin',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   switchWorkspace: 'desktop2-auth:switch-workspace',
@@ -120,6 +122,12 @@ export async function stateForSender(
 ): Promise<ComfyDesktop2AuthState> {
   const gate = gateForSender(event)
   return gate ? sessionState(gate) : DISABLED
+}
+
+export async function cloudOriginForSender(event: EmbeddedSessionSender): Promise<string | null> {
+  const gate = gateForSender(event)
+  if (!gate || !(await gate())) return null
+  return new URL(CLOUD_CONFIG.issuer).origin
 }
 
 export async function workspaceTokenForSender(

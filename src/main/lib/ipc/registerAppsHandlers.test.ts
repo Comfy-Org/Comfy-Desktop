@@ -5,6 +5,10 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   isPanel: true,
+  isGlobalSettings: true,
+  canPasteDrafts: vi.fn(async () => true),
+  closeDraftPages: vi.fn(),
+  openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
   )
@@ -18,14 +22,24 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../../apps/appPageView', () => ({
   captureAppPage: vi.fn(),
+  closeDraftPages: mocks.closeDraftPages,
   hideAppPage: vi.fn(),
   showAppPage: vi.fn()
 }))
 vi.mock('../../apps/appsCatalog', () => ({ listApps: vi.fn(async () => []) }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: vi.fn(async () => true) }))
 vi.mock('../../host/registry', () => ({ isPanelSender: () => mocks.isPanel }))
+vi.mock('../../popups/titlePopup', () => ({
+  isGlobalSettingsSender: () => mocks.isGlobalSettings
+}))
+vi.mock('../../apps/draftLinks', () => ({
+  acceptDraft: vi.fn(),
+  canPasteDrafts: mocks.canPasteDrafts,
+  openPastedDraft: mocks.openPastedDraft
+}))
 vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse }))
 
+import { cloudAuthEvents } from '../cloudAuthEvents'
 import { registerAppsHandlers } from './registerAppsHandlers'
 
 const SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
@@ -42,6 +56,7 @@ describe('apps:send-request', () => {
     vi.clearAllMocks()
     mocks.handlers.clear()
     mocks.isPanel = true
+    cloudAuthEvents.removeAllListeners()
     mocks.sendSurveyResponse.mockResolvedValue(true)
     registerAppsHandlers()
   })
@@ -85,5 +100,57 @@ describe('apps:send-request', () => {
 
     expect(await sendRequest('An app that colors line art')).toBe(false)
     expect(mocks.sendSurveyResponse).not.toHaveBeenCalled()
+  })
+})
+
+describe('pasting a draft app address in Desktop settings', () => {
+  function call(channel: string, ...args: unknown[]): Promise<unknown> {
+    const handler = mocks.handlers.get(channel)
+    if (!handler) throw new Error(`No handler for ${channel}`)
+    return Promise.resolve(handler({ sender: {} }, ...args))
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.isGlobalSettings = true
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('tells Desktop settings whether it takes a pasted address', async () => {
+    expect(await call('apps:can-paste-draft')).toBe(true)
+  })
+
+  it('opens the pasted address through the draft link checks', async () => {
+    const address = 'http://localhost:4321/apps/depth-swap/'
+    expect(await call('apps:open-pasted-draft', address)).toEqual({ kind: 'asked' })
+    expect(mocks.openPastedDraft).toHaveBeenCalledExactlyOnceWith(address)
+  })
+
+  it('answers nothing to a page other than Desktop settings', async () => {
+    mocks.isGlobalSettings = false
+
+    expect(await call('apps:can-paste-draft')).toBe(false)
+    expect(await call('apps:open-pasted-draft', 'http://localhost:4321/apps/x/')).toBeNull()
+    expect(mocks.canPasteDrafts).not.toHaveBeenCalled()
+    expect(mocks.openPastedDraft).not.toHaveBeenCalled()
+  })
+})
+
+describe('a Cloud account change', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('closes every draft app, so the next account is asked again', () => {
+    expect(mocks.closeDraftPages).not.toHaveBeenCalled()
+
+    cloudAuthEvents.emit('changed')
+
+    expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1)
   })
 })

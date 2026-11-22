@@ -16,10 +16,12 @@ import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp } from './appsCatalog'
 import { areAppsEnabled, currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
+import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
 
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
 export const APP_PAGE_CLOSED_CHANNEL = 'apps:page-closed'
+export const APPS_LIST_CHANGED_CHANNEL = 'apps:list-changed'
 export const APP_OUTPUTS_CHANNEL = 'apps:outputs'
 export const APP_OUTPUT_ACTION_CHANNEL = 'apps-outputs:action'
 export const APP_OPENED_EVENT = 'comfy.desktop.apps.app_opened'
@@ -44,10 +46,12 @@ interface ShownOutputs {
 
 interface HostedPage {
   view: WebContentsView
+  session: Session
   appId: string | null
   loaded: LoadedAppPage | null
   loadStarted: boolean
   loadingUrl: string | null
+  startUrl: string | null
   routeBase: string | null
   documents: number
   status: AppPageStatus
@@ -155,9 +159,18 @@ function isInAppRoute(base: string, url: string): boolean {
   return at === route || at.startsWith(`${route}/`)
 }
 
+function pageUrlForApp(appId: string): string | null {
+  return draftPageUrl(appId) ?? pageUrlForListedApp(appId)
+}
+
+function sessionForApp(appId: string): Session {
+  const draft = draftOf(appId)
+  return draft ? draftSession(draft.origin, draft.mount) : session.fromPartition(APPS_PARTITION)
+}
+
 function routeBaseOf(hosted: HostedPage): string | null {
   if (hosted.routeBase !== null) return hosted.routeBase
-  return hosted.appId === null ? null : pageUrlForListedApp(hosted.appId)
+  return hosted.appId === null ? null : pageUrlForApp(hosted.appId)
 }
 
 function isInLoadedRoute(hosted: HostedPage, url: string): boolean {
@@ -203,13 +216,26 @@ function load(windowKey: number, hosted: HostedPage, url: string): void {
   hosted.loaded = null
   hosted.loadStarted = true
   hosted.loadingUrl = url
+  hosted.startUrl = url
   hosted.routeBase = null
   setStatus(windowKey, hosted, 'loading')
   void hosted.view.webContents.loadURL(url).catch(() => {})
 }
 
+function isDraft(appId: string | null): appId is string {
+  return appId !== null && draftOf(appId) !== null
+}
+
+function dropDraft(windowKey: number, appId: string | null): void {
+  if (!isDraft(appId)) return
+  revokeDraft(appId)
+  panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
+}
+
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
-  if (!pageStillShowsApp) {
+  const showedDraft = isDraft(hosted.appId)
+  dropDraft(windowKey, hosted.appId)
+  if (!pageStillShowsApp || showedDraft) {
     hosted.appId = null
     hosted.loaded = null
     hosted.routeBase = null
@@ -226,8 +252,11 @@ function disposeHostedPage(windowKey: number): void {
   if (!hosted.view.webContents.isDestroyed()) hosted.view.webContents.close()
 }
 
-function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation): HostedPage {
-  const appsSession = session.fromPartition(APPS_PARTITION)
+function createHostedPage(
+  { windowKey, entry }: PageHost,
+  location: AppsLocation,
+  appsSession: Session
+): HostedPage {
   secureSession(appsSession, location)
   const view = createWebContentsView({
     webPreferences: {
@@ -245,10 +274,12 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   const contents = view.webContents
   const hosted: HostedPage = {
     view,
+    session: appsSession,
     appId: null,
     loaded: null,
     loadStarted: false,
     loadingUrl: null,
+    startUrl: null,
     routeBase: null,
     documents: 0,
     status: 'loading',
@@ -402,14 +433,19 @@ export async function showAppPage(
 ): Promise<AppPageStatus> {
   const placement = parsePlacement(rawPlacement)
   if (typeof appId !== 'string' || !placement || !(await areAppsEnabled())) return 'failed'
-  const pageUrl = pageUrlForListedApp(appId)
+  const pageUrl = pageUrlForApp(appId)
   const host = hostOf(panel)
   if (!pageUrl || !host) return 'failed'
-  const hosted = hostedFor(host) ?? createHostedPage(host, currentAppsLocation())
+  const appsSession = sessionForApp(appId)
+  const shown = hostedFor(host)?.appId ?? null
+  if (shown !== appId) dropDraft(host.windowKey, shown)
+  if (hostedFor(host)?.session !== appsSession) disposeHostedPage(host.windowKey)
+  const hosted = hostedFor(host) ?? createHostedPage(host, currentAppsLocation(), appsSession)
   concealWhenPanelGoes(host.windowKey, panel)
   const askedFresh = placement.justOpened === true || placement.retry === true
   const retriesFailedPage = askedFresh && hosted.status === 'failed'
-  if (hosted.appId !== appId || retriesFailedPage) {
+  const draftMoved = isDraft(appId) && hosted.startUrl !== pageUrl
+  if (hosted.appId !== appId || retriesFailedPage || draftMoved) {
     hosted.appId = appId
     load(host.windowKey, hosted, pageUrl)
   }
@@ -420,6 +456,20 @@ export async function showAppPage(
   raiseAbovePanel(host.entry, hosted.view)
   applyVisibility(hosted)
   return hosted.status
+}
+
+function showsDraftSession(hosted: HostedPage): boolean {
+  return hosted.session !== session.fromPartition(APPS_PARTITION)
+}
+
+export function closeDraftPages(): void {
+  for (const [windowKey, hosted] of hostedByWindow) {
+    if (!showsDraftSession(hosted)) continue
+    if (hosted.appId !== null) closeForList(windowKey, hosted, false)
+    disposeHostedPage(windowKey)
+  }
+  forgetDrafts()
+  for (const windowKey of comfyWindows.keys()) panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
 }
 
 export function hideAppPage(panel: WebContents): void {

@@ -44,6 +44,7 @@ const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
+let stopListUpdates: (() => void) | null = null
 
 const matchingApps = computed(() => {
   const needle = query.value.trim().toLowerCase()
@@ -62,6 +63,13 @@ async function loadApps(): Promise<void> {
     apps.value = []
     state.value = 'failed'
   }
+}
+
+async function refreshApps(): Promise<void> {
+  const listed = await window.api.listApps().catch(() => null)
+  if (!listed) return
+  apps.value = listed
+  state.value = 'ready'
 }
 
 const RHYTHM_GRID_CLASS =
@@ -213,11 +221,13 @@ watch(
 
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())
+  stopListUpdates = window.api.onAppsListChanged(() => void refreshApps())
   void loadApps()
 })
 
 onBeforeUnmount(() => {
   stopClosedUpdates?.()
+  stopListUpdates?.()
   if (openApp.value) emit('app-open-change', false)
 })
 </script>

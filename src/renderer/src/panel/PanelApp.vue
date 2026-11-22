@@ -54,7 +54,7 @@ import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import type { AppCard, DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, DashboardPage, DraftAppRequest, Installation } from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -283,6 +283,28 @@ function openAppFromHome(app: AppCard): void {
   dashboardHomePage.value = 'apps'
 }
 
+async function answerDraftApp(request: DraftAppRequest): Promise<void> {
+  if (request.kind === 'refused') {
+    await dialogs.alert({ title: request.title, message: request.message })
+    return
+  }
+  if (request.kind === 'ask') {
+    const choice = await dialogs.confirm({
+      title: request.title,
+      message: request.message,
+      confirmLabel: 'Open',
+      cancelLabel: 'Cancel'
+    })
+    const accepted = choice === 'primary' ? await window.api.acceptDraftApp(request.appId) : null
+    if (accepted) await answerDraftApp(accepted)
+    return
+  }
+  if (activePanel.value !== 'chooser') await switchPanel('chooser', 'install')
+  closeBuildDetails()
+  assetsFocusName.value = null
+  openAppFromHome(request.card)
+}
+
 const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
 
 function handleSidebarClick(page: DashboardPage): void {
@@ -385,6 +407,7 @@ let unsubReturnToDashboardRequest: (() => void) | null = null
 let unsubAppUpdatePromptRestart: (() => void) | null = null
 let unsubAppUpdateUserActionFailed: (() => void) | null = null
 let unsubAppPageClosed: (() => void) | null = null
+let unsubOpenDraftApp: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
 const { triggerAction: triggerInstallAction, viewError: viewBuildError } = useInstallContextMenu({
@@ -525,6 +548,8 @@ onMounted(async () => {
     appInProgress.value = null
   })
 
+  unsubOpenDraftApp = window.api.onOpenDraftApp((request) => void answerDraftApp(request))
+
   try {
     const shouldOpenFirstUse =
       urlFirstUsePending ||
@@ -566,6 +591,7 @@ onUnmounted(() => {
   unsubAppUpdatePromptRestart?.()
   unsubAppUpdateUserActionFailed?.()
   unsubAppPageClosed?.()
+  unsubOpenDraftApp?.()
   document.body.classList.remove('panel-overlay-mode')
   sessionStore.dispose()
   if (params.get('e2e') === '1') bindE2EPanelHooks(null)
