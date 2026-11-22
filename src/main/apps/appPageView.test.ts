@@ -574,11 +574,12 @@ describe('a draft app', () => {
   })
 
   it('says a switch closes the draft while it runs in another window', async () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
     const otherPage = await openDraftInAnotherWindow()
     noteAppPageRunning(otherPage.webContents as unknown as WebContents, true)
 
     expect(appSwitchStopsRun(panelContents(), CUTOUT)).toEqual({
-      appTitle: DRAFT,
+      appTitle: 'Depth Swap',
       closesDraft: true
     })
   })
@@ -607,6 +608,7 @@ describe('a draft app', () => {
   })
 
   it('asks the panel first when the draft runs in another window and this page goes back', async () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
     const otherPage = await openDraftInAnotherWindow()
     noteAppPageRunning(otherPage.webContents as unknown as WebContents, true)
 
@@ -617,6 +619,7 @@ describe('a draft app', () => {
   })
 
   it('closes the running draft once the panel says go back', () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
     noteAppPageRunning(draftPage(), true)
     hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
 
