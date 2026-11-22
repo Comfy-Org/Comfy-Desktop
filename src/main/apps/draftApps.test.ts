@@ -27,6 +27,7 @@ import {
   _resetForTest,
   cloudHeaders,
   confirmDraft,
+  draftAskedWith,
   draftCards,
   draftIdOf,
   draftOf,
@@ -36,6 +37,7 @@ import {
   draftTagOf,
   findDraftLink,
   forgetDrafts,
+  hasDrafts,
   isComfyAddress,
   isLocalHost,
   isStaffAccount,
@@ -47,7 +49,7 @@ import {
   sameSiteHeaders,
   titleFromPage
 } from './draftApps'
-import type { DraftApp, DraftLink } from './draftApps'
+import type { AskedDraft, DraftLink } from './draftApps'
 
 const PREVIEW = 'https://pr-683.drafts.comfy.org'
 const OWNER = '["staff-subject","ws-1"]'
@@ -64,7 +66,7 @@ async function register(
   link: DraftLink,
   owner = OWNER,
   isStillOwner = (): boolean => true
-): Promise<DraftApp> {
+): Promise<AskedDraft> {
   const draft = await registerDraft(link, owner, isStillOwner)
   if (!draft) throw new Error('The draft was dropped')
   return draft
@@ -247,10 +249,10 @@ describe('parsePastedDraft', () => {
 })
 
 describe('draft helpers', () => {
-  it('names a draft by its pull request and page', () => {
+  it('names a draft by its pull request and page, then a hash of where it is served from', () => {
     expect(
       draftIdOf({ origin: PREVIEW, path: '/apps/a/', slug: 'depth-swap', pr: 683, mount: '/' })
-    ).toBe('draft-pr683-depth-swap')
+    ).toMatch(/^draft-pr683-depth-swap-[0-9a-f]{8}$/)
     expect(
       draftIdOf({
         origin: 'http://localhost:4321',
@@ -259,13 +261,39 @@ describe('draft helpers', () => {
         pr: null,
         mount: '/'
       })
-    ).toBe('draft-localhost-4321-x')
+    ).toMatch(/^draft-localhost-4321-x-[0-9a-f]{8}$/)
     expect(
       draftIdOf({ origin: 'https://my.dev.box', path: '/apps/a/', slug: 'x', pr: null, mount: '/' })
-    ).toBe('draft-my-dev-box-x')
-    expect(draftIdOf(parsePastedDraft('https://myapp.vercel.app/')!)).toBe(
-      'draft-myapp-vercel-app-draft'
+    ).toMatch(/^draft-my-dev-box-x-[0-9a-f]{8}$/)
+    expect(draftIdOf(parsePastedDraft('https://myapp.vercel.app/')!)).toMatch(
+      /^draft-myapp-vercel-app-draft-[0-9a-f]{8}$/
     )
+  })
+
+  it('keeps one id for one draft, whatever page of it was opened', () => {
+    expect(draftIdOf({ ...DEPTH_SWAP, path: '/apps/depth-swap/desktop.html' })).toBe(
+      draftIdOf(DEPTH_SWAP)
+    )
+  })
+
+  it.each([
+    [
+      'hosts whose names read alike',
+      { origin: 'https://a.b.example', pr: null, mount: '/' },
+      { origin: 'https://a-b.example', pr: null, mount: '/' }
+    ],
+    [
+      'two previews of one pull request',
+      { origin: PREVIEW, pr: 683, mount: '/' },
+      { origin: 'https://comfy-website-preview-pr-683.vercel.app', pr: 683, mount: '/' }
+    ],
+    [
+      'one site shown at two paths',
+      { origin: 'https://my.dev.box', pr: null, mount: '/' },
+      { origin: 'https://my.dev.box', pr: null, mount: '/apps/draft/' }
+    ]
+  ])('gives %s their own ids', (_why, first, second) => {
+    expect(draftIdOf({ ...DEPTH_SWAP, ...first })).not.toBe(draftIdOf({ ...DEPTH_SWAP, ...second }))
   })
 
   it('names where a draft is from by its exact address', () => {
@@ -430,17 +458,18 @@ describe('registerDraft', () => {
     })
 
     expect(draft.card).toMatchObject({
-      id: 'draft-pr683-depth-swap',
+      id: draft.id,
       title: 'Depth Swap',
       description: 'Draft from pr-683.drafts.comfy.org'
     })
+    expect(draft.id).toMatch(/^draft-pr683-depth-swap-/)
     expect(draftOf(draft.id)?.origin).toBe(PREVIEW)
     expect(draftPageUrl(draft.id)).toBeNull()
     expect(draftCards()).toEqual([])
 
-    expect(confirmDraft(draft.id)?.id).toBe('draft-pr683-depth-swap')
+    expect(confirmDraft(draft.token)?.id).toBe(draft.id)
     expect(draftPageUrl(draft.id)).toBe('https://comfy.org/apps/depth-swap/desktop.html')
-    expect(draftCards().map((card) => card.id)).toEqual(['draft-pr683-depth-swap'])
+    expect(draftCards().map((card) => card.id)).toEqual([draft.id])
     expect(mocks.handle).toHaveBeenCalledWith('https', expect.any(Function))
   })
 
@@ -465,7 +494,7 @@ describe('registerDraft', () => {
       pr: 683,
       mount: '/'
     })
-    confirmDraft(draft.id)
+    confirmDraft(draft.token)
 
     revokeDraft(draft.id)
 
@@ -482,7 +511,6 @@ describe('registerDraft', () => {
   })
 
   it.each([
-    ['another site', 'https://evil.example', '/apps/depth-swap/', '/'],
     ['another page', PREVIEW, '/apps/depth-swap/desktop.html', '/'],
     ['another query', PREVIEW, '/apps/depth-swap/?example=3', '/']
   ])('asks again when the same draft now comes from %s', async (_why, origin, path, mount) => {
@@ -494,7 +522,7 @@ describe('registerDraft', () => {
       pr: 683,
       mount: '/'
     })
-    confirmDraft(first.id)
+    confirmDraft(first.token)
 
     const moved = await register({ origin, path, slug: 'depth-swap', pr: 683, mount })
 
@@ -512,21 +540,60 @@ describe('registerDraft', () => {
       pr: 683,
       mount: '/'
     }
-    confirmDraft((await register(link)).id)
+    confirmDraft((await register(link)).token)
 
     expect((await register(link)).accepted).toBe(true)
+  })
+
+  it('keeps a draft from a host whose name reads alike apart from the one already accepted', async () => {
+    mocks.fetch.mockResolvedValue(new Response(''))
+    const first = await register(parsePastedDraft('https://a.b.example/apps/x/')!)
+    confirmDraft(first.token)
+
+    const lookalike = await register(parsePastedDraft('https://a-b.example/apps/x/')!)
+
+    expect(lookalike.id).not.toBe(first.id)
+    expect(lookalike.accepted).toBe(false)
+    expect(draftOf(first.id)?.origin).toBe('https://a.b.example')
+    expect(draftCards().map((card) => card.id)).toEqual([first.id])
+  })
+
+  it('accepts a draft only with the token its question was sent with, and only once', async () => {
+    mocks.fetch.mockResolvedValue(new Response(''))
+    const draft = await register(DEPTH_SWAP)
+
+    expect(confirmDraft('')).toBeNull()
+    expect(confirmDraft('a-token-never-sent')).toBeNull()
+    expect(draftAskedWith(draft.token)).toBe(draftOf(draft.id))
+    expect(confirmDraft(draft.token)?.id).toBe(draft.id)
+    expect(draftAskedWith(draft.token)).toBeNull()
+    expect(confirmDraft(draft.token)).toBeNull()
+  })
+
+  it('refuses the token of a question a newer registration replaced', async () => {
+    mocks.fetch.mockResolvedValue(new Response(''))
+    const first = await register(DEPTH_SWAP)
+    const second = await register({ ...DEPTH_SWAP, path: '/apps/depth-swap/?example=3' })
+
+    expect(second.id).toBe(first.id)
+    expect(second.token).not.toBe(first.token)
+    expect(confirmDraft(first.token)).toBeNull()
+    expect(draftPageUrl(first.id)).toBeNull()
+    expect(confirmDraft(second.token)?.id).toBe(second.id)
+    expect(draftPageUrl(second.id)).toBe('https://comfy.org/apps/depth-swap/?example=3')
   })
 
   it('forgets every draft, so none is listed and none can be accepted', async () => {
     mocks.fetch.mockResolvedValue(new Response(''))
     const draft = await register(parsePastedDraft(`${PREVIEW}/apps/depth-swap/`)!)
-    confirmDraft(draft.id)
+    const unanswered = await register(parsePastedDraft('https://my.dev.box/apps/x/')!)
+    confirmDraft(draft.token)
 
     forgetDrafts()
 
     expect(draftCards()).toEqual([])
     expect(draftOf(draft.id)).toBeNull()
-    expect(confirmDraft(draft.id)).toBeNull()
+    expect(confirmDraft(unanswered.token)).toBeNull()
   })
 
   it('opens a pasted page under comfy.org/apps/draft/, titled from the page on its own site', async () => {
@@ -538,11 +605,12 @@ describe('registerDraft', () => {
       signal: expect.any(AbortSignal)
     })
     expect(draft.card).toMatchObject({
-      id: 'draft-myapp-vercel-app-draft',
+      id: draft.id,
       title: 'My App',
       description: 'Draft from myapp.vercel.app'
     })
-    confirmDraft(draft.id)
+    expect(draft.id).toMatch(/^draft-myapp-vercel-app-draft-/)
+    confirmDraft(draft.token)
     expect(draftPageUrl(draft.id)).toBe('https://comfy.org/apps/draft/tools/?x=1')
   })
 
@@ -617,12 +685,12 @@ describe('registerDraft', () => {
 
     await expect(registerDraft(DEPTH_SWAP, OWNER, () => false)).resolves.toBeNull()
 
-    expect(draftOf('draft-pr683-depth-swap')).toBeNull()
+    expect(draftOf(draftIdOf(DEPTH_SWAP))).toBeNull()
   })
 
   it('asks again when another account registers a draft the first account accepted', async () => {
     mocks.fetch.mockResolvedValue(new Response(''))
-    confirmDraft((await register(DEPTH_SWAP)).id)
+    confirmDraft((await register(DEPTH_SWAP)).token)
 
     const again = await register(DEPTH_SWAP, '["other-subject","ws-2"]')
 
@@ -639,6 +707,15 @@ describe('registerDraft', () => {
     expect(draftsBelongTo('["staff-subject","ws-2"]')).toBe(false)
     expect(draftsBelongTo(null)).toBe(false)
   })
+
+  it('tells whether any draft is registered', async () => {
+    expect(hasDrafts()).toBe(false)
+    mocks.fetch.mockResolvedValue(new Response(''))
+    await register(DEPTH_SWAP)
+    expect(hasDrafts()).toBe(true)
+    forgetDrafts()
+    expect(hasDrafts()).toBe(false)
+  })
 })
 
 describe('a draft with a developer apps address', () => {
@@ -654,7 +731,7 @@ describe('a draft with a developer apps address', () => {
     const draft = await register(DEPTH_SWAP)
 
     expect(mocks.fetch).toHaveBeenCalledWith(`${PREVIEW}/apps/depth-swap/`, expect.anything())
-    confirmDraft(draft.id)
+    confirmDraft(draft.token)
     expect(draftPageUrl(draft.id)).toBe('http://localhost:4321/apps/depth-swap/')
   })
 

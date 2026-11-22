@@ -17,6 +17,7 @@ import { pageUrlForListedApp } from './appsCatalog'
 import { areAppsEnabled, currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
+import { isDraftStillAllowed } from './draftLinks'
 
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
@@ -226,21 +227,32 @@ function isDraft(appId: string | null): appId is string {
   return appId !== null && draftOf(appId) !== null
 }
 
-function dropDraft(windowKey: number, appId: string | null): void {
-  if (!isDraft(appId)) return
+function tellPanelsTheListChanged(): void {
+  for (const windowKey of comfyWindows.keys()) panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
+}
+
+function dropDraft(droppedIn: number, appId: string | null): boolean {
+  if (!isDraft(appId)) return false
   revokeDraft(appId)
-  panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
+  for (const [windowKey, hosted] of hostedByWindow) {
+    if (hosted.appId !== appId) continue
+    conceal(hosted)
+    disposeHostedPage(windowKey)
+    if (windowKey !== droppedIn) panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
+  }
+  tellPanelsTheListChanged()
+  return true
 }
 
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
-  const showedDraft = isDraft(hosted.appId)
-  dropDraft(windowKey, hosted.appId)
-  if (!pageStillShowsApp || showedDraft) {
-    hosted.appId = null
-    hosted.loaded = null
-    hosted.routeBase = null
+  if (!dropDraft(windowKey, hosted.appId)) {
+    if (!pageStillShowsApp) {
+      hosted.appId = null
+      hosted.loaded = null
+      hosted.routeBase = null
+    }
+    conceal(hosted)
   }
-  conceal(hosted)
   panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
 }
 
@@ -250,6 +262,15 @@ function disposeHostedPage(windowKey: number): void {
   hostedByWindow.delete(windowKey)
   hosted.forget()
   if (!hosted.view.webContents.isDestroyed()) hosted.view.webContents.close()
+}
+
+function showsDraftSession(hosted: HostedPage): boolean {
+  return hosted.session !== session.fromPartition(APPS_PARTITION)
+}
+
+async function admitsBridge(hosted: HostedPage): Promise<boolean> {
+  if (!showsDraftSession(hosted)) return true
+  return hosted.appId !== null && (await isDraftStillAllowed(hosted.appId))
 }
 
 function createHostedPage(
@@ -286,7 +307,7 @@ function createHostedPage(
     wanted: false,
     focusWhenReady: false,
     outputs: null,
-    forget: registerAppsPage(contents)
+    forget: registerAppsPage(contents, () => admitsBridge(hosted))
   }
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
     if (isAppsListUrl(location, url)) {
@@ -458,10 +479,6 @@ export async function showAppPage(
   return hosted.status
 }
 
-function showsDraftSession(hosted: HostedPage): boolean {
-  return hosted.session !== session.fromPartition(APPS_PARTITION)
-}
-
 export function closeDraftPages(): void {
   for (const [windowKey, hosted] of hostedByWindow) {
     if (!showsDraftSession(hosted)) continue
@@ -469,7 +486,7 @@ export function closeDraftPages(): void {
     disposeHostedPage(windowKey)
   }
   forgetDrafts()
-  for (const windowKey of comfyWindows.keys()) panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
+  tellPanelsTheListChanged()
 }
 
 export function hideAppPage(panel: WebContents): void {

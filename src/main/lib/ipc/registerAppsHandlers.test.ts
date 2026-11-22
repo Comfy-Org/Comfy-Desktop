@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
   isGlobalSettings: true,
   canPasteDrafts: vi.fn(async () => true),
   closeDraftPages: vi.fn(),
-  cloudIdentity: '["staff-subject","ws-1"]' as string | null,
-  draftsBelongTo: vi.fn((_identity: string | null) => true),
+  acceptDraft: vi.fn(async (_sender: unknown, _token: unknown) => null),
+  draftsStillAllowed: vi.fn(async () => true),
   openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
@@ -34,14 +34,11 @@ vi.mock('../../host/registry', () => ({ isPanelSender: () => mocks.isPanel }))
 vi.mock('../../popups/titlePopup', () => ({
   isGlobalSettingsSender: () => mocks.isGlobalSettings
 }))
-vi.mock('../../apps/draftApps', () => ({
-  draftCards: () => [],
-  draftsBelongTo: mocks.draftsBelongTo
-}))
+vi.mock('../../apps/draftApps', () => ({ draftCards: () => [] }))
 vi.mock('../../apps/draftLinks', () => ({
-  acceptDraft: vi.fn(),
+  acceptDraft: mocks.acceptDraft,
   canPasteDrafts: mocks.canPasteDrafts,
-  cloudIdentity: () => mocks.cloudIdentity,
+  draftsStillAllowed: mocks.draftsStillAllowed,
   openPastedDraft: mocks.openPastedDraft
 }))
 vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse }))
@@ -145,6 +142,22 @@ describe('pasting a draft app address in Desktop settings', () => {
   })
 })
 
+describe('accepting a draft app', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it('passes the token of the question the person answered', async () => {
+    const sender = { id: 'panel' }
+    await mocks.handlers.get('apps:accept-draft')?.({ sender }, 'question-1')
+
+    expect(mocks.acceptDraft).toHaveBeenCalledExactlyOnceWith(sender, 'question-1')
+  })
+})
+
 describe('a Cloud account change', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -153,24 +166,31 @@ describe('a Cloud account change', () => {
     registerAppsHandlers()
   })
 
-  it('closes every draft app when they belong to another account, so the next account is asked again', () => {
-    mocks.cloudIdentity = '["other-subject","ws-9"]'
-    mocks.draftsBelongTo.mockReturnValue(false)
-    expect(mocks.closeDraftPages).not.toHaveBeenCalled()
+  it('closes every draft app once they are no longer allowed, so the next account is asked again', async () => {
+    mocks.draftsStillAllowed.mockResolvedValueOnce(false)
 
     cloudAuthEvents.emit('changed')
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
 
-    expect(mocks.draftsBelongTo).toHaveBeenCalledExactlyOnceWith('["other-subject","ws-9"]')
-    expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1)
+    expect(mocks.draftsStillAllowed).toHaveBeenCalledOnce()
   })
 
-  it('keeps an open draft when the account and workspace stayed the same, as after a failed workspace switch', () => {
-    mocks.cloudIdentity = '["staff-subject","ws-1"]'
-    mocks.draftsBelongTo.mockReturnValue(true)
+  it('closes every draft app when Desktop cannot tell whether they are still allowed', async () => {
+    mocks.draftsStillAllowed.mockRejectedValueOnce(new Error('offline'))
 
     cloudAuthEvents.emit('changed')
 
-    expect(mocks.draftsBelongTo).toHaveBeenCalledExactlyOnceWith('["staff-subject","ws-1"]')
+    await vi.waitFor(() => expect(mocks.closeDraftPages).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps an open draft while it is still allowed, as after a failed workspace switch', async () => {
+    mocks.draftsStillAllowed.mockResolvedValueOnce(true)
+
+    cloudAuthEvents.emit('changed')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mocks.draftsStillAllowed).toHaveBeenCalledOnce()
+
     expect(mocks.closeDraftPages).not.toHaveBeenCalled()
   })
 })

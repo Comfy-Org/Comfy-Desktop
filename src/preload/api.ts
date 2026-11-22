@@ -156,7 +156,7 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:open-draft', handler)
       return () => ipcRenderer.removeListener('apps:open-draft', handler)
     },
-    acceptDraftApp: (appId) => ipcRenderer.invoke('apps:accept-draft', appId),
+    acceptDraftApp: (token) => ipcRenderer.invoke('apps:accept-draft', token),
     onAppOutputs: (callback) => {
       const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs | null): void =>
         callback(appId, outputs)

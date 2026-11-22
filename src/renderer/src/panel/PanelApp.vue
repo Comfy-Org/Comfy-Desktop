@@ -295,7 +295,7 @@ async function answerDraftApp(request: DraftAppRequest): Promise<void> {
       confirmLabel: 'Open',
       cancelLabel: 'Cancel'
     })
-    const accepted = choice === 'primary' ? await window.api.acceptDraftApp(request.appId) : null
+    const accepted = choice === 'primary' ? await window.api.acceptDraftApp(request.token) : null
     if (accepted) await answerDraftApp(accepted)
     return
   }

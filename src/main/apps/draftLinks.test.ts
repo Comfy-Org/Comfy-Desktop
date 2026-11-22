@@ -30,13 +30,23 @@ vi.mock('./appsConfig', () => ({
 }))
 
 import { getCloudSession } from '../devplatform/session'
-import { _resetForTest, draftCards, draftOf, draftPageUrl } from './draftApps'
+import type { DraftAppRequest } from '../../types/ipc'
+import {
+  _resetForTest,
+  draftCards,
+  draftOf,
+  draftPageUrl,
+  hasDrafts,
+  revokeDraft
+} from './draftApps'
 import {
   acceptDraft,
   cloudIdentity,
   DRAFT_OPENED_EVENT,
   DRAFT_REFUSED_EVENT,
   canPasteDrafts,
+  draftsStillAllowed,
+  isDraftStillAllowed,
   openDraftLink,
   openPastedDraft
 } from './draftLinks'
@@ -54,6 +64,21 @@ const STAFF = '["staff-subject","ws-1"]'
 const OTHER_ACCOUNT = '["other-subject","ws-9"]'
 const STAFF_ACCOUNT = { email: 'purz@comfy.org', signInProvider: 'google.com' }
 const OUTSIDER_ACCOUNT = { email: 'someone@gmail.com', signInProvider: 'google.com' }
+
+type DraftQuestion = Extract<DraftAppRequest, { kind: 'ask' }>
+
+const DEPTH_SWAP_ID = expect.stringMatching(/^draft-pr683-depth-swap-[0-9a-f]{8}$/)
+
+function questionSentBy(d: DraftLinkDeps): DraftQuestion {
+  const sent = vi.mocked(d.sendToPanel).mock.calls.at(-1)?.[1]
+  if (sent?.kind !== 'ask') throw new Error('No draft app question was sent')
+  return sent
+}
+
+async function askedAbout(link: string, d: DraftLinkDeps = deps()): Promise<DraftQuestion> {
+  await openDraftLink(link, d)
+  return questionSentBy(d)
+}
 
 function deps(overrides: Partial<DraftLinkDeps> = {}): DraftLinkDeps {
   return {
@@ -82,12 +107,21 @@ describe('openDraftLink', () => {
     await expect(openDraftLink(LINK, d)).resolves.toBe('asked')
     expect(d.sendToPanel).toHaveBeenCalledWith(expect.anything(), {
       kind: 'ask',
-      appId: 'draft-pr683-depth-swap',
+      appId: DEPTH_SWAP_ID,
+      token: expect.any(String),
       title: 'Open a draft app from pr-683.drafts.comfy.org?',
       message: ABOUT_DEPTH_SWAP
     })
     expect(draftCards()).toEqual([])
-    expect(draftPageUrl('draft-pr683-depth-swap')).toBeNull()
+    expect(draftPageUrl(questionSentBy(d).appId)).toBeNull()
+  })
+
+  it('sends a new token with every question, even for the same draft', async () => {
+    const first = await askedAbout(LINK)
+    const second = await askedAbout(LINK)
+
+    expect(second.appId).toBe(first.appId)
+    expect(second.token).not.toBe(first.token)
   })
 
   it.each([
@@ -122,6 +156,7 @@ describe('openDraftLink', () => {
     expect(d.sendToPanel).toHaveBeenCalledWith(expect.anything(), {
       kind: 'ask',
       appId: expect.any(String),
+      token: expect.any(String),
       title: `Open a draft app from ${host}?`,
       message
     })
@@ -137,6 +172,7 @@ describe('openDraftLink', () => {
     expect(d.sendToPanel).toHaveBeenCalledWith(expect.anything(), {
       kind: 'ask',
       appId: expect.any(String),
+      token: expect.any(String),
       title: 'Open a draft app from myapp.vercel.app?',
       message: `"Depth Swap'? It is from comfy.org. '". It is not published, and it runs with your Comfy Cloud account.\n${NOT_COMFY}`
     })
@@ -201,7 +237,8 @@ describe('openPastedDraft', () => {
     ).resolves.toEqual({ kind: 'asked' })
     expect(d.sendToPanel).toHaveBeenCalledWith(expect.anything(), {
       kind: 'ask',
-      appId: 'draft-pr683-depth-swap',
+      appId: DEPTH_SWAP_ID,
+      token: expect.any(String),
       title: 'Open a draft app from pr-683.drafts.comfy.org?',
       message: ABOUT_DEPTH_SWAP
     })
@@ -213,14 +250,14 @@ describe('openPastedDraft', () => {
     await expect(openPastedDraft(LOCAL_PAGE, d)).resolves.toEqual({ kind: 'asked' })
     expect(d.sendToPanel).toHaveBeenCalledWith(expect.anything(), {
       kind: 'ask',
-      appId: 'draft-localhost-4321-depth-swap',
+      appId: expect.stringMatching(/^draft-localhost-4321-depth-swap-/),
+      token: expect.any(String),
       title: 'Open a draft app from localhost:4321?',
       message: ABOUT_DEPTH_SWAP
     })
-    expect((await acceptDraft(PANEL, 'draft-localhost-4321-depth-swap', d))?.kind).toBe('open')
-    expect(draftPageUrl('draft-localhost-4321-depth-swap')).toBe(
-      'https://comfy.org/apps/depth-swap/'
-    )
+    const question = questionSentBy(d)
+    expect((await acceptDraft(PANEL, question.token, d))?.kind).toBe('open')
+    expect(draftPageUrl(question.appId)).toBe('https://comfy.org/apps/depth-swap/')
   })
 
   it.each([true, false])(
@@ -233,14 +270,14 @@ describe('openPastedDraft', () => {
       })
       expect(d.sendToPanel).toHaveBeenCalledWith(expect.anything(), {
         kind: 'ask',
-        appId: 'draft-myapp-vercel-app-draft',
+        appId: expect.stringMatching(/^draft-myapp-vercel-app-draft-/),
+        token: expect.any(String),
         title: 'Open a draft app from myapp.vercel.app?',
         message: `"My App". It is not published, and it runs with your Comfy Cloud account.\n${NOT_COMFY}`
       })
-      await acceptDraft(PANEL, 'draft-myapp-vercel-app-draft', d)
-      expect(draftPageUrl('draft-myapp-vercel-app-draft')).toBe(
-        'https://comfy.org/apps/draft/tools/?x=1'
-      )
+      const question = questionSentBy(d)
+      await acceptDraft(PANEL, question.token, d)
+      expect(draftPageUrl(question.appId)).toBe('https://comfy.org/apps/draft/tools/?x=1')
     }
   )
 
@@ -298,28 +335,58 @@ describe('canPasteDrafts', () => {
 describe('acceptDraft', () => {
   it('lists and opens the draft once the person says Open', async () => {
     const d = deps()
-    await openDraftLink(LINK, d)
+    const { appId, token } = await askedAbout(LINK, d)
 
-    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', d)).toEqual({
+    expect(await acceptDraft(PANEL, token, d)).toEqual({
       kind: 'open',
-      card: expect.objectContaining({ id: 'draft-pr683-depth-swap', title: 'Depth Swap' })
+      card: expect.objectContaining({ id: appId, title: 'Depth Swap' })
     })
-    expect(draftPageUrl('draft-pr683-depth-swap')).toBe(
-      'https://comfy.org/apps/depth-swap/desktop.html'
-    )
-    expect(draftCards().map((card) => card.id)).toEqual(['draft-pr683-depth-swap'])
-    expect(mocks.capture).toHaveBeenCalledWith(DRAFT_OPENED_EVENT, {
-      app_id: 'draft-pr683-depth-swap'
-    })
+    expect(draftPageUrl(appId)).toBe('https://comfy.org/apps/depth-swap/desktop.html')
+    expect(draftCards().map((card) => card.id)).toEqual([appId])
+    expect(mocks.capture).toHaveBeenCalledWith(DRAFT_OPENED_EVENT, { app_id: appId })
   })
 
-  it('accepts only from the panel, and only a draft a link asked about', async () => {
+  it('accepts only from the panel, and only with the token a question was sent with', async () => {
     const d = deps()
-    await openDraftLink(LINK, d)
-    expect(await acceptDraft(PANEL, 'draft-pr999-other', d)).toBeNull()
+    const { appId, token } = await askedAbout(LINK, d)
+    expect(await acceptDraft(PANEL, appId, d)).toBeNull()
+    expect(await acceptDraft(PANEL, 'a-token-never-sent', d)).toBeNull()
+    expect(await acceptDraft(PANEL, 42, d)).toBeNull()
     mocks.isPanelSender.mockReturnValue(false)
-    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', d)).toBeNull()
+    expect(await acceptDraft(PANEL, token, d)).toBeNull()
     expect(draftCards()).toEqual([])
+  })
+
+  it('opens what the first question showed or nothing, when a look-alike host asked after it', async () => {
+    const first = await askedAbout(linkTo('https://a.b.example/apps/x/'))
+    const lookalike = await askedAbout(linkTo('https://a-b.example/apps/x/'))
+    expect(lookalike.appId).not.toBe(first.appId)
+
+    expect(await acceptDraft(PANEL, first.token, deps())).toEqual({
+      kind: 'open',
+      card: expect.objectContaining({ id: first.appId })
+    })
+    expect(draftOf(first.appId)?.origin).toBe('https://a.b.example')
+    expect(draftPageUrl(lookalike.appId)).toBeNull()
+  })
+
+  it('refuses the Open of a question that a newer registration of the same draft replaced', async () => {
+    const first = await askedAbout(LINK)
+    const replaced = await askedAbout(
+      linkTo('https://pr-683.drafts.comfy.org/apps/depth-swap/?example=3')
+    )
+    expect(replaced.appId).toBe(first.appId)
+
+    expect(await acceptDraft(PANEL, first.token, deps())).toBeNull()
+    expect(draftPageUrl(first.appId)).toBeNull()
+    expect((await acceptDraft(PANEL, replaced.token, deps()))?.kind).toBe('open')
+  })
+
+  it('takes one Open per question', async () => {
+    const { token } = await askedAbout(LINK)
+
+    expect((await acceptDraft(PANEL, token, deps()))?.kind).toBe('open')
+    expect(await acceptDraft(PANEL, token, deps())).toBeNull()
   })
 
   it.each([
@@ -328,16 +395,16 @@ describe('acceptDraft', () => {
     ['the person signed out', { cloudIdentity: () => null, signedInAccount: async () => null }],
     ['the account is no longer staff', { signedInAccount: async () => OUTSIDER_ACCOUNT }]
   ] as const)('does not open a draft staff asked for when %s', async (_why, overrides) => {
-    await openDraftLink(LINK, deps())
+    const { appId, token } = await askedAbout(LINK)
 
-    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', deps(overrides))).toBeNull()
-    expect(draftPageUrl('draft-pr683-depth-swap')).toBeNull()
+    expect(await acceptDraft(PANEL, token, deps(overrides))).toBeNull()
+    expect(draftPageUrl(appId)).toBeNull()
     expect(draftCards()).toEqual([])
     expect(mocks.capture).not.toHaveBeenCalledWith(DRAFT_OPENED_EVENT, expect.anything())
   })
 
   it('does not open the draft when the account changes while Desktop checks it is staff', async () => {
-    await openDraftLink(LINK, deps())
+    const { appId, token } = await askedAbout(LINK)
     let identity: string = STAFF
     const d = deps({
       cloudIdentity: () => identity,
@@ -347,8 +414,8 @@ describe('acceptDraft', () => {
       }
     })
 
-    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', d)).toBeNull()
-    expect(draftPageUrl('draft-pr683-depth-swap')).toBeNull()
+    expect(await acceptDraft(PANEL, token, d)).toBeNull()
+    expect(draftPageUrl(appId)).toBeNull()
   })
 })
 
@@ -396,7 +463,7 @@ describe('an account change while a draft is loading', () => {
     await expect(openDraftLink(LINK, d)).resolves.toBe('account_changed')
 
     expect(d.sendToPanel).not.toHaveBeenCalled()
-    expect(draftOf('draft-pr683-depth-swap')).toBeNull()
+    expect(hasDrafts()).toBe(false)
     expect(mocks.capture).toHaveBeenCalledWith(DRAFT_REFUSED_EVENT, { reason: 'account_changed' })
   })
 
@@ -413,17 +480,101 @@ describe('an account change while a draft is loading', () => {
     })
     expect(homeWindow).not.toHaveBeenCalled()
     expect(d.sendToPanel).not.toHaveBeenCalled()
-    expect(draftOf('draft-pr683-depth-swap')).toBeNull()
+    expect(hasDrafts()).toBe(false)
   })
 
   it('leaves a later account nothing to accept', async () => {
-    await openDraftLink(LINK, changeAccountDuringLoad())
+    const d = changeAccountDuringLoad()
+    await openDraftLink(LINK, d)
 
-    const next = deps({
-      cloudIdentity: () => OTHER_ACCOUNT,
-      signedInAccount: async () => OUTSIDER_ACCOUNT
-    })
-    expect(await acceptDraft(PANEL, 'draft-pr683-depth-swap', next)).toBeNull()
+    expect(d.sendToPanel).not.toHaveBeenCalled()
+    expect(hasDrafts()).toBe(false)
     expect(draftCards()).toEqual([])
+  })
+})
+
+describe('a draft page asking Desktop for its Cloud account', () => {
+  async function acceptedDraft(): Promise<string> {
+    const { appId, token } = await askedAbout(LINK)
+    await acceptDraft(PANEL, token, deps())
+    return appId
+  }
+
+  it('is allowed while the account that said Open is signed in and still staff', async () => {
+    const appId = await acceptedDraft()
+
+    await expect(isDraftStillAllowed(appId, deps())).resolves.toBe(true)
+  })
+
+  it('is refused before the person says Open', async () => {
+    const { appId } = await askedAbout(LINK)
+
+    await expect(isDraftStillAllowed(appId, deps())).resolves.toBe(false)
+  })
+
+  it('is refused once the draft is dropped, as when the person goes back to all apps', async () => {
+    const appId = await acceptedDraft()
+
+    revokeDraft(appId)
+
+    await expect(isDraftStillAllowed(appId, deps())).resolves.toBe(false)
+  })
+
+  it.each([
+    ['another account is now signed in', { cloudIdentity: () => OTHER_ACCOUNT }],
+    ['the account moved to another workspace', { cloudIdentity: () => '["staff-subject","ws-2"]' }],
+    ['the person signed out', { cloudIdentity: () => null, signedInAccount: async () => null }],
+    [
+      'the same account signed in again with a password',
+      { signedInAccount: async () => ({ email: 'purz@comfy.org', signInProvider: 'password' }) }
+    ],
+    ['the account is no longer staff', { signedInAccount: async () => OUTSIDER_ACCOUNT }]
+  ] as const)('is refused when %s', async (_why, overrides) => {
+    const appId = await acceptedDraft()
+
+    await expect(isDraftStillAllowed(appId, deps(overrides))).resolves.toBe(false)
+  })
+
+  it('is refused when the account changes while Desktop checks it is staff', async () => {
+    const appId = await acceptedDraft()
+    let identity: string = STAFF
+    const d = deps({
+      cloudIdentity: () => identity,
+      signedInAccount: async () => {
+        identity = OTHER_ACCOUNT
+        return STAFF_ACCOUNT
+      }
+    })
+
+    await expect(isDraftStillAllowed(appId, d)).resolves.toBe(false)
+  })
+})
+
+describe('draftsStillAllowed', () => {
+  it('keeps no drafts without asking who is signed in', async () => {
+    const signedInAccount = vi.fn(async () => null)
+
+    await expect(draftsStillAllowed(deps({ signedInAccount }))).resolves.toBe(true)
+    expect(signedInAccount).not.toHaveBeenCalled()
+  })
+
+  it('keeps the drafts when the account and workspace stayed the same, as after a failed workspace switch', async () => {
+    await askedAbout(LINK)
+
+    await expect(draftsStillAllowed(deps())).resolves.toBe(true)
+  })
+
+  it.each([
+    ['another account is now signed in', { cloudIdentity: () => OTHER_ACCOUNT }],
+    ['the account moved to another workspace', { cloudIdentity: () => '["staff-subject","ws-2"]' }],
+    ['the person signed out', { cloudIdentity: () => null, signedInAccount: async () => null }],
+    [
+      'the same account signed in again with a password',
+      { signedInAccount: async () => ({ email: 'purz@comfy.org', signInProvider: 'password' }) }
+    ]
+  ] as const)('drops the drafts when %s', async (_why, overrides) => {
+    await askedAbout(LINK)
+
+    await expect(draftsStillAllowed(deps(overrides))).resolves.toBe(false)
   })
 })

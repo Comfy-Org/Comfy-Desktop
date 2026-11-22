@@ -10,8 +10,11 @@ import * as mainTelemetry from '../lib/telemetry'
 import { areAppsEnabled } from './appsConfig'
 import {
   confirmDraft,
+  draftAskedWith,
   draftOf,
+  draftsBelongTo,
   draftSourceOf,
+  hasDrafts,
   isComfyAddress,
   isStaffAccount,
   OPEN_DRAFT_CHANNEL,
@@ -144,6 +147,7 @@ async function askToOpen(
   deps.sendToPanel(window(), {
     kind: 'ask',
     appId: draft.id,
+    token: draft.token,
     ...draftQuestion(parsed, draft.card.title)
   })
   return true
@@ -193,17 +197,35 @@ export async function canPasteDrafts(deps: DraftLinkDeps = defaultDeps): Promise
 
 export async function acceptDraft(
   sender: WebContents,
-  appId: unknown,
+  token: unknown,
   deps: DraftLinkDeps = defaultDeps
 ): Promise<DraftAppRequest | null> {
-  if (!isPanelSender(sender) || typeof appId !== 'string') return null
-  const draft = draftOf(appId)
+  if (!isPanelSender(sender) || typeof token !== 'string') return null
+  const draft = draftAskedWith(token)
   const owner = deps.cloudIdentity()
   if (!draft || owner === null || draft.owner !== owner) return null
   if (!isStaffAccount(await deps.signedInAccount())) return null
-  if (deps.cloudIdentity() !== owner || draftOf(appId) !== draft) return null
-  const card = confirmDraft(appId)
+  if (deps.cloudIdentity() !== owner || draftAskedWith(token) !== draft) return null
+  const card = confirmDraft(token)
   if (!card) return null
-  mainTelemetry.capture(DRAFT_OPENED_EVENT, { app_id: appId })
+  mainTelemetry.capture(DRAFT_OPENED_EVENT, { app_id: draft.id })
   return { kind: 'open', card }
+}
+
+export async function isDraftStillAllowed(
+  appId: string,
+  deps: DraftLinkDeps = defaultDeps
+): Promise<boolean> {
+  const draft = draftOf(appId)
+  const owner = deps.cloudIdentity()
+  if (!draft?.accepted || owner === null || draft.owner !== owner) return false
+  if (!isStaffAccount(await deps.signedInAccount())) return false
+  return deps.cloudIdentity() === owner && draftOf(appId) === draft && draft.accepted
+}
+
+export async function draftsStillAllowed(deps: DraftLinkDeps = defaultDeps): Promise<boolean> {
+  if (!hasDrafts()) return true
+  if (!draftsBelongTo(deps.cloudIdentity())) return false
+  if (!isStaffAccount(await deps.signedInAccount())) return false
+  return draftsBelongTo(deps.cloudIdentity())
 }

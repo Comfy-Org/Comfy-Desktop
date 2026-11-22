@@ -15,7 +15,7 @@ import type {
   ComfyDesktop2BillingHandoffReceiver
 } from '../../types/comfyDesktopBridge'
 import { areAppsEnabled } from '../apps/appsConfig'
-import { isAppsPageSender, liveAppsPages } from '../apps/appsPages'
+import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../apps/appsPages'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 import * as mainTelemetry from './telemetry'
 import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
@@ -111,9 +111,13 @@ async function sessionState(
 
 type SessionGate = () => Promise<boolean>
 
+function appsPageGate(page: WebContents): SessionGate {
+  return async () => (await areAppsEnabled()) && (await appsPageAdmits(page))
+}
+
 function gateForSender(event: EmbeddedSessionSender): SessionGate | null {
   if (isTrustedSender(event)) return enabledForLocalView
-  if (isAppsPageSender(event.sender, event.senderFrame)) return areAppsEnabled
+  if (isAppsPageSender(event.sender, event.senderFrame)) return appsPageGate(event.sender)
   return null
 }
 
@@ -244,9 +248,19 @@ export async function broadcastEmbeddedSessionChanged(): Promise<void> {
     }
   }
   if (appsState.status === 'disabled') return
-  for (const contents of liveAppsPages()) {
-    contents.send(EMBEDDED_SESSION_CHANNELS.changed, appsState)
-  }
+  await Promise.all(
+    liveAppsPages().map((contents) => sendWhenAdmitted(contents, appsState, generation))
+  )
+}
+
+async function sendWhenAdmitted(
+  contents: WebContents,
+  state: ComfyDesktop2AuthState,
+  generation: number
+): Promise<void> {
+  const admitted = await appsPageAdmits(contents)
+  if (!admitted || generation !== broadcastGeneration || contents.isDestroyed()) return
+  contents.send(EMBEDDED_SESSION_CHANNELS.changed, state)
 }
 
 export function _resetForTest(): void {

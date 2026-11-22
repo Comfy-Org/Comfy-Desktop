@@ -177,7 +177,7 @@ export interface AppCard {
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
 
 export type DraftAppRequest =
-  | { kind: 'ask'; appId: string; title: string; message: string }
+  | { kind: 'ask'; appId: string; token: string; title: string; message: string }
   | { kind: 'refused'; title: string; message: string }
   | { kind: 'open'; card: AppCard }
 
@@ -1319,7 +1319,7 @@ export interface ElectronApi {
   onAppPageClosed(callback: () => void): () => void
   onAppsListChanged(callback: () => void): () => void
   onOpenDraftApp(callback: (request: DraftAppRequest) => void): () => void
-  acceptDraftApp(appId: string): Promise<DraftAppRequest | null>
+  acceptDraftApp(token: string): Promise<DraftAppRequest | null>
   onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
   sendAppOutputAction(action: AppOutputAction): void
   sendAppRequest(text: string): Promise<boolean>

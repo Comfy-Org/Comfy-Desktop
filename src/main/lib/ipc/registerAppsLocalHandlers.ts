@@ -4,7 +4,7 @@ import type { IpcMainInvokeEvent } from 'electron'
 import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
-import { isAppsPageSender } from '../../apps/appsPages'
+import { appsPageAdmits, isAppsPageSender } from '../../apps/appsPages'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
 import { localBuilds, openInComfy } from '../../apps/openInComfy'
 import type {
@@ -25,7 +25,11 @@ export const APPS_LOCAL_CHANNELS = {
 } as const
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
-  return isAppsPageSender(event.sender, event.senderFrame) && (await areAppsEnabled())
+  return (
+    isAppsPageSender(event.sender, event.senderFrame) &&
+    (await areAppsEnabled()) &&
+    (await appsPageAdmits(event.sender))
+  )
 }
 
 interface Caller {

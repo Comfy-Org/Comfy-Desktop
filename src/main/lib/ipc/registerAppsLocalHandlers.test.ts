@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   isAppsPage: true,
   appsEnabled: true,
+  pageAdmitted: true,
   localState: vi.fn(),
   startLocal: vi.fn(),
   localFetch: vi.fn(),
@@ -32,7 +33,10 @@ vi.mock('../../apps/appPageView', () => ({
   loadedAppPage: () =>
     mocks.loadedApp ? { appId: mocks.loadedApp, document: mocks.document } : null
 }))
-vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
+vi.mock('../../apps/appsPages', () => ({
+  appsPageAdmits: async () => mocks.pageAdmitted,
+  isAppsPageSender: () => mocks.isAppsPage
+}))
 vi.mock('../../apps/localComfy', () => ({
   localState: mocks.localState,
   startLocal: mocks.startLocal,
@@ -68,6 +72,7 @@ beforeEach(() => {
   mocks.handlers.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
+  mocks.pageAdmitted = true
   mocks.loadedApp = 'product-ads'
   mocks.document = 1
   mocks.whileChecking = () => {}
@@ -140,7 +145,11 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
 
   it.each([
     ['a sender that is not the hosted Apps page', { isAppsPage: false, appsEnabled: true }],
-    ['the Apps page while Apps is switched off', { isAppsPage: true, appsEnabled: false }]
+    ['the Apps page while Apps is switched off', { isAppsPage: true, appsEnabled: false }],
+    [
+      'a draft app page whose draft was dropped',
+      { isAppsPage: true, appsEnabled: true, pageAdmitted: false }
+    ]
   ])('does nothing for %s', async (_who, state) => {
     Object.assign(mocks, state)
 

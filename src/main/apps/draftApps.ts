@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { session } from 'electron'
 import type { Session } from 'electron'
 
@@ -33,6 +33,7 @@ const SITE_TITLE_SUFFIX = /\s*[·|]\s*Comfy$/
 const TITLE_FETCH_TIMEOUT_MS = 5_000
 const MAX_TITLE_PAGE_BYTES = 64 * 1024
 const CLOUD_ORIGIN = new URL(CLOUD_CONFIG.issuer).origin
+const PLACE_HASH_LENGTH = 8
 
 export interface DraftLink {
   origin: string
@@ -47,6 +48,11 @@ export interface DraftApp extends DraftLink {
   owner: string
   card: AppCard
   accepted: boolean
+  token: string | null
+}
+
+export interface AskedDraft extends DraftApp {
+  token: string
 }
 
 const drafts = new Map<string, DraftApp>()
@@ -145,12 +151,19 @@ export function parsePastedDraft(address: unknown): DraftLink | null {
   return draftAt(text.startsWith(`${DRAFT_LINK_SCHEME}:`) ? pageInLink(text) : urlOf(text))
 }
 
+function placeHashOf(link: DraftLink): string {
+  return createHash('sha256')
+    .update(sessionKeyOf(link.origin, link.mount))
+    .digest('hex')
+    .slice(0, PLACE_HASH_LENGTH)
+}
+
 export function draftIdOf(link: DraftLink): string {
   const source =
     link.pr === null
       ? new URL(link.origin).host.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       : `pr${link.pr}`
-  return `draft-${source}-${link.slug}`
+  return `draft-${source}-${link.slug}-${placeHashOf(link)}`
 }
 
 export function draftSourceOf(link: DraftLink): string {
@@ -333,18 +346,19 @@ export async function registerDraft(
   link: DraftLink,
   owner: string,
   isStillOwner: () => boolean
-): Promise<DraftApp | null> {
+): Promise<AskedDraft | null> {
   const id = draftIdOf(link)
   const title = titleFromPage(await draftPageStart(link), link.slug)
   if (!isStillOwner()) return null
   const known = drafts.get(id)
-  const draft: DraftApp = {
+  const draft: AskedDraft = {
     ...link,
     id,
     owner,
     card: draftCard(id, link, title),
     accepted:
-      known !== undefined && known.owner === owner && isSameSource(known, link) && known.accepted
+      known !== undefined && known.owner === owner && isSameSource(known, link) && known.accepted,
+    token: randomUUID()
   }
   drafts.set(id, draft)
   return draft
@@ -354,9 +368,15 @@ export function draftOf(appId: string): DraftApp | null {
   return drafts.get(appId) ?? null
 }
 
-export function confirmDraft(appId: string): AppCard | null {
-  const draft = drafts.get(appId)
+export function draftAskedWith(token: string): DraftApp | null {
+  if (token === '') return null
+  return [...drafts.values()].find((draft) => draft.token === token) ?? null
+}
+
+export function confirmDraft(token: string): AppCard | null {
+  const draft = draftAskedWith(token)
   if (!draft) return null
+  draft.token = null
   draft.accepted = true
   return draft.card
 }
@@ -373,6 +393,10 @@ export function revokeDraft(appId: string): void {
 
 export function forgetDrafts(): void {
   drafts.clear()
+}
+
+export function hasDrafts(): boolean {
+  return drafts.size > 0
 }
 
 export function draftsBelongTo(owner: string | null): boolean {
