@@ -45,8 +45,9 @@ A Comfy page that Desktop shows in its Apps view gets these objects instead,
 and nothing else of the bridge above: `window.comfyDesktopAuth`, Desktop's
 account session, `window.comfyDesktopLocal`, a ComfyUI on this computer,
 `window.comfyDesktopTelemetry`, the page's usage events,
-`window.comfyDesktopOutputs`, Desktop's output dialog, and
-`window.comfyDesktopAssets`, the person's pictures for the page's inputs.
+`window.comfyDesktopOutputs`, Desktop's output dialog,
+`window.comfyDesktopAssets`, the person's pictures for the page's inputs, and
+`window.comfyDesktopRuns`, where the page says when a run starts and ends.
 
 ```ts
 import type {
@@ -54,6 +55,7 @@ import type {
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
   ComfyDesktopHostedOutputsBridge,
+  ComfyDesktopHostedRunsBridge,
   ComfyDesktopHostedTelemetryBridge
 } from '@comfyorg/comfyui-desktop-bridge-types'
 
@@ -64,6 +66,7 @@ declare global {
     comfyDesktopTelemetry?: ComfyDesktopHostedTelemetryBridge
     comfyDesktopOutputs?: ComfyDesktopHostedOutputsBridge
     comfyDesktopAssets?: ComfyDesktopHostedAssetsBridge
+    comfyDesktopRuns?: ComfyDesktopHostedRunsBridge
   }
 }
 ```

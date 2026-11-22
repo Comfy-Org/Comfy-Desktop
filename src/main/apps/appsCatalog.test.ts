@@ -14,7 +14,12 @@ vi.mock('./appsConfig', () => ({
 
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
-import { _resetAppsCatalogForTest, listApps, pageUrlForListedApp } from './appsCatalog'
+import {
+  _resetAppsCatalogForTest,
+  listApps,
+  pageUrlForListedApp,
+  pictureForListedApp
+} from './appsCatalog'
 
 const mockedFetchJSON = vi.mocked(fetchJSON)
 const mockedReadSaved = vi.mocked(readFileSafeAsync)
@@ -230,6 +235,20 @@ describe('the apps Desktop lists', () => {
     )
     expect(pageUrlForListedApp('upscale')).toBe('https://comfy.org/apps/#/upscale')
     expect(pageUrlForListedApp('never-listed')).toBeNull()
+  })
+
+  it("give the still picture of a listed app for the title bar menu, and none for an app it can't show", async () => {
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({ still: '/catalog-media/still-1/v2' }),
+      websiteApp({ id: 'no-cover', cover: undefined })
+    ])
+    await listApps()
+
+    expect(pictureForListedApp('remove-background')).toBe(
+      'https://comfy.org/catalog-media/still-1/v2'
+    )
+    expect(pictureForListedApp('no-cover')).toBeNull()
+    expect(pictureForListedApp('never-listed')).toBeNull()
   })
 
   it('show a card without a picture when the cover is missing or on another site', async () => {

@@ -4,7 +4,16 @@ import path from 'path'
 
 import { isAppsListUrl, isInAppsScope, isWebUrl } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../../types/ipc'
+import type {
+  AppOutputAction,
+  AppOutputs,
+  AppPagePlacement,
+  AppPageStatus,
+  AppRun,
+  AppSwitchStop,
+  RunningApp,
+  TitleBarApps
+} from '../../types/ipc'
 import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
@@ -13,7 +22,7 @@ import { tryOpenExternalUrl } from '../lib/openExternal'
 import * as mainTelemetry from '../lib/telemetry'
 import { COMFY_BG } from '../lib/theme'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
-import { pageUrlForListedApp } from './appsCatalog'
+import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { areAppsEnabled, currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
@@ -26,6 +35,9 @@ export const APP_PAGE_CLOSED_CHANNEL = 'apps:page-closed'
 export const APPS_LIST_CHANGED_CHANNEL = 'apps:list-changed'
 export const APP_OUTPUTS_CHANNEL = 'apps:outputs'
 export const APP_OUTPUT_ACTION_CHANNEL = 'apps-outputs:action'
+export const APP_RUNS_CHANNEL = 'apps:runs-changed'
+export const TITLE_BAR_APPS_CHANNEL = 'comfy-titlebar:apps-running-changed'
+export const MAX_BACKGROUND_RUNS = 3
 export const APP_OPENED_EVENT = 'comfy.desktop.apps.app_opened'
 export const APP_PAGE_FAILED_EVENT = 'comfy.desktop.apps.app_page_failed'
 
@@ -47,6 +59,7 @@ interface ShownOutputs {
 }
 
 interface HostedPage {
+  windowKey: number
   view: WebContentsView
   session: Session
   appId: string | null
@@ -60,8 +73,9 @@ interface HostedPage {
   wanted: boolean
   focusWhenReady: boolean
   outputs: ShownOutputs | null
+  running: boolean
+  finished: boolean
   forget: () => void
-  unwatchWindow: () => void
 }
 
 interface PageHost {
@@ -70,6 +84,8 @@ interface PageHost {
 }
 
 const hostedByWindow = new Map<number, HostedPage>()
+const backgroundByWindow = new Map<number, Map<string, HostedPage>>()
+const watchedWindows = new WeakSet<object>()
 const securedSessions = new WeakSet<Session>()
 const watchedPanels = new WeakSet<WebContents>()
 
@@ -112,6 +128,10 @@ function applyVisibility(hosted: HostedPage): void {
   const contents = hosted.view.webContents
   if (contents.isDestroyed()) return
   hosted.view.setVisible(isOnScreen(hosted))
+  if (isOnScreen(hosted) && hosted.finished) {
+    hosted.finished = false
+    announceRuns(hosted.windowKey)
+  }
   if (!isOnScreen(hosted) || !hosted.focusWhenReady) return
   hosted.focusWhenReady = false
   contents.focus()
@@ -121,6 +141,77 @@ function conceal(hosted: HostedPage): void {
   hosted.wanted = false
   hosted.focusWhenReady = false
   applyVisibility(hosted)
+}
+
+function backgroundOf(windowKey: number): Map<string, HostedPage> {
+  const known = backgroundByWindow.get(windowKey)
+  if (known) return known
+  const pages = new Map<string, HostedPage>()
+  backgroundByWindow.set(windowKey, pages)
+  return pages
+}
+
+function pagesOf(windowKey: number): HostedPage[] {
+  const current = hostedByWindow.get(windowKey)
+  const background = [...(backgroundByWindow.get(windowKey)?.values() ?? [])]
+  return current ? [current, ...background] : background
+}
+
+function everyPage(): HostedPage[] {
+  const windowKeys = new Set([...hostedByWindow.keys(), ...backgroundByWindow.keys()])
+  return [...windowKeys].flatMap(pagesOf)
+}
+
+function runsOf(windowKey: number): AppRun[] {
+  return pagesOf(windowKey).flatMap(({ appId, running, finished }) =>
+    appId !== null && (running || finished) ? [{ appId, running, finished }] : []
+  )
+}
+
+function appsWhere(windowKey: number, matches: (run: AppRun) => boolean): RunningApp[] {
+  return runsOf(windowKey)
+    .filter(matches)
+    .map((run) => ({ id: run.appId, title: titleForListedApp(run.appId) ?? run.appId }))
+}
+
+export function runningApps(windowKey: number): RunningApp[] {
+  return appsWhere(windowKey, (run) => run.running)
+}
+
+export function titleBarApps(windowKey: number): TitleBarApps {
+  return {
+    running: runningApps(windowKey),
+    ready: appsWhere(windowKey, (run) => run.finished && !run.running)
+  }
+}
+
+function announceRuns(windowKey: number): void {
+  panelOf(windowKey)?.send(APP_RUNS_CHANNEL, runsOf(windowKey))
+  const titleBar = comfyWindows.get(windowKey)?.titleBarView?.webContents
+  if (titleBar && !titleBar.isDestroyed()) {
+    titleBar.send(TITLE_BAR_APPS_CHANNEL, titleBarApps(windowKey))
+  }
+}
+
+function forgetRun(hosted: HostedPage): void {
+  if (!hosted.running && !hosted.finished) return
+  hosted.running = false
+  hosted.finished = false
+  announceRuns(hosted.windowKey)
+}
+
+function setRunning(hosted: HostedPage, running: boolean): void {
+  if (hosted.running === running) return
+  hosted.running = running
+  hosted.finished = !running && !isOnScreen(hosted) && hosted.loaded !== null
+  announceRuns(hosted.windowKey)
+}
+
+function closePage(hosted: HostedPage): void {
+  hosted.forget()
+  if (hosted.view.webContents.isDestroyed()) return
+  comfyWindows.get(hosted.windowKey)?.window.contentView.removeChildView(hosted.view)
+  hosted.view.webContents.close()
 }
 
 function setStatus(windowKey: number, hosted: HostedPage, status: AppPageStatus): void {
@@ -233,38 +324,71 @@ function tellPanelsTheListChanged(): void {
   for (const windowKey of comfyWindows.keys()) panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
 }
 
+function isHeld(hosted: HostedPage): boolean {
+  if (hostedByWindow.get(hosted.windowKey) === hosted) return true
+  return (
+    hosted.appId !== null && backgroundByWindow.get(hosted.windowKey)?.get(hosted.appId) === hosted
+  )
+}
+
+function disposePage(hosted: HostedPage): void {
+  if (hostedByWindow.get(hosted.windowKey) === hosted) hostedByWindow.delete(hosted.windowKey)
+  const background = backgroundByWindow.get(hosted.windowKey)
+  if (hosted.appId !== null && background?.get(hosted.appId) === hosted) {
+    background.delete(hosted.appId)
+  }
+  closePage(hosted)
+  forgetRun(hosted)
+}
+
 function dropDraft(droppedIn: number, appId: string | null): boolean {
   if (!isDraft(appId)) return false
   revokeDraft(appId)
-  for (const [windowKey, hosted] of hostedByWindow) {
+  for (const hosted of everyPage()) {
     if (hosted.appId !== appId) continue
     conceal(hosted)
-    disposeHostedPage(windowKey)
-    if (windowKey !== droppedIn) panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
+    disposePage(hosted)
+    if (hosted.windowKey !== droppedIn) panelOf(hosted.windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
   }
   tellPanelsTheListChanged()
   return true
 }
 
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
-  if (!dropDraft(windowKey, hosted.appId)) {
-    if (!pageStillShowsApp) {
-      hosted.appId = null
-      hosted.loaded = null
-      hosted.routeBase = null
-    }
-    conceal(hosted)
+  const shown = hostedByWindow.get(windowKey) === hosted
+  if (dropDraft(windowKey, hosted.appId)) {
+    if (shown) panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
+    return
   }
+  if (!shown) {
+    dropBackgroundPage(hosted)
+    return
+  }
+  if (!pageStillShowsApp) {
+    hosted.appId = null
+    hosted.loaded = null
+    hosted.routeBase = null
+  }
+  conceal(hosted)
   panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
 }
 
-function disposeHostedPage(windowKey: number): void {
-  const hosted = hostedByWindow.get(windowKey)
-  if (!hosted) return
+function dropBackgroundPage(hosted: HostedPage): void {
+  const background = backgroundByWindow.get(hosted.windowKey)
+  if (!hosted.appId || background?.get(hosted.appId) !== hosted) return
+  background.delete(hosted.appId)
+  closePage(hosted)
+  announceRuns(hosted.windowKey)
+}
+
+function disposeWindowPages(windowKey: number): void {
+  const pages = pagesOf(windowKey)
   hostedByWindow.delete(windowKey)
-  hosted.forget()
-  hosted.unwatchWindow()
-  if (!hosted.view.webContents.isDestroyed()) hosted.view.webContents.close()
+  backgroundByWindow.delete(windowKey)
+  for (const hosted of pages) {
+    hosted.forget()
+    if (!hosted.view.webContents.isDestroyed()) hosted.view.webContents.close()
+  }
 }
 
 function showsDraftSession(hosted: HostedPage): boolean {
@@ -288,7 +412,8 @@ function createHostedPage(
       preload: path.join(__dirname, '../preload/appsPreload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true
+      sandbox: true,
+      backgroundThrottling: false
     }
   })
   view.setBackgroundColor(COMFY_BG)
@@ -296,8 +421,8 @@ function createHostedPage(
   entry.window.contentView.addChildView(view)
 
   const contents = view.webContents
-  const closeWithWindow = (): void => disposeHostedPage(windowKey)
   const hosted: HostedPage = {
+    windowKey,
     view,
     session: appsSession,
     appId: null,
@@ -311,8 +436,9 @@ function createHostedPage(
     wanted: false,
     focusWhenReady: false,
     outputs: null,
-    forget: registerAppsPage(contents, () => admitsBridge(hosted)),
-    unwatchWindow: () => entry.window.removeListener('closed', closeWithWindow)
+    running: false,
+    finished: false,
+    forget: registerAppsPage(contents, () => admitsBridge(hosted))
   }
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
     if (isAppsListUrl(location, url)) {
@@ -339,6 +465,7 @@ function createHostedPage(
     return { action: 'deny' }
   })
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
+    forgetRun(hosted)
     commitDocument(hosted, url)
     dismissStaleOutputs(windowKey, hosted)
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
@@ -357,11 +484,15 @@ function createHostedPage(
   contents.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
     if (isMainFrame && errorCode !== NAVIGATION_ABORTED) fail(windowKey, hosted, 'network')
   })
-  contents.on('render-process-gone', () => fail(windowKey, hosted, 'crashed'))
+  contents.on('render-process-gone', () => {
+    forgetRun(hosted)
+    fail(windowKey, hosted, 'crashed')
+  })
   attachContextMenu(entry.window, contents)
-  entry.window.once('closed', closeWithWindow)
-
-  hostedByWindow.set(windowKey, hosted)
+  if (!watchedWindows.has(entry.window)) {
+    watchedWindows.add(entry.window)
+    entry.window.once('closed', () => disposeWindowPages(windowKey))
+  }
   return hosted
 }
 
@@ -378,8 +509,64 @@ function hostedFor(host: PageHost): HostedPage | null {
   const hosted = hostedByWindow.get(host.windowKey)
   if (!hosted) return null
   if (!hosted.view.webContents.isDestroyed()) return hosted
-  disposeHostedPage(host.windowKey)
+  hostedByWindow.delete(host.windowKey)
+  hosted.forget()
   return null
+}
+
+function makeRoomInBackground(background: Map<string, HostedPage>): boolean {
+  if (background.size < MAX_BACKGROUND_RUNS) return true
+  const idle = [...background.values()].find((page) => !page.running)
+  if (!idle) return false
+  dropBackgroundPage(idle)
+  return true
+}
+
+function runningAppToKeep(current: HostedPage): string | null {
+  if (!current.running || current.appId === null) return null
+  return makeRoomInBackground(backgroundOf(current.windowKey)) ? current.appId : null
+}
+
+function keptPageFor(
+  background: Map<string, HostedPage>,
+  appId: string,
+  appsSession: Session
+): HostedPage | null {
+  const kept = background.get(appId)
+  if (!kept) return null
+  background.delete(appId)
+  if (kept.session === appsSession) return kept
+  closePage(kept)
+  forgetRun(kept)
+  return null
+}
+
+function pageForApp(
+  host: PageHost,
+  appId: string,
+  location: AppsLocation,
+  appsSession: Session
+): HostedPage {
+  const current = hostedFor(host)
+  if (current?.appId === appId && current.session === appsSession) return current
+  const background = backgroundOf(host.windowKey)
+  const kept = keptPageFor(background, appId, appsSession)
+  if (current) {
+    const keptRunning = runningAppToKeep(current)
+    if (keptRunning !== null) {
+      conceal(current)
+      background.set(keptRunning, current)
+    } else if (kept || current.session !== appsSession) {
+      hostedByWindow.delete(host.windowKey)
+      closePage(current)
+      forgetRun(current)
+    } else {
+      return current
+    }
+  }
+  const page = kept ?? createHostedPage(host, location, appsSession)
+  hostedByWindow.set(host.windowKey, page)
+  return page
 }
 
 function isMeasure(value: unknown): value is number {
@@ -388,7 +575,7 @@ function isMeasure(value: unknown): value is number {
 
 function parsePlacement(raw: unknown): AppPagePlacement | null {
   if (!raw || typeof raw !== 'object') return null
-  const { x, y, width, height, cornerRadius, justOpened, retry, focus } = raw as Record<
+  const { x, y, width, height, cornerRadius, justOpened, retry, focus, hidden } = raw as Record<
     string,
     unknown
   >
@@ -402,7 +589,8 @@ function parsePlacement(raw: unknown): AppPagePlacement | null {
     cornerRadius,
     justOpened: justOpened === true,
     retry: retry === true,
-    focus: focus === true
+    focus: focus === true,
+    hidden: hidden === true
   }
 }
 
@@ -446,10 +634,7 @@ function concealWhenPanelGoes(windowKey: number, panel: WebContents): void {
 }
 
 export function loadedAppPage(contents: WebContents): LoadedAppPage | null {
-  for (const hosted of hostedByWindow.values()) {
-    if (hosted.view.webContents === contents) return hosted.loaded
-  }
-  return null
+  return everyPage().find((hosted) => hosted.view.webContents === contents)?.loaded ?? null
 }
 
 export async function showAppPage(
@@ -465,8 +650,7 @@ export async function showAppPage(
   const appsSession = sessionForApp(appId)
   const shown = hostedFor(host)?.appId ?? null
   if (shown !== appId) dropDraft(host.windowKey, shown)
-  if (hostedFor(host)?.session !== appsSession) disposeHostedPage(host.windowKey)
-  const hosted = hostedFor(host) ?? createHostedPage(host, currentAppsLocation(), appsSession)
+  const hosted = pageForApp(host, appId, currentAppsLocation(), appsSession)
   concealWhenPanelGoes(host.windowKey, panel)
   const askedFresh = placement.justOpened === true || placement.retry === true
   const retriesFailedPage = askedFresh && hosted.status === 'failed'
@@ -476,7 +660,7 @@ export async function showAppPage(
     load(host.windowKey, hosted, pageUrl)
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
-  hosted.wanted = true
+  hosted.wanted = !placement.hidden
   hosted.focusWhenReady = hosted.focusWhenReady || askedFresh || placement.focus === true
   place(host.entry, hosted.view, placement)
   raiseAbovePanel(host.entry, hosted.view)
@@ -485,12 +669,12 @@ export async function showAppPage(
 }
 
 export function closeDraftPages(only?: readonly DraftApp[]): void {
-  for (const [windowKey, hosted] of hostedByWindow) {
-    if (!showsDraftSession(hosted)) continue
+  for (const hosted of everyPage()) {
+    if (!showsDraftSession(hosted) || !isHeld(hosted)) continue
     const draft = hosted.appId === null ? null : draftOf(hosted.appId)
     if (only && draft && !only.includes(draft)) continue
-    if (hosted.appId !== null) closeForList(windowKey, hosted, false)
-    disposeHostedPage(windowKey)
+    if (hosted.appId !== null) closeForList(hosted.windowKey, hosted, false)
+    if (isHeld(hosted)) disposePage(hosted)
   }
   forgetDrafts(only)
   tellPanelsTheListChanged()
@@ -502,16 +686,45 @@ export function hideAppPage(panel: WebContents): void {
   if (hosted) conceal(hosted)
 }
 
+const FROZEN_FRAME_JPEG_QUALITY = 90
+
 export async function captureAppPage(panel: WebContents): Promise<string | null> {
   const host = hostOf(panel)
   const hosted = host && hostedFor(host)
   if (!hosted || !isOnScreen(hosted)) return null
   try {
     const frame = await hosted.view.webContents.capturePage()
-    return frame.isEmpty() ? null : frame.toDataURL()
+    if (frame.isEmpty()) return null
+    return `data:image/jpeg;base64,${frame.toJPEG(FROZEN_FRAME_JPEG_QUALITY).toString('base64')}`
   } catch {
     return null
   }
+}
+
+export function noteAppPageRunning(contents: WebContents, running: unknown): void {
+  if (typeof running !== 'boolean') return
+  const hosted = everyPage().find((page) => page.view.webContents === contents)
+  if (!hosted || (running && !hosted.loaded)) return
+  setRunning(hosted, running)
+}
+
+export function appSwitchStopsRun(panel: WebContents, appId: unknown): AppSwitchStop | null {
+  const host = hostOf(panel)
+  const current = host && hostedFor(host)
+  if (!current?.running || current.appId === null || current.appId === appId) return null
+  const background = [...backgroundOf(current.windowKey).values()]
+  const otherRuns = background.filter((page) => page.running && page.appId !== appId).length
+  if (otherRuns < MAX_BACKGROUND_RUNS) return null
+  return { appTitle: titleForListedApp(current.appId) ?? current.appId, otherRuns }
+}
+
+export function appRuns(panel: WebContents): AppRun[] {
+  const host = hostOf(panel)
+  return host ? runsOf(host.windowKey) : []
+}
+
+export function runningAppCount(): number {
+  return everyPage().filter((page) => page.running && page.appId !== null).length
 }
 
 function isStillLoaded(hosted: HostedPage, page: LoadedAppPage): boolean {
@@ -524,8 +737,9 @@ export function showAppOutputs(
   outputs: AppOutputs,
   files: readonly (string | null)[] = []
 ): boolean {
-  for (const [windowKey, hosted] of hostedByWindow) {
+  for (const hosted of everyPage()) {
     if (hosted.view.webContents !== contents) continue
+    const windowKey = hosted.windowKey
     const panel = panelOf(windowKey)
     if (!panel || !isOnScreen(hosted) || !isStillLoaded(hosted, sentFrom)) return false
     hosted.outputs = { page: sentFrom, count: outputs.items.length, files }
@@ -555,4 +769,5 @@ export function sendAppOutputAction(panel: WebContents, action: AppOutputAction)
 
 export function _resetForTest(): void {
   hostedByWindow.clear()
+  backgroundByWindow.clear()
 }

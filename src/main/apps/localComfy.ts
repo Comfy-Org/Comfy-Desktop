@@ -591,7 +591,8 @@ async function sendRun(
   const started = parsed(answer)
   if (isRecord(started) && typeof started['prompt_id'] === 'string') {
     rememberBounded(ownRuns, started['prompt_id'], buildId, MAX_RUNS_REMEMBERED)
-    runAccepted(started['prompt_id'], buildId, appId, submittedAt)
+    const queueNumber = typeof started['number'] === 'number' ? started['number'] : undefined
+    runAccepted(started['prompt_id'], buildId, appId, submittedAt, queueNumber)
   }
   return answer
 }

@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppPageHost from './AppPageHost.vue'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const PAGE_LEFT = 260
@@ -92,6 +92,7 @@ beforeAll(() => browserPage.viewport(1280, 800))
 beforeEach(() => {
   vi.clearAllMocks()
   sidebarHovered.value = false
+  sidebarFocused.value = false
   stoppedListening = false
   stoppedListeningForOutputs = false
   page = document.createElement('div')
@@ -343,6 +344,83 @@ describe('AppPageHost', () => {
 
     sidebarHovered.value = false
     await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+  })
+
+  it('swaps the app for a still frame while the keyboard is in the sidebar, then brings it back', async () => {
+    await mountHost()
+    showAppPage.mockClear()
+
+    sidebarFocused.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(false)
+
+    sidebarFocused.value = false
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+  })
+
+  it('shows no loading placeholder for an app that is up when no still frame could be taken', async () => {
+    captureAppPage.mockResolvedValue(null)
+    const wrapper = await mountHost()
+
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+
+    expect(wrapper.find('[data-testid="app-page-loading"]').exists()).toBe(false)
+  })
+
+  it('lets the sidebar know the page is covered when another app starts loading while a hide still waits for its picture', async () => {
+    const wrapper = await mountHost()
+    let giveFrame: (frame: string | null) => void = () => {}
+    captureAppPage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        giveFrame = resolve
+      })
+    )
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(captureAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+
+    await wrapper.setProps({ appId: 'sdr-to-hdr', title: 'SDR to HDR' })
+    await flushPromises()
+    giveFrame(FRAME)
+    await flushPromises()
+
+    expect(appPageShown.value).toBe(false)
+  })
+
+  it('starts loading another app picked from the sidebar at once, hidden, with the placeholder showing', async () => {
+    const wrapper = await mountHost()
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+    showAppPage.mockClear()
+    showAppPage.mockResolvedValue('loading')
+
+    await wrapper.setProps({ appId: 'sdr-to-hdr', title: 'SDR to HDR' })
+    await flushPromises()
+
+    expect(showAppPage).toHaveBeenCalledTimes(1)
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'sdr-to-hdr',
+      expect.objectContaining({ justOpened: true, hidden: true })
+    )
+    expect(wrapper.find('[data-testid="app-page-frozen-frame"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe(
+      'Loading SDR to HDR All apps'
+    )
+    expect(appPageShown.value).toBe(false)
+
+    tellStatusOf('sdr-to-hdr', 'ready')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-loading"]').exists()).toBe(true)
+
+    sidebarHovered.value = false
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(2))
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'sdr-to-hdr',
+      expect.not.objectContaining({ hidden: true })
+    )
     expect(appPageShown.value).toBe(true)
   })
 

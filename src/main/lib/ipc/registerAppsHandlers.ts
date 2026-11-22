@@ -1,8 +1,19 @@
 import { ipcMain } from 'electron'
+import type { IpcMainEvent } from 'electron'
 
-import { captureAppPage, closeDraftPages, hideAppPage, showAppPage } from '../../apps/appPageView'
-import { listApps } from '../../apps/appsCatalog'
+import {
+  appRuns,
+  appSwitchStopsRun,
+  captureAppPage,
+  closeDraftPages,
+  hideAppPage,
+  noteAppPageRunning,
+  showAppPage,
+  titleBarApps
+} from '../../apps/appPageView'
+import { listApps, pictureForListedApp } from '../../apps/appsCatalog'
 import { areAppsEnabled } from '../../apps/appsConfig'
+import { isAppsPageSender } from '../../apps/appsPages'
 import { currentDrafts, draftCards } from '../../apps/draftApps'
 import {
   acceptDraft,
@@ -10,8 +21,10 @@ import {
   draftsStillAllowed,
   openPastedDraft
 } from '../../apps/draftLinks'
-import { isPanelSender } from '../../host/registry'
-import { isGlobalSettingsSender } from '../../popups/titlePopup'
+import { findEntryByTitleBarSender, isPanelSender } from '../../host/registry'
+import { isGlobalSettingsSender, openRunningAppsMenu } from '../../popups/titlePopup'
+import { OPEN_RUNNING_APP_CHANNEL } from '../../../types/ipc'
+import type { RunningApp } from '../../../types/ipc'
 import { cloudAuthEvents } from '../cloudAuthEvents'
 import { sendSurveyResponse } from '../telemetry'
 
@@ -27,6 +40,39 @@ async function closeDraftsNoLongerAllowed(): Promise<void> {
   const allowed = await draftsStillAllowed().catch(() => false)
   if (allowed || change !== authChanges) return
   closeDraftPages(inspected)
+}
+
+interface MenuAnchor {
+  x?: unknown
+  y?: unknown
+}
+
+function anchorCoordinate(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0
+}
+
+function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): void {
+  const found = findEntryByTitleBarSender(event.sender)
+  if (!found || found.entry.window.isDestroyed()) return
+  const panel = found.entry.panelView?.webContents
+  if (!panel || panel.isDestroyed()) return
+  const { running, ready } = titleBarApps(found.id)
+  const withState = (state: 'running' | 'ready') => (app: RunningApp) => ({
+    ...app,
+    picture: pictureForListedApp(app.id),
+    state
+  })
+  const apps = [...running.map(withState('running')), ...ready.map(withState('ready'))]
+  const [only, ...others] = apps
+  if (!only) return
+  if (others.length === 0) {
+    panel.send(OPEN_RUNNING_APP_CHANNEL, only.id)
+    return
+  }
+  openRunningAppsMenu(found.id, apps, {
+    x: anchorCoordinate(anchor?.x),
+    y: anchorCoordinate(anchor?.y)
+  })
 }
 
 export function registerAppsHandlers(): void {
@@ -51,6 +97,22 @@ export function registerAppsHandlers(): void {
 
   ipcMain.handle('apps:open-pasted-draft', (event, address: unknown) =>
     isGlobalSettingsSender(event.sender) ? openPastedDraft(address) : null
+  )
+
+  ipcMain.handle('apps:get-runs', (event) =>
+    isPanelSender(event.sender) ? appRuns(event.sender) : []
+  )
+
+  ipcMain.handle('apps:switch-stops-run', (event, appId: unknown) =>
+    isPanelSender(event.sender) ? appSwitchStopsRun(event.sender, appId) : null
+  )
+
+  ipcMain.on('apps-page:running', (event, running: unknown) => {
+    if (isAppsPageSender(event.sender, event.senderFrame)) noteAppPageRunning(event.sender, running)
+  })
+
+  ipcMain.on('comfy-titlebar:click-running-apps', (event, payload: { anchor?: MenuAnchor }) =>
+    openRunningApps(event, payload?.anchor)
   )
 
   ipcMain.on('apps:hide-page', (event) => hideAppPage(event.sender))

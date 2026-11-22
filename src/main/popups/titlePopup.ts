@@ -1,8 +1,14 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import type { WebContentsView } from 'electron'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
-import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind, TitlePopupMenuItem } from '../../types/ipc'
+import { OPEN_RUNNING_APP_CHANNEL, PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
+import type {
+  PopupTheme,
+  RunningApp,
+  TitlePopupKind,
+  TitlePopupMenuApp,
+  TitlePopupMenuItem
+} from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import { blurContentsBehindBackdrop, type BlurrableContents } from './backdropBlur'
 import {
@@ -475,6 +481,8 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 }
 
 const POPUP_WIDTH = 220
+const APPS_POPUP_WIDTH = 260
+const RUNNING_APP_ITEM = 'running-app:'
 const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8
@@ -486,7 +494,7 @@ export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number
     (sum, item) => sum + (item.kind === 'separator' ? POPUP_SEPARATOR_HEIGHT : POPUP_ITEM_HEIGHT),
     0
   )
-  const rowGap = items.some((item) => item.icon) ? POPUP_ICON_ROW_GAP : 0
+  const rowGap = items.some((item) => item.icon || item.app) ? POPUP_ICON_ROW_GAP : 0
   const gaps = rowGap * Math.max(0, items.length - 1)
   return content + gaps + POPUP_VPADDING + POPUP_VBORDER
 }
@@ -714,6 +722,28 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
 }
 
 const BACKDROP_DISMISS_GUARD_MS = 180
+
+export function openRunningAppsMenu(
+  windowKey: number,
+  apps: (RunningApp & TitlePopupMenuApp)[],
+  anchor: { x: number; y: number }
+): void {
+  const entry = comfyWindows.get(windowKey)
+  if (!entry || entry.window.isDestroyed()) return
+  openTitlePopup({
+    parent: entry.window,
+    parentEntryId: windowKey,
+    kind: 'menu',
+    items: apps.map(({ id, title, picture, state }) => ({
+      id: `${RUNNING_APP_ITEM}${id}`,
+      label: title,
+      app: { picture, state }
+    })),
+    anchor,
+    theme: entry.lastTheme,
+    titleBarSender: entry.titleBarView.webContents
+  })
+}
 
 function hideTitlePopup(
   entry: TitlePopupEntry,
@@ -978,7 +1008,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   let height: number
   let x: number
   if (opts.kind === 'menu') {
-    width = POPUP_WIDTH
+    width = opts.items.some((item) => item.app) ? APPS_POPUP_WIDTH : POPUP_WIDTH
     height = computePopupHeight(opts.items)
     x = clampPopupX(rawX, width, opts.parent)
   } else if (opts.kind === 'downloads') {
@@ -1263,7 +1293,13 @@ export function activateTitlePopupMenuItem(
   let releaseFocusToParent = true
   const parentEntry = comfyWindows.get(entry.parentEntryId)
   const nearParent = { nearWindow: parentEntry?.window }
-  if (id === 'new-window') {
+  const panel = parentEntry?.panelView?.webContents
+  if (id.startsWith(RUNNING_APP_ITEM)) {
+    if (panel && !panel.isDestroyed()) {
+      panel.send(OPEN_RUNNING_APP_CHANNEL, id.slice(RUNNING_APP_ITEM.length))
+    }
+    releaseFocusToParent = false
+  } else if (id === 'new-window') {
     bindings.openChooserHostWindow('comfy', nearParent)
     releaseFocusToParent = false
   } else if (id === 'performance-test' || id === 'benchmarks') {

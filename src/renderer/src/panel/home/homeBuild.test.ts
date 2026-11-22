@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { deviceKindForChassis } from '../../composables/useLocalDeviceKind'
 import { createI18n } from 'vue-i18n'
 import { appI18nOptions } from '../../lib/i18nOptions'
-import { buildDeviceKind, buildUsageLabel, homeBuildStatus, homeBuildTone } from './homeBuild'
+import {
+  buildDeviceKind,
+  buildUsageLabel,
+  homeBuildDetail,
+  homeBuildStatus,
+  homeBuildTone
+} from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const build = (sourceCategory: string): Installation =>
@@ -84,5 +90,40 @@ describe('buildUsageLabel', () => {
 
   it('says when an opened Comfy Cloud was last used', () => {
     expect(buildUsageLabel(used('cloud', NOW - 2 * 60 * 60_000), NOW, t, 'en')).toBe('Used 2h ago')
+  })
+})
+
+describe('homeBuildDetail', () => {
+  const t = createI18n(appI18nOptions).global.t
+  const local = (fields: Record<string, unknown>): Installation =>
+    ({
+      id: 'b',
+      name: 'Comfy Vanilla',
+      sourceCategory: 'local',
+      sourceLabel: 'ComfyBuilder',
+      ...fields
+    }) as unknown as Installation
+
+  it('shows the build release, not the source, while a custom build installs', () => {
+    const installing = local({ sourceId: 'comfybuilder', distributionVersion: '3' })
+    expect(homeBuildDetail(installing, t)).toBe('Build v3')
+  })
+
+  it('shows the ComfyUI version once a custom build knows it', () => {
+    const installed = local({
+      sourceId: 'comfybuilder',
+      distributionVersion: '3',
+      version: 'v0.3.75'
+    })
+    expect(homeBuildDetail(installed, t)).toBe('v0.3.75')
+  })
+
+  it('never shows ComfyBuilder for a custom build without a release', () => {
+    expect(homeBuildDetail(local({ sourceId: 'comfybuilder' }), t)).toBe('')
+  })
+
+  it('keeps the install method for a standard build without a version', () => {
+    const standard = local({ sourceId: 'standalone', sourceLabel: 'Standalone' })
+    expect(homeBuildDetail(standard, t)).toBe('Standalone')
   })
 })

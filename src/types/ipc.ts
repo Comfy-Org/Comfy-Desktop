@@ -184,6 +184,27 @@ export type DraftAppRequest =
 export type DraftAppPasteAnswer =
   { kind: 'asked' } | { kind: 'refused'; title: string; message: string }
 
+export interface AppRun {
+  appId: string
+  running: boolean
+  finished: boolean
+}
+
+export interface RunningApp {
+  id: string
+  title: string
+}
+
+export interface TitleBarApps {
+  running: RunningApp[]
+  ready: RunningApp[]
+}
+
+export interface AppSwitchStop {
+  appTitle: string
+  otherRuns: number
+}
+
 export interface AppPagePlacement {
   x: number
   y: number
@@ -193,6 +214,7 @@ export interface AppPagePlacement {
   justOpened?: boolean
   retry?: boolean
   focus?: boolean
+  hidden?: boolean
 }
 
 export interface AppOutput {
@@ -1312,6 +1334,10 @@ export interface ElectronApi {
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
+  getAppRuns(): Promise<AppRun[]>
+  appSwitchStopsRun(appId: string): Promise<AppSwitchStop | null>
+  onAppRunsChanged(callback: (runs: AppRun[]) => void): () => void
+  onOpenRunningApp(callback: (appId: string) => void): () => void
   hideAppPage(): void
   onAppPageStatusChanged(
     callback: (appId: string | null, status: AppPageStatus) => void
@@ -1608,14 +1634,22 @@ export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
 export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
 
+export interface TitlePopupMenuApp {
+  picture: string | null
+  state: 'running' | 'ready'
+}
+
 export interface TitlePopupMenuItem {
   id?: string
   label?: string
   labelKey?: string
   labelParams?: Record<string, string | number>
   icon?: TitlePopupMenuIcon
+  app?: TitlePopupMenuApp
   kind?: 'separator'
 }
+
+export const OPEN_RUNNING_APP_CHANNEL = 'apps:open-running-app'
 
 export interface PopupTheme {
   bg: string

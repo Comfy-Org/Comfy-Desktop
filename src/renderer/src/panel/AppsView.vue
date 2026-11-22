@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowUpRight, Plus, Search } from '@lucide/vue'
-import { stillsOf } from '../lib/appStills'
+import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
@@ -13,6 +13,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { badgeDescriptionIds } from './appCardBadges'
+import { useAppSwitchConfirm } from './useAppSwitchConfirm'
 import type { AppCard } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
@@ -26,6 +27,7 @@ const startWith = defineModel<AppCard | null>('startWith', { default: null })
 const emit = defineEmits<{
   'app-open-change': [open: boolean]
   'current-app': [app: AppCard | null]
+  'apps-loaded': [apps: AppCard[]]
   'view-in-assets': [name: string]
 }>()
 
@@ -63,6 +65,7 @@ async function loadApps(): Promise<void> {
     apps.value = []
     state.value = 'failed'
   }
+  emit('apps-loaded', apps.value)
 }
 
 async function refreshApps(): Promise<void> {
@@ -70,6 +73,7 @@ async function refreshApps(): Promise<void> {
   if (!listed) return
   apps.value = listed
   state.value = 'ready'
+  emit('apps-loaded', listed)
 }
 
 const RHYTHM_GRID_CLASS =
@@ -186,10 +190,16 @@ function playsCover(app: AppCard): boolean {
   )
 }
 
+const confirmAppSwitch = useAppSwitchConfirm()
+
 function open(app: AppCard): void {
   hoveredId.value = null
   lastOpenedId = app.id
   openApp.value = app
+}
+
+async function openPicked(app: AppCard): Promise<void> {
+  if (await confirmAppSwitch(app, lastOpenedId)) open(app)
 }
 
 async function closeApp(): Promise<void> {
@@ -354,7 +364,7 @@ onBeforeUnmount(() => {
               class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
               :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
-              @click="open(app)"
+              @click="openPicked(app)"
               @focus="noteCardFocus(app, $event)"
               @blur="keyboardFocusedId = null"
               @mouseenter="hoveredId = app.id"

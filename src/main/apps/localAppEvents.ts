@@ -33,6 +33,7 @@ interface Run {
   buildId: string
   appId: string | null
   submittedAt: number
+  queueNumber?: number
   startedAt?: number
   heardEnd?: RunEnd
 }
@@ -44,6 +45,16 @@ interface EarlyRun {
 
 const runs = new Map<string, Run>()
 const earlyRuns = new Map<string, EarlyRun>()
+const runWatchers = new Set<() => void>()
+
+function runsChanged(): void {
+  for (const watcher of runWatchers) watcher()
+}
+
+export function onRunsChanged(watcher: () => void): () => void {
+  runWatchers.add(watcher)
+  return () => runWatchers.delete(watcher)
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -117,6 +128,7 @@ export function finishRun(promptId: string, end: RunEnd): void {
   if (!run) return
   runs.delete(promptId)
   sendRunFinished(run, end)
+  runsChanged()
 }
 
 export function finishHeardRun(promptId: string): void {
@@ -132,14 +144,16 @@ export function runAccepted(
   promptId: string,
   buildId: string,
   appId: string | null,
-  submittedAt: number
+  submittedAt: number,
+  queueNumber?: number
 ): void {
   if (runs.has(promptId)) return
   const early = earlyRuns.get(promptId)
   earlyRuns.delete(promptId)
-  const run: Run = { buildId, appId, submittedAt, startedAt: early?.startedAt }
+  const run: Run = { buildId, appId, submittedAt, queueNumber, startedAt: early?.startedAt }
   keepNewest(runs, promptId, run, MAX_RUNS)
   if (early?.end) finishRun(promptId, early.end)
+  else runsChanged()
 }
 
 function noteEarly(promptId: string, change: EarlyRun): void {
@@ -163,8 +177,11 @@ export function noteRunMessage(message: unknown, now = Date.now()): void {
   const at = timeOf(data, now)
   const run = runs.get(promptId)
   if (type === 'execution_start') {
-    if (run) run.startedAt ??= at
-    else noteEarly(promptId, { startedAt: at })
+    if (!run) noteEarly(promptId, { startedAt: at })
+    else if (run.startedAt === undefined) {
+      run.startedAt = at
+      runsChanged()
+    }
     return
   }
   const outcome = RUN_ENDS[type]
@@ -217,6 +234,24 @@ export function unstartedRunsOn(buildId: string): string[] {
   return runsOn(buildId).filter((promptId) => runs.get(promptId)?.startedAt === undefined)
 }
 
+export function busyAppOn(buildId: string, askingAppId: string | null = null): string | null {
+  const onBuild = [...runs.values()].filter(
+    (run): run is Run & { appId: string } => run.buildId === buildId && run.appId !== null
+  )
+  const working = onBuild.find((run) => run.startedAt !== undefined)
+  if (working) return working.appId === askingAppId ? null : working.appId
+  const queue = inQueueOrder(onBuild)
+  const asking = queue.findIndex((run) => run.appId === askingAppId)
+  const [firstInQueue] = asking === -1 ? queue : queue.slice(0, asking)
+  return firstInQueue?.appId ?? null
+}
+
+function inQueueOrder<T extends Run>(queued: T[]): T[] {
+  const numbered = queued.every((run) => run.queueNumber !== undefined)
+  const place = (run: T): number => (numbered ? (run.queueNumber ?? 0) : run.submittedAt)
+  return [...queued].sort((a, b) => place(a) - place(b))
+}
+
 export function isFollowing(promptId: string): boolean {
   return runs.has(promptId)
 }
@@ -261,6 +296,7 @@ export function setupStarted(stage: SetupStage, appId: string | null): SetupStep
 }
 
 export function _resetForTest(): void {
+  runWatchers.clear()
   runs.clear()
   earlyRuns.clear()
 }

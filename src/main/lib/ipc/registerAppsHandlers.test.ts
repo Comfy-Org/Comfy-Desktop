@@ -4,6 +4,7 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
+  listeners: new Map<string, Handler>(),
   isPanel: true,
   isGlobalSettings: true,
   canPasteDrafts: vi.fn(async () => true),
@@ -12,6 +13,14 @@ const mocks = vi.hoisted(() => ({
   draftsStillAllowed: vi.fn(async () => true),
   currentDrafts: vi.fn((): readonly unknown[] => []),
   openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
+  isAppsPage: true,
+  titleBarEntry: null as unknown,
+  running: [] as { id: string; title: string }[],
+  ready: [] as { id: string; title: string }[],
+  noteAppPageRunning: vi.fn(),
+  appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
+  appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
+  openRunningAppsMenu: vi.fn(),
   sendSurveyResponse: vi.fn(
     async (_surveyId: string, _questionId: string, _response: string) => true
   )
@@ -20,20 +29,33 @@ const mocks = vi.hoisted(() => ({
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler),
-    on: vi.fn()
+    on: (channel: string, handler: Handler) => mocks.listeners.set(channel, handler)
   }
 }))
 vi.mock('../../apps/appPageView', () => ({
+  appRuns: mocks.appRuns,
+  appSwitchStopsRun: mocks.appSwitchStopsRun,
   captureAppPage: vi.fn(),
   closeDraftPages: mocks.closeDraftPages,
   hideAppPage: vi.fn(),
-  showAppPage: vi.fn()
+  noteAppPageRunning: mocks.noteAppPageRunning,
+  showAppPage: vi.fn(),
+  titleBarApps: () => ({ running: mocks.running, ready: mocks.ready })
 }))
-vi.mock('../../apps/appsCatalog', () => ({ listApps: vi.fn(async () => []) }))
+vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
+vi.mock('../../apps/appsCatalog', () => ({
+  listApps: vi.fn(async () => []),
+  pictureForListedApp: (id: string) =>
+    id === 'remove-background' ? 'https://comfy.org/rb.webp' : null
+}))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: vi.fn(async () => true) }))
-vi.mock('../../host/registry', () => ({ isPanelSender: () => mocks.isPanel }))
+vi.mock('../../host/registry', () => ({
+  isPanelSender: () => mocks.isPanel,
+  findEntryByTitleBarSender: () => mocks.titleBarEntry
+}))
 vi.mock('../../popups/titlePopup', () => ({
-  isGlobalSettingsSender: () => mocks.isGlobalSettings
+  isGlobalSettingsSender: () => mocks.isGlobalSettings,
+  openRunningAppsMenu: mocks.openRunningAppsMenu
 }))
 vi.mock('../../apps/draftApps', () => ({
   currentDrafts: mocks.currentDrafts,
@@ -49,6 +71,7 @@ vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse })
 
 import { cloudAuthEvents } from '../cloudAuthEvents'
 import { registerAppsHandlers } from './registerAppsHandlers'
+import { OPEN_RUNNING_APP_CHANNEL } from '../../../types/ipc'
 
 const SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
 const QUESTION_ID = '0f16a789-5c8e-4871-b44e-ec11c54b8c9b'
@@ -261,5 +284,124 @@ describe('a Cloud account change', () => {
     expect(mocks.draftsStillAllowed).toHaveBeenCalledOnce()
 
     expect(mocks.closeDraftPages).not.toHaveBeenCalled()
+  })
+})
+
+describe('runs of apps kept open', () => {
+  const panelSend = vi.fn()
+  const hostWindow = { isDestroyed: () => false }
+  const REMOVE_BACKGROUND = { id: 'remove-background', title: 'Remove Background' }
+  const HDR = { id: 'sdr-to-hdr', title: 'SDR to HDR' }
+
+  function listener(channel: string): Handler {
+    const handler = mocks.listeners.get(channel)
+    if (!handler) throw new Error(`No listener for ${channel}`)
+    return handler
+  }
+
+  function clickRunningApps(anchor: unknown = { x: 812.4, y: 36 }): void {
+    void listener('comfy-titlebar:click-running-apps')({ sender: {} }, { anchor })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.listeners.clear()
+    cloudAuthEvents.removeAllListeners()
+    mocks.isPanel = true
+    mocks.isAppsPage = true
+    mocks.running = []
+    mocks.ready = []
+    mocks.titleBarEntry = {
+      id: 7,
+      entry: {
+        window: hostWindow,
+        panelView: { webContents: { send: panelSend, isDestroyed: () => false } }
+      }
+    }
+    registerAppsHandlers()
+  })
+
+  it('hands the panel the runs of its window', async () => {
+    const handler = mocks.handlers.get('apps:get-runs')
+
+    expect(await handler?.({ sender: {} })).toEqual([
+      { appId: 'remove-background', running: true, finished: false }
+    ])
+    mocks.isPanel = false
+    expect(await handler?.({ sender: {} })).toEqual([])
+  })
+
+  it('asks the page host whether opening an app stops a run, for the panel only', async () => {
+    const handler = mocks.handlers.get('apps:switch-stops-run')
+    const sender = {}
+
+    expect(await handler?.({ sender }, 'sdr-to-hdr')).toEqual({
+      appTitle: 'Remove Background',
+      otherRuns: 3
+    })
+    expect(mocks.appSwitchStopsRun).toHaveBeenCalledWith(sender, 'sdr-to-hdr')
+    mocks.isPanel = false
+    expect(await handler?.({ sender }, 'sdr-to-hdr')).toBeNull()
+  })
+
+  it('takes a run report only from an app page', () => {
+    const sender = {}
+    listener('apps-page:running')({ sender, senderFrame: {} }, true)
+    expect(mocks.noteAppPageRunning).toHaveBeenCalledExactlyOnceWith(sender, true)
+
+    mocks.isAppsPage = false
+    listener('apps-page:running')({ sender, senderFrame: {} }, false)
+    expect(mocks.noteAppPageRunning).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the one running app when its title bar indicator is clicked', () => {
+    mocks.running = [REMOVE_BACKGROUND]
+
+    clickRunningApps()
+
+    expect(panelSend).toHaveBeenCalledExactlyOnceWith(
+      OPEN_RUNNING_APP_CHANNEL,
+      REMOVE_BACKGROUND.id
+    )
+    expect(mocks.openRunningAppsMenu).not.toHaveBeenCalled()
+  })
+
+  it('lists two or more running apps with their pictures in the title bar menu', () => {
+    mocks.running = [REMOVE_BACKGROUND, HDR]
+
+    clickRunningApps()
+
+    expect(mocks.openRunningAppsMenu).toHaveBeenCalledExactlyOnceWith(
+      7,
+      [
+        { ...REMOVE_BACKGROUND, picture: 'https://comfy.org/rb.webp', state: 'running' },
+        { ...HDR, picture: null, state: 'running' }
+      ],
+      { x: 812, y: 36 }
+    )
+    expect(panelSend).not.toHaveBeenCalled()
+  })
+
+  it('opens the one app whose run ended, and lists ready apps after running ones', () => {
+    mocks.ready = [HDR]
+    clickRunningApps()
+    expect(panelSend).toHaveBeenCalledExactlyOnceWith(OPEN_RUNNING_APP_CHANNEL, HDR.id)
+
+    mocks.running = [REMOVE_BACKGROUND]
+    clickRunningApps()
+    expect(mocks.openRunningAppsMenu.mock.lastCall?.[1]).toEqual([
+      { ...REMOVE_BACKGROUND, picture: 'https://comfy.org/rb.webp', state: 'running' },
+      { ...HDR, picture: null, state: 'ready' }
+    ])
+  })
+
+  it('does nothing for a click from outside a title bar, or with nothing running', () => {
+    clickRunningApps()
+    mocks.running = [REMOVE_BACKGROUND]
+    mocks.titleBarEntry = null
+    clickRunningApps()
+
+    expect(panelSend).not.toHaveBeenCalled()
   })
 })
