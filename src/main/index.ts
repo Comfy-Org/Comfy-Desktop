@@ -966,6 +966,7 @@ function registerDraftLinkScheme({ registration, desktopEntry }: DraftLinkStartu
 }
 
 async function explainDevCopyNotRunning(): Promise<void> {
+  app.releaseSingleInstanceLock()
   await app.whenReady()
   await dialog.showMessageBox({
     type: 'info',

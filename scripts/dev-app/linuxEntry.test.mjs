@@ -1,3 +1,5 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEV_DESKTOP_ENTRY_ENV as MAIN_DEV_DESKTOP_ENTRY_ENV } from '../../src/main/apps/draftLinkStartup'
 import {
@@ -10,6 +12,7 @@ import {
 } from './linuxEntry.mjs'
 
 const ELECTRON = '/src/Comfy-Desktop/node_modules/electron/dist/electron'
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 describe('desktopEntryFileName', () => {
   it('names one entry per clone', () => {
@@ -66,29 +69,38 @@ describe('desktopEntryText', () => {
 })
 
 describe('devSandboxOff', () => {
-  it('is off when ELECTRON_DISABLE_SANDBOX=1 is set', () => {
-    expect(devSandboxOff({ ELECTRON_DISABLE_SANDBOX: '1' }, [])).toBe(true)
+  const sandboxOff = (env, args) => devSandboxOff(env, args, ROOT)
+
+  it('is off when ELECTRON_DISABLE_SANDBOX=1 is set', async () => {
+    expect(await sandboxOff({ ELECTRON_DISABLE_SANDBOX: '1' }, [])).toBe(true)
   })
 
-  it('is off when NO_SANDBOX=1 is set', () => {
-    expect(devSandboxOff({ NO_SANDBOX: '1' }, [])).toBe(true)
+  it('is off when NO_SANDBOX=1 is set', async () => {
+    expect(await sandboxOff({ NO_SANDBOX: '1' }, [])).toBe(true)
   })
 
-  it('is off when electron-vite is given --noSandbox', () => {
-    expect(devSandboxOff({}, ['--noSandbox'])).toBe(true)
-    expect(devSandboxOff({}, ['--watch', '--noSandbox=true'])).toBe(true)
+  it('is off when electron-vite is given --noSandbox', async () => {
+    expect(await sandboxOff({}, ['--noSandbox'])).toBe(true)
+    expect(await sandboxOff({}, ['--watch', '--noSandbox=true'])).toBe(true)
+    expect(await sandboxOff({}, ['--noSandbox', 'true'])).toBe(true)
+    expect(await sandboxOff({}, ['--noSandbox', '--noSandbox=false'])).toBe(true)
   })
 
-  it('is on otherwise', () => {
-    expect(devSandboxOff({}, [])).toBe(false)
-    expect(devSandboxOff({ ELECTRON_DISABLE_SANDBOX: '0', NO_SANDBOX: '0' }, ['--watch'])).toBe(
+  it('is on otherwise', async () => {
+    expect(await sandboxOff({}, [])).toBe(false)
+    expect(await sandboxOff({ ELECTRON_DISABLE_SANDBOX: '0', NO_SANDBOX: '0' }, ['--watch'])).toBe(
       false
     )
-    expect(devSandboxOff({}, ['--noSandbox=false'])).toBe(false)
+    expect(await sandboxOff({}, ['--noSandbox=false'])).toBe(false)
   })
 
-  it('ignores --noSandbox passed through to Electron after --', () => {
-    expect(devSandboxOff({}, ['--', '--noSandbox'])).toBe(false)
+  it('is on when electron-vite reads --noSandbox as false', async () => {
+    expect(await sandboxOff({}, ['--noSandbox', 'false'])).toBe(false)
+    expect(await sandboxOff({}, ['--noSandbox', '--no-noSandbox'])).toBe(false)
+  })
+
+  it('ignores --noSandbox passed through to Electron after --', async () => {
+    expect(await sandboxOff({}, ['--', '--noSandbox'])).toBe(false)
   })
 })
 

@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 export const DEV_DESKTOP_ENTRY_ENV = 'COMFY_DEV_DESKTOP_ENTRY'
 export const LINUX_DEV_ENTRY = { name: 'Comfy Desktop Dev', scheme: 'comfy' }
@@ -25,19 +26,21 @@ function execArg(value) {
   return quoted.replace(/\\/g, '\\\\')
 }
 
-function electronViteArgs(args) {
-  const end = args.indexOf('--')
-  return end < 0 ? args : args.slice(0, end)
+async function loadElectronViteCac(root) {
+  const require = createRequire(path.join(root, 'package.json'))
+  const electronVitePackage = require.resolve('electron-vite/package.json')
+  const cacEntry = createRequire(electronVitePackage).resolve('cac')
+  const { cac } = await import(pathToFileURL(cacEntry).href)
+  return cac
 }
 
-function isNoSandboxFlag(arg) {
-  if (arg === '--noSandbox') return true
-  return arg.startsWith('--noSandbox=') && arg !== '--noSandbox=false'
-}
-
-export function devSandboxOff(env, args) {
+export async function devSandboxOff(env, args, root) {
   if (env['ELECTRON_DISABLE_SANDBOX'] === '1' || env['NO_SANDBOX'] === '1') return true
-  return electronViteArgs(args).some(isNoSandboxFlag)
+  const cac = await loadElectronViteCac(root)
+  const cli = cac('electron-vite')
+  cli.command('[root]').alias('serve').alias('dev').option('--noSandbox', '')
+  const { options } = cli.parse(['node', 'electron-vite', 'dev', ...args], { run: false })
+  return Boolean(options.noSandbox)
 }
 
 export function desktopEntryText({ name, scheme, executable, root, disableSandbox }) {
@@ -118,14 +121,14 @@ function electronExecutable(root) {
   return path.join(electronDir, 'dist', relative)
 }
 
-export function ensureLinuxDevEntry(root, env = process.env, args = []) {
+export function ensureLinuxDevEntry(root, env = process.env, disableSandbox = false) {
   const dir = applicationsDir(env)
   const fileName = desktopEntryFileName(root)
   const text = desktopEntryText({
     ...LINUX_DEV_ENTRY,
     executable: electronExecutable(root),
     root,
-    disableSandbox: devSandboxOff(env, args)
+    disableSandbox
   })
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, fileName), text)

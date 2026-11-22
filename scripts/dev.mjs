@@ -20,7 +20,7 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const ELECTRON_VITE_ARGS = process.argv.slice(2)
-const SANDBOX_OFF = devSandboxOff(process.env, ELECTRON_VITE_ARGS)
+const SANDBOX_OFF = await devSandboxOff(process.env, ELECTRON_VITE_ARGS, ROOT)
 
 function warn(message) {
   console.warn(`\n\x1b[33m⚠ ${message}\x1b[0m\n`)
@@ -37,7 +37,7 @@ function linuxDevEntryEnv() {
   }
   if (process.env['E2E'] === '1') return {}
   try {
-    return { [DEV_DESKTOP_ENTRY_ENV]: ensureLinuxDevEntry(ROOT, process.env, ELECTRON_VITE_ARGS) }
+    return { [DEV_DESKTOP_ENTRY_ENV]: ensureLinuxDevEntry(ROOT, process.env, SANDBOX_OFF) }
   } catch (err) {
     warn(
       `Could not set up the ${LINUX_DEV_ENTRY.name} desktop entry, so ${LINUX_DEV_ENTRY.scheme}:// links will not reach this copy. ${err.message}`
