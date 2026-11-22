@@ -252,6 +252,7 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     )
     if (!finished) return
     reported = true
+    for (const state of states) dropRequest(state)
     opts.onComplete()
   }
 
@@ -318,10 +319,20 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
     }
   }
 
+  const releaseRequest = (state: SegmentState): void => {
+    clearIdle(state)
+    state.request = null
+  }
+
   const finishNetwork = (state: SegmentState): void => {
     state.networkDone = true
     clearIdle(state)
-    state.request = null
+    if (state.request) {
+      state.idle = setTimeout(() => {
+        state.idle = null
+        dropRequest(state)
+      }, idleTimeoutMs)
+    }
     if (state.queued === 0) checkComplete()
     const heir = states.find((other) => other.parked)
     if (heir) heir.slot = state.slot
@@ -461,11 +472,19 @@ export function startSegmentedRun(opts: SegmentedRunOptions): SegmentedRun {
       }
     })
     response.on('end', () => {
-      if (stale() || state.networkDone) return
+      if (stale()) return
+      if (state.networkDone) {
+        releaseRequest(state)
+        return
+      }
       retry(state, 'Download failed: connection closed before the byte range finished')
     })
     response.on('error', (err: Error) => {
-      if (stale() || state.networkDone) return
+      if (stale()) return
+      if (state.networkDone) {
+        dropRequest(state)
+        return
+      }
       retry(state, `Download failed: ${err.message}`)
     })
     armIdle(state, gen)

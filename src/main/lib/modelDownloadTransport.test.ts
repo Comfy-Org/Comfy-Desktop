@@ -1355,6 +1355,67 @@ describe('segmented download', () => {
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
   })
 
+  it('aborts a range that sent all its bytes but never ended once the download completes', async () => {
+    const { handle } = startSegmented()
+    const [, first, second] = requests
+    const head = rangeResponse(0, 4)
+    first!.emit('response', head)
+    head.emit('data', Buffer.from('01234'))
+    const tail = rangeResponse(5, 9)
+    second!.emit('response', tail)
+    tail.emit('data', Buffer.from('56789'))
+    tail.emit('end')
+
+    expect(await handle.done).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+    expect(first!.abort).toHaveBeenCalled()
+    expect(second!.abort).not.toHaveBeenCalled()
+  })
+
+  it('pause aborts a range that sent all its bytes but never ended', async () => {
+    const { handle } = startSegmented()
+    const [, first, second] = requests
+    const head = rangeResponse(0, 4)
+    first!.emit('response', head)
+    head.emit('data', Buffer.from('01234'))
+    const tail = rangeResponse(5, 9)
+    second!.emit('response', tail)
+    tail.emit('data', Buffer.from('56'))
+
+    expect(handle.pause()).toBe(true)
+    expect(await handle.done).toEqual({ outcome: 'paused' })
+    expect(first!.abort).toHaveBeenCalled()
+    expect(second!.abort).toHaveBeenCalled()
+  })
+
+  it('aborts a range that sent all its bytes when its response does not end within the idle timeout', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { handle } = startSegmented({ idleTimeoutMs: 20 })
+      const [, first, second] = requests
+      const head = rangeResponse(0, 4)
+      first!.emit('response', head)
+      head.emit('data', Buffer.from('01234'))
+      const tail = rangeResponse(5, 9)
+      second!.emit('response', tail)
+      tail.emit('data', Buffer.from('56'))
+      vi.advanceTimersByTime(15)
+      tail.emit('data', Buffer.from('7'))
+      vi.advanceTimersByTime(15)
+
+      expect(first!.abort).toHaveBeenCalled()
+      expect(second!.abort).not.toHaveBeenCalled()
+      expect(requests).toHaveLength(3)
+
+      tail.emit('data', Buffer.from('89'))
+      tail.emit('end')
+      const outcome = await handle.done
+      expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
+      expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('cancel deletes the staged segments', async () => {
     const { handle } = startSegmented()
     const head = rangeResponse(0, 4)
