@@ -530,7 +530,7 @@ describe('useInstallContextMenu - export latest snapshot', () => {
 
     expect(apiMock.exportSnapshot).not.toHaveBeenCalled()
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
-    expect(modalMock.alert.mock.calls[0]![0].message).toBe('There are no snapshots to share yet.')
+    expect(modalMock.alert.mock.calls[0]![0].message).toBe('There are no snapshots to export.')
   })
 
   it('surfaces a real export error but stays silent on a dialog cancel', async () => {

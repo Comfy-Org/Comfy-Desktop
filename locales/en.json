@@ -1549,7 +1549,7 @@
     "createSnapshot": "Create snapshot",
     "changesInSnapshot": "What changed in this snapshot",
     "ifYouRestore": "What restoring this would change",
-    "noSnapshotsToShare": "There are no snapshots to share yet.",
+    "noSnapshotsToExport": "There are no snapshots to export.",
     "shareFailed": "Could not export the snapshot.",
     "current": "Current",
     "triggerBoot": "Boot",
