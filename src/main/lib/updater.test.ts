@@ -85,6 +85,8 @@ vi.mock('./startup-attempt-marker', () => ({
 }))
 
 let installAttempt: InstallAttemptRecord | null = null
+let installAttemptClears = true
+let installAttemptWrites = true
 let shipItReport: ShipItReport = { logFound: false, ranAfterTrigger: null, errorTail: null }
 
 vi.mock('./update-install-attempt', async (importOriginal) => {
@@ -92,15 +94,18 @@ vi.mock('./update-install-attempt', async (importOriginal) => {
   return {
     ...actual,
     writeInstallAttempt: vi.fn((record: InstallAttemptRecord) => {
+      if (!installAttemptWrites) return false
       installAttempt = record
       return true
     }),
     readInstallAttempt: vi.fn(() => installAttempt),
     clearInstallAttempt: vi.fn(() => {
+      if (!installAttemptClears) return false
       installAttempt = null
+      return true
     }),
     markInstallAttemptExit: vi.fn((quitReason: string) => {
-      if (!installAttempt || installAttempt.exitedAt) return
+      if (!installAttempt || installAttempt.exitedAt || installAttempt.reportedOutcome) return
       installAttempt = {
         ...installAttempt,
         exitedAt: new Date().toISOString(),
@@ -463,6 +468,8 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     sidecarReadable = true
     sidecarClears = true
     installAttempt = null
+    installAttemptClears = true
+    installAttemptWrites = true
     shipItReport = { logFound: false, ranAfterTrigger: null, errorTail: null }
     mockAppVersion = '1.0.0'
     delete process.env.E2E
@@ -767,6 +774,76 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       const updater = await bootUpdater()
       await updater.applyPendingUpdateOnStartup()
       expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(0)
+    })
+
+    it('marks a record it cannot delete as reported and reports it only once', async () => {
+      installAttemptClears = false
+      installAttempt = {
+        attemptId: 'attempt-stuck-file',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt
+      }
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(installAttempt).toMatchObject({
+        attemptId: 'attempt-stuck-file',
+        reportedOutcome: 'not_installed'
+      })
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(1)
+
+      vi.resetModules()
+      const relaunched = await bootUpdater()
+      await relaunched.applyPendingUpdateOnStartup()
+      relaunched.recordProcessExit()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(1)
+      expect(installAttempt).not.toHaveProperty('exitedAt')
+    })
+
+    it('reports nothing when the record can be neither deleted nor marked', async () => {
+      installAttemptClears = false
+      installAttemptWrites = false
+      installAttempt = {
+        attemptId: 'attempt-read-only',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt
+      }
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(0)
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '[app-update] could not clear or mark the install attempt for 1.0.1'
+        )
+      )
+    })
+
+    it('scrubs credentials and home paths from updater errors in the console', async () => {
+      await bootUpdater()
+      for (const cb of listeners.error || [])
+        cb(
+          new Error(
+            'Cannot download "https://updates.example.com/app-1.0.1.zip?token=s3cr3t-value", status 403: EACCES /Users/alice/Library/Caches/updater/pending'
+          )
+        )
+
+      const lines = vi
+        .mocked(console.warn)
+        .mock.calls.map((call) => String(call[0]))
+        .filter((line) => line.startsWith('[app-update]'))
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain('failed')
+      expect(lines[0]).not.toContain('s3cr3t-value')
+      expect(lines[0]).not.toContain('alice')
     })
   })
 
@@ -1546,6 +1623,8 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
     sidecarPersists = true
     sidecarReadable = true
     sidecarClears = true
+    installAttemptClears = true
+    installAttemptWrites = true
     mockAppVersion = '1.0.24'
     fakeUpdater = {
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {

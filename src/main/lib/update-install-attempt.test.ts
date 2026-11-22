@@ -51,7 +51,25 @@ describe('install attempt record', () => {
   it('writes, reads back and clears a record', () => {
     expect(writeInstallAttempt(record)).toBe(true)
     expect(readInstallAttempt()).toEqual(record)
-    clearInstallAttempt()
+    expect(clearInstallAttempt()).toBe(true)
+    expect(readInstallAttempt()).toBeNull()
+  })
+
+  it('counts a missing record as cleared', () => {
+    expect(clearInstallAttempt()).toBe(true)
+  })
+
+  it('reads back the reported outcome', () => {
+    const reported = { ...record, reportedOutcome: 'not_installed' }
+    expect(writeInstallAttempt(reported)).toBe(true)
+    expect(readInstallAttempt()).toEqual(reported)
+  })
+
+  it('ignores a record whose reported outcome is not a string', () => {
+    fs.writeFileSync(
+      path.join(dir, 'update-install-attempt.json'),
+      JSON.stringify({ ...record, reportedOutcome: 1 })
+    )
     expect(readInstallAttempt()).toBeNull()
   })
 
@@ -77,6 +95,13 @@ describe('install attempt record', () => {
       exitedAt: '2026-11-22T10:00:05.000Z',
       exitQuitReason: 'update-install'
     })
+  })
+
+  it('does not stamp an exit on a record already reported', () => {
+    const reported = { ...record, reportedOutcome: 'installed' }
+    writeInstallAttempt(reported)
+    markInstallAttemptExit('user-quit')
+    expect(readInstallAttempt()).toEqual(reported)
   })
 
   it('does nothing on exit when no install was requested', () => {

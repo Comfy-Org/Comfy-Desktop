@@ -34,6 +34,7 @@ import {
 import { _broadcastToRenderer, cancelAll, keepsComfyRunningWhenWindowCloses } from './ipc/shared'
 import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
+import { scrubAll } from '../../shared/piiScrub'
 
 export interface AppUpdateState {
   kind: 'available' | 'downloading' | 'ready' | null
@@ -115,7 +116,7 @@ function emitUpdateTelemetry(
 }
 
 function logUpdate(level: 'info' | 'warn' | 'error', message: string): void {
-  console[level](`[app-update] ${message}`)
+  console[level](`[app-update] ${scrubAll(message)}`)
 }
 
 function currentAppLocation(): ReturnType<typeof describeAppLocation> {
@@ -742,7 +743,10 @@ function macShipItLogPath(bundlePath: string): string | null {
 function reportPreviousInstallAttempt(): void {
   const record = readInstallAttempt()
   if (!record) return
-  clearInstallAttempt()
+  if (record.reportedOutcome) {
+    clearInstallAttempt()
+    return
+  }
   const running = app.getVersion()
   const installed = !isStrictlyNewerVersion(record.targetVersion, running)
   const outcome = installed
@@ -750,6 +754,13 @@ function reportPreviousInstallAttempt(): void {
     : running === record.fromVersion
       ? 'not_installed'
       : 'other_version'
+  if (!clearInstallAttempt() && !writeInstallAttempt({ ...record, reportedOutcome: outcome })) {
+    logUpdate(
+      'warn',
+      `could not clear or mark the install attempt for ${record.targetVersion}, skipping its outcome`
+    )
+    return
+  }
   const triggeredAt = new Date(record.triggeredAt)
   const exitedAt = record.exitedAt ? new Date(record.exitedAt) : null
   const location = currentAppLocation()

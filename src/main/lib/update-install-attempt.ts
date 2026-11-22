@@ -14,6 +14,7 @@ export interface InstallAttemptRecord {
   triggeredAt: string
   exitedAt?: string
   exitQuitReason?: string
+  reportedOutcome?: string
 }
 
 export type AppLocationKind =
@@ -48,7 +49,8 @@ function isRecord(value: unknown): value is InstallAttemptRecord {
     typeof r.fromVersion === 'string' &&
     typeof r.triggeredAt === 'string' &&
     (r.source === 'install_call' || r.source === 'startup_install') &&
-    (r.attemptId === null || typeof r.attemptId === 'string')
+    (r.attemptId === null || typeof r.attemptId === 'string') &&
+    (r.reportedOutcome === undefined || typeof r.reportedOutcome === 'string')
   )
 }
 
@@ -72,15 +74,18 @@ export function readInstallAttempt(): InstallAttemptRecord | null {
   }
 }
 
-export function clearInstallAttempt(): void {
+export function clearInstallAttempt(): boolean {
   try {
     fs.unlinkSync(recordPath())
-  } catch {}
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT'
+  }
 }
 
 export function markInstallAttemptExit(quitReason: string, now: Date = new Date()): void {
   const record = readInstallAttempt()
-  if (!record || record.exitedAt) return
+  if (!record || record.exitedAt || record.reportedOutcome) return
   writeInstallAttempt({ ...record, exitedAt: now.toISOString(), exitQuitReason: quitReason })
 }
 
