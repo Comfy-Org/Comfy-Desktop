@@ -29,7 +29,7 @@
       "to": "lib"
     }
   ],
-  "asarUnpack": ["node_modules/7zip-bin/**/*"],
+  "asarUnpack": ["node_modules/7zip-bin/**/*", "**/node_modules/@koromix/koffi-*/**/*.node"],
   "windows": {
     "icon": "./assets/Comfy_Logo_x256.png",
     "nsisInclude": "./scripts/installer.nsh"

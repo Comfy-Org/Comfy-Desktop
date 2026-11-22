@@ -20,6 +20,7 @@ extraResources:
 asarUnpack:
   - node_modules/7zip-bin/**/*
   - node_modules/node-pty/**/*
+  - '**/node_modules/@koromix/koffi-*/**/*.node'
 afterPack: ./scripts/afterPack.mjs
 publish:
   provider: github

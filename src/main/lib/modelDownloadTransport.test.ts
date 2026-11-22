@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { R2_BASE_URL, R2_MIRROR_BASE_URL } from './r2Mirror'
+import * as exclusiveRename from './renameNoReplace'
 import {
   readStagedMeta,
   stagingMetaPathFor,
@@ -316,6 +317,14 @@ describe('resume', () => {
     fs.writeFileSync(stagingPathFor(finalPath), bytes)
     writeStagedMeta(stagingMetaPathFor(finalPath), meta)
   }
+
+  it('retries a fully verified stage without a validator or a new request', async () => {
+    preStage('0123456789', stagedMeta({ etag: undefined, readyToInstall: true }))
+    const handle = startModelTransfer(baseOpts())
+    expect(await handle.done).toMatchObject({ outcome: 'completed', finalBytes: 10 })
+    expect(requests).toHaveLength(0)
+    expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+  })
 
   it('sends Range and If-Range for retained staged bytes and appends on a well-formed 206', async () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
@@ -1024,7 +1033,10 @@ describe('final destination conflicts', () => {
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
   })
 
-  it('fails closed when hard links are unsupported', async () => {
+  it('fails closed when neither hard links nor exclusive rename are supported', async () => {
+    const rename = vi
+      .spyOn(exclusiveRename, 'renameNoReplace')
+      .mockRejectedValue(Object.assign(new Error('Not supported'), { code: 'ENOTSUP' }))
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
       err.code = 'EPERM'
@@ -1051,8 +1063,40 @@ describe('final destination conflicts', () => {
       renameSpy.mockRestore()
       openSpy.mockRestore()
       linkSpy.mockRestore()
+      rename.mockRestore()
     }
   })
+
+  it.each(['EACCES', 'ENOSPC', 'EXDEV', 'EIO'])(
+    'retains the verified stage when native rename fails with %s',
+    async (code) => {
+      vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+        throw Object.assign(new Error('unsupported'), { code: 'ENOTSUP' })
+      })
+      vi.spyOn(exclusiveRename, 'renameNoReplace').mockRejectedValue(
+        Object.assign(new Error(code), { code })
+      )
+      try {
+        const handle = startModelTransfer(baseOpts())
+        const req = requests[0]!
+        const res = makeResponse(200, { 'content-length': '10' })
+        req.emit('response', res)
+        res.emit('data', Buffer.from('0123456789'))
+        res.emit('end')
+        expect(await handle.done).toMatchObject({
+          outcome: 'error',
+          error: expect.stringContaining(code)
+        })
+        expect(fs.existsSync(finalPath)).toBe(false)
+        expect(fs.readFileSync(stagingPathFor(finalPath), 'utf8')).toBe('0123456789')
+        expect(readStagedMeta(stagingMetaPathFor(finalPath))).toMatchObject({
+          readyToInstall: true
+        })
+      } finally {
+        vi.restoreAllMocks()
+      }
+    }
+  )
 
   it('fails closed on a real link error instead of degrading to claim+rename', async () => {
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
@@ -1103,28 +1147,33 @@ describe('final destination conflicts', () => {
     }
   })
 
-  it('a link-less filesystem never creates a final-name claim marker', async () => {
-    const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
-      const err = new Error('EPERM: operation not permitted') as NodeJS.ErrnoException
-      err.code = 'EPERM'
-      throw err
-    })
-    const openSpy = vi.spyOn(fs, 'openSync')
-    try {
-      const handle = startModelTransfer(baseOpts())
-      const req = requests[0]!
-      const res = makeResponse(200, { 'content-length': '10' })
-      req.emit('response', res)
-      res.emit('data', Buffer.from('0123456789'))
-      res.emit('end')
-      const outcome = await handle.done
-      expect(outcome.outcome).toBe('error')
-      expect(fs.existsSync(finalPath)).toBe(false)
-      expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
-      expect(openSpy).not.toHaveBeenCalledWith(finalPath, 'wx')
-    } finally {
-      openSpy.mockRestore()
-      linkSpy.mockRestore()
+  it.each(process.platform === 'win32' ? ['EPERM', 'EISDIR'] : ['EPERM'])(
+    'publishes a complete staged file using native rename after link returns %s',
+    async (code) => {
+      vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+        throw Object.assign(new Error(code), { code })
+      })
+      const openSpy = vi.spyOn(fs, 'openSync')
+      const copySpy = vi.spyOn(fs, 'copyFileSync')
+      const asyncCopySpy = vi.spyOn(fs.promises, 'copyFile')
+      try {
+        const handle = startModelTransfer(baseOpts())
+        const req = requests[0]!
+        const res = makeResponse(200, { 'content-length': '10' })
+        req.emit('response', res)
+        res.emit('data', Buffer.from('0123456789'))
+        expect(fs.existsSync(finalPath)).toBe(false)
+        res.emit('end')
+        expect(await handle.done).toMatchObject({ outcome: 'completed', finalBytes: 10 })
+        expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
+        expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+        expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+        expect(openSpy.mock.calls.some(([file]) => file === finalPath)).toBe(false)
+        expect(copySpy).not.toHaveBeenCalled()
+        expect(asyncCopySpy).not.toHaveBeenCalled()
+      } finally {
+        vi.restoreAllMocks()
+      }
     }
-  })
+  )
 })
