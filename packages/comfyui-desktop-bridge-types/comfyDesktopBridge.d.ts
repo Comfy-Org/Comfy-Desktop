@@ -260,10 +260,16 @@ export interface ComfyDesktopLocalDownload {
  * `execution_success`, `execution_error`, `execution_interrupted`), or
  * `run_failed` from Desktop itself, with `prompt_id` and `reason` in `data`.
  * Desktop sends `run_failed` when a run the page started ends with no answer
- * from ComfyUI. `reason` is `comfyui_exited` when the ComfyUI closed or
- * restarted during the run, for any cause. Desktop sends it to every open app
- * page, so a page acts only on a `prompt_id` it started. Desktop builds that
- * predate it never send it.
+ * from ComfyUI, to every open app page, so a page acts only on a `prompt_id`
+ * it started. Desktop builds that predate it never send it. `reason` is one of
+ * these; read any other as `unknown`:
+ *
+ * - `comfyui_crashed`: the ComfyUI process ended with an error, and Desktop did
+ *   not stop it.
+ * - `comfyui_stopped`: Desktop stopped the ComfyUI, as Stop, Restart, Update,
+ *   closing its window and deleting its build do, or it closed with no error.
+ * - `unknown`: Desktop cannot tell. The ComfyUI may still run without the run,
+ *   or have restarted itself.
  */
 export interface ComfyDesktopLocalEvent {
   type: string
@@ -317,19 +323,26 @@ export interface ComfyDesktopLocalBuild {
     title?: string
   }
 }
-/**
- * Facts about this computer, so a page can tell before a run whether its app
- * is likely to run out of memory here.
- */
+/** Facts about this computer, for a page to use before a run. */
 export interface ComfyDesktopMachine {
   /** The operating system: `win32` (Windows), `darwin` (macOS) or `linux`. */
   platform: 'win32' | 'darwin' | 'linux'
   /**
-   * The memory of the GPU that ComfyUI uses, in whole gigabytes. Absent when
-   * Desktop cannot read it, as on many Macs, where the GPU shares the memory
-   * of the computer.
+   * The memory of one graphics card in gigabytes, rounded to a whole number:
+   * the card with the most memory, among the cards of the vendor Desktop
+   * detects (NVIDIA, else AMD, else Intel) when it detects one. A build can use
+   * another card. It is what the system reports, which can be less than the
+   * card has. `0` is less than half a gigabyte. Absent when Desktop cannot read
+   * it, as on Apple silicon Macs, where the GPU shares the memory of the
+   * computer, and with `noGpu`.
    */
   gpuMemoryGb?: number
+  /**
+   * True when Desktop read the display adapters and each one is a virtual
+   * machine's, so there is no GPU. Absent otherwise, also when Desktop cannot
+   * tell, and always on macOS.
+   */
+  noGpu?: true
 }
 /**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
@@ -364,10 +377,10 @@ export interface ComfyDesktopHostedLocalBridge {
    */
   onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
   /**
-   * Facts about this computer. Desktop reads the GPU memory once per session
-   * and waits at most 5 seconds for it; after that the answer has the
-   * platform alone. Rejects when the page is not in the Apps view or Apps is
-   * off. Absent on Desktop builds that predate it.
+   * Facts about this computer. Desktop reads the GPU once per session and
+   * waits at most 5 seconds for it; after that the answer has the platform
+   * alone. Rejects when the page is not in the Apps view or Apps is off.
+   * Absent on Desktop builds that predate it.
    */
   machine?(): Promise<ComfyDesktopMachine>
 }

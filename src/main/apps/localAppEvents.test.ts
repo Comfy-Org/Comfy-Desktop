@@ -44,7 +44,7 @@ import {
   finishRun,
   isFollowing,
   noteRunMessage,
-  onRunEnded,
+  onRunLost,
   onRunsChanged,
   RUN_FINISHED_EVENT,
   runAccepted,
@@ -287,7 +287,7 @@ describe('run_finished', () => {
     noteRunMessage(message('execution_success', { timestamp: T0 + 1_000 }))
     noteRunMessage(message('execution_success', { timestamp: T0 + 2_000 }))
     noteRunMessage(message('execution_interrupted', { timestamp: T0 + 3_000 }))
-    failRunsOn(BUILD, COMFYUI_EXITED)
+    failRunsOn(BUILD, 'comfyui_stopped')
 
     expect(sent(RUN_FINISHED_EVENT)).toHaveLength(1)
     expect(isFollowing(RUN)).toBe(false)
@@ -397,7 +397,7 @@ describe('run_finished', () => {
     runAccepted(OTHER_RUN, 'lab', 'remove-background', T0)
     expect(buildsWithRuns()).toEqual([BUILD, 'lab'])
 
-    failRunsOn(BUILD, COMFYUI_EXITED, T0 + 9_000)
+    failRunsOn(BUILD, 'comfyui_crashed', T0 + 9_000)
 
     expect(sent(RUN_FINISHED_EVENT)).toEqual([
       expect.objectContaining({
@@ -412,29 +412,32 @@ describe('run_finished', () => {
     expect(runsOn('lab')).toEqual([OTHER_RUN])
   })
 
-  it('tells each run-end watcher which run ended and how, once', () => {
+  it('tells a lost-run watcher which run was lost and why, once', () => {
     const watcher = vi.fn()
-    onRunEnded(watcher)
+    onRunLost(watcher)
     runAccepted(RUN, BUILD, APP, T0)
 
-    failRunsOn(BUILD, COMFYUI_EXITED, T0 + 9_000)
+    failRunsOn(BUILD, 'comfyui_stopped', T0 + 9_000)
     finishRun(RUN, { outcome: 'success', at: T0 + 10_000 })
 
-    expect(watcher).toHaveBeenCalledExactlyOnceWith(RUN, {
-      outcome: 'failed',
-      errorClass: COMFYUI_EXITED,
-      at: T0 + 9_000
-    })
+    expect(watcher).toHaveBeenCalledExactlyOnceWith(RUN, 'comfyui_stopped')
   })
 
-  it('stops telling a run-end watcher once it is removed', () => {
+  it.each([
+    ['that finished', message('execution_success')],
+    [
+      'that a custom node failed with an error called ComfyuiExited',
+      message('execution_error', { exception_type: 'ComfyuiExited' })
+    ]
+  ])('does not call a run lost %s', (_case, ending) => {
     const watcher = vi.fn()
-    const stop = onRunEnded(watcher)
+    onRunLost(watcher)
     runAccepted(RUN, BUILD, APP, T0)
 
-    stop()
-    finishRun(RUN, { outcome: 'success', at: T0 + 1_000 })
+    noteRunMessage(message('execution_start'))
+    noteRunMessage(ending)
 
+    expect(isFollowing(RUN)).toBe(false)
     expect(watcher).not.toHaveBeenCalled()
   })
 
@@ -505,7 +508,7 @@ describe('run_finished for a run whose start Desktop did not hear', () => {
     runAccepted(RUN, BUILD, APP, T0)
     noteRunMessage(message('execution_success', { timestamp: T0 + 9_000 }))
 
-    failRunsOn(BUILD, COMFYUI_EXITED)
+    failRunsOn(BUILD, 'comfyui_stopped')
 
     const [event] = sent(RUN_FINISHED_EVENT)
     expect(event).toMatchObject({ outcome: 'success' })

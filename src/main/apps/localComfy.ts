@@ -30,11 +30,12 @@ import { appsPageAdmits, liveAppsPages } from './appsPages'
 import {
   _resetForTest as _resetLocalAppEventsForTest,
   buildsWithRuns,
-  COMFYUI_EXITED,
   failRunsOn,
   finishHeardRun,
   isFollowing,
+  lostRun,
   noteRunMessage,
+  onRunLost,
   runAccepted,
   runEndFromHistory,
   runsOn,
@@ -42,7 +43,7 @@ import {
   setupStarted,
   unstartedRunsOn
 } from './localAppEvents'
-import type { RunEnd, SetupStep } from './localAppEvents'
+import type { LostRunReason, RunEnd, SetupStep } from './localAppEvents'
 import {
   chooseInstallingBuild,
   chooseLocalBuild,
@@ -159,7 +160,7 @@ function sendToPage(page: WebContents, event: ComfyDesktopLocalEvent): void {
   void drainPage(page, fresh)
 }
 
-export function sendToPages(event: ComfyDesktopLocalEvent): void {
+function sendToPages(event: ComfyDesktopLocalEvent): void {
   for (const page of liveAppsPages()) sendToPage(page, event)
 }
 
@@ -193,7 +194,7 @@ function relayFor(installationId: string, port: number): LocalRelay {
   return relay
 }
 
-function stopFollowingStoppedBuilds(): void {
+function stopFollowingStoppedBuilds(crashedId?: string): void {
   for (const id of startedHere) {
     if (runningPortOf(id) !== null) continue
     startedHere.delete(id)
@@ -205,14 +206,20 @@ function stopFollowingStoppedBuilds(): void {
     relayByBuild.delete(id)
   }
   for (const id of buildsWithRuns()) {
-    if (runningPortOf(id) === null) failRunsOn(id, COMFYUI_EXITED)
+    if (runningPortOf(id) !== null) continue
+    failRunsOn(id, id === crashedId ? 'comfyui_crashed' : 'comfyui_stopped')
   }
+}
+
+function tellPagesOfLostRun(promptId: string, reason: LostRunReason): void {
+  sendToPages({ type: 'run_failed', data: { prompt_id: promptId, reason } })
 }
 
 function watchSessions(): void {
   if (watchingSessions) return
   watchingSessions = true
   sessionLifecycleEvents.on('changed', stopFollowingStoppedBuilds)
+  onRunLost(tellPagesOfLostRun)
 }
 
 function isEmpty(queue: QueueAnswer): boolean {
@@ -645,10 +652,8 @@ function checkUnheardRuns(buildId: string): void {
   const promptIds = runsOn(buildId)
   if (promptIds.length === 0) return
   const port = runningPortOf(buildId)
-  if (port === null) return failRunsOn(buildId, COMFYUI_EXITED)
-  settleUnheardRuns(port, promptIds, { outcome: 'failed', errorClass: COMFYUI_EXITED }).catch(
-    () => {}
-  )
+  if (port === null) return failRunsOn(buildId, 'unknown')
+  settleUnheardRuns(port, promptIds, lostRun('unknown')).catch(() => {})
 }
 
 function checkClearedRuns(buildId: string): void {

@@ -83,11 +83,16 @@ For a run on this computer the page asks `getLocal({ minVersion })` which of
 the person's builds Desktop would use, starts it with `startLocal()`, and then
 talks to it through `localFetch()`. Desktop forwards only the calls a run
 needs, and only for runs the page started; `onLocalEvent()` carries ComfyUI's
-updates for those runs. `localDownload()` saves a safetensors model from
+updates for those runs, and Desktop's own `run_failed` when one ends with no
+answer from ComfyUI, with the reason. `localDownload()` saves a safetensors model from
 Hugging Face into that build's models folder. While the person's first build
 is still installing, `getLocal()` answers `installing`: `localDownload()`
 works already, and `startLocal()` waits for the install, then starts the
 build.
+
+`machine()` gives the operating system, and the memory of the graphics card or
+that there is no GPU when Desktop can read it. It is absent on Desktop builds
+that predate it.
 
 `openInComfy({ prompt, where, name, build })` opens a run's API-format
 workflow in a ComfyUI window in Desktop: the build the page runs on (or the

@@ -20,10 +20,7 @@ const mocks = vi.hoisted(() => ({
   pages: [] as { send: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }[],
   refusedPages: new Set<unknown>(),
   runsChanged: null as (() => void) | null,
-  runEnded: null as
-    ((promptId: string, end: { outcome: string; errorClass?: string }) => void) | null,
-  machine: vi.fn(),
-  sendToPages: vi.fn()
+  machine: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -47,19 +44,13 @@ vi.mock('../../apps/appsPages', () => ({
   liveAppsPages: () => mocks.pages
 }))
 vi.mock('../../apps/localAppEvents', () => ({
-  COMFYUI_EXITED: 'comfyui_exited',
   onRunsChanged: (watcher: () => void) => {
     mocks.runsChanged = watcher
-    return () => {}
-  },
-  onRunEnded: (watcher: typeof mocks.runEnded) => {
-    mocks.runEnded = watcher
     return () => {}
   }
 }))
 vi.mock('../../apps/machine', () => ({ machine: mocks.machine }))
 vi.mock('../../apps/localComfy', () => ({
-  sendToPages: mocks.sendToPages,
   localState: mocks.localState,
   startLocal: mocks.startLocal,
   localFetch: mocks.localFetch,
@@ -200,31 +191,6 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(mocks.openInComfy).not.toHaveBeenCalled()
     expect(mocks.localBuilds).not.toHaveBeenCalled()
     expect(mocks.machine).not.toHaveBeenCalled()
-  })
-})
-
-describe('telling app pages that ComfyUI closed during a run', () => {
-  function runEnds(promptId: string, end: { outcome: string; errorClass?: string }): void {
-    if (!mocks.runEnded) throw new Error('No run-end watcher was registered')
-    mocks.runEnded(promptId, end)
-  }
-
-  it('sends the open app pages a run_failed event with the reason comfyui_exited', () => {
-    runEnds('run-1', { outcome: 'failed', errorClass: 'comfyui_exited' })
-
-    expect(mocks.sendToPages).toHaveBeenCalledExactlyOnceWith({
-      type: 'run_failed',
-      data: { prompt_id: 'run-1', reason: 'comfyui_exited' }
-    })
-  })
-
-  it.each([
-    ['a run that finished', { outcome: 'success' }],
-    ['a run that ComfyUI itself failed', { outcome: 'failed', errorClass: 'out_of_memory_error' }]
-  ])('sends nothing for %s', (_case, end) => {
-    runEnds('run-1', end)
-
-    expect(mocks.sendToPages).not.toHaveBeenCalled()
   })
 })
 

@@ -19,10 +19,12 @@ const RUN_ENDS: Readonly<Record<string, RunOutcome>> = {
 
 export type RunOutcome = 'success' | 'failed' | 'cancelled' | 'refused'
 export type SetupStage = 'install' | 'start'
+export type LostRunReason = 'comfyui_crashed' | 'comfyui_stopped' | 'unknown'
 
 export interface RunEnd {
   outcome: RunOutcome
   errorClass?: string
+  lost?: LostRunReason
   at: number
   startedAt?: number
 }
@@ -46,7 +48,7 @@ interface EarlyRun {
 const runs = new Map<string, Run>()
 const earlyRuns = new Map<string, EarlyRun>()
 const runWatchers = new Set<() => void>()
-const endWatchers = new Set<(promptId: string, end: RunEnd) => void>()
+const lostRunWatchers = new Set<(promptId: string, reason: LostRunReason) => void>()
 
 function runsChanged(): void {
   for (const watcher of runWatchers) watcher()
@@ -57,9 +59,8 @@ export function onRunsChanged(watcher: () => void): () => void {
   return () => runWatchers.delete(watcher)
 }
 
-export function onRunEnded(watcher: (promptId: string, end: RunEnd) => void): () => void {
-  endWatchers.add(watcher)
-  return () => endWatchers.delete(watcher)
+export function onRunLost(watcher: (promptId: string, reason: LostRunReason) => void): void {
+  lostRunWatchers.add(watcher)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -134,7 +135,7 @@ export function finishRun(promptId: string, end: RunEnd): void {
   if (!run) return
   runs.delete(promptId)
   sendRunFinished(run, end)
-  for (const watcher of endWatchers) watcher(promptId, end)
+  if (end.lost) for (const watcher of lostRunWatchers) watcher(promptId, end.lost)
   runsChanged()
 }
 
@@ -267,9 +268,13 @@ export function buildsWithRuns(): string[] {
   return [...new Set([...runs.values()].map((run) => run.buildId))]
 }
 
-export function failRunsOn(buildId: string, errorClass: string, now = Date.now()): void {
+export function lostRun(reason: LostRunReason): Omit<RunEnd, 'at'> {
+  return { outcome: 'failed', errorClass: COMFYUI_EXITED, lost: reason }
+}
+
+export function failRunsOn(buildId: string, reason: LostRunReason, now = Date.now()): void {
   for (const promptId of runsOn(buildId)) {
-    settleRun(promptId, null, { outcome: 'failed', errorClass, at: now })
+    settleRun(promptId, null, { ...lostRun(reason), at: now })
   }
 }
 
@@ -304,7 +309,7 @@ export function setupStarted(stage: SetupStage, appId: string | null): SetupStep
 
 export function _resetForTest(): void {
   runWatchers.clear()
-  endWatchers.clear()
+  lostRunWatchers.clear()
   runs.clear()
   earlyRuns.clear()
 }

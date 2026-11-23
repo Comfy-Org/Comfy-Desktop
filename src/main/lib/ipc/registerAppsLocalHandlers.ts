@@ -5,14 +5,8 @@ import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
-import { COMFYUI_EXITED, onRunEnded, onRunsChanged } from '../../apps/localAppEvents'
-import {
-  localDownload,
-  localFetch,
-  localState,
-  sendToPages,
-  startLocal
-} from '../../apps/localComfy'
+import { onRunsChanged } from '../../apps/localAppEvents'
+import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
 import { machine } from '../../apps/machine'
 import { localBuilds, localBuildsForEach, openInComfy } from '../../apps/openInComfy'
 import type {
@@ -123,13 +117,9 @@ export function registerAppsLocalHandlers(): void {
   })
 
   ipcMain.handle(APPS_LOCAL_CHANNELS.machine, async (event): Promise<ComfyDesktopMachine> => {
-    if (!(await isFromAppsPage(event))) throw new Error(i18n.t('apps.local.notRunning'))
+    if (!(await isFromAppsPage(event))) throw new Error('This page cannot ask about this computer.')
     return machine()
   })
 
   onRunsChanged(() => void announceBuilds())
-  onRunEnded((promptId, end) => {
-    if (end.errorClass !== COMFYUI_EXITED) return
-    sendToPages({ type: 'run_failed', data: { prompt_id: promptId, reason: COMFYUI_EXITED } })
-  })
 }
