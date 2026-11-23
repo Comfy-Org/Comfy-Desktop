@@ -953,6 +953,11 @@ export function _runningPortOwner(port: number): string | undefined {
   return sessionsServingLocally().find((session) => session.port === port)?.installationName
 }
 
+export async function stopRunningOnPort(port: number): Promise<void> {
+  const owner = [..._runningSessions].find(([, session]) => session.proc && session.port === port)
+  if (owner) await stopRunning(owner[0])
+}
+
 export {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,

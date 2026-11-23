@@ -24,7 +24,7 @@ describe('the GPU memory Desktop tells an app page', () => {
     ['linux', 24564, 24],
     ['win32', 128, 0]
   ] as const)('on %s with %d MB is %d', async (platform, mb, gb) => {
-    probeFinds({ gpu_vendor: 'nvidia', gpu_vram_mb: mb, gpu_vram_gb: gb, gpus: [] })
+    probeFinds({ gpu_vendor: 'nvidia', gpu_model: 'RTX', gpu_vram_mb: mb, gpu_vram_gb: gb })
 
     expect(await machine(platform)).toEqual({ platform, gpuMemoryGb: gb })
   })
@@ -34,7 +34,7 @@ describe('the GPU memory Desktop tells an app page', () => {
     ['the probe reports zero, as when Windows gives no number', 'win32', 0, 0],
     ['Linux reports under half a gigabyte, the size of a PCI window', 'linux', 256, 0]
   ] as const)('is left out when %s', async (_case, platform, mb, gb) => {
-    probeFinds({ gpu_vendor: 'amd', gpu_vram_mb: mb, gpu_vram_gb: gb, gpus: [gpu('Radeon')] })
+    probeFinds({ gpu_vendor: 'amd', gpu_model: 'Radeon', gpu_vram_mb: mb, gpu_vram_gb: gb })
 
     expect(await machine(platform)).toEqual({ platform })
   })
@@ -82,7 +82,6 @@ describe('no GPU, as Desktop tells an app page', () => {
 
   it.each([
     ['the probe lists no adapter, as when it fails', 'win32', []],
-    ['Linux names no model, as for VMware', 'linux', [gpu('')]],
     ['there is also a card Desktop cannot measure', 'win32', [VMWARE, gpu('Adreno X1-85')]],
     ['an adapter is a remote desktop, which can hide the card', 'win32', [VMWARE, REMOTE_DESKTOP]],
     ['an adapter has no driver', 'win32', [VMWARE, NO_DRIVER]],
@@ -95,6 +94,12 @@ describe('no GPU, as Desktop tells an app page', () => {
       expect(await machine(platform)).toEqual({ platform })
     }
   )
+
+  it('is not said when Linux names no model, as for VMware, and neither is its memory', async () => {
+    probeFinds({ ...VIRTUAL, gpu_model: null, gpus: [gpu('')] })
+
+    expect(await machine('linux')).toEqual({ platform: 'linux' })
+  })
 
   it('is not said when Desktop found a vendor', async () => {
     probeFinds({ ...VIRTUAL, gpu_vendor: 'nvidia', gpus: [HYPER_V] })

@@ -20,7 +20,7 @@ function hasNoGpu({ gpu_vendor: vendor, gpus = [] }: ProbedGpus): boolean {
 
 function gpuMemoryOf(probed: ProbedGpus, platform: Platform): number | undefined {
   const { gpu_model: model, gpu_vram_mb: mb, gpu_vram_gb: gb } = probed
-  if (!mb || typeof gb !== 'number' || isVirtualGpu(model)) return undefined
+  if (!model || isVirtualGpu(model) || !mb || typeof gb !== 'number') return undefined
   return gb === 0 && platform !== 'win32' ? undefined : gb
 }
 

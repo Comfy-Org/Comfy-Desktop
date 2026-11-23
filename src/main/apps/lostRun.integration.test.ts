@@ -78,7 +78,13 @@ vi.mock('./localRelay', () => ({
   })
 }))
 
-import { _runningSessions, killProcessTree, stopRunning } from '../lib/ipc/shared'
+import {
+  _addSession,
+  _runningSessions,
+  killProcessTree,
+  stopRunning,
+  stopRunningOnPort
+} from '../lib/ipc/shared'
 import type * as SharedModule from '../lib/ipc/shared'
 import type { InstallationRecord } from '../lib/ipc/shared'
 import { handleRemove } from '../lib/ipc/sessionActions/basic'
@@ -195,6 +201,7 @@ describe('what the app page hears when its ComfyUI process ends', { timeout: 30_
     ['restarts itself and then fails to start', 'comfyui_stopped', () => ask('/restart-broken')],
     ['is stopped, as by Stop or Update', 'comfyui_stopped', () => stopRunning(BUILD)],
     ['is stopped with the others, as by quitting', 'comfyui_stopped', () => stopRunning()],
+    ['gives its port to another build', 'comfyui_stopped', () => stopRunningOnPort(port)],
     ['is restarted by Desktop', 'comfyui_stopped', () => stopRunning(BUILD).then(launch)],
     ['belongs to a build that is deleted', 'comfyui_stopped', () => handleRemove(context())]
   ])('when it %s: %s', async (_case, reason, end) => {
@@ -204,5 +211,20 @@ describe('what the app page hears when its ComfyUI process ends', { timeout: 30_
     expect(fake.page.send.mock.calls).toEqual([
       [local.LOCAL_EVENT_CHANNEL, { type: 'run_failed', data: { prompt_id: RUN, reason } }]
     ])
+  })
+
+  it('keeps a remote connection when another program gives up the same port', async () => {
+    await stopRunning(BUILD)
+    _addSession('remote', {
+      proc: null,
+      port,
+      url: `http://192.168.1.50:${port}`,
+      mode: 'window',
+      installationName: 'Remote'
+    })
+
+    await stopRunningOnPort(port)
+
+    expect([..._runningSessions.keys()]).toEqual(['remote'])
   })
 })
