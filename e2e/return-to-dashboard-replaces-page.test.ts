@@ -10,6 +10,8 @@ import { returnFirstInstallHostToDashboard } from './support/devHooks'
 const REMOTE_ID = 'inst-return-replaces-remote'
 const REMOTE_NAME = 'Return Replaces Remote'
 
+test.describe.configure({ mode: 'serial' })
+
 let ctx: AppContext
 let server: http.Server
 let remoteUrl: string

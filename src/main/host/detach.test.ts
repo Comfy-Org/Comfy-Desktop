@@ -600,6 +600,17 @@ describe('returning to the dashboard from a running ComfyUI', () => {
       expect(entry.detachInstall).not.toHaveBeenCalled()
     })
 
+    it('asks again on the next attempt after the person cancels', async () => {
+      const entry = openRunningComfy()
+      await returnPanelHostToDashboard(entry)
+      mocks.agrees = true
+
+      await expect(returnPanelHostToDashboard(entry)).resolves.toBe(true)
+
+      expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([DISCARD, DISCARD])
+      expect(entry.detachInstall).toHaveBeenCalledTimes(1)
+    })
+
     it('returns to the dashboard from the panel once the person discards', async () => {
       mocks.agrees = true
       const entry = openRunningComfy()
