@@ -89,8 +89,13 @@ const builds = computed(() => {
   return [...installing, ...settled].filter((build) => shown.has(build.id))
 })
 const showNewBuildSlot = computed(
-  () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
+  () =>
+    !installationStore.loading &&
+    (builds.value.length < HOME_BUILD_LIMIT || builds.value.every((build) => isCloudBuild(build)))
 )
+const NARROW_BUILD_LIMIT = 2
+const newBuildTileFitsNarrow = computed(() => builds.value.length < NARROW_BUILD_LIMIT)
+const buildRowSize = computed(() => builds.value.length + (showNewBuildSlot.value ? 1 : 0))
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
   if (!latest) return new Set<string>()
@@ -297,28 +302,30 @@ onMounted(() => {
               </Button>
             </Tooltip>
           </h2>
-          <Tooltip
-            v-if="!showNewBuildSlot && !installationStore.loading"
-            :text="t('sidebar.newBuild')"
+          <div
+            v-if="!installationStore.loading && (!showNewBuildSlot || !newBuildTileFitsNarrow)"
             class="shrink-0"
+            :class="showNewBuildSlot && 'hidden @max-[56rem]/home-builds:block'"
           >
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon"
-              class="size-8 rounded-lg"
-              :aria-label="t('sidebar.newBuild')"
-              data-testid="home-new-build-button"
-              @click="emit('new-build')"
-            >
-              <Plus :size="16" aria-hidden="true" />
-            </Button>
-          </Tooltip>
+            <Tooltip :text="t('sidebar.newBuild')">
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                class="size-8 rounded-lg"
+                :aria-label="t('sidebar.newBuild')"
+                data-testid="home-new-build-button"
+                @click="emit('new-build')"
+              >
+                <Plus :size="16" aria-hidden="true" />
+              </Button>
+            </Tooltip>
+          </div>
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
           :class="[
-            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
+            buildRowSize > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
             '@max-[40rem]/home-builds:grid-cols-1'
           ]"
         >
@@ -337,7 +344,11 @@ onMounted(() => {
               @open="openBuild(build)"
             />
           </li>
-          <li v-if="showNewBuildSlot" class="min-w-0">
+          <li
+            v-if="showNewBuildSlot"
+            class="min-w-0"
+            :class="!newBuildTileFitsNarrow && '@max-[56rem]/home-builds:hidden'"
+          >
             <HomeNewBuildTile @open="emit('new-build')" />
           </li>
         </ul>

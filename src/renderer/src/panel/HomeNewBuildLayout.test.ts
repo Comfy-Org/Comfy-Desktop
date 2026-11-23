@@ -37,6 +37,8 @@ const LOCAL: Installation = {
   lastLaunchedAt: 200
 }
 
+const FULL_ROW = [LOCAL, OTHER_LOCAL, CLOUD]
+
 let host: HTMLElement
 
 beforeAll(() => browserPage.viewport(1440, 900))
@@ -70,6 +72,8 @@ async function homeAt(width: number, installations: Installation[]) {
   host.style.cssText = `position: fixed; left: 0; top: 0; width: ${width}px; height: 900px; display: flex`
   installApi(installations)
   const wrapper = mount(HomeView, { attachTo: host })
+  host.querySelector<HTMLElement>(':scope > div')!.style.cssText =
+    'display: flex; flex: 1; min-width: 0'
   await flushPromises()
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   return wrapper
@@ -134,12 +138,25 @@ describe('Home with no local build', () => {
     expect(wrapper.emitted('new-build')).toHaveLength(2)
     wrapper.unmount()
   })
+})
 
-  it('hides the New build tile once a local build exists', async () => {
+describe('Home with one local build', () => {
+  it('keeps the New build tile in the free slot of the row, with no + beside the title', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+    const row = host.querySelector<HTMLElement>('[data-testid="home-builds"] ul')!
 
-    expect(host.querySelector('[data-testid="home-build"]')).not.toBeNull()
-    expect(host.querySelector('[data-testid="home-new-build"]')).toBeNull()
+    expect(shown('[data-testid="home-build"]'), 'local build').toBe(true)
+    expect(shown('[data-testid="home-new-build"]'), 'New build tile').toBe(true)
+    expect(getComputedStyle(row).gridTemplateColumns.split(' ')).toHaveLength(3)
+    expect(shown('[data-testid="home-new-build-button"]'), 'New build button').toBe(false)
+    wrapper.unmount()
+  })
+
+  it('swaps the tile for the + when the window is too narrow for a third card', async () => {
+    const wrapper = await homeAt(MIN_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+
+    expect(shown('[data-testid="home-new-build"]'), 'New build tile').toBe(false)
+    expect(shown('[data-testid="home-new-build-button"]'), 'New build button').toBe(true)
     wrapper.unmount()
   })
 })
@@ -153,14 +170,12 @@ function shown(selector: string): boolean {
 
 describe('New build next to All builds', () => {
   it.each([
-    ['one local build', 'the minimum window width', MIN_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD]],
-    ['one local build', 'a normal window width', NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD]],
-    ['a full row', 'the minimum window width', MIN_WINDOW_PAGE_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD]],
-    ['a full row', 'a normal window width', NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD]]
+    ['the minimum window width', MIN_WINDOW_PAGE_WIDTH],
+    ['a normal window width', NORMAL_WINDOW_PAGE_WIDTH]
   ] as const)(
-    'with %s, at %s, offers New build as the + next to the Builds title, not a tile',
-    async (_builds, _width, width, installations) => {
-      const wrapper = await homeAt(width, [...installations])
+    'with a full row, at %s, offers New build as the + next to the Builds title, not a tile',
+    async (_width, width) => {
+      const wrapper = await homeAt(width, FULL_ROW)
 
       expect(shown('[data-testid="home-new-build-button"]'), 'New build button').toBe(true)
       expect(host.querySelector('[data-testid="home-new-build"]'), 'New build tile').toBeNull()
@@ -177,7 +192,7 @@ describe('New build next to All builds', () => {
   })
 
   it('goes to all builds from the Builds title', async () => {
-    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
     const title = host.querySelector<HTMLElement>('[data-testid="home-all-builds"]')!
 
     expect(title.closest('h2')?.id).toBe('home-builds')
@@ -189,7 +204,7 @@ describe('New build next to All builds', () => {
   })
 
   it('shows the Builds title in the secondary text color, brighter than a plain section label', async () => {
-    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
     const title = host.querySelector<HTMLElement>('[data-testid="home-all-builds"]')!
     const probe = document.createElement('span')
     probe.className = 'text-muted-foreground'
@@ -201,7 +216,7 @@ describe('New build next to All builds', () => {
   })
 
   it('names the + in a tooltip', async () => {
-    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
 
     host.querySelector<HTMLElement>('[data-testid="home-new-build-button"]')!.focus()
 
@@ -212,7 +227,7 @@ describe('New build next to All builds', () => {
   })
 
   it('opens New build from the +', async () => {
-    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
 
     host.querySelector<HTMLElement>('[data-testid="home-new-build-button"]')!.click()
 
