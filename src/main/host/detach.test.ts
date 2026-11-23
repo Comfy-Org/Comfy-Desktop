@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
     spec: { message: string; confirmStyle?: string; details?: { items: string[] }[] }
   }[],
   stopAppsBuilds: vi.fn(async () => {}),
-  keepComfyRunning: undefined as boolean | undefined
+  keepComfyRunning: undefined as boolean | undefined,
+  pageVetoesLeaving: false
 }))
 
 vi.mock('electron', () => ({
@@ -61,6 +62,7 @@ import {
   nextWindowKey,
   type ComfyWindowEntry
 } from './registry'
+import { takeUnloadVeto } from './unloadVeto'
 import {
   closeAllHostWindows,
   confirmAndCloseAllHostWindows,
@@ -89,11 +91,21 @@ function makeWindow(opts: { destroyed?: boolean } = {}): FakeWindow {
   return win
 }
 
+function makeComfyContents(): ComfyWindowEntry['comfyView']['webContents'] {
+  const contents = {
+    isDestroyed: () => false,
+    loadURL: vi.fn(async () => {
+      if (mocks.pageVetoesLeaving && takeUnloadVeto(contents as never)) await new Promise(() => {})
+    })
+  }
+  return contents as unknown as ComfyWindowEntry['comfyView']['webContents']
+}
+
 function makeEntry(window: FakeWindow): ComfyWindowEntry {
   return {
     windowKey: nextWindowKey(),
     window: window as unknown as ComfyWindowEntry['window'],
-    comfyView: {} as ComfyWindowEntry['comfyView'],
+    comfyView: { webContents: makeComfyContents() } as ComfyWindowEntry['comfyView'],
     titleBarView: { webContents: {} } as unknown as ComfyWindowEntry['titleBarView'],
     panelView: null,
     activePanel: 'comfy',
@@ -121,6 +133,7 @@ afterEach(() => {
   comfyWindows.clear()
   _runningSessions.clear()
   mocks.keepComfyRunning = undefined
+  mocks.pageVetoesLeaving = false
 })
 
 describe('closeAllHostWindows', () => {
@@ -529,5 +542,60 @@ describe('returning to the dashboard from a running ComfyUI', () => {
 
     expect(mocks.asked).toEqual([])
     expect(entry.detachInstall).toHaveBeenCalledTimes(1)
+  })
+
+  describe('when the page has unsaved changes and asks to stay', () => {
+    const DISCARD = "This workflow has changes that haven't been saved. They will be lost."
+
+    beforeEach(() => {
+      mocks.pageVetoesLeaving = true
+    })
+
+    it('asks before discarding them, and Discard changes returns to the dashboard', async () => {
+      mocks.agrees = true
+      const entry = openRunningComfy()
+
+      await returnToDashboard(entry.windowKey)
+
+      expect(mocks.asked.map((asked) => asked.spec)).toEqual([
+        expect.objectContaining({ message: DISCARD, confirmStyle: 'danger' })
+      ])
+      expect(entry.detachInstall).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the page and its ComfyUI when the person cancels', async () => {
+      const entry = openRunningComfy()
+
+      await returnToDashboard(entry.windowKey)
+
+      expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([DISCARD])
+      expect(entry.detachInstall).not.toHaveBeenCalled()
+    })
+
+    it('asks about stopping ComfyUI first, then about the unsaved changes, with keepComfyRunningWhenWindowCloses off', async () => {
+      mocks.keepComfyRunning = false
+      mocks.agrees = true
+      const entry = openRunningComfy()
+
+      await returnToDashboard(entry.windowKey)
+
+      expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+        'This will stop the current ComfyUI.',
+        DISCARD
+      ])
+      expect(entry.detachInstall).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not leave the page when the person cancels stopping ComfyUI', async () => {
+      mocks.keepComfyRunning = false
+      const entry = openRunningComfy()
+
+      await returnToDashboard(entry.windowKey)
+
+      expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+        'This will stop the current ComfyUI.'
+      ])
+      expect(entry.comfyView.webContents.loadURL).not.toHaveBeenCalled()
+    })
   })
 })

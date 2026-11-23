@@ -71,6 +71,7 @@ import {
   unregisterHostEntry
 } from './registry'
 import type { ComfyWindowEntry, ComfyPanelKey } from './registry'
+import { takeUnloadVeto } from './unloadVeto'
 
 export type CloseConsultResult = 'cleared' | 'aborted' | 'defer'
 
@@ -733,7 +734,7 @@ export function buildComfyView(
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
-    if (!comfyWindows.has(windowKey)) return
+    if (!comfyWindows.has(windowKey) || takeUnloadVeto(comfyContents)) return
     e.preventDefault()
   })
   attachContextMenu(comfyWindow, comfyContents)

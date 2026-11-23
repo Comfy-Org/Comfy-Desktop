@@ -18,6 +18,7 @@ import {
 } from './registry'
 import type { ComfyWindowEntry } from './registry'
 import { navigatorFor } from './buildNavigator'
+import { leavesWithoutVeto } from './unloadVeto'
 import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
@@ -131,9 +132,27 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
   const cleared = panelAlive
     ? await consultPanelRendererReturnToDashboard(entry.panelView)
     : await confirmReturnToDashboardViaSystemModal(entry)
-  if (!cleared) return
+  if (!cleared || !(await leavesPageOrDiscardsUnsavedWork(entry))) return
   if (entry.window.isDestroyed()) return
   entry.detachInstall()
+}
+
+export async function leavesPageOrDiscardsUnsavedWork(entry: ComfyWindowEntry): Promise<boolean> {
+  const contents = entry.comfyView.webContents
+  if (contents.isDestroyed()) return true
+  if (await leavesWithoutVeto(contents, () => navigatorFor(entry).blank())) return true
+  if (entry.window.isDestroyed()) return false
+  return openSystemModalAsync({
+    parent: entry.window,
+    spec: {
+      title: 'Discard unsaved changes?',
+      message: "This workflow has changes that haven't been saved. They will be lost.",
+      confirmLabel: 'Discard changes',
+      cancelLabel: 'Cancel',
+      confirmStyle: 'danger',
+      theme: entry.lastTheme
+    }
+  })
 }
 
 async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {

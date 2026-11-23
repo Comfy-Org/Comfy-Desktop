@@ -30,7 +30,7 @@ export interface BuildNavigator {
   showSplash(theme: SplashTheme): Promise<void>
   reopenBehindSplash(reopen: SplashReopen): Promise<void>
   keepCurrentPage(): void
-  blank(): void
+  blank(): Promise<void>
 }
 
 function createBuildNavigator(entry: ComfyWindowEntry): BuildNavigator {
@@ -124,7 +124,7 @@ function createBuildNavigator(entry: ComfyWindowEntry): BuildNavigator {
 
     blank() {
       supersedeEarlierNavigations()
-      void contents()
+      return contents()
         .loadURL('about:blank')
         .catch(() => {})
     }
