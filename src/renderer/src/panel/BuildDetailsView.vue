@@ -8,6 +8,8 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import { homeBuildStatus } from './home/homeBuild'
+import { useRestartBuild } from './home/useBuildMenu'
+import type { NavDecision } from '../../../shared/navigation/navDecision'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
 import {
   buildFailure,
@@ -38,6 +40,15 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
+const restartBuild = useRestartBuild()
+
+function handlePrimaryAction(decision: NavDecision): void {
+  if (decision.verb === 'restart' && sessionStore.isRunning(installation.id)) {
+    void restartBuild(installation)
+    return
+  }
+  emit('launch', installation)
+}
 const progressStore = useProgressStore()
 
 const { progress, viewLogs } = useBuildProgress(() => installation)
@@ -221,7 +232,7 @@ onUnmounted(() => unsubscribeSettings?.())
           @navigate-list="emit('back')"
           @request-close="emit('back')"
           @request-dismiss="emit('back')"
-          @primary-action="emit('launch', installation)"
+          @primary-action="handlePrimaryAction"
         />
       </template>
     </div>

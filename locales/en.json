@@ -2194,7 +2194,7 @@
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
     "progressCancelled": "Cancelled",
-    "restartToApply": "Restart to apply changes"
+    "restartToApply": "Restart to apply"
   },
   "installShowcase": {
     "cloud": {
