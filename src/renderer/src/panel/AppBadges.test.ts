@@ -94,6 +94,13 @@ describe('AppBadges', () => {
     expect(chip.getBoundingClientRect().height).toBe(crown.getBoundingClientRect().height)
   })
 
+  it('writes the chip in uppercase', () => {
+    const chip = mountBadges({ badges: [NEW_CHIP] }).get('[data-testid="app-badge-new"] > span')
+      .element as HTMLElement
+
+    expect(chip.innerText).toBe('NEW')
+  })
+
   it("puts the other badges' words in the crown's one-line tooltip", async () => {
     const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP, VIDEO_LABEL] })
 

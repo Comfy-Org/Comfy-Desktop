@@ -81,7 +81,7 @@ const foldedIntoCrown = computed(() =>
         v-else-if="item.badge.style === 'chip'"
         :class="[
           FROSTED_GLASS_CLASS,
-          'flex h-7 items-center rounded-lg px-2.5 text-2xs/tight font-medium whitespace-nowrap text-white'
+          'flex h-7 items-center rounded-lg px-2.5 text-2xs/tight font-medium tracking-[0.06em] whitespace-nowrap text-white uppercase'
         ]"
         aria-hidden="true"
       >
