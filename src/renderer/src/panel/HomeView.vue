@@ -34,7 +34,7 @@ type LoadState = 'loading' | 'ready' | 'unavailable'
 
 const HOME_BUILD_LIMIT = 3
 const BUILDS_TITLE_LINK_CLASS =
-  '-mx-2 -my-1 h-8 gap-1 rounded-lg px-2 hover:bg-secondary hover:text-foreground'
+  '-mx-2 -my-1 h-8 gap-1 rounded-lg px-2 text-muted-foreground hover:bg-secondary hover:text-foreground'
 const TEXT_LINK_CLASS =
   '-my-1 h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
 

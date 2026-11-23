@@ -188,6 +188,18 @@ describe('New build next to All builds', () => {
     wrapper.unmount()
   })
 
+  it('shows the Builds title in the secondary text color, brighter than a plain section label', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+    const title = host.querySelector<HTMLElement>('[data-testid="home-all-builds"]')!
+    const probe = document.createElement('span')
+    probe.className = 'text-muted-foreground'
+    host.appendChild(probe)
+
+    expect(getComputedStyle(title).color).toBe(getComputedStyle(probe).color)
+    probe.remove()
+    wrapper.unmount()
+  })
+
   it('opens New build from the +', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
 
