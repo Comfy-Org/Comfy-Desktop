@@ -84,6 +84,16 @@ describe('AppBadges', () => {
     }
   )
 
+  it('gives the chip the same corners and height as the crown square', () => {
+    const crown = mountBadges({ badges: [CROWN] }).get('[data-testid="app-badge-square"]').element
+    const chip = mountBadges({ badges: [NEW_CHIP] }).get(
+      '[data-testid="app-badge-new"] > span'
+    ).element
+
+    expect(getComputedStyle(chip).borderRadius).toBe(getComputedStyle(crown).borderRadius)
+    expect(chip.getBoundingClientRect().height).toBe(crown.getBoundingClientRect().height)
+  })
+
   it("puts the other badges' words in the crown's one-line tooltip", async () => {
     const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP, VIDEO_LABEL] })
 
