@@ -20,7 +20,7 @@ const {
 
 const FROSTED_GLASS_CLASS =
   'relative isolate overflow-hidden bg-[linear-gradient(180deg,rgb(44_44_48/0.94),rgb(18_18_20/0.96))] shadow-[inset_0_1px_0_rgb(255_255_255/0.16),inset_0_0_0_1px_rgb(255_255_255/0.08),0_2px_6px_rgb(0_0_0/0.35)]'
-const GLASS_TINT_CLASS = 'pointer-events-none absolute inset-0 bg-[rgb(0_0_0/0.45)]'
+const GLASS_TINT_CLASS = 'pointer-events-none absolute inset-0 bg-[rgb(0_0_0/0.6)]'
 const GLASS_PICTURE_CLASS =
   'pointer-events-none absolute max-w-none object-cover blur-[10px] saturate-[1.4]'
 
