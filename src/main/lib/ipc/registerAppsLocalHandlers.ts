@@ -7,10 +7,10 @@ import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
 import { COMFYUI_EXITED, onRunEnded, onRunsChanged } from '../../apps/localAppEvents'
 import {
-  LOCAL_EVENT_CHANNEL,
   localDownload,
   localFetch,
   localState,
+  sendToPages,
   startLocal
 } from '../../apps/localComfy'
 import { machine } from '../../apps/machine'
@@ -19,7 +19,6 @@ import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopLocalComfy,
   ComfyDesktopLocalDownload,
-  ComfyDesktopLocalEvent,
   ComfyDesktopMachine,
   ComfyDesktopOpenInComfy
 } from '../../../types/comfyDesktopBridge'
@@ -35,8 +34,6 @@ export const APPS_LOCAL_CHANNELS = {
   buildsChanged: 'apps-local:builds-changed',
   machine: 'apps-local:machine'
 } as const
-
-export const RUN_FAILED_EVENT = 'run_failed'
 
 let latestAnnouncement = 0
 
@@ -74,16 +71,6 @@ async function callerUnchanged(event: IpcMainInvokeEvent): Promise<Caller | null
   if (!(await isFromAppsPage(event))) return null
   if (!isSamePage(loadedAppPage(event.sender), sentFrom)) return null
   return { appId: sentFrom?.appId ?? null }
-}
-
-function tellPagesComfyExited(promptId: string): void {
-  const event: ComfyDesktopLocalEvent = {
-    type: RUN_FAILED_EVENT,
-    data: { prompt_id: promptId, reason: COMFYUI_EXITED }
-  }
-  for (const page of liveAppsPages()) {
-    if (!page.isDestroyed()) page.send(LOCAL_EVENT_CHANNEL, event)
-  }
 }
 
 function notOffered(): ComfyDesktopLocalComfy {
@@ -136,6 +123,7 @@ export function registerAppsLocalHandlers(): void {
 
   onRunsChanged(() => void announceBuilds())
   onRunEnded((promptId, end) => {
-    if (end.errorClass === COMFYUI_EXITED) tellPagesComfyExited(promptId)
+    if (end.errorClass !== COMFYUI_EXITED) return
+    sendToPages({ type: 'run_failed', data: { prompt_id: promptId, reason: COMFYUI_EXITED } })
   })
 }

@@ -252,7 +252,13 @@ export interface ComfyDesktopLocalDownload {
  * A model download's progress (`type: 'download'`, with `name`, `done` and
  * `total` bytes in `data`), or one ComfyUI socket message about a run the page
  * started (`execution_start`, `executing`, `progress`, `progress_state`,
- * `execution_success`, `execution_error`, `execution_interrupted`).
+ * `execution_success`, `execution_error`, `execution_interrupted`), or
+ * `run_failed` from Desktop itself, with `prompt_id` and `reason` in `data`.
+ * Desktop sends `run_failed` when a run the page started ends with no answer
+ * from ComfyUI. `reason` is `comfyui_exited` when the ComfyUI closed or
+ * restarted during the run, which often means that the computer ran out of
+ * memory. Desktop sends it to every open app page, so a page acts only on a
+ * `prompt_id` it started. Desktop builds that predate it never send it.
  */
 export interface ComfyDesktopLocalEvent {
   type: string
@@ -307,6 +313,20 @@ export interface ComfyDesktopLocalBuild {
   }
 }
 /**
+ * Facts about this computer, so a page can tell before a run whether its app
+ * is likely to run out of memory here.
+ */
+export interface ComfyDesktopMachine {
+  /** The operating system: `win32` (Windows), `darwin` (macOS) or `linux`. */
+  platform: 'win32' | 'darwin' | 'linux'
+  /**
+   * The memory of the GPU that ComfyUI uses, in whole gigabytes. Absent when
+   * Desktop cannot read it, as on many Macs, where the GPU shares the memory
+   * of the computer.
+   */
+  gpuMemoryGb?: number
+}
+/**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
  * Desktop's Apps view. Desktop exposes it to that page as
  * `window.comfyDesktopLocal`. The page builds and follows its own runs;
@@ -338,6 +358,13 @@ export interface ComfyDesktopHostedLocalBridge {
    * that predate it.
    */
   onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
+  /**
+   * Facts about this computer. Desktop reads the GPU memory once per session
+   * and waits at most 5 seconds for it; after that the answer has the
+   * platform alone. Rejects when the page is not in the Apps view or Apps is
+   * off. Absent on Desktop builds that predate it.
+   */
+  machine?(): Promise<ComfyDesktopMachine>
 }
 /** Whether a Comfy page hosted in Desktop's Apps view has a run going. */
 export interface ComfyDesktopRunState {

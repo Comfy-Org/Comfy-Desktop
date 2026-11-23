@@ -353,7 +353,8 @@ export interface ComfyDesktopHostedLocalBridge {
   /**
    * Facts about this computer. Desktop reads the GPU memory once per session
    * and waits at most 5 seconds for it; after that the answer has the
-   * platform alone. Absent on Desktop builds that predate it.
+   * platform alone. Rejects when the page is not in the Apps view or Apps is
+   * off. Absent on Desktop builds that predate it.
    */
   machine?(): Promise<ComfyDesktopMachine>
 }

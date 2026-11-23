@@ -20,7 +20,8 @@ const mocks = vi.hoisted(() => ({
   runsChanged: null as (() => void) | null,
   runEnded: null as
     ((promptId: string, end: { outcome: string; errorClass?: string }) => void) | null,
-  machine: vi.fn()
+  machine: vi.fn(),
+  sendToPages: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -55,7 +56,7 @@ vi.mock('../../apps/localAppEvents', () => ({
 }))
 vi.mock('../../apps/machine', () => ({ machine: mocks.machine }))
 vi.mock('../../apps/localComfy', () => ({
-  LOCAL_EVENT_CHANNEL: 'apps-local:event',
+  sendToPages: mocks.sendToPages,
   localState: mocks.localState,
   startLocal: mocks.startLocal,
   localFetch: mocks.localFetch,
@@ -194,30 +195,27 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
 })
 
 describe('telling app pages that ComfyUI closed during a run', () => {
-  it('sends each open app page a run_failed event with the reason comfyui_exited', () => {
-    const page = { send: vi.fn(), isDestroyed: () => false }
-    const closed = { send: vi.fn(), isDestroyed: () => true }
-    mocks.pages = [page, closed]
+  function runEnds(promptId: string, end: { outcome: string; errorClass?: string }): void {
+    if (!mocks.runEnded) throw new Error('No run-end watcher was registered')
+    mocks.runEnded(promptId, end)
+  }
 
-    mocks.runEnded?.('run-1', { outcome: 'failed', errorClass: 'comfyui_exited' })
+  it('sends the open app pages a run_failed event with the reason comfyui_exited', () => {
+    runEnds('run-1', { outcome: 'failed', errorClass: 'comfyui_exited' })
 
-    expect(page.send).toHaveBeenCalledExactlyOnceWith('apps-local:event', {
+    expect(mocks.sendToPages).toHaveBeenCalledExactlyOnceWith({
       type: 'run_failed',
       data: { prompt_id: 'run-1', reason: 'comfyui_exited' }
     })
-    expect(closed.send).not.toHaveBeenCalled()
   })
 
   it.each([
     ['a run that finished', { outcome: 'success' }],
     ['a run that ComfyUI itself failed', { outcome: 'failed', errorClass: 'out_of_memory_error' }]
   ])('sends nothing for %s', (_case, end) => {
-    const page = { send: vi.fn(), isDestroyed: () => false }
-    mocks.pages = [page]
+    runEnds('run-1', end)
 
-    mocks.runEnded?.('run-1', end)
-
-    expect(page.send).not.toHaveBeenCalled()
+    expect(mocks.sendToPages).not.toHaveBeenCalled()
   })
 })
 

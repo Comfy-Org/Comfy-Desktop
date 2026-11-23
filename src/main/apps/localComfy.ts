@@ -135,7 +135,7 @@ function rememberBounded<T>(map: Map<string, T>, key: string, value: T, limit: n
   }
 }
 
-function sendToPages(event: ComfyDesktopLocalEvent): void {
+export function sendToPages(event: ComfyDesktopLocalEvent): void {
   for (const page of liveAppsPages()) page.send(LOCAL_EVENT_CHANNEL, event)
 }
 
