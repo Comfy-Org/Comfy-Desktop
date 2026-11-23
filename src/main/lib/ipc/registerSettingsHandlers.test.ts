@@ -6,6 +6,7 @@ const mockSettingsSet = vi.fn((key: string, value: unknown) => {
 })
 
 const mockBeta = { resolved: false }
+const mockConsent: { withheld: boolean } = { withheld: false }
 
 vi.mock('./shared', async () => {
   const { lookupEnMessage } = await import('../localeTestHelper')
@@ -16,6 +17,7 @@ vi.mock('./shared', async () => {
     settings: {
       getAll: () => mockSettings,
       get: (key: string) => mockSettings[key],
+      telemetryConsent: () => (mockConsent.withheld ? undefined : mockSettings.telemetryEnabled),
       set: (key: string, value: unknown) => mockSettingsSet(key, value),
       getTrackedSettingsTelemetryProperties: () => ({}),
       resolveBetaFeaturesEnabled: () => mockBeta.resolved
@@ -54,6 +56,7 @@ import {
 
 function resetMockSettings(): void {
   for (const key of Object.keys(mockSettings)) delete mockSettings[key]
+  mockConsent.withheld = false
   mockSettingsSet.mockClear()
 }
 
@@ -170,6 +173,16 @@ describe('applySettingSet beta enrolment consent', () => {
     }
   )
 
+  it('rejects new beta enrolment when settings serve a consent the accessor withholds', () => {
+    mockSettings.betaFeaturesEnabled = false
+    mockSettings.telemetryEnabled = true
+    mockConsent.withheld = true
+
+    applySettingSet('betaFeaturesEnabled', true)
+
+    expect(mockSettingsSet).not.toHaveBeenCalled()
+  })
+
   it('allows new beta enrolment with explicit telemetry consent', () => {
     mockSettings.betaFeaturesEnabled = false
     mockSettings.telemetryEnabled = true
@@ -214,5 +227,36 @@ describe('picking the Auto start build by hand', () => {
 
     expect(mockSettings['autoStartAwaitingFirstStart']).toBeUndefined()
     expect(mockSettings['autoLaunchOnStartup']).toBe('fresh-install')
+  })
+})
+
+describe('get-setting', () => {
+  function getSetting(key: string): unknown {
+    registerSettingsHandlers()
+    const handler = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'get-setting')![1]
+    return handler({} as Electron.IpcMainInvokeEvent, key)
+  }
+
+  beforeEach(resetMockSettings)
+
+  it('answers telemetry consent from the accessor, not the raw setting', () => {
+    mockSettings.telemetryEnabled = true
+    mockConsent.withheld = true
+
+    expect(getSetting('telemetryEnabled')).toBeUndefined()
+  })
+
+  it.each([true, false, undefined])('passes through a readable consent of %s', (consent) => {
+    mockSettings.telemetryEnabled = consent
+
+    expect(getSetting('telemetryEnabled')).toBe(consent)
+  })
+
+  it('reads other keys from settings', () => {
+    mockSettings.theme = 'dark'
+
+    expect(getSetting('theme')).toBe('dark')
   })
 })

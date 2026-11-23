@@ -8,8 +8,9 @@ import InstancePickerView from './InstancePickerView.vue'
 
 const START_DECISION: NavDecision = { verb: 'start', primaryLabel: NAV_LABEL.start }
 const RESTART_DECISION: NavDecision = { verb: 'restart', primaryLabel: NAV_LABEL.restart }
-const FOCUS_DECISION: NavDecision = { verb: 'focus', primaryLabel: NAV_LABEL.switch }
+const FOCUS_DECISION: NavDecision = { verb: 'focus', primaryLabel: NAV_LABEL.openRunning }
 import type { SnapshotListData } from '../types/ipc'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 vi.mock('../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
   default: {
@@ -49,6 +50,7 @@ interface MockInstall {
   sourceCategory: string
   version?: string
   lastLaunchedAt?: number
+  lastStoppedAt?: number
   installPath?: string
   status?: string
   statusTag?: { style: string; label: string }
@@ -134,6 +136,12 @@ function makeInstall(overrides: Partial<MockInstall>): MockInstall {
   }
 }
 
+function fewBuilds(count: number): MockInstall[] {
+  return Array.from({ length: count }, (_, index) =>
+    makeInstall({ id: `extra-${index}`, name: `Extra ${index}` })
+  )
+}
+
 async function mountPicker(snapshot: MockSnapshot) {
   const pinia = createPinia()
   const enriched = {
@@ -165,16 +173,13 @@ describe('comfyTitlePopup/InstancePickerView', () => {
   })
 
   describe('structural shell', () => {
-    it('renders the search input, chip row, and split panes', async () => {
+    it('renders the build list and the settings pane, with no filter chips', async () => {
       const wrapper = await mountPicker({
         installs: [],
         activeInstallationId: null,
         runningInstallationIds: []
       })
-      const input = wrapper.get('.picker-search input')
-      expect(input.attributes('placeholder')).toBe('Search builds')
-      expect(input.attributes('aria-label')).toBe('Search builds')
-      expect(wrapper.findAll('.picker-chip').length).toBeGreaterThan(0)
+      expect(wrapper.find('.picker-chip').exists()).toBe(false)
       expect(wrapper.find('.picker-list').exists()).toBe(true)
       expect(wrapper.find('.picker-detail-wrap.is-expanded').exists()).toBe(true)
     })
@@ -186,6 +191,9 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: []
       })
       expect(wrapper.get('.picker-list-section-title').text()).toBe('Builds')
+      expect(wrapper.get('.picker-list-section-title').classes()).toEqual(
+        expect.arrayContaining(SECTION_TITLE_CLASS.split(' '))
+      )
       expect(wrapper.find('.picker-new-install').exists()).toBe(false)
       expect(wrapper.find('.picker-left-footer').exists()).toBe(false)
     })
@@ -322,37 +330,15 @@ describe('comfyTitlePopup/InstancePickerView', () => {
   })
 
   describe('home icon', () => {
-    it('renders Home only when the picker is hosted by an install', async () => {
+    it('leaves Home to the title bar, so the picker has no Home button', async () => {
       const installHost = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: 'a',
         runningInstallationIds: []
       })
-      expect(installHost.find('.picker-home').exists()).toBe(true)
-
-      const chooserHost = await mountPicker({
-        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
-        activeInstallationId: null,
-        runningInstallationIds: []
-      })
-      expect(chooserHost.find('.picker-home').exists()).toBe(false)
-    })
-
-    it('routes dashboard-button clicks through bridge.activate("new-window") so the running instance is not stopped', async () => {
-      const activate = vi.fn()
-      const existing = (window as unknown as { __comfyTitlePopup: Record<string, unknown> })
-        .__comfyTitlePopup
-      ;(window as unknown as { __comfyTitlePopup: Record<string, unknown> }).__comfyTitlePopup = {
-        ...existing,
-        activate
-      }
-      const wrapper = await mountPicker({
-        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
-        activeInstallationId: 'a',
-        runningInstallationIds: []
-      })
-      await wrapper.find('.picker-home').trigger('click')
-      expect(activate).toHaveBeenCalledWith('new-window')
+      expect(installHost.find('.picker-home').exists()).toBe(false)
+      expect(installHost.find('.picker-chips-divider').exists()).toBe(false)
+      expect(installHost.text()).not.toContain('Open Dashboard')
     })
   })
 
@@ -391,16 +377,76 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bridge.selectedInstallSets.at(-1)).toBeNull()
     })
 
-    it('filters install rows by search query', async () => {
+    it('keeps the search closed behind an icon next to the Builds title', async () => {
+      const wrapper = await mountPicker({
+        installs: fewBuilds(3),
+        activeInstallationId: null,
+        runningInstallationIds: []
+      })
+      expect(wrapper.find('.picker-search input').exists()).toBe(false)
+      const toggle = wrapper.get('.picker-list-section-title .picker-search-toggle')
+      expect(toggle.attributes('aria-label')).toBe('Search builds')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+    })
+
+    it('opens the search over the Builds title and closes it with Escape once empty', async () => {
+      const wrapper = await mountPicker({
+        installs: fewBuilds(3),
+        activeInstallationId: null,
+        runningInstallationIds: []
+      })
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('.picker-search input')
+      await input.setValue('build')
+      await input.trigger('keydown', { key: 'Escape' })
+      expect((input.element as HTMLInputElement).value).toBe('')
+      expect(wrapper.find('.picker-search input').exists()).toBe(true)
+      await input.trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(wrapper.find('.picker-search input').exists()).toBe(false)
+    })
+
+    it('keeps the search text when Escape only ends an input method composition', async () => {
+      const wrapper = await mountPicker({
+        installs: fewBuilds(3),
+        activeInstallationId: null,
+        runningInstallationIds: []
+      })
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('.picker-search input')
+      await input.setValue('build')
+      const reachedPopup = vi.fn()
+      wrapper.element.addEventListener('keydown', reachedPopup)
+      const composingEscape = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        isComposing: true,
+        bubbles: true,
+        cancelable: true
+      })
+      input.element.dispatchEvent(composingEscape)
+      await flushPromises()
+      expect((input.element as HTMLInputElement).value).toBe('build')
+      expect(composingEscape.defaultPrevented).toBe(false)
+      expect(reachedPopup).not.toHaveBeenCalled()
+    })
+
+    it('filters install rows by search query under the Builds title', async () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'a', name: 'Alpha' }),
-          makeInstall({ id: 'b', name: 'Bravo' })
+          makeInstall({ id: 'b', name: 'Bravo' }),
+          ...fewBuilds(4)
         ],
         activeInstallationId: null,
         runningInstallationIds: []
       })
-      const input = wrapper.find('.picker-search input')
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('.picker-search input')
+      expect(input.attributes('placeholder')).toBe('Search builds')
+      expect(input.attributes('aria-label')).toBe('Search builds')
       await input.setValue('alph')
       await flushPromises()
       const rows = wrapper.findAll('.picker-row')
@@ -408,31 +454,15 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(rows[0]!.text()).toContain('Alpha')
     })
 
-    it('switches visible rows when a non-all filter chip is activated', async () => {
-      const wrapper = await mountPicker({
-        installs: [
-          makeInstall({ id: 'l', name: 'LocalThing', sourceCategory: 'local' }),
-          makeInstall({ id: 'r', name: 'RemoteThing', sourceCategory: 'remote' })
-        ],
-        activeInstallationId: null,
-        runningInstallationIds: []
-      })
-      const chips = wrapper.findAll('.picker-chip')
-      const remoteChip = chips.find((c) => c.text() === 'Remote')
-      expect(remoteChip).toBeTruthy()
-      await remoteChip!.trigger('click')
-      const rows = wrapper.findAll('.picker-row')
-      expect(rows.length).toBe(1)
-      expect(rows[0]!.text()).toContain('RemoteThing')
-    })
-
     it('shows the empty-state hint when no rows match', async () => {
       const wrapper = await mountPicker({
-        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        installs: [makeInstall({ id: 'a', name: 'Alpha' }), ...fewBuilds(5)],
         activeInstallationId: null,
         runningInstallationIds: []
       })
-      const input = wrapper.find('.picker-search input')
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('.picker-search input')
       await input.setValue('zzzz-no-match')
       await flushPromises()
       expect(wrapper.find('.picker-list-empty').exists()).toBe(true)
@@ -452,6 +482,36 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bridge.selectedInstallSets).toContain('a')
     })
 
+    it('selects and lists first the build that ran 09:00 to 18:00 over one that ran 12:00 to 12:30', async () => {
+      const day = (hour: number, minute = 0) => new Date(2026, 10, 18, hour, minute).getTime()
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({
+            id: 'short-run',
+            name: 'Short run',
+            lastLaunchedAt: day(12),
+            lastStoppedAt: day(12, 30)
+          }),
+          makeInstall({
+            id: 'long-run',
+            name: 'Long run',
+            lastLaunchedAt: day(9),
+            lastStoppedAt: day(18)
+          })
+        ],
+        activeInstallationId: null,
+        runningInstallationIds: [],
+        selectedInstallationId: null
+      })
+      await flushPromises()
+      expect(wrapper.findAll('.picker-row-name').map((n) => n.text())).toEqual([
+        'Long run',
+        'Short run'
+      ])
+      expect(bridge.selectedInstallSets).toContain('long-run')
+      expect(bridge.selectedInstallSets).not.toContain('short-run')
+    })
+
     it('mounts ComfyUISettingsContent when an install is selected', async () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
@@ -459,6 +519,18 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: []
       })
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
+    })
+
+    it('passes each explicit open to the settings pane so it can reapply the requested tab', async () => {
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        activeInstallationId: 'a',
+        runningInstallationIds: [],
+        pickerSelectionEpoch: 3
+      })
+      expect(wrapper.findComponent(ComfyUISettingsContent).props('openEpoch')).toBe(3)
     })
 
     it('dispatches an in-flight background operation only once', async () => {
@@ -483,6 +555,53 @@ describe('comfyTitlePopup/InstancePickerView', () => {
 
       expect(bridge.backgroundOps).toHaveLength(1)
       expect(bridge.backgroundOps[0]).toMatchObject({ installationId: 'a', actionId: 'update' })
+    })
+  })
+
+  describe('detail header', () => {
+    it('puts the build name, its Running status and its actions in the header', async () => {
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        activeInstallationId: 'a',
+        runningInstallationIds: ['a']
+      })
+      await flushPromises()
+      const header = wrapper.get('.picker-detail-header')
+      expect(header.text()).toContain('Alpha')
+      expect(header.text()).toContain('Running')
+      expect(header.find('[data-testid="picker-primary-cta"]').exists()).toBe(true)
+      expect(wrapper.find('.settings-v2-content > .settings-v2-footer').exists()).toBe(false)
+    })
+  })
+
+  describe('header title editor', () => {
+    it('starts a fresh title editor when the selected build changes', async () => {
+      const alpha = makeInstall({ id: 'a', name: 'Alpha' })
+      const beta = makeInstall({ id: 'b', name: 'Beta' })
+      const wrapper = await mountPicker({
+        installs: [alpha, beta],
+        activeInstallationId: 'a',
+        runningInstallationIds: []
+      })
+      await flushPromises()
+      const alphaEditor = wrapper.findComponent({ name: 'InlineNameEdit' })
+      expect(alphaEditor.props('name')).toBe('Alpha')
+      const alphaEditorId = alphaEditor.vm.$.uid
+
+      await wrapper.setProps({
+        snapshot: {
+          ...wrapper.props('snapshot'),
+          installs: [beta],
+          activeInstallationId: 'b',
+          selectedInstallationId: 'b'
+        }
+      })
+      await flushPromises()
+
+      const betaEditor = wrapper.findComponent({ name: 'InlineNameEdit' })
+      expect(betaEditor.props('name')).toBe('Beta')
+      expect(betaEditor.vm.$.uid).not.toBe(alphaEditorId)
+      expect(wrapper.get('.picker-detail-header').text()).not.toContain('Alpha')
     })
   })
 
@@ -573,7 +692,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bridge.restarts).toEqual([])
     })
 
-    it('keeps Switch from the dashboard for a build another window is starting', async () => {
+    it('keeps Open from the dashboard for a build another window is starting', async () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
         activeInstallationId: null,
@@ -584,7 +703,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       await flushPromises()
       const primary = wrapper.get('[data-testid="picker-primary-cta"]')
-      expect(primary.text()).toBe('Switch')
+      expect(primary.text()).toBe('Open')
       await primary.trigger('click')
       await flushPromises()
       expect(bridge.picks).toEqual(['a'])

@@ -3,6 +3,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { comfyWindows } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
+import { cloudAuthEvents } from '../cloudAuthEvents'
 import { creditBalanceAuthChanged } from './registerCreditBalanceHandlers'
 import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
 import { openExternalUrl } from '../openExternal'
@@ -96,6 +97,7 @@ export function broadcastAuthChanged(status: AuthStatus): void {
   }
   void broadcastEmbeddedSessionChanged()
   creditBalanceAuthChanged()
+  cloudAuthEvents.emit('changed')
 }
 
 export async function signInToCloud(): Promise<AuthStatus> {
@@ -162,7 +164,7 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
         message: i18n.t('devPlatform.account.installationInProgressMessage'),
         confirmLabel: i18n.t('devPlatform.account.cancelInstallationAndSignOut'),
         cancelLabel: i18n.t('common.close'),
-        confirmStyle: 'danger',
+        confirmStyle: 'primary',
         theme: host.lastTheme
       }
     })
@@ -268,7 +270,12 @@ export function registerDevPlatformHandlers(): void {
       if (promoting.has(installationId)) {
         return { ok: false, message: 'Promotion is already in progress.' }
       }
+      if (_operationAborts.has(installationId)) {
+        return { ok: false, message: i18n.t('chooser.busyActionGatedReason') }
+      }
       promoting.add(installationId)
+      const captureSlot = new AbortController()
+      _operationAborts.set(installationId, captureSlot)
       try {
         const inst = await installations.get(installationId)
         if (!inst) return { ok: false, message: 'Instance not found.' }
@@ -344,6 +351,9 @@ export function registerDevPlatformHandlers(): void {
         return { ok: false, message: (err as Error)?.message || String(err) }
       } finally {
         promoting.delete(installationId)
+        if (_operationAborts.get(installationId) === captureSlot) {
+          _operationAborts.delete(installationId)
+        }
       }
     }
   )
@@ -412,7 +422,7 @@ export function registerDevPlatformHandlers(): void {
         return { ok: false, message: 'Invalid instance name.' }
       }
       if (request.installRoot !== undefined && typeof request.installRoot !== 'string') {
-        return { ok: false, message: 'Invalid install location.' }
+        return { ok: false, message: 'Invalid install location.', reason: 'location' }
       }
       const hasArtifactId = request.artifactId !== undefined
       const hasReleaseVersion = request.releaseVersion !== undefined

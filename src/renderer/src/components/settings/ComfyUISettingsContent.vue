@@ -4,38 +4,34 @@ import Tabs from '@comfyorg/design-system/tabs/Tabs'
 import TabsList from '@comfyorg/design-system/tabs/TabsList'
 import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
 import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
-import { computed, nextTick, onMounted, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircle,
   XCircle,
-  ChevronDown,
-  ChevronUp,
-  HardDrive,
-  SlidersHorizontal,
   RefreshCw,
   History,
-  SquareTerminal,
   Cloud,
   Play,
   RotateCcw,
   LayoutDashboard,
   Copy,
   CopyPlus,
-  FolderOpen,
-  Share2,
+  FolderSearch,
   ArrowRightLeft,
   Pencil,
   Trash2,
   CircleStop,
   EyeOff,
   Settings2,
-  Repeat2,
   Server,
-  Ellipsis
+  Ellipsis,
+  Download,
+  SquareArrowOutUpRight
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
+import { useSessionStore } from '../../stores/sessionStore'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'
 import { decideNavigation, type NavDecision } from '../../../../shared/navigation/navDecision'
 import type { Category, ViewKind } from '../../../../shared/viewKind'
@@ -52,6 +48,7 @@ import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
 import ConsoleTerminalPane from '../../views/comfyUISettings/ConsoleTerminalPane.vue'
 import Tooltip from '../ui/Tooltip.vue'
+import { vSlidingPill } from '../ui/vSlidingPill'
 import OperationErrorDetail from '../ui/OperationErrorDetail.vue'
 import type { PickerTab, SectionTab } from '../../lib/pickerTabs'
 import { isTabAllowedForCategory } from '../../lib/pickerTabs'
@@ -62,6 +59,7 @@ import {
 } from '../../lib/progressStatusLabel'
 import type { ActionDef, DetailField, Installation, ShowProgressOpts } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
+import { useBuildMenu, type BuildMenuEntry } from '../../panel/home/useBuildMenu'
 
 export type ComfyUISettingsTab = PickerTab
 
@@ -81,6 +79,7 @@ interface ActiveOperation {
 interface Props {
   installation: Installation | null
   initialTab?: ComfyUISettingsTab
+  openEpoch?: number
   autoAction?: string | null
   autoActionNonce?: number
   globalSettingsSnapshot?: StorageSnapshot
@@ -90,11 +89,13 @@ interface Props {
   currentCategory?: Category | null
   startingWithoutWindow?: boolean
   pageActionsTarget?: string
-  pageTitleTarget?: string
+  actionsTarget?: HTMLElement | null
+  pageTitleTarget?: string | HTMLElement | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   initialTab: 'update',
+  openEpoch: 0,
   showBack: false,
   autoAction: null,
   autoActionNonce: 0,
@@ -104,6 +105,7 @@ const props = withDefaults(defineProps<Props>(), {
   currentCategory: null,
   startingWithoutWindow: false,
   pageActionsTarget: undefined,
+  actionsTarget: null,
   pageTitleTarget: undefined,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
@@ -126,7 +128,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const isPage = computed(() => props.pageActionsTarget !== undefined)
-const menuChevron = computed(() => (isPage.value ? ChevronDown : ChevronUp))
+const footerTarget = computed(() => props.pageActionsTarget ?? props.actionsTarget)
 
 function overviewTab(tab: ComfyUISettingsTab): ComfyUISettingsTab {
   return tab === 'status' ? 'update' : tab
@@ -197,8 +199,16 @@ watch(
     const autoAction = props.autoAction
     if (!autoAction) return
 
+    if (autoAction === 'rename') {
+      consumedAutoActionKey.value = key
+      await nextTick()
+      if (props.installation?.id === installId && canRename.value) titleEdit.value?.focus()
+      return
+    }
+
     const action = findActionById(sections.value, autoAction, currentChannelValue(sections.value))
     if (!action) return
+    if (autoAction === 'remove' && props.activeOperation?.done === false) return
 
     consumedAutoActionKey.value = key
     await nextTick()
@@ -248,7 +258,6 @@ interface TabDef {
   key: ComfyUISettingsTab
   sectionTab: SectionTab
   label: string
-  icon: typeof SlidersHorizontal
   tooltip?: string
 }
 
@@ -257,35 +266,30 @@ const ALL_TABS: TabDef[] = [
     key: 'update',
     sectionTab: 'update',
     label: t('comfyUISettings.tabOverview'),
-    icon: LayoutDashboard,
     tooltip: t('tooltips.tabOverview')
   },
   {
     key: 'storage',
     sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage'),
-    icon: HardDrive,
-    tooltip: t('tooltips.tabStorage')
+    label: t('comfyUISettings.tabFolders'),
+    tooltip: t('tooltips.tabFolders')
   },
   {
     key: 'config',
     sectionTab: 'settings',
     label: t('comfyUISettings.tabConfig'),
-    icon: SlidersHorizontal,
     tooltip: t('tooltips.tabConfig')
   },
   {
     key: 'snapshots',
     sectionTab: 'snapshots',
     label: t('comfyUISettings.tabSnapshots'),
-    icon: History,
     tooltip: t('tooltips.snapshots')
   },
   {
     key: 'console',
     sectionTab: 'console',
     label: t('comfyUISettings.tabTerminal'),
-    icon: SquareTerminal,
     tooltip: t('tooltips.console')
   }
 ]
@@ -307,7 +311,7 @@ function tabHasContent(tab: TabDef): boolean {
 const tabs = computed<TabDef[]>(() =>
   ALL_TABS.filter(tabHasContent).map((tab) =>
     isCloud.value && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
+      ? { ...tab, label: t('comfyUISettings.tabCloudStorage') }
       : tab
   )
 )
@@ -335,12 +339,16 @@ const showUpdateBadge = computed(() => {
   return inst?.statusTag?.style === 'update' || inst?.status === 'update-available'
 })
 
-watch([tabs, sectionsFresh], ([next, isFresh]) => {
-  if (!isFresh) return
-  if (next.length === 0) return
-  if (next.some((tab) => tab.key === activeTab.value)) return
-  const requested = next.find((tab) => tab.key === props.initialTab)
-  activeTab.value = requested ? requested.key : next[0]!.key
+function availableTab(wanted: ComfyUISettingsTab): ComfyUISettingsTab {
+  const list = tabs.value
+  if (!sectionsFresh.value || list.length === 0) return wanted
+  if (list.some((tab) => tab.key === wanted)) return wanted
+  const requested = list.find((tab) => tab.key === props.initialTab)
+  return requested ? requested.key : list[0]!.key
+}
+
+watch([tabs, sectionsFresh], () => {
+  activeTab.value = availableTab(activeTab.value)
 })
 
 const visibleSections = computed(() => {
@@ -352,32 +360,44 @@ const storageSections = computed(() => sectionsForTab('storage').value)
 
 const rootRef = useTemplateRef<HTMLElement>('root')
 const footerRef = useTemplateRef<HTMLElement>('footer')
-const tabsRef = useTemplateRef<HTMLElement>('tabs')
-
-const TAB_COLLAPSE_PX = 640
-const tabsCollapsed = ref(false)
-let tabsObserver: ResizeObserver | undefined
-
-onMounted(() => {
-  if (tabsRef.value && typeof ResizeObserver !== 'undefined') {
-    tabsObserver = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry) return
-      tabsCollapsed.value = entry.contentRect.width < TAB_COLLAPSE_PX
-    })
-    tabsObserver.observe(tabsRef.value)
-  }
-})
-
-onUnmounted(() => {
-  tabsObserver?.disconnect()
-  tabsObserver = undefined
-})
-
-function isTabLabelHidden(key: ComfyUISettingsTab): boolean {
-  return tabsCollapsed.value && activeTab.value !== key
+const tabStrip = useTemplateRef<HTMLElement>('tabStrip')
+const tabsHiddenStart = ref(false)
+const tabsHiddenEnd = ref(false)
+function measureTabStrip(): void {
+  const strip = tabStrip.value
+  if (!strip) return
+  tabsHiddenStart.value = strip.scrollLeft > 1
+  tabsHiddenEnd.value = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1
 }
-
+let tabStripObserver: ResizeObserver | undefined
+function observeTabStrip(): void {
+  tabStripObserver?.disconnect()
+  const strip = tabStrip.value
+  if (!strip || typeof ResizeObserver === 'undefined') return
+  tabStripObserver = new ResizeObserver(measureTabStrip)
+  tabStripObserver.observe(strip)
+  for (const trigger of strip.querySelectorAll<HTMLElement>('.settings-v2-tab')) {
+    tabStripObserver.observe(trigger, { box: 'border-box' })
+  }
+}
+watch(tabStrip, observeTabStrip, { flush: 'post' })
+onUnmounted(() => tabStripObserver?.disconnect())
+function revealActiveTab(): void {
+  tabStrip.value
+    ?.querySelector<HTMLElement>(`[data-testid="${TID.settingsTab(activeTab.value)}"]`)
+    ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+watch([activeTab, tabStrip], revealActiveTab, { flush: 'post' })
+watch(
+  () => tabs.value.map((tab) => tab.key).join(),
+  () => {
+    observeTabStrip()
+    measureTabStrip()
+    revealActiveTab()
+  },
+  { flush: 'post' }
+)
+watch(() => showUpdateBadge.value, measureTabStrip, { flush: 'post' })
 function onTabValueChange(value: string | number): void {
   const tab = tabs.value.find((item) => item.key === value)
   if (tab) selectTab(tab.key)
@@ -394,14 +414,26 @@ function closeMoreMenu(): void {
 const canRename = computed(() =>
   pinBottomActions.value.some((action) => action.id === 'rename' && action.enabled !== false)
 )
-const renameHandler = computed(() => (canRename.value ? renameInstallation : undefined))
+function renameOnlyWhileSelected(installationId: string) {
+  return (next: string): Promise<boolean> =>
+    installation.value?.id === installationId ? renameInstallation(next) : Promise.resolve(false)
+}
+const renameHandler = computed(() => {
+  const id = installation.value?.id
+  return canRename.value && sectionsFresh.value && id ? renameOnlyWhileSelected(id) : undefined
+})
 const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
 function handleMorePick(action: ActionDef): void {
   if (action.id === 'rename' && titleEdit.value) {
     titleEdit.value.focus()
     return
   }
-  void runAction(action)
+  const pageAction = pageActionById.value.get(PAGE_ACTION_FOR_SHARED_ID[action.id] ?? action.id)
+  if (sharedMenu && !pageAction) {
+    void sharedMenu.run(action.id)
+    return
+  }
+  void runAction(pageAction ?? action)
 }
 
 type SubPage = 'args' | null
@@ -441,6 +473,15 @@ watch(
   () => {
     subPage.value = null
     moreMenuOpen.value = false
+    tabTransition.value = 'subpage-push'
+  }
+)
+
+watch(
+  () => props.openEpoch,
+  () => {
+    activeTab.value = availableTab(overviewTab(props.initialTab))
+    subPage.value = null
     tabTransition.value = 'subpage-push'
   }
 )
@@ -494,8 +535,20 @@ const isRunningInThisWindow = installCta.runningInThisWindow
 
 const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput()))
 
+const sessionStore = useSessionStore()
+const restartsFromPage = computed(
+  () =>
+    isPage.value &&
+    installCta.runningElsewhere.value &&
+    !!installation.value &&
+    sessionStore.isRunning(installation.value.id)
+)
+
 const primaryRestartsTarget = computed(
-  () => isRunningInThisWindow.value || primaryDecision.value.verb === 'restart'
+  () =>
+    isRunningInThisWindow.value ||
+    primaryDecision.value.verb === 'restart' ||
+    restartsFromPage.value
 )
 
 const hasPendingRestart = computed(
@@ -525,8 +578,8 @@ function navIcon(labelKey: string): Component {
     case 'instancePicker.restart':
     case 'instancePicker.restartToApply':
       return RotateCcw
-    case 'instancePicker.switch':
-      return Repeat2
+    case 'instancePicker.openRunning':
+      return SquareArrowOutUpRight
     case 'instancePicker.open':
       return Play
     default:
@@ -545,15 +598,6 @@ const primaryActionIcon = computed<Component>(() =>
   hasPendingRestart.value ? RotateCcw : navIconFor(primaryDecision.value.primaryLabel)
 )
 
-const stopAction = computed<ActionDef | undefined>(() =>
-  pinBottomActions.value.find((a) => a.id === 'stop')
-)
-const caretActions = computed<MenuAction[]>(() => {
-  const verb = primaryDecision.value.verb
-  if (!stopAction.value || (verb !== 'focus' && verb !== 'restart')) return []
-  return [{ ...stopAction.value, icon: actionIcon('stop') }]
-})
-
 function actionIcon(id: string): Component {
   switch (id) {
     case 'update-comfyui':
@@ -566,9 +610,9 @@ function actionIcon(id: string): Component {
       return CopyPlus
     case 'open-folder':
     case 'reveal-in-folder':
-      return FolderOpen
+      return FolderSearch
     case 'share':
-      return Share2
+      return Download
     case 'migrate-to-standalone':
     case 'migrate':
       return ArrowRightLeft
@@ -588,35 +632,183 @@ function actionIcon(id: string): Component {
   }
 }
 
-const pinBottomMenuActions = computed<MenuAction[]>(() => {
-  const firstDanger = pinBottomActions.value.findIndex((action) => action.style === 'danger')
-  return pinBottomActions.value.map((action, index) => ({
+const NOW_ACTION_IDS = new Set(['stop'])
+const PAGE_ACTION_FOR_SHARED_ID: Record<string, string> = {
+  'copy-install': 'copy',
+  'reveal-in-folder': 'open-folder',
+  share: 'share',
+  untrack: 'remove',
+  delete: 'delete',
+  stop: 'stop'
+}
+const PAGE_ACTIONS_IN_SHARED_MENU = new Set([
+  'launch',
+  'rename',
+  ...Object.values(PAGE_ACTION_FOR_SHARED_ID)
+])
+const SOURCE_ACTIONS_GO_BEFORE = [
+  'share',
+  'restore-snapshot',
+  'promote-to-workspace',
+  'untrack',
+  'delete'
+]
+
+const sharedMenu = isPage.value
+  ? useBuildMenu(() => installation.value as Installation, { onPage: true })
+  : null
+
+const freshPageActions = computed<ActionDef[]>(() =>
+  sectionsFresh.value ? pinBottomActions.value : []
+)
+const pageActionById = computed(
+  () => new Map(freshPageActions.value.map((action) => [action.id, action]))
+)
+const sourceOnlyActions = computed<ActionDef[]>(() =>
+  freshPageActions.value.filter((action) => !PAGE_ACTIONS_IN_SHARED_MENU.has(action.id))
+)
+
+function sharedMenuAction(entry: BuildMenuEntry): MenuAction {
+  return {
+    id: entry.id,
+    label: entry.label,
+    icon: entry.icon,
+    separator: entry.separator,
+    enabled: entry.disabled !== true,
+    disabledMessage: entry.title,
+    style: entry.danger ? 'danger' : undefined
+  }
+}
+
+function pageMenuAction(action: ActionDef): MenuAction {
+  return {
     ...action,
     icon: actionIcon(action.id),
-    style: action.id === 'untrack' || action.id === 'remove' ? undefined : action.style,
-    separator: index === firstDanger
-  }))
+    style: action.id === 'delete' ? 'danger' : undefined,
+    separator: false
+  }
+}
+
+function withoutIds(list: MenuAction[], ids: Set<string>): MenuAction[] {
+  const kept: MenuAction[] = []
+  let carriedSeparator = false
+  for (const action of list) {
+    if (ids.has(action.id)) {
+      carriedSeparator ||= action.separator === true
+      continue
+    }
+    kept.push({ ...action, separator: action.separator === true || carriedSeparator })
+    carriedSeparator = false
+  }
+  return kept
+}
+
+function insertBefore(
+  list: MenuAction[],
+  items: MenuAction[],
+  anchorIds: string[],
+  placement: 'heads-the-group' | 'ends-the-group-before'
+): MenuAction[] {
+  if (items.length === 0) return list
+  const at = list.findIndex((action) => anchorIds.includes(action.id))
+  if (at < 0) return [...list, ...items.map((item, i) => ({ ...item, separator: i === 0 }))]
+  const anchor = list[at]!
+  const takesSeparator = placement === 'heads-the-group' && anchor.separator === true
+  const moved = items.map((item, i) => ({ ...item, separator: i === 0 && takesSeparator }))
+  const rest = takesSeparator ? { ...anchor, separator: false } : anchor
+  return [...list.slice(0, at), ...moved, rest, ...list.slice(at + 1)]
+}
+
+const pageMenuActions = computed<MenuAction[]>(() => {
+  if (!sharedMenu || !installation.value) return []
+  const pageActions = pageActionById.value
+  const sourceActions = sourceOnlyActions.value
+  const hidesMigrate = sourceActions.some((action) => action.id === 'migrate-to-standalone')
+  const hidden = new Set(['rename', 'untrack', ...(hidesMigrate ? ['migrate'] : [])])
+  let menu = withoutIds(sharedMenu.items.value.map(sharedMenuAction), hidden)
+  const rename = pageActions.get('rename')
+  const untrack = pageActions.get(PAGE_ACTION_FOR_SHARED_ID['untrack']!)
+  menu = insertBefore(
+    menu,
+    rename ? [pageMenuAction(rename)] : [],
+    ['copy-install', 'reveal-in-folder', ...SOURCE_ACTIONS_GO_BEFORE],
+    'heads-the-group'
+  )
+  menu = insertBefore(
+    menu,
+    sourceActions.map(pageMenuAction),
+    SOURCE_ACTIONS_GO_BEFORE,
+    'ends-the-group-before'
+  )
+  menu = insertBefore(menu, untrack ? [pageMenuAction(untrack)] : [], ['delete'], 'heads-the-group')
+  const sourceUninstall = pageActions.get('delete')
+  if (sourceUninstall && !menu.some((action) => action.id === 'delete')) {
+    menu = [...menu, { ...pageMenuAction(sourceUninstall), separator: menu.length > 0 && !untrack }]
+  }
+  return menu
 })
+
+const moreMenuActions = computed<MenuAction[]>(() =>
+  isPage.value ? pageMenuActions.value : pinBottomMenuActions.value
+)
+
+const pinBottomMenuActions = computed<MenuAction[]>(() => {
+  const actions = sectionsFresh.value
+    ? pinBottomActions.value
+    : pinBottomActions.value.filter((action) => NOW_ACTION_IDS.has(action.id))
+  const now = actions.filter((action) => NOW_ACTION_IDS.has(action.id))
+  const rest = actions.filter((action) => !NOW_ACTION_IDS.has(action.id) && action.id !== 'delete')
+  const last = actions.filter((action) => action.id === 'delete')
+  return [now, rest, last]
+    .filter((group) => group.length > 0)
+    .flatMap((group, groupIndex) =>
+      group.map((action, index) => ({
+        ...action,
+        icon: actionIcon(action.id),
+        style: action.id === 'delete' ? ('danger' as const) : undefined,
+        separator: groupIndex > 0 && index === 0
+      }))
+    )
+})
+
+const ctaWrap = useTemplateRef<HTMLElement>('ctaWrap')
+
+function focusLostToMenu(): boolean {
+  const active = document.activeElement
+  return !active || active === document.body || !!active.closest('.more-menu')
+}
+
+watch(
+  () => moreMenuActions.value.length,
+  async (count) => {
+    if (count > 0 || !moreMenuOpen.value) return
+    closeMoreMenu()
+    await nextTick()
+    if (!focusLostToMenu()) return
+    ctaWrap.value?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus()
+  }
+)
+
+const RESTART_TO_APPLY: NavDecision = { verb: 'restart', primaryLabel: 'instancePicker.restart' }
+
+const showsOpenBesideRestart = computed(() => hasPendingRestart.value && restartsFromPage.value)
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
   if (!selectedInstall) return
+  if (showsOpenBesideRestart.value) {
+    emit('primary-action', RESTART_TO_APPLY)
+    return
+  }
   if (primaryDecision.value.verb === 'restart' && pendingRestartFieldIds.value.size > 0) {
     clearPendingRestart(selectedInstall.id)
   }
   emit('primary-action', primaryDecision.value)
 }
 
-const caretMenuOpen = ref(false)
-function toggleCaretMenu(): void {
-  caretMenuOpen.value = !caretMenuOpen.value
-}
-function closeCaretMenu(): void {
-  caretMenuOpen.value = false
-}
-function handleCaretPick(action: ActionDef): void {
+function handleOpenBesideRestart(): void {
   if (!installation.value) return
-  void runAction(action)
+  emit('primary-action', primaryDecision.value)
 }
 
 const opInflight = computed(() => props.activeOperation != null && !props.activeOperation.done)
@@ -767,74 +959,93 @@ defineExpose({
 <template>
   <Tabs :model-value="activeTab" as-child @update:model-value="onTabValueChange">
     <div ref="root" class="settings-v2-content flex min-h-0 flex-1 flex-col">
-      <TabsList as-child>
-        <nav
-          ref="tabs"
-          class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden"
-          :class="[
-            isPage
-              ? 'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]'
-              : '@container/settings-tabs gap-1.5 border-b border-solid border-[var(--chooser-surface-border)] p-3',
-            { 'is-subpage-active opacity-60': subPage !== null }
-          ]"
-          :aria-label="t('comfyUISettings.title')"
-        >
-          <Tooltip
-            v-for="tab in tabs"
-            :key="tab.key"
-            :text="tab.tooltip ?? tab.label"
-            side="bottom"
-            :disabled="tab.tooltip ? false : !isTabLabelHidden(tab.key)"
+      <div
+        class="settings-v2-tabrow"
+        :class="
+          isPage ? 'flex min-w-0 shrink-0 flex-wrap items-center justify-between gap-3' : 'contents'
+        "
+      >
+        <TabsList as-child>
+          <nav
+            ref="tabStrip"
+            v-sliding-pill="isPage ? 'bg-accent' : 'bg-secondary'"
+            class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
+            :class="[
+              'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]',
+              isPage ? 'max-w-full' : 'mx-5 max-w-[calc(100%-2.5rem)]',
+              {
+                'is-subpage-active opacity-60': subPage !== null,
+                '[mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent)]':
+                  tabsHiddenEnd && !tabsHiddenStart,
+                '[mask-image:linear-gradient(to_left,black_calc(100%-40px),transparent)]':
+                  tabsHiddenStart && !tabsHiddenEnd,
+                '[mask-image:linear-gradient(to_right,transparent,black_40px,black_calc(100%-40px),transparent)]':
+                  tabsHiddenStart && tabsHiddenEnd
+              }
+            ]"
+            :aria-label="t('comfyUISettings.title')"
+            @scroll.passive="measureTabStrip"
           >
-            <TabsTrigger
-              :value="tab.key"
-              variant="panel"
-              :disabled="opInflight && activeTab !== tab.key"
-              class="settings-v2-tab group/settings-tab min-w-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:gap-0 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:px-2 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)>span:not(.settings-v2-tab-icon-wrap)]:hidden"
-              :class="[
-                {
-                  'is-active': activeTab === tab.key,
-                  'is-locked': opInflight && activeTab !== tab.key
-                },
-                isPage &&
-                  'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
-              ]"
-              :data-testid="TID.settingsTab(tab.key)"
-              @click="selectTab(tab.key)"
+            <Tooltip
+              v-for="tab in tabs"
+              :key="tab.key"
+              :text="tab.tooltip ?? tab.label"
+              side="bottom"
+              :disabled="!tab.tooltip"
             >
-              <span
-                v-if="!isPage || (tab.key === 'update' && showUpdateBadge)"
-                class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+              <TabsTrigger
+                :value="tab.key"
+                variant="panel"
+                :disabled="opInflight && activeTab !== tab.key"
+                class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
+                :class="[
+                  {
+                    'is-active': activeTab === tab.key,
+                    'is-locked': opInflight && activeTab !== tab.key
+                  },
+                  'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
+                ]"
+                :data-testid="TID.settingsTab(tab.key)"
+                @click="selectTab(tab.key)"
               >
-                <component
-                  :is="tab.icon"
-                  v-if="!isPage"
-                  :size="14"
-                  aria-hidden="true"
-                  class="settings-v2-tab-icon shrink-0 opacity-85"
-                />
                 <span
                   v-if="tab.key === 'update' && showUpdateBadge"
-                  :class="[
-                    activeTab === tab.key
-                      ? 'border-neutral-700'
-                      : 'border-[var(--modal-surface-bg)]',
-                    !isPage && 'absolute -right-px -bottom-px'
-                  ]"
-                  class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
-                  aria-hidden="true"
-                ></span>
-              </span>
-              <span>{{ tab.label }}</span>
-            </TabsTrigger>
-          </Tooltip>
-        </nav>
-      </TabsList>
+                  class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+                >
+                  <span
+                    v-if="tab.key === 'update' && showUpdateBadge"
+                    :class="[
+                      activeTab === tab.key
+                        ? 'border-neutral-700'
+                        : 'border-[var(--modal-surface-bg)]'
+                    ]"
+                    class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
+                    aria-hidden="true"
+                  ></span>
+                </span>
+                <span>{{ tab.label }}</span>
+              </TabsTrigger>
+            </Tooltip>
+          </nav>
+        </TabsList>
+        <Transition
+          enter-active-class="transition-opacity duration-150 ease-out"
+          leave-active-class="transition-opacity duration-150 ease-out"
+          enter-from-class="opacity-0"
+          leave-to-class="opacity-0"
+        >
+          <div
+            v-if="isPage && activeTab === 'snapshots' && installation"
+            id="settings-v2-tab-tools"
+            class="settings-v2-tab-tools ml-auto flex shrink-0 items-center"
+          ></div>
+        </Transition>
+      </div>
 
       <TabsContent :value="activeTab" as-child force-mount>
         <section
           class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
-          :class="isPage ? 'pt-5 pb-8' : 'p-4'"
+          :class="isPage ? '-mx-1 px-1 pt-5 pb-8' : 'px-5 pt-4 pb-5'"
         >
           <p
             v-if="!installation"
@@ -899,6 +1110,7 @@ defineExpose({
                   <SnapshotsView
                     :installation-id="installation.id"
                     :active-operation="activeOperation"
+                    :toolbar-target="isPage ? '#settings-v2-tab-tools' : undefined"
                     @run-action="handleSnapshotAction"
                     @refresh-all="handleSnapshotsRefresh"
                     @op-cancel="emit('op-cancel')"
@@ -985,7 +1197,7 @@ defineExpose({
                             class="op-bar-track h-[3px] overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)]"
                           >
                             <div
-                              class="op-bar-fill h-full rounded-[2px] bg-[var(--brand-accent,#f5c518)] transition-[width] duration-300 ease-[ease]"
+                              class="op-bar-fill h-full rounded-[2px] bg-foreground transition-[width] duration-300 ease-[ease]"
                               :class="{
                                 'is-indeterminate w-2/5 animate-[op-bar-slide_1.5s_ease-in-out_infinite]':
                                   opIsIndeterminate
@@ -1105,7 +1317,7 @@ defineExpose({
                       <template v-else>
                         <SettingsSectionList
                           :sections="visibleSections"
-                          :columns="isStartupArgsPage"
+                          :stacked="isStartupArgsPage"
                           :installation-id="installation?.id"
                           :running-action-ids="runningActionIds"
                           :pending-restart-field-ids="pendingRestartFieldIds"
@@ -1135,12 +1347,12 @@ defineExpose({
         </section>
       </TabsContent>
 
-      <Teleport defer :to="pageActionsTarget" :disabled="!pageActionsTarget">
+      <Teleport defer :to="footerTarget" :disabled="!footerTarget">
         <footer
           ref="footer"
           class="settings-v2-footer flex shrink-0 items-center justify-end gap-2"
           :class="
-            !isPage &&
+            !footerTarget &&
             'border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3'
           "
         >
@@ -1162,19 +1374,33 @@ defineExpose({
           </Transition>
 
           <div
-            class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]"
-            :class="{ 'has-caret': caretActions.length > 0 }"
+            ref="ctaWrap"
+            class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto] gap-2"
           >
+            <Button
+              v-if="showsOpenBesideRestart"
+              variant="secondary"
+              size="md"
+              type="button"
+              class="gap-1.5 px-3 text-[13px]/5"
+              :disabled="!installation || opBlocksFooter"
+              data-testid="picker-open-beside-restart"
+              @click="handleOpenBesideRestart"
+            >
+              <component
+                :is="navIconFor(primaryDecision.primaryLabel)"
+                :size="15"
+                class="shrink-0 opacity-85"
+                aria-hidden="true"
+              />
+              <span>{{ resolveNavLabel(primaryDecision.primaryLabel) }}</span>
+            </Button>
             <Button
               variant="inverted"
               size="md"
               type="button"
-              class="settings-v2-relaunch flex-[0_1_auto] [&.is-split]:rounded-r-none"
-              :class="[
-                isPage ? 'gap-1.5 px-3 text-[13px]/5' : 'min-w-[200px]',
-                { 'is-pending-restart': hasPendingRestart },
-                { 'is-split': caretActions.length > 0 }
-              ]"
+              class="settings-v2-relaunch flex-[0_1_auto]"
+              :class="['gap-1.5 px-3 text-[13px]/5', { 'is-pending-restart': hasPendingRestart }]"
               :disabled="!installation || opBlocksFooter"
               :data-testid="TID.pickerPrimaryCta"
               @click="handlePrimaryAction"
@@ -1187,38 +1413,12 @@ defineExpose({
               />
               <span>{{ primaryActionLabel }}</span>
             </Button>
-            <template v-if="caretActions.length > 0">
-              <Button
-                variant="inverted"
-                size="icon"
-                type="button"
-                class="settings-v2-cta-caret rounded-l-none border-l border-solid border-background/20"
-                data-more-trigger
-                :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
-                aria-haspopup="menu"
-                :aria-expanded="caretMenuOpen"
-                :aria-label="t('instancePicker.moreWindowOptions')"
-                :disabled="!installation || opBlocksFooter"
-                :data-testid="TID.pickerNewWindow"
-                @click="toggleCaretMenu"
-              >
-                <component :is="menuChevron" :size="14" />
-              </Button>
-              <MoreMenu
-                :open="caretMenuOpen"
-                :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-cta-caret')"
-                :actions="caretActions"
-                :heading="t('instancePicker.windowOptions')"
-                @close="closeCaretMenu"
-                @pick="handleCaretPick"
-              />
-            </template>
           </div>
 
           <div class="settings-v2-more-wrap relative inline-flex">
             <Button
               variant="secondary"
-              :size="isPage ? 'icon' : 'md'"
+              size="icon"
               type="button"
               class="settings-v2-more"
               data-more-trigger
@@ -1226,22 +1426,17 @@ defineExpose({
               aria-haspopup="menu"
               :aria-expanded="moreMenuOpen"
               :aria-label="t('comfyUISettings.more')"
-              :disabled="
-                !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
-              "
+              :disabled="!installation || moreMenuActions.length === 0 || opInflight"
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >
-              <Ellipsis v-if="isPage" :size="16" aria-hidden="true" />
-              <template v-else>
-                {{ t('comfyUISettings.more') }}
-                <component :is="menuChevron" :size="14" />
-              </template>
+              <Ellipsis :size="16" aria-hidden="true" />
             </Button>
             <MoreMenu
               :open="moreMenuOpen"
               :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-more')"
-              :actions="pinBottomMenuActions"
+              :actions="moreMenuActions"
+              :side="isPage ? 'bottom' : 'top'"
               @close="closeMoreMenu"
               @pick="handleMorePick"
             />
@@ -1251,6 +1446,7 @@ defineExpose({
 
       <Teleport v-if="pageTitleTarget && installation" defer :to="pageTitleTarget">
         <InlineNameEdit
+          :key="installation.id"
           ref="titleEdit"
           prefix="build-details-title"
           :name="installation.name"

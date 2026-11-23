@@ -48,7 +48,12 @@ const mocks = vi.hoisted(() => ({
   translate: vi.fn((key: string) => key),
   endViewGrants: vi.fn(),
   allowDesktopWorkspace: vi.fn(),
-  creditBalanceAuthChanged: vi.fn()
+  creditBalanceAuthChanged: vi.fn(),
+  cloudAuthChanged: vi.fn()
+}))
+
+vi.mock('../cloudAuthEvents', () => ({
+  cloudAuthEvents: { emit: mocks.cloudAuthChanged }
 }))
 
 vi.mock('./registerCreditBalanceHandlers', () => ({
@@ -361,6 +366,16 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledTimes(2)
   })
 
+  it('tells the rest of main the sign-in changed, on sign-in and on sign-out', async () => {
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'ws-1' })
+
+    await handler('comfybuilder:signIn')({})
+    expect(mocks.cloudAuthChanged).toHaveBeenCalledExactlyOnceWith('changed')
+
+    await handler('comfybuilder:signOut')({})
+    expect(mocks.cloudAuthChanged).toHaveBeenCalledTimes(2)
+  })
+
   it('signOut clears the session and broadcasts signed-out', async () => {
     const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
     mocks.getAllWindows.mockReturnValue([win])
@@ -395,7 +410,7 @@ describe('registerDevPlatformHandlers', () => {
         spec: expect.objectContaining({
           cancelLabel: 'common.close',
           confirmLabel: 'devPlatform.account.cancelInstallationAndSignOut',
-          confirmStyle: 'danger'
+          confirmStyle: 'primary'
         })
       })
     )
@@ -1023,6 +1038,32 @@ describe('registerDevPlatformHandlers', () => {
     )
   })
 
+  it('does not capture a build while another task is changing it', async () => {
+    mocks.operationAborts.set('local-1', new AbortController())
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'chooser.busyActionGatedReason' })
+    expect(mocks.saveSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('holds the build so no task can change it while the promotion captures it', async () => {
+    let finishCapture!: (filename: string) => void
+    mocks.saveSnapshot.mockReturnValue(
+      new Promise<string>((resolve) => {
+        finishCapture = resolve
+      })
+    )
+
+    const promotion = handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+    await vi.waitFor(() => expect(mocks.saveSnapshot).toHaveBeenCalledOnce())
+
+    expect(mocks.operationAborts.has('local-1'), 'the build is held during the capture').toBe(true)
+    finishCapture('snapshot-1.json')
+    await promotion
+    expect(mocks.operationAborts.has('local-1'), 'the build is released afterwards').toBe(false)
+  })
+
   it('does not start two promotions for the same instance', async () => {
     let finishCapture!: (filename: string) => void
     mocks.saveSnapshot.mockReturnValue(
@@ -1352,6 +1393,15 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
+  it('installBuild marks a bad install location so the alert can offer Change location', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1', installRoot: 7 })
+
+    expect(result).toEqual({ ok: false, message: 'Invalid install location.', reason: 'location' })
+    expect(mocks.listBuilds).not.toHaveBeenCalled()
+  })
+
   it('installBuild rejects the legacy string request shape', async () => {
     mocks.isSignedIn.mockReturnValue(true)
 
@@ -1393,6 +1443,32 @@ describe('registerDevPlatformHandlers', () => {
     const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
 
     expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
+    expect(mocks.add).not.toHaveBeenCalled()
+  })
+
+  it('installBuild marks a folder another build already uses as a location problem', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-9',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
+    })
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.findDuplicatePath.mockResolvedValueOnce({ name: 'Studio' } as never)
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'That directory is already used by "Studio".',
+      reason: 'location'
+    })
     expect(mocks.add).not.toHaveBeenCalled()
   })
 

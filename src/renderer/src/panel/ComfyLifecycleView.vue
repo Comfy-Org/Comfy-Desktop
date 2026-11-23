@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { RefreshCcw, Loader2, ArrowLeft } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore } from '../stores/progressStore'
+import { buildProgressOf, useViewBuildLogs } from '../composables/useBuildProgress'
 import {
   useReturnToDashboardConfirm,
   type ReturnToDashboardReason
@@ -12,6 +14,7 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import BrandFinishedSurface from '../components/BrandFinishedSurface.vue'
 import { TID } from '../../../shared/testIds'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 interface Props {
   installation: Installation | null
@@ -26,6 +29,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
+const progressStore = useProgressStore()
 
 type LifecycleState = 'running' | 'launching' | 'stopping' | 'crashed' | 'stopped' | 'unknown'
 
@@ -157,7 +161,7 @@ function startLaunch(): void {
   emit('show-progress', {
     installationId: props.installationId,
     title: installationName.value
-      ? `${t('comfyLifecycle.launchProgressTitle')} — ${installationName.value}`
+      ? progressTitle(t('comfyLifecycle.launchProgressTitle'), installationName.value)
       : t('comfyLifecycle.launchProgressTitle'),
     apiCall: () => window.api.runAction(props.installationId, 'launch'),
     cancellable: true,
@@ -186,6 +190,49 @@ const placeholderTitle = computed<string>(() => {
   if (state.value === 'stopping') return t('comfyLifecycle.stoppingTitle')
   return t('comfyLifecycle.preparingTitle')
 })
+
+const placeholderBuildLine = computed<string>(() => {
+  const version = props.installation?.version
+  if (!installationName.value) return ''
+  return [installationName.value, version && version !== 'unknown' ? version : '']
+    .filter(Boolean)
+    .join(' · ')
+})
+
+const SLOW_LAUNCH_MS = 15_000
+const launchIsSlow = ref(false)
+let slowLaunchTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearSlowLaunchTimer(): void {
+  if (slowLaunchTimer) {
+    clearTimeout(slowLaunchTimer)
+    slowLaunchTimer = null
+  }
+}
+
+watch(
+  () => [state.value === 'launching', props.installationId] as const,
+  ([launching]) => {
+    clearSlowLaunchTimer()
+    launchIsSlow.value = false
+    if (!launching) return
+    slowLaunchTimer = setTimeout(() => {
+      launchIsSlow.value = true
+      slowLaunchTimer = null
+    }, SLOW_LAUNCH_MS)
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(clearSlowLaunchTimer)
+
+const viewBuildLogs = useViewBuildLogs()
+
+async function viewLaunchLogs(): Promise<void> {
+  const id = props.installationId
+  if (buildProgressOf(progressStore, id)?.kind === 'launch') viewBuildLogs(id)
+  else await window.api.openLogsWindow(id)
+}
 </script>
 
 <template>
@@ -218,7 +265,7 @@ const placeholderTitle = computed<string>(() => {
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />
-          {{ $t('common.back') }}
+          {{ $t('common.backToDashboard') }}
         </Button>
         <Button
           size="unset"
@@ -272,15 +319,39 @@ const placeholderTitle = computed<string>(() => {
 
     <div
       v-else-if="showPlaceholder"
-      class="lifecycle-placeholder flex max-w-[480px] flex-col items-center gap-3 px-8 py-7 text-center"
+      class="lifecycle-placeholder flex max-w-[480px] min-w-0 flex-col items-center px-8 py-7 text-center"
       data-state="placeholder"
     >
       <div
-        class="lifecycle-placeholder__icon inline-flex size-14 items-center justify-center rounded-[999px] border border-solid border-[var(--border)] bg-surface text-[var(--action,#4d8eff)]"
+        class="lifecycle-placeholder__icon inline-flex size-14 items-center justify-center text-foreground"
       >
         <Loader2 :size="32" class="animate-spin" />
       </div>
-      <h2 class="m-0 text-[18px] font-semibold">{{ placeholderTitle }}</h2>
+      <h2 class="m-0 mt-3 text-[18px] font-semibold">{{ placeholderTitle }}</h2>
+      <p
+        v-if="placeholderBuildLine"
+        class="lifecycle-placeholder__build m-0 mt-1 max-w-full truncate text-[13px] text-muted-foreground"
+        :title="placeholderBuildLine"
+      >
+        {{ placeholderBuildLine }}
+      </p>
+      <div class="flex h-0 w-full justify-center overflow-visible" aria-live="polite">
+        <Transition
+          enter-active-class="transition-[opacity,transform] duration-[280ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+          enter-from-class="translate-y-1 opacity-0"
+        >
+          <Button
+            v-if="state === 'launching' && launchIsSlow"
+            type="button"
+            variant="secondary"
+            class="lifecycle-placeholder__logs mt-2 flex-none"
+            :data-testid="TID.lifecycleViewLogs"
+            @click="viewLaunchLogs"
+          >
+            {{ $t('launch.viewLogs') }}
+          </Button>
+        </Transition>
+      </div>
     </div>
   </div>
 </template>

@@ -34,6 +34,20 @@ export function formatEta(seconds: number): string {
   return `${h}h ${m}m`
 }
 
+export function formatTimeLeft(seconds: number): string {
+  if (seconds < 60) return 'Less than a minute left'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} min left`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${hours} h left` : `${hours} h ${rest} min left`
+}
+
+function bytesSoFar(d: DownloadFormatInput): string | null {
+  if (!d.totalBytes || d.totalBytes <= 0 || d.receivedBytes == null) return null
+  return `${formatBytes(d.receivedBytes)} of ${formatBytes(d.totalBytes)}`
+}
+
 export function statusLine(
   d: DownloadFormatInput,
   opts: { completedShowsSize?: boolean } = {}
@@ -43,25 +57,18 @@ export function statusLine(
     case 'pending':
       return 'Waiting…'
     case 'downloading': {
-      const parts: string[] = []
-      if (d.totalBytes && d.totalBytes > 0 && d.receivedBytes != null) {
-        parts.push(`${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)}`)
-      }
-      parts.push(`${pct}%`)
-      if (d.speedBytesPerSec && d.speedBytesPerSec > 0) {
-        parts.push(formatSpeed(d.speedBytesPerSec))
-      }
+      const parts = [bytesSoFar(d) ?? `${pct}%`]
       if (d.etaSeconds != null && d.etaSeconds > 0 && isFinite(d.etaSeconds)) {
-        parts.push(formatEta(d.etaSeconds))
+        parts.push(formatTimeLeft(d.etaSeconds))
       }
       return parts.join(' · ')
     }
     case 'paused':
-      return `Paused at ${pct}%`
+      return `Paused · ${bytesSoFar(d) ?? `${pct}%`}`
     case 'completed':
       return opts.completedShowsSize && d.totalBytes
-        ? `Completed · ${formatBytes(d.totalBytes)}`
-        : 'Completed'
+        ? `Downloaded · ${formatBytes(d.totalBytes)}`
+        : 'Downloaded'
     case 'error':
       return d.error || 'Error'
     case 'cancelled':
@@ -110,7 +117,7 @@ export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
     case 'pending':
       return 'Waiting…'
     case 'downloading': {
-      const parts: string[] = []
+      const parts: string[] = [`${pct}%`]
       if (d.totalBytes && d.totalBytes > 0 && d.receivedBytes != null) {
         parts.push(`${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)}`)
       }
@@ -120,10 +127,10 @@ export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
       if (d.etaSeconds != null && d.etaSeconds > 0 && isFinite(d.etaSeconds)) {
         parts.push(`~${formatEta(d.etaSeconds)} left`)
       }
-      return parts.join(' · ') || `${pct}%`
+      return parts.join(' · ')
     }
     case 'paused': {
-      const parts = [`Paused at ${pct}%`]
+      const parts = [`Paused · ${pct}%`]
       if (d.totalBytes && d.totalBytes > 0 && d.receivedBytes != null) {
         parts.push(`${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)}`)
       }
@@ -134,7 +141,7 @@ export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
       if (d.totalBytes) parts.push(formatBytes(d.totalBytes))
       const ago = relativeTime(d.createdAt, now)
       if (ago) parts.push(ago)
-      return parts.join(' · ') || 'Completed'
+      return parts.join(' · ') || 'Downloaded'
     }
     case 'error':
       return d.error || 'Download failed'

@@ -91,7 +91,7 @@ export async function signInViaDesktopLoginCode(
     app_version: app.getVersion(),
     code_challenge: codeChallengeS256(codeVerifier)
   }
-  if (settings.get('telemetryEnabled') === true) {
+  if (settings.telemetryConsent() === true) {
     request.installation_id = getDeviceId()
   }
 

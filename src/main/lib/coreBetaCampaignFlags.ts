@@ -105,17 +105,19 @@ function readSavedCampaigns(): {
   return { registry, answers }
 }
 
-export async function getCoreBetaCampaigns(): Promise<{
+export async function getCoreBetaCampaigns({ live = false } = {}): Promise<{
   registry: CampaignRegistryEntry[]
   answers: Map<string, CampaignAnswer>
 }> {
   if (savedOnly) return readSavedCampaigns()
   if (!started && bootId !== null) await initCoreBetaCampaigns({ distinctId: bootId })
-  const entries = await registry.get()
+  const read = <T>(flag: OpsFlag<T>): Promise<T> => (live ? flag.getLive() : flag.get())
+  const entries = await read(registry)
   if (bootId !== null) startCampaignFlags(entries, bootId)
   const answers = new Map<string, CampaignAnswer>()
   for (const { key } of entries) {
-    const answer = await campaigns.get(key)?.get()
+    const flag = campaigns.get(key)
+    const answer = flag && (await read(flag))
     if (answer) answers.set(key, answer)
   }
   return { registry: entries, answers }

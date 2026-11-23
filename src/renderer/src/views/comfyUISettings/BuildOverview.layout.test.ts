@@ -8,8 +8,8 @@ import BuildOverview from './BuildOverview.vue'
 import type { BuildOverviewModel, OverviewChannel } from './overviewModel'
 import type { ActionDef, Installation } from '../../types/ipc'
 
-const updateNow: ActionDef = { id: 'update-comfyui', label: 'Update Now', style: 'primary' }
-const copyUpdate: ActionDef = { id: 'copy-update', label: 'Copy & Update' }
+const updateNow: ActionDef = { id: 'update-comfyui', label: 'Update now', style: 'primary' }
+const copyUpdate: ActionDef = { id: 'copy-update', label: 'Copy & update' }
 const checkUpdate: ActionDef = { id: 'check-update', label: 'Check for updates' }
 const changeTorch: ActionDef = { id: 'change-pytorch', label: 'Change PyTorch' }
 
@@ -62,7 +62,7 @@ function model(
   withTorchMenu = true
 ): BuildOverviewModel {
   return {
-    channelLabel: 'Update Channel',
+    channelLabel: 'Update channel',
     currentChannel: 'stable',
     channels: [
       {
@@ -234,6 +234,18 @@ describe('BuildOverview columns (wide window)', () => {
         )
         expect(comfyui.scrollHeight).toBeLessThanOrEqual(comfyui.clientHeight)
       }
+    }
+  )
+})
+
+describe('BuildOverview update note', () => {
+  it.each([760, 900, 960, WIDTHS.wide])(
+    'shows the whole snapshot note beside the Update button at %ipx',
+    async (width) => {
+      const { root } = await measure(width, SHORT, STATES['update available'])
+      const note = root.querySelector<HTMLElement>('[data-testid="build-overview-update-note"]')!
+      expect(note.textContent?.trim()).toBe('Saves a snapshot first')
+      expect(note.scrollWidth, 'the note is cut off').toBeLessThanOrEqual(note.clientWidth)
     }
   )
 })

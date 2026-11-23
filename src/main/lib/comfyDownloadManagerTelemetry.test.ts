@@ -292,6 +292,37 @@ describe('model download events through the real manager and transfer', () => {
     expect(JSON.stringify(events())).not.toContain(modelsDir)
   })
 
+  it('names the app that asked for an app download on both events', async () => {
+    const job = await manager.startManagedModelJob({ ...options('success'), appId: 'product-ads' })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+
+    expect(eventNames()).toEqual(['started', 'result'])
+    for (const { properties } of events()) {
+      expect(properties).toMatchObject({ source: 'app', app_id: 'product-ads' })
+    }
+  })
+
+  it.each([
+    ['an app download with no app', { appId: null }],
+    ['a template download', { source: 'template' as const, appId: 'product-ads' }]
+  ])('names no app for %s', async (_what, extra) => {
+    const job = await manager.startManagedModelJob({ ...options('success'), ...extra })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+
+    expect(eventNames()).toEqual(['started', 'result'])
+    for (const { properties } of events()) expect(properties).not.toHaveProperty('app_id')
+  })
+
+  it('keeps the app on a retry of an app download', async () => {
+    const job = await manager.startManagedModelJob({ ...options('retry'), appId: 'product-ads' })
+    await expect(job.completion).resolves.toMatchObject({ status: 'error' })
+    expect(manager.retryDownload(job.id)).toBe(true)
+    await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'result', 'started', 'result']))
+
+    expect(events()[2]!.properties).toMatchObject({ is_retry: true, app_id: 'product-ads' })
+    expect(events()[3]!.properties).toMatchObject({ result: 'completed', app_id: 'product-ads' })
+  })
+
   it('records a retry as a new attempt with the original source', async () => {
     const job = await manager.startManagedModelJob({ ...options('retry'), source: 'template' })
     await expect(job.completion).resolves.toMatchObject({ status: 'error' })

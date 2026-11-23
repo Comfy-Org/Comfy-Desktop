@@ -1,9 +1,10 @@
 <script setup lang="ts" generic="T extends string">
 import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
 import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
+import { vSlidingPill } from './vSlidingPill'
 
 defineProps<{
-  options: { value: T; label: string; count?: number; testId?: string }[]
+  options: { value: T; label: string; testId?: string }[]
   label: string
   disabled?: boolean
 }>()
@@ -14,6 +15,7 @@ const model = defineModel<T>({ required: true })
 <template>
   <ToggleGroup
     v-model="model"
+    v-sliding-pill="'bg-accent'"
     type="single"
     :allow-empty="false"
     :disabled="disabled"
@@ -28,12 +30,7 @@ const model = defineModel<T>({ required: true })
       :data-testid="option.testId"
       class="h-[26px] rounded-[7px] px-[11px] text-[13px] whitespace-nowrap hover:bg-transparent hover:text-foreground data-[state=on]:bg-accent data-[state=on]:hover:bg-accent"
     >
-      {{ option.label
-      }}<span
-        v-if="option.count !== undefined"
-        class="ml-1.5 text-subtle-foreground tabular-nums"
-        >{{ option.count }}</span
-      >
+      {{ option.label }}
     </ToggleGroupItem>
   </ToggleGroup>
 </template>

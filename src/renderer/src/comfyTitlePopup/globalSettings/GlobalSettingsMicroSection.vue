@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import InfoTooltip from '../../components/InfoTooltip.vue'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 defineProps<{
   title: string
@@ -9,9 +10,7 @@ defineProps<{
 
 <template>
   <section class="gs-micro-section flex flex-col gap-2">
-    <h3
-      class="gs-micro-title m-0 flex items-center px-0 pt-0 pb-1 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase [&>span]:opacity-55"
-    >
+    <h3 class="gs-micro-title m-0 flex items-center px-0 pt-0 pb-1" :class="SECTION_TITLE_CLASS">
       <span>{{ title }}</span>
       <InfoTooltip v-if="tooltip" :text="tooltip" />
       <div

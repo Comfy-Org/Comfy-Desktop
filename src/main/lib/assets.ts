@@ -14,7 +14,14 @@ import { buildSaveDialogFilters, startFileSave } from './comfyDownloadManager'
 import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
-import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
+import { searchTerm } from './assetSearch'
+import {
+  copyOutputImage,
+  openOutputFile,
+  outputFilePath,
+  revealOutputFile,
+  trashOutputFile
+} from './outputFolders'
 import type { CloudAssetLookup } from '../../types/ipc'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
@@ -29,7 +36,11 @@ import type {
 const ASSETS_LIST_CHANNEL = 'assets:list'
 const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 const ASSETS_REVEAL_CHANNEL = 'assets:reveal'
+const ASSETS_OPEN_CHANNEL = 'assets:open'
 const ASSETS_COPY_CHANNEL = 'assets:copy'
+const ASSETS_READ_MODEL_CHANNEL = 'assets:read-model'
+const MAX_MODEL_BYTES = 100 * 1024 * 1024
+const MODEL_TIMEOUT_MS = 120_000
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
 const MAX_PAGE_SIZE = 200
@@ -46,7 +57,8 @@ const SIGNED_URL_CONCURRENCY = 6
 const SIGNED_STORAGE_HOST = 'storage.googleapis.com'
 const HEADER_BYTES: Partial<Record<AssetKind, number>> = {
   image: 64 * 1024,
-  video: 512 * 1024
+  video: 512 * 1024,
+  audio: 512 * 1024
 }
 
 const KIND_BY_EXTENSION = new Map<string, AssetKind>([
@@ -67,6 +79,7 @@ interface AssetRow {
   mime_type?: string | null
   created_at?: string | null
   preview_url?: string | null
+  preview_id?: string | null
   tags?: unknown
 }
 
@@ -85,7 +98,8 @@ function isAssetRow(value: unknown): value is AssetRow {
     isOptional(row.size, 'number') &&
     isOptional(row.mime_type, 'string') &&
     isOptional(row.created_at, 'string') &&
-    isOptional(row.preview_url, 'string')
+    isOptional(row.preview_url, 'string') &&
+    isOptional(row.preview_id, 'string')
   )
 }
 
@@ -126,7 +140,7 @@ interface AssetRowPage extends Omit<CloudAssetPage, 'assets'> {
 }
 
 function cloudListUrl(
-  { offset, after, limit, order }: CloudAssetPageRequest,
+  { offset, after, limit, order, search }: CloudAssetPageRequest,
   count: boolean
 ): string {
   const query = new URLSearchParams({
@@ -137,6 +151,7 @@ function cloudListUrl(
     include_public: 'false',
     ...(count ? { capped_total: 'true' } : { include_total: 'false' })
   })
+  if (search !== undefined) query.set('name_contains', search)
   if (after !== undefined) query.set('after', after)
   else if (offset > 0) query.set('offset', String(offset))
   return `${CLOUD_CONFIG.apiBase}/assets?${query}`
@@ -196,7 +211,7 @@ function contentPath(assetId: string, disposition: ContentDisposition): string {
   return `/api/assets/${encodeURIComponent(assetId)}/content?disposition=${disposition}`
 }
 
-async function resolveCloudContentUrl(
+export async function resolveCloudContentUrl(
   assetId: string,
   accessToken: string,
   disposition: ContentDisposition,
@@ -214,7 +229,7 @@ async function resolveCloudContentUrl(
   }
 }
 
-async function firstBytes(response: Response, limit: number): Promise<Uint8Array> {
+export async function firstBytes(response: Response, limit: number): Promise<Uint8Array> {
   const reader = response.body?.getReader()
   if (!reader) return new Uint8Array()
   const chunks: Uint8Array[] = []
@@ -245,7 +260,10 @@ async function addMediaFacts(summary: AssetSummary, deadline: AbortSignal): Prom
     })
     if (!res.ok) return
     const bytes = await firstBytes(res, limit)
-    Object.assign(summary, await mediaFactsFromBytes(bytes, summary.kind, summary.mimeType))
+    Object.assign(
+      summary,
+      await mediaFactsFromBytes(bytes, summary.kind, summary.mimeType, summary.sizeBytes)
+    )
   } catch {
     return
   }
@@ -290,12 +308,28 @@ async function fetchLookupPage(url: string, accessToken: string): Promise<Lookup
   return { rows: assets, hasMore, nextCursor: nextCursor ?? null }
 }
 
-async function withPreview(row: AssetRow, accessToken: string): Promise<AssetSummary> {
-  const summary = toSummary(row, null)
-  if (summary.kind === null || summary.kind === '3d') return summary
-  const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
+async function addPreview(
+  summary: AssetSummary,
+  row: AssetRow,
+  accessToken: string,
+  deadline: AbortSignal
+): Promise<void> {
+  if (summary.kind === '3d' && row.preview_id) {
+    summary.thumbnailUrl = await resolveCloudContentUrl(
+      row.preview_id,
+      accessToken,
+      'inline',
+      deadline
+    )
+  }
+  if (summary.kind === null || summary.kind === '3d') return
   summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
   await addMediaFacts(summary, deadline)
+}
+
+async function withPreview(row: AssetRow, accessToken: string): Promise<AssetSummary> {
+  const summary = toSummary(row, null)
+  await addPreview(summary, row, accessToken, AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS))
   return summary
 }
 
@@ -325,7 +359,7 @@ export async function findCloudAsset(
   return lookUpCloudAsset(accessToken, name).catch(() => LOOKUP_INCOMPLETE)
 }
 
-async function cloudAccessToken(installationId: string): Promise<string | null> {
+export async function cloudAccessToken(installationId: string): Promise<string | null> {
   const inst = await installations.get(installationId)
   if (!inst || sourceMap[inst.sourceId]?.category !== 'cloud') return null
   return getCloudSession().getAccessToken()
@@ -346,7 +380,7 @@ interface ScanSlot {
 }
 
 async function scanAllRows(
-  order: CloudAssetPageRequest['order'],
+  { order, search }: Pick<CloudAssetPageRequest, 'order' | 'search'>,
   headers: Record<string, string>,
   signal: AbortSignal
 ): Promise<ScannedRows> {
@@ -356,7 +390,7 @@ async function scanAllRows(
   let after: string | undefined
   for (let page = 0; page < MAX_SCAN_PAGES; page++) {
     const listed = await fetchAssetRows(
-      { offset: 0, limit: SCAN_PAGE_SIZE, order, after },
+      { offset: 0, limit: SCAN_PAGE_SIZE, order, after, search },
       headers,
       scanSignal,
       false
@@ -377,12 +411,12 @@ async function rowsOfKind(
   signal: AbortSignal,
   slot: ScanSlot
 ): Promise<AssetRowPage> {
-  const key = [accessToken, request.order].join('\n')
+  const key = JSON.stringify([accessToken, request.order, request.search ?? ''])
   let scan = slot.scan
   if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
     slot.scan = undefined
     const headers = { Authorization: `Bearer ${accessToken}` }
-    const scanned = await scanAllRows(request.order, headers, signal)
+    const scanned = await scanAllRows(request, headers, signal)
     scan = { key, savedAt: Date.now(), ...scanned }
     slot.scan = scan
   }
@@ -414,11 +448,7 @@ async function listCloudAssets(
   await runPool(
     summaries,
     SIGNED_URL_CONCURRENCY,
-    async (summary) => {
-      if (summary.kind === null || summary.kind === '3d') return
-      summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
-      await addMediaFacts(summary, deadline)
-    },
+    (summary, index) => addPreview(summary, rows[index]!, accessToken, deadline),
     deadline
   )
   signal.throwIfAborted()
@@ -435,21 +465,142 @@ export async function listAssets(
   return accessToken ? listCloudAssets(accessToken, request, signal, slot) : EMPTY_PAGE
 }
 
+export interface CloudOutput {
+  id: string
+  name: string
+  size: number | null
+  mimeType: string | null
+  createdAt: string | null
+  loaderPath: string | null
+  tags: string[]
+}
+
+export type CloudOutputBytes =
+  { bytes: Uint8Array } | { error: 'signed-out' | 'too-large' | 'missing' | 'elsewhere' }
+
+const NOT_FOUND = 404
+
+function cloudOutputOf(value: unknown): CloudOutput | null {
+  if (!isAssetRow(value)) return null
+  const loaderPath = (value as { loader_path?: unknown }).loader_path
+  const summary = toSummary(value, null)
+  return {
+    id: value.id,
+    name: summary.name,
+    size: summary.sizeBytes,
+    mimeType: summary.mimeType,
+    createdAt: summary.createdAt,
+    loaderPath: typeof loaderPath === 'string' && loaderPath !== '' ? loaderPath : null,
+    tags: summary.tags
+  }
+}
+
+export interface CloudOutputPage {
+  outputs: CloudOutput[]
+  nextCursor: string | null
+}
+
+function nextCursorOf(page: Record<string, unknown>, after: string | undefined): string | null {
+  const { has_more: hasMore, next_cursor: cursor } = page
+  if (hasMore !== true || typeof cursor !== 'string' || cursor === '' || cursor === after) {
+    return null
+  }
+  return cursor
+}
+
+export async function listNewestCloudOutputs(
+  limit: number,
+  after?: string
+): Promise<CloudOutputPage | null> {
+  const accessToken = await getCloudSession().getAccessToken()
+  if (!accessToken) return null
+  const query = new URLSearchParams({
+    tags_any: 'output',
+    sort: 'created_at',
+    order: 'desc',
+    limit: String(Math.min(Math.max(1, limit), MAX_PAGE_SIZE)),
+    include_public: 'false',
+    include_total: 'false'
+  })
+  if (after !== undefined) query.set('after', after)
+  const res = await fetch(`${CLOUD_CONFIG.apiBase}/assets?${query}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  })
+  if (!res.ok) throw new Error(`List assets failed: HTTP ${res.status}`)
+  const body: unknown = await res.json().catch(() => null)
+  const page = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  if (!Array.isArray(page.assets)) throw new Error('List assets returned an invalid page')
+  return {
+    outputs: page.assets
+      .map(cloudOutputOf)
+      .filter((output): output is CloudOutput => output !== null),
+    nextCursor: nextCursorOf(page, after)
+  }
+}
+
+export async function readCloudOutput(
+  assetId: string,
+  maxBytes: number,
+  timeoutMs: number
+): Promise<CloudOutputBytes> {
+  const accessToken = await getCloudSession().getAccessToken()
+  if (!accessToken) return { error: 'signed-out' }
+  try {
+    return await fetchCloudOutput(assetId, accessToken, maxBytes, AbortSignal.timeout(timeoutMs))
+  } catch {
+    return { error: 'elsewhere' }
+  }
+}
+
+async function fetchCloudOutput(
+  assetId: string,
+  accessToken: string,
+  maxBytes: number,
+  deadline: AbortSignal
+): Promise<CloudOutputBytes> {
+  const link = await fetch(`${CLOUD_CONFIG.issuer}${contentPath(assetId, 'inline')}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    redirect: 'manual',
+    signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), deadline])
+  })
+  if (link.status === NOT_FOUND) return { error: 'missing' }
+  const url = signedStorageUrl(link.headers.get('location'))
+  if (!url) return { error: 'elsewhere' }
+  const res = await fetch(url, { redirect: 'error', signal: deadline })
+  if (!res.ok || contentLength(res) > maxBytes) {
+    await res.body?.cancel().catch(() => {})
+    if (res.ok) return { error: 'too-large' }
+    return { error: res.status === NOT_FOUND ? 'missing' : 'elsewhere' }
+  }
+  const bytes = await firstBytes(res, maxBytes + 1)
+  return bytes.byteLength > maxBytes ? { error: 'too-large' } : { bytes }
+}
+
 function isCount(value: unknown, min: number, max: number): value is number {
   return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
 }
 
 function pageRequest(value: unknown): CloudAssetPageRequest | null {
   if (!value || typeof value !== 'object') return null
-  const { offset, after, limit, order, kind } = value as Record<string, unknown>
+  const { offset, after, limit, order, kind, search } = value as Record<string, unknown>
   const knownKind = ASSET_KINDS.find((known) => known === kind)
+  const term = searchTerm(search)
   return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
     isCount(limit, 1, MAX_PAGE_SIZE) &&
     (order === 'newest' || order === 'oldest') &&
     (kind === undefined || knownKind) &&
+    term !== null &&
     (after === undefined || (typeof after === 'string' && after.length > 0 && offset > 0)) &&
     (offset < CLOUD_COUNT_CAP || after !== undefined || knownKind)
-    ? { offset, limit, order, ...(after && { after }), ...(knownKind && { kind: knownKind }) }
+    ? {
+        offset,
+        limit,
+        order,
+        ...(after && { after }),
+        ...(knownKind && { kind: knownKind }),
+        ...(term && { search: term })
+      }
     : null
 }
 
@@ -617,6 +768,31 @@ async function copyCloudImage(installationId: string, assetId: string): Promise<
   return true
 }
 
+async function readCloudModel(installationId: string, assetId: string): Promise<Uint8Array | null> {
+  const accessToken = await cloudAccessToken(installationId)
+  if (!accessToken) return null
+  const deadline = AbortSignal.timeout(MODEL_TIMEOUT_MS)
+  const url = await resolveCloudContentUrl(assetId, accessToken, 'inline', deadline)
+  if (!url) return null
+  const res = await fetch(url, { redirect: 'error', signal: deadline })
+  if (!res.ok || contentLength(res) > MAX_MODEL_BYTES) return null
+  const bytes = await firstBytes(res, MAX_MODEL_BYTES + 1)
+  return bytes.byteLength > MAX_MODEL_BYTES ? null : bytes
+}
+
+async function readLocalModel(assetId: string): Promise<Uint8Array | null> {
+  const file = await outputFilePath(assetId)
+  if (!file) return null
+  const { size } = await fs.promises.stat(file)
+  return size > MAX_MODEL_BYTES ? null : fs.promises.readFile(file)
+}
+
+export function readAssetModel(source: string, assetId: string): Promise<Uint8Array | null> {
+  const read =
+    source === LOCAL_ASSETS_SOURCE ? readLocalModel(assetId) : readCloudModel(source, assetId)
+  return read.catch(() => null)
+}
+
 export function copyAsset(source: string, assetId: string): Promise<boolean> {
   return source === LOCAL_ASSETS_SOURCE ? copyOutputImage(assetId) : copyCloudImage(source, assetId)
 }
@@ -649,7 +825,13 @@ export function registerAssetsHandlers(): void {
     }
   )
   ipcMain.handle(ASSETS_REVEAL_CHANNEL, localFileAction(revealOutputFile))
+  ipcMain.handle(ASSETS_OPEN_CHANNEL, localFileAction(openOutputFile))
   ipcMain.handle(ASSETS_TRASH_CHANNEL, localFileAction(trashOutputFile))
+  ipcMain.handle(ASSETS_READ_MODEL_CHANNEL, (event, source: unknown, assetId: unknown) =>
+    isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
+      ? readAssetModel(source, assetId)
+      : null
+  )
   ipcMain.handle(ASSETS_COPY_CHANNEL, (event, source: unknown, assetId: unknown) =>
     isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
       ? copyAsset(source, assetId)

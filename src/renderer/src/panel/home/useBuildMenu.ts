@@ -1,9 +1,9 @@
 import { computed, inject, provide, type Component, type InjectionKey } from 'vue'
-import { CircleStop, Play, RotateCw, ScrollText, X } from '@lucide/vue'
+import { CircleStop, Info, OctagonAlert, Play, RotateCw, ScrollText, X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
-import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
+import { buildProgressOf, launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { useCanPromoteToWorkspace } from '../../composables/useCanPromoteToWorkspace'
 import {
   isPromotingToWorkspace,
@@ -46,6 +46,62 @@ export function provideBuildMenuHost(host: BuildMenuHost): void {
   provide(BUILD_MENU_HOST, host)
 }
 
+function withoutPageItems(items: BuildMenuEntry[]): BuildMenuEntry[] {
+  const kept: BuildMenuEntry[] = []
+  let pendingSeparator = false
+  for (const item of items) {
+    if (ON_PAGE_HIDDEN.has(item.id)) {
+      pendingSeparator ||= item.separator === true
+      continue
+    }
+    kept.push({ ...item, separator: kept.length > 0 && (item.separator || pendingSeparator) })
+    pendingSeparator = false
+  }
+  return kept
+}
+
+const restartsInFlight = new Set<string>()
+
+export function useRestartBuild(): (inst: Installation) => Promise<void> {
+  const { t } = useI18n()
+  const host = inject(BUILD_MENU_HOST, NO_HOST)
+  const modal = useModal()
+  const sessionStore = useSessionStore()
+
+  return async function restart(inst: Installation): Promise<void> {
+    const confirmed = await modal.confirm({
+      title: t('actions.restartConfirmTitle'),
+      message: t('actions.restartConfirmMessage'),
+      confirmLabel: t('actions.restartConfirm')
+    })
+    if (!confirmed || restartsInFlight.has(inst.id)) return
+    restartsInFlight.add(inst.id)
+    let stopFailure: unknown
+    try {
+      stopFailure = await stopAndLaunch(inst)
+    } finally {
+      restartsInFlight.delete(inst.id)
+    }
+    if (stopFailure === undefined) return
+    await modal.alert({
+      title: t('actions.restart'),
+      message: (stopFailure as Error)?.message || String(stopFailure)
+    })
+  }
+
+  async function stopAndLaunch(inst: Installation): Promise<unknown> {
+    try {
+      await window.api.stopComfyUI(inst.id)
+    } catch (err) {
+      return err ?? new Error(String(err))
+    }
+    await until(() => sessionStore.isRunning(inst.id)).toBe(false, { timeout: STOP_WAIT_MS })
+    if (sessionStore.isRunning(inst.id)) return undefined
+    await host.launch(inst, { isRestart: true })
+    return undefined
+  }
+}
+
 function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   const [head] = entries
   if (!head) return
@@ -53,10 +109,16 @@ function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   items.push(...entries)
 }
 
-export function useBuildMenu(build: () => Installation) {
+const ON_PAGE_HIDDEN = new Set(['launch', 'manage'])
+const LAST_GROUP = new Set(['untrack', 'delete'])
+
+export function useBuildMenu(
+  build: () => Installation,
+  opts: { whyCloud?: () => boolean; onPage?: boolean } = {}
+) {
   const { t } = useI18n()
   const host = inject(BUILD_MENU_HOST, NO_HOST)
-  const modal = useModal()
+  const restart = useRestartBuild()
   const sessionStore = useSessionStore()
   const progressStore = useProgressStore()
   const install = useBuildProgress(build)
@@ -70,7 +132,8 @@ export function useBuildMenu(build: () => Installation) {
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
     canPromoteToWorkspace: useCanPromoteToWorkspace(),
-    autoStart: useAutoStartBuild()
+    autoStart: useAutoStartBuild(),
+    onStartAgain: (inst) => host.launch(inst)
   })
   const status = computed(() => homeBuildStatus(build(), sessionStore))
   const canLaunch = computed(
@@ -83,6 +146,16 @@ export function useBuildMenu(build: () => Installation) {
 
   function isLocal(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
+  }
+
+  function hasError(inst: Installation): boolean {
+    return sessionStore.errorInstances.has(inst.id) || inst.statusTag?.style === 'danger'
+  }
+
+  function viewError(inst: Installation): void {
+    if (!sessionStore.errorInstances.has(inst.id)) return installMenu.viewDanger(inst)
+    if (launchFailed(progressStore, inst.id)) return install.viewLogs()
+    installMenu.viewError(inst)
   }
 
   function isStarting(inst: Installation): boolean {
@@ -100,11 +173,21 @@ export function useBuildMenu(build: () => Installation) {
     const items: BuildMenuEntry[] = []
 
     const now: BuildMenuEntry[] = []
+    if (!progress && hasError(inst)) {
+      now.push({ id: 'view-error', label: t('chooser.menuViewError'), icon: OctagonAlert })
+    }
     if (progress) {
       if (progress.kind !== 'uninstall') {
         now.push({ id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText })
       }
-      now.push({ id: 'cancel', label: t('common.cancel'), icon: X, disabled: progress.cancelling })
+      if (progress.cancellable) {
+        now.push({
+          id: 'cancel',
+          label: t('common.cancel'),
+          icon: X,
+          disabled: progress.cancelling
+        })
+      }
     } else if (running) {
       now.push(
         { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },
@@ -139,40 +222,19 @@ export function useBuildMenu(build: () => Installation) {
       items
     )
 
-    startsGroup(
-      existing.filter(
-        (item) => item.id !== 'stop' && item.id !== 'delete' && item.id !== 'auto-start'
-      ),
-      items
+    const rest = existing.filter(
+      (item) => item.id !== 'stop' && item.id !== 'auto-start' && !LAST_GROUP.has(item.id)
     )
-    startsGroup(
-      existing.filter((item) => item.id === 'delete'),
-      items
-    )
-    return items
-  })
-
-  async function restart(inst: Installation): Promise<void> {
-    const confirmed = await modal.confirm({
-      title: t('actions.restartConfirmTitle'),
-      message: t('actions.restartConfirmMessage'),
-      confirmLabel: t('actions.restartConfirm'),
-      confirmStyle: 'danger'
-    })
-    if (!confirmed) return
-    try {
-      await window.api.stopComfyUI(inst.id)
-    } catch (err) {
-      await modal.alert({
-        title: t('actions.restart'),
-        message: (err as Error)?.message || String(err)
-      })
-      return
+    if (opts.whyCloud?.()) {
+      rest.push({ id: 'why-cloud', label: t('chooser.menuWhyTryCloud'), icon: Info })
     }
-    await until(() => sessionStore.isRunning(inst.id)).toBe(false, { timeout: STOP_WAIT_MS })
-    if (sessionStore.isRunning(inst.id)) return
-    await host.launch(inst, { isRestart: true })
-  }
+    startsGroup(rest, items)
+    startsGroup(
+      existing.filter((item) => LAST_GROUP.has(item.id)),
+      items
+    )
+    return opts.onPage ? withoutPageItems(items) : items
+  })
 
   async function cancelLeftStart(inst: Installation): Promise<void> {
     await window.api.cancelOperation(inst.id)
@@ -187,10 +249,12 @@ export function useBuildMenu(build: () => Installation) {
         return
       case 'view-logs':
         if (install.progress.value) install.viewLogs()
-        else openInstallManager(inst, { initialTab: 'console' })
+        else await window.api.openLogsWindow(inst.id)
         return
       case 'cancel':
         return install.progress.value ? install.cancel() : cancelLeftStart(inst)
+      case 'view-error':
+        return viewError(inst)
       case 'restart':
         if (canLaunch.value) return restart(inst)
         return

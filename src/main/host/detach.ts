@@ -138,18 +138,17 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
 
 async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {
   if (keepsComfyRunningWhenWindowCloses()) return true
-  if (entry.sourceCategory !== 'local') return true
-  if (entry.installationId === null) return true
+  if (!shouldConfirmKillForEntry(entry)) return true
   if (!_runningSessions.has(entry.installationId)) return true
   if (entry.window.isDestroyed()) return true
   return openSystemModalAsync({
     parent: entry.window,
     spec: {
-      title: 'Return to Home?',
+      title: 'Back to Home?',
       message: 'This will stop the current ComfyUI.',
-      confirmLabel: 'Return to Home',
+      confirmLabel: 'Back to Home',
       cancelLabel: 'Cancel',
-      confirmStyle: 'danger',
+      confirmStyle: 'primary',
       theme: entry.lastTheme
     }
   })
@@ -208,7 +207,7 @@ export async function confirmAndCloseAllHostWindows(
       details,
       confirmLabel: 'Quit',
       cancelLabel: 'Cancel',
-      confirmStyle: 'danger',
+      confirmStyle: 'primary',
       theme: overlayParentEntry.lastTheme
     }
   })
@@ -235,7 +234,7 @@ export async function confirmCloseInstanceWindow(
       message,
       confirmLabel: 'Close Window',
       cancelLabel: 'Cancel',
-      confirmStyle: 'danger',
+      confirmStyle: 'primary',
       theme
     }
   })

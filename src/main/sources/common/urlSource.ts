@@ -131,7 +131,7 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
         actions.push(renameAction(installation.name))
       }
       if (includeUntrack) {
-        actions.push(untrackAction())
+        actions.push(untrackAction('remoteConnection'))
       }
 
       return [

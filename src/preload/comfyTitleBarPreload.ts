@@ -1,16 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
+import type { RunningApp, TitleBarApps } from '../types/ipc'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
 export type ComfyPanelKey =
-  | 'comfy'
-  | 'performance-test'
-  | 'benchmarks'
-  | 'new-install'
-  | 'track'
-  | 'load-snapshot'
-  | 'quick-install'
+  'comfy' | 'performance-test' | 'benchmarks' | 'new-install' | 'track' | 'load-snapshot'
 
 export type CoachmarkKind = 'beta-notice'
 
@@ -68,8 +63,10 @@ export interface ComfyTitleBarBridge {
   clickInstallUpdatePill(): void
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void
   clickDownloadsTray(anchor: TitleMenuAnchor): void
+  onAppsRunningChanged(cb: (apps: TitleBarApps) => void): () => void
+  clickRunningApps(anchor: TitleMenuAnchor): void
   clickFeedback(): void
-  clickAnnouncement(): void
+  openWhatsNewMenu(anchor: TitleMenuAnchor): void
   clickRefreshInstance(): void
   clickHome(): void
   resetZoom(): void
@@ -250,11 +247,24 @@ const bridge: ComfyTitleBarBridge = {
   clickDownloadsTray: (anchor) => {
     ipcRenderer.send('comfy-window:click-downloads-tray', { anchor })
   },
+  onAppsRunningChanged: (cb) => {
+    const handler = (_event: IpcRendererEvent, apps: unknown): void => {
+      const given = (apps ?? {}) as Partial<Record<keyof TitleBarApps, unknown>>
+      const listOf = (value: unknown): RunningApp[] =>
+        Array.isArray(value) ? (value as RunningApp[]) : []
+      cb({ running: listOf(given.running), ready: listOf(given.ready) })
+    }
+    ipcRenderer.on('comfy-titlebar:apps-running-changed', handler)
+    return () => ipcRenderer.removeListener('comfy-titlebar:apps-running-changed', handler)
+  },
+  clickRunningApps: (anchor) => {
+    ipcRenderer.send('comfy-titlebar:click-running-apps', { anchor })
+  },
   clickFeedback: () => {
     ipcRenderer.send('comfy-window:click-feedback')
   },
-  clickAnnouncement: () => {
-    ipcRenderer.send('comfy-window:click-announcement')
+  openWhatsNewMenu: (anchor) => {
+    ipcRenderer.send('comfy-window:open-title-menu', { menu: 'whats-new', anchor })
   },
   clickRefreshInstance: () => {
     ipcRenderer.send('comfy-window:click-refresh-instance')

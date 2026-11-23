@@ -46,9 +46,13 @@ import type {
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import {
   INSTALL_SPACE_FACTOR,
+  defaultFieldOption,
   downloadBytesOf,
+  hardwareNoteKey,
   isCpuVariant,
+  isDefaultPick,
   machineName,
+  versionText,
   type ChangeSetupDraft,
   type NewInstallSetup,
   type SavedSetup,
@@ -71,17 +75,26 @@ import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
+import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
-import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
+import {
+  toCardSelectOption as cardToSelectOption,
+  toHardwareCards,
+  toOptionCards
+} from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
+import { SUMMARY_BOX_CLASS, SUMMARY_GRID_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
+import BrowseFolderButton from '../components/BrowseFolderButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
+import { alertAddFailure } from '../lib/addFailureAlert'
 import type { Build, BuildTarget } from '../devplatform/types'
+import { progressTitle } from '../lib/progressTitle'
 
 const emit = defineEmits<{
   close: []
@@ -93,7 +106,7 @@ const emit = defineEmits<{
 }>()
 
 const spinnerClass =
-  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[""] before:[animation-duration:600ms]'
+  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-foreground before:content-[""] before:[animation-duration:600ms]'
 
 const props = withDefaults(
   defineProps<{
@@ -119,8 +132,9 @@ const systemInfo = ref<SystemInfo | null>(null)
 const machineUnsupported = ref(false)
 const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
-const platform = window.api?.platform ?? 'darwin'
+const localDeviceKind = useLocalDeviceKind()
 const hardwareWarning = ref('')
+const hardwarePickedByHand = ref(false)
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
@@ -401,6 +415,7 @@ watch(instPath, (newPath) => {
 let loadGeneration = 0
 let modeGeneration = 0
 let changeSetupSession = 0
+let setupInstallRoot = ''
 
 const nameError = computed(() =>
   instName.value.length > 0 && instName.value.trim().length === 0
@@ -512,6 +527,7 @@ interface OpenOpts {
   entrypoint?: string
   workspaceId?: string
   restore?: ChangeSetupDraft
+  installRoot?: string
 }
 
 const cameFromSetup = ref(false)
@@ -528,6 +544,11 @@ function onConsentToggle(accepted: boolean): void {
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
+  changeSetupSession++
+  setupInstallRoot = opts.installRoot ?? ''
+  folderBrowsedWhileOpening = null
+  const session = changeSetupSession
+  openingSession = session
   const gen = ++modeGeneration
   instName.value = ''
   workspaceId.value = opts.workspaceId?.trim() || PERSONAL_WORKSPACE_ID
@@ -562,9 +583,11 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   changeSetupDraft = null
   hardwareValidation = null
   hardwareWarning.value = ''
+  hardwarePickedByHand.value = false
   resetDiskSpace()
   sourceError.value = ''
   authorizingWorkspace.value = false
+  abandonManagedSignIn()
   initializing.value = true
 
   try {
@@ -592,26 +615,32 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       workspaceBuilds.value.length === 0
     ) {
       workspaceInstallMode.value = 'public'
-      await initializeInstallMode(gen)
+      await initializeInstallMode(gen, false, undefined, true)
     }
     if (opts.restore && gen === modeGeneration) {
       instName.value = opts.restore.instName
-      await restoreNewInstallSetup(opts.restore)
+      const restoredPath = folderBrowsedWhileOpening || opts.installRoot || opts.restore.instPath
+      await restoreNewInstallSetup({ ...opts.restore, instPath: restoredPath })
+      if (folderBrowsedWhileOpening && session === changeSetupSession) {
+        instPath.value = folderBrowsedWhileOpening
+      }
     }
   } finally {
     if (gen === modeGeneration) initializing.value = false
+    if (openingSession === session) openingSession = null
   }
 }
 
 async function initializeInstallMode(
   gen: number,
   refreshManagedBuilds = false,
-  source?: Source
+  source?: Source,
+  keepPath = false
 ): Promise<void> {
   const installDir = await installDirPromise
   if (gen !== modeGeneration) return
   defaultInstPath.value = installDir ?? ''
-  instPath.value = defaultInstPath.value
+  if (!keepPath || !instPath.value) instPath.value = setupInstallRoot || defaultInstPath.value
 
   if (managedBuildMode.value) {
     await Promise.all([initializeManagedBuilds(gen, refreshManagedBuilds), loadSources()])
@@ -683,30 +712,46 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
   }
 }
 
-let pendingSignIn: ReturnType<typeof authStore.signIn> | null = null
+const signingInForManaged = ref(false)
+const waitingForManagedSignIn = computed(() => signingInForManaged.value && authStore.signInPending)
+let managedSignInPick = 0
 
-function signInOnce(): ReturnType<typeof authStore.signIn> {
-  pendingSignIn ??= authStore.signIn().finally(() => {
-    pendingSignIn = null
-  })
-  return pendingSignIn
+function abandonManagedSignIn(): void {
+  managedSignInPick++
+  signingInForManaged.value = false
 }
 
 async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
   let authenticatedNow = false
   if (!authStore.isSignedIn) {
+    if (signingInForManaged.value) {
+      void authStore.signIn().catch(() => {})
+      return
+    }
     const session = changeSetupSession
-    authorizingWorkspace.value = true
+    const pick = ++managedSignInPick
+    const stillWanted = (): boolean => session === changeSetupSession && pick === managedSignInPick
+    signingInForManaged.value = true
     try {
-      const status = await signInOnce()
+      const status = await authStore.signIn()
       if (!status.signedIn) return
       authenticatedNow = true
-      if (workspaceId.value === PERSONAL_WORKSPACE_ID) await authStore.fetchWorkspaces()
     } catch {
       return
     } finally {
-      authorizingWorkspace.value = false
+      if (stillWanted()) signingInForManaged.value = false
+    }
+    if (!stillWanted()) return
+    if (workspaceId.value === PERSONAL_WORKSPACE_ID) {
+      authorizingWorkspace.value = true
+      try {
+        await authStore.fetchWorkspaces()
+      } catch {
+        return
+      } finally {
+        authorizingWorkspace.value = false
+      }
     }
     if (session !== changeSetupSession) return
   }
@@ -723,7 +768,7 @@ async function selectManagedInstallMode(): Promise<void> {
   const gen = ++modeGeneration
   initializing.value = true
   try {
-    await initializeInstallMode(gen, authenticatedNow)
+    await initializeInstallMode(gen, authenticatedNow, undefined, true)
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }
@@ -740,6 +785,7 @@ async function loadSources(): Promise<void> {
 }
 
 async function selectSourceCard(source: Source): Promise<void> {
+  abandonManagedSignIn()
   if (managedBuildMode.value) {
     workspaceInstallMode.value = 'public'
     resetSourceState(null)
@@ -747,7 +793,7 @@ async function selectSourceCard(source: Source): Promise<void> {
     const gen = ++modeGeneration
     initializing.value = true
     try {
-      await initializeInstallMode(gen, false, source)
+      await initializeInstallMode(gen, false, source, true)
     } finally {
       if (gen === modeGeneration) initializing.value = false
     }
@@ -861,10 +907,9 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     heldFields.value.delete(field.id)
 
     if (options.length > 0) {
-      let defaultIndex = options.findIndex((opt) => opt.recommended)
-      if (defaultIndex < 0) defaultIndex = 0
-      const defaultOption = options[defaultIndex]
+      const defaultOption = defaultFieldOption(options)
       if (defaultOption) selections.value[field.id] = defaultOption
+      if (field.id === 'variant') hardwarePickedByHand.value = false
     } else {
       delete selections.value[field.id]
     }
@@ -927,6 +972,9 @@ function supersedeFieldLoads(fromIndex: number): void {
 function selectCardOption(field: SourceField, fieldIndex: number, option: FieldOption): void {
   selections.value[field.id] = option
   if (field.id === 'variant') {
+    if (!isDefaultPick(option, fieldOptions.value.get(field.id) ?? [])) {
+      hardwarePickedByHand.value = true
+    }
     emitTelemetryAction('comfy.desktop.install.variant.selected', {
       variant_bucket: toVariantBucket(
         (option.data?.variantId as string | undefined) || option.value
@@ -961,9 +1009,14 @@ function handleTextAction(field: SourceField): void {
   }
 }
 
+let folderBrowsedWhileOpening: string | null = null
+let openingSession: number | null = null
+
 async function handleBrowse(): Promise<void> {
   const chosen = await window.api.browseFolder(instPath.value)
-  if (chosen) instPath.value = chosen
+  if (!chosen) return
+  instPath.value = chosen
+  if (openingSession === changeSetupSession) folderBrowsedWhileOpening = chosen
 }
 
 function handleOpenInstPath(): void {
@@ -992,7 +1045,13 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
       reason: 'add_installation_failed',
       error_bucket: toErrorBucket(result.message || '')
     })
-    await modal.alert({ title: failureTitle, message: result.message || '' })
+    await alertAddFailure({
+      modal,
+      t,
+      title: failureTitle,
+      failure: result,
+      onChangeLocation: handleBrowse
+    })
     return
   }
   if (result.entry) {
@@ -1004,7 +1063,7 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
     })
     emit('show-progress', {
       installationId: result.entry.id,
-      title: `${t('newInstall.installing')} - ${result.entry.name}`,
+      title: progressTitle(t('newInstall.installing'), result.entry.name),
       apiCall: () => window.api.installInstance(result.entry!.id),
       autoLaunchOnFinish: true,
       opKind: 'install'
@@ -1056,7 +1115,7 @@ async function handleWorkspaceBuildSave(): Promise<void> {
       ok: false,
       message: error instanceof Error ? error.message : String(error)
     }))
-  await handOffInstall(result, t('errors.installFailed'))
+  await handOffInstall(result, t('errors.cannotAdd'))
 }
 
 async function confirmNvidiaDriver(source: Source): Promise<boolean> {
@@ -1097,9 +1156,11 @@ async function handleSave(): Promise<void> {
       ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
     })
     if (!result.ok) {
-      await modal.alert({
+      await alertAddFailure({
+        modal,
+        t,
         title: t('errors.cannotAdd'),
-        message: result.message || ''
+        failure: result
       })
       return
     }
@@ -1218,9 +1279,11 @@ const diskShortLabel = computed(() => {
   return t('newInstall.requiredSpace', { size: formatBytes(required) })
 })
 const locationMeta = computed(() => {
-  const required = shownInstallSize.value
-  if (!diskFreeLabel.value || required <= 0 || diskShortLabel.value) return diskFreeLabel.value
-  return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
+  if (!diskShortLabel.value || !diskSpace.value) return diskFreeLabel.value
+  return t('diskSpace.insufficientForInstall', {
+    free: formatFreeSpace(diskSpace.value.free),
+    required: formatBytes(shownInstallSize.value)
+  })
 })
 
 let changeSetupDraft: ChangeSetupDraft | null = null
@@ -1237,7 +1300,8 @@ function captureNewInstallSetup(): NewInstallSetup {
     sourceError: sourceError.value,
     instPath: instPath.value,
     selectedBuildId: selectedBuildId.value,
-    selectedBuildTargetId: selectedBuildTargetId.value
+    selectedBuildTargetId: selectedBuildTargetId.value,
+    hardwarePickedByHand: hardwarePickedByHand.value
   }
 }
 
@@ -1272,6 +1336,12 @@ function workspaceBuildPlan(build: Build): SetupPlan {
   }
 }
 
+function isDetectedHardware(variant: FieldOption | undefined): boolean {
+  return (
+    !hardwarePickedByHand.value && isDefaultPick(variant, fieldOptions.value.get('variant') ?? [])
+  )
+}
+
 function sourcePlan(source: Source): SetupPlan {
   const picked = rawSelections()
   return {
@@ -1280,6 +1350,7 @@ function sourcePlan(source: Source): SetupPlan {
     installRoot: instPath.value,
     downloadBytes: downloadBytesOf(picked.variant),
     requiredBytes: estimatedInstallSize.value,
+    hardwareDetected: isDetectedHardware(picked.variant),
     ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
     ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   }
@@ -1365,6 +1436,7 @@ async function restoreNewInstallSetup(setup: NewInstallSetup): Promise<void> {
   loadGeneration++
   heldFields.value.clear()
   selections.value = { ...setup.selections }
+  hardwarePickedByHand.value = setup.hardwarePickedByHand ?? false
   fieldOptions.value = new Map(setup.fieldOptions)
   fieldLoading.value = new Map(setup.fieldLoading)
   fieldErrors.value = new Map(setup.fieldErrors)
@@ -1385,6 +1457,7 @@ async function discardChangeSetup(): Promise<void> {
   buildImportChoice.value = null
   setupBeforeServer = null
   authorizingWorkspace.value = false
+  abandonManagedSignIn()
   if (!draft) return
   instName.value = draft.instName
   await restoreNewInstallSetup(draft)
@@ -1542,6 +1615,7 @@ const existingCards = computed<SetupOptionCard[]>(() => {
 const selectedExistingCard = computed(() => buildImportChoice.value ?? selectedSourceCard.value)
 
 function chooseBuildImport(flow: BuildImportFlow): void {
+  abandonManagedSignIn()
   if (buildImportChoice.value === flow) return
   buildImportChoice.value = flow
   emitTelemetryAction('comfy.desktop.install.flow.opened', {
@@ -1583,15 +1657,7 @@ function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: 
 }
 
 function toCardSelectOption(card: SetupOptionCard): BaseSelectOption {
-  return {
-    value: card.value,
-    label: card.label,
-    description: card.description,
-    disabled: card.disabled,
-    icon: card.icon,
-    testId: card.testId,
-    badge: card.recommended ? t('newInstall.recommended') : undefined
-  }
+  return cardToSelectOption(card, t('newInstall.recommended'))
 }
 
 const existingSelectOptions = computed(() => existingCards.value.map(toCardSelectOption))
@@ -1620,7 +1686,11 @@ interface SummaryRow {
   label: string
   value: string
   meta?: string
+  metaTitle?: string
+  metaWarning?: boolean
 }
+
+const LOCATION_ROW_KEY = 'location'
 
 function fieldSummaryValue(field: SourceField): string {
   if (field.type === 'text') return textFieldValues.value.get(field.id) ?? ''
@@ -1628,7 +1698,47 @@ function fieldSummaryValue(field: SourceField): string {
   return selections.value[field.id]?.label ?? getSelectPlaceholder(field)
 }
 
-const summaryRows = computed<SummaryRow[]>(() => {
+function hardwarePlaceholder(): string {
+  const field = currentSource.value?.fields.find((candidate) => candidate.id === 'variant')
+  const settled =
+    !!field &&
+    !fieldLoading.value.get(field.id) &&
+    (fieldOptions.value.has(field.id) || fieldErrors.value.has(field.id))
+  return settled ? getSelectPlaceholder(field) : t('setup.checking')
+}
+
+function standaloneHardwareRow(): SummaryRow {
+  const variant = selections.value.variant
+  const note = hardwareNoteKey({
+    unsupported: !!unsupportedReason.value,
+    cpuOnly: isCpuVariant(variant),
+    detected: isDetectedHardware(variant)
+  })
+  const caution = unsupportedReason.value || hardwareWarning.value
+  return {
+    key: 'standalone-hardware',
+    icon: Zap,
+    label: t('setup.hardware'),
+    value: variant?.label ?? hardwarePlaceholder(),
+    meta: note ? t(note) : undefined,
+    metaTitle: caution || undefined,
+    metaWarning: !!caution
+  }
+}
+
+function standaloneVersionRow(): SummaryRow {
+  const loading = fieldLoading.value.get('release') || fieldLoading.value.get('comfyVersion')
+  const text = versionText(selections.value)
+  return {
+    key: 'standalone-version',
+    icon: Package,
+    label: t('setup.version'),
+    value: loading ? t('newInstall.loading') : t(text.key, text.params),
+    meta: selections.value.release?.label
+  }
+}
+
+const fieldSummaryRows = computed<SummaryRow[]>(() => {
   if (managedBuildMode.value) {
     const rows: SummaryRow[] = [
       {
@@ -1655,6 +1765,7 @@ const summaryRows = computed<SummaryRow[]>(() => {
   }
   const source = currentSource.value
   if (!source) return []
+  if (source.id === 'standalone') return [standaloneHardwareRow(), standaloneVersionRow()]
   return source.fields
     .filter((field) => !isHiddenWhenEmpty(field))
     .map((field) => ({
@@ -1667,6 +1778,12 @@ const summaryRows = computed<SummaryRow[]>(() => {
 })
 
 const showLocation = computed(() => !currentSource.value?.skipInstall)
+
+const summaryRows = computed<SummaryRow[]>(() => {
+  const rows = fieldSummaryRows.value
+  if (!showLocation.value) return rows
+  return [...rows, { key: LOCATION_ROW_KEY, icon: HardDrive, label: '', value: '' }]
+})
 
 const trackFormRef = ref<InstanceType<typeof TrackBuildForm> | null>(null)
 const snapshotFormRef = ref<InstanceType<typeof LoadSnapshotForm> | null>(null)
@@ -1745,7 +1862,6 @@ defineExpose({ open })
     :anchor-top="view === 'change'"
     :brand-backdrop="useTakeoverHost"
     :closable="view === 'summary' && !hideBackToDashboard"
-    :close-title="$t('common.backToDashboard')"
     data-testid="new-build-modal"
     @close="emit('close')"
   >
@@ -1759,6 +1875,14 @@ defineExpose({ open })
       {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
     </div>
     <div
+      v-else-if="waitingForManagedSignIn"
+      class="mt-4 w-full text-[13px] leading-[1.4] text-subtle-foreground"
+      role="status"
+      data-testid="managed-signin-status"
+    >
+      {{ $t('devPlatform.signIn.waiting') }}
+    </div>
+    <div
       v-if="sourceError && !buildImportChoice"
       class="config-error mt-4 text-[13px] leading-[1.4] text-[var(--danger)]"
       role="alert"
@@ -1766,9 +1890,14 @@ defineExpose({ open })
       {{ sourceError }}
     </div>
 
-    <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
+    <div
+      v-if="view === 'summary'"
+      class="config-summary [--summary-label-width:132px] max-[640px]:[--summary-label-width:100px]"
+      data-testid="config-summary"
+    >
       <div
-        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+        class="config-name-card mt-4 rounded-[14px] bg-white/5 py-3 pr-3 pl-5"
+        :class="SUMMARY_GRID_CLASS"
       >
         <label
           class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
@@ -1784,12 +1913,12 @@ defineExpose({ open })
       </div>
 
       <div
-        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] py-6 pr-5 pl-7 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
         :class="machineBlocked && 'config-machine--unsupported'"
       >
         <SetupMachineIllustration
           class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
-          :os="platform"
+          :kind="localDeviceKind"
           :bad="machineBlocked"
         />
         <span class="grid min-w-0">
@@ -1805,7 +1934,7 @@ defineExpose({ open })
             :class="
               machineBlocked
                 ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
-                : 'truncate text-neutral-100'
+                : 'line-clamp-2 break-words text-neutral-100'
             "
             data-testid="detected-gpu-field"
             >{{ machineTitle }}</span
@@ -1848,7 +1977,7 @@ defineExpose({ open })
       <div v-if="buildCatalogFailed" class="mt-2 flex px-1" role="alert">
         <Button
           size="unset"
-          variant="destructive-textonly"
+          variant="textonly"
           type="button"
           class="wizard-build-retry text-left text-[12px] leading-[1.4] whitespace-normal"
           data-testid="config-summary-build-retry"
@@ -1859,71 +1988,82 @@ defineExpose({ open })
         </Button>
       </div>
 
-      <dl
-        class="config-summary-list m-0 mt-3 flex flex-col"
+      <section
+        class="config-summary-list mt-3"
+        :class="SUMMARY_BOX_CLASS"
         :aria-label="$t('newInstall.installSummary')"
       >
-        <SetupSummaryRow
-          v-for="row in summaryRows"
-          :key="row.key"
-          :icon="row.icon"
-          :label="row.label"
-        >
-          <span class="grid min-w-0 flex-1 gap-1">
-            <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
-            <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              row.meta
-            }}</span>
-          </span>
-        </SetupSummaryRow>
-        <SetupSummaryRow
-          v-if="showLocation"
-          class="config-summary-location"
-          :icon="HardDrive"
-          :label="$t('common.location')"
-        >
-          <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
-            <PathOpenButton
-              v-if="instPath"
-              class="leading-5"
-              :path="instPath"
-              @open="handleOpenInstPath"
-            />
-            <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              locationMeta
-            }}</span>
-            <span
-              v-if="diskShortLabel"
-              class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
-              >{{ diskShortLabel }}</span
-            >
-            <PathDiskInfo
-              issues-only
-              :path-issues="pathIssues"
-              :disk-space-loading="diskSpaceLoading"
-              :disk-space="diskSpace"
-              :estimated-size="estimatedInstallSize"
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="textonly"
-            type="button"
-            class="config-path-browse flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
-            data-testid="config-summary-browse"
-            @click="handleBrowse"
+        <template v-for="row in summaryRows" :key="row.key">
+          <SetupSummaryRow
+            v-if="row.key === LOCATION_ROW_KEY"
+            class="config-summary-row config-summary-location"
+            :icon="HardDrive"
+            :label="$t('common.location')"
           >
-            {{ $t('common.browse') }}
-          </Button>
-        </SetupSummaryRow>
+            <span class="flex min-w-0" data-testid="config-summary-path">
+              <PathOpenButton
+                v-if="instPath"
+                class="leading-4"
+                :path="instPath"
+                @open="handleOpenInstPath"
+              />
+            </span>
+            <span
+              class="flex min-w-0 items-center justify-end gap-3"
+              :class="[
+                SUMMARY_META_CLASS,
+                diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
+              ]"
+            >
+              <span
+                class="min-w-0 truncate"
+                :class="{ 'config-path-required': diskShortLabel }"
+                :title="locationMeta || undefined"
+                >{{ locationMeta }}</span
+              >
+              <BrowseFolderButton
+                class="config-path-browse -my-1"
+                data-testid="config-summary-browse"
+                @click="handleBrowse"
+              />
+            </span>
+          </SetupSummaryRow>
+          <SetupSummaryRow
+            v-else
+            class="config-summary-row"
+            :data-testid="`config-summary-${row.key}`"
+            :icon="row.icon"
+            :label="row.label"
+          >
+            <span class="truncate text-foreground">{{ row.value }}</span>
+            <span
+              :class="[
+                SUMMARY_META_CLASS,
+                'max-w-[220px] min-w-0 truncate',
+                row.metaWarning ? 'text-[#f0b135]' : 'text-subtle-foreground'
+              ]"
+              :title="row.metaTitle ?? row.meta"
+              >{{ row.meta }}</span
+            >
+          </SetupSummaryRow>
+        </template>
         <div
-          v-if="initializing && summaryRows.length === 0"
-          class="config-loading px-3.5 py-3 text-[13px] text-text-muted"
+          v-if="initializing && fieldSummaryRows.length === 0"
+          class="config-loading h-4 text-[13px]/4 text-subtle-foreground"
           :class="spinnerClass"
         >
           {{ $t('newInstall.loading') }}
         </div>
-      </dl>
+      </section>
+      <div v-if="showLocation" class="px-1">
+        <PathDiskInfo
+          issues-only
+          :path-issues="pathIssues"
+          :disk-space-loading="diskSpaceLoading"
+          :disk-space="diskSpace"
+          :estimated-size="estimatedInstallSize"
+        />
+      </div>
     </div>
 
     <div
@@ -2072,7 +2212,7 @@ defineExpose({ open })
               <Button
                 v-if="authStore.buildsError"
                 size="unset"
-                variant="destructive-textonly"
+                variant="textonly"
                 type="button"
                 class="wizard-build-retry self-start text-left text-[13px] whitespace-normal"
                 :disabled="authStore.loadingBuilds || authorizingWorkspace"
@@ -2294,7 +2434,7 @@ defineExpose({ open })
           size="lg"
           variant="secondary"
           type="button"
-          class="h-9 rounded-[10px] config-discard-changes"
+          class="config-discard-changes"
           data-testid="config-discard-changes"
           :disabled="submittingExisting || savingSetup"
           @click="discardChanges"
@@ -2306,7 +2446,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-use-existing min-w-[104px]"
+          class="config-use-existing min-w-[104px]"
           data-testid="config-use-existing"
           :disabled="!canProceed"
           @click="handleConfigureContinue"
@@ -2318,7 +2458,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-save-changes min-w-[104px]"
+          class="config-save-changes min-w-[104px]"
           data-testid="config-save-changes"
           :disabled="cameFromSetup && (!canProceed || savingSetup)"
           @click="saveChanges"
@@ -2332,7 +2472,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-continue min-w-[104px]"
+          class="config-continue min-w-[104px]"
           :disabled="!canProceed"
           @click="handleConfigureContinue"
         >

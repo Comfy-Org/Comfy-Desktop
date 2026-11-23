@@ -17,7 +17,7 @@ import type { FakeComfySeen } from './__fixtures__/fakeComfyApi'
 
 const mocks = vi.hoisted(() => ({
   sessions: new Map<string, Record<string, unknown>>(),
-  pages: [] as { send: (channel: string, event: unknown) => void }[]
+  pages: [] as { send: (channel: string, event: unknown) => void; isDestroyed: () => boolean }[]
 }))
 
 vi.mock('../host/registry', () => ({ getEntryByInstallationId: () => undefined }))
@@ -52,7 +52,11 @@ vi.mock('../lib/ipc/shared', async () => {
 })
 vi.mock('../lib/models', () => ({ resolveComfyDir: (installPath: string) => installPath }))
 vi.mock('../lib/process', () => ({ COMFY_BOOT_TIMEOUT_MS: 300_000 }))
-vi.mock('./appsPages', () => ({ liveAppsPages: () => mocks.pages }))
+vi.mock('./appsPages', () => ({
+  appsPageAdmits: async () => true,
+  liveAppsPages: () => mocks.pages
+}))
+vi.mock('../lib/telemetry', () => ({ capture: () => false }))
 
 import * as local from './localComfy'
 
@@ -108,7 +112,12 @@ afterAll(() => {
 describe('a run on a ComfyUI that really answers and really talks over its socket', () => {
   it("goes from a picture to its result, with ComfyUI's updates reaching the page on the way", async () => {
     const updates: string[] = []
-    mocks.pages = [{ send: (_channel, event) => updates.push((event as { type: string }).type) }]
+    mocks.pages = [
+      {
+        send: (_channel, event) => updates.push((event as { type: string }).type),
+        isDestroyed: () => false
+      }
+    ]
 
     const state = await localState(WANT)
     const uploaded = textOf(

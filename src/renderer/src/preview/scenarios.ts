@@ -120,7 +120,23 @@ export const SCENARIOS: PreviewScenario[] = [
     ready: '[data-testid="app-sidebar-assets"][aria-current="page"]',
     seed: (machine) => ({
       installations: everydayBuilds(machine),
-      replies: { listLocalAssets: async () => ({ assets: localAssets(), truncated: false }) }
+      replies: {
+        listLocalAssets: async () => {
+          const assets = localAssets()
+          const count = (kind: string) => assets.filter((asset) => asset.kind === kind).length
+          return {
+            assets,
+            total: assets.length,
+            counts: {
+              all: assets.length,
+              image: count('image'),
+              video: count('video'),
+              audio: count('audio'),
+              '3d': count('3d')
+            }
+          }
+        }
+      }
     }),
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-assets"]')

@@ -211,13 +211,25 @@ describe('ChooserView', () => {
   })
 
   it('names the search after builds', async () => {
-    installMockApi([])
+    installMockApi([makeInstall({ name: 'One' })])
     const wrapper = mountChooser()
     await flushPromises()
 
     const input = wrapper.get('.chooser-search input')
     expect(input.attributes('placeholder')).toBe('Search builds')
     expect(input.attributes('aria-label')).toBe('Search builds')
+  })
+
+  it('drops the tabs, sort and search when there are no builds at all', async () => {
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const toolbar = wrapper.get('.chooser-toolbar')
+    expect(toolbar.find('.chooser-search').exists()).toBe(false)
+    expect(toolbar.find('[role="radiogroup"], [role="tablist"]').exists()).toBe(false)
+    expect(toolbar.findComponent({ name: 'BaseSelect' }).exists()).toBe(false)
+    expect(wrapper.find('.chooser-no-builds').exists()).toBe(true)
   })
 
   it('offers the shared Comfy Cloud in team workspaces while filtering local builds', async () => {
@@ -254,15 +266,16 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('Team local')
   })
 
-  it('invites a first build when the user has zero installs', async () => {
+  it('points a first build at the header New build, with no second button', async () => {
     installMockApi([])
     const wrapper = mountChooser()
     await flushPromises()
 
     const invitation = wrapper.get('.chooser-no-builds')
-    expect(invitation.text()).toContain('Set up where your work runs')
+    expect(invitation.text()).toContain('No builds yet')
+    expect(invitation.find('button').exists()).toBe(false)
 
-    await invitation.get('button').trigger('click')
+    await wrapper.get('.chooser-header .chooser-tile-new').trigger('click')
     expect(wrapper.emitted('show-new-install')).toEqual([[]])
   })
 
@@ -274,7 +287,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('show-new-install')).toEqual([[]])
   })
 
-  it('filters by where a build runs, counting each tab and hiding empty ones', async () => {
+  it('filters by where a build runs, with no counts on the tabs, hiding empty ones', async () => {
     installMockApi([
       makeInstall({ id: 'a', name: 'Alpha' }),
       makeInstall({ id: 'b', name: 'Beta' }),
@@ -283,7 +296,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tabs = (): string[] => tabButtons(wrapper).map((tab) => tab.text())
-    expect(tabs()).toEqual(['All3', 'This computer2', 'Cloud1'])
+    expect(tabs()).toEqual(['All', 'This computer', 'Cloud'])
 
     await tabButtons(wrapper)[2]!.trigger('click')
     await flushPromises()
@@ -331,7 +344,7 @@ describe('ChooserView', () => {
       makeInstall({
         id: 'a',
         name: 'Alpha',
-        statusTag: { style: 'danger', label: 'Folder Not Found', detail: 'Gone.' }
+        statusTag: { style: 'danger', label: 'Folder not found', detail: 'Gone.' }
       })
     ])
     const wrapper = mountChooser()
@@ -391,11 +404,11 @@ describe('ChooserView', () => {
     expect(startsWithDesktop('a')).toBe(true)
     expect(tile('a').text()).toContain('Auto start')
     expect(startsWithDesktop('b')).toBe(false)
-    expect(tile('b').text()).toContain('Ready')
+    expect(tile('b').text()).toContain('Never used')
 
     const itemsA = await menuFor('a', 'right-click')
     expect(itemsA.slice(0, 3)).toEqual(['launch', 'auto-start', 'manage'])
-    expect(buildMenuItem('a', 'auto-start')!.textContent?.trim()).toBe('Turn off Auto start')
+    expect(buildMenuItem('a', 'auto-start')!.textContent?.trim()).toBe('Turn off auto start')
     closeMenu('a')
     await vi.waitFor(() => expect(buildMenu('a')).toBeNull())
 
@@ -411,14 +424,14 @@ describe('ChooserView', () => {
 
     await vi.waitFor(() => expect(buildMenu('b')).toBeNull())
     await menuFor('b', 'kebab')
-    expect(buildMenuItem('b', 'auto-start')!.textContent?.trim()).toBe('Turn off Auto start')
+    expect(buildMenuItem('b', 'auto-start')!.textContent?.trim()).toBe('Turn off auto start')
     await chooseFromBuildMenu('b', 'auto-start')
 
     expect(autoStartWrites()).toEqual(['b', 'none'])
     expect(startsWithDesktop('b')).toBe(false)
   })
 
-  it('names the update briefly in the meta line, keeps Ready on top and Launch first in its menu', async () => {
+  it('names the update briefly in the meta line, keeps the last-used line on top and Launch first in its menu', async () => {
     installMockApi([
       makeInstall({
         id: 'a',
@@ -430,8 +443,8 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update')
-    expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Ready/)
+    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update available')
+    expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Never used/)
     expect(wrapper.find('.chooser-tile-pill-update').exists()).toBe(false)
 
     const items = await openBuildMenu(wrapper, 'a')
@@ -590,7 +603,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
-  it('shows a clickable error badge that opens the error details without emitting pick', async () => {
+  it('shows the error as plain status text and opens its details from the build menu', async () => {
     installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     const wrapper = mountChooser()
     await flushPromises()
@@ -607,14 +620,31 @@ describe('ChooserView', () => {
     const badge = tile.find('.chooser-tile-error-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('Error')
+    expect(badge.element.tagName).toBe('SPAN')
+    expect(tile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
 
-    await badge.trigger('click')
-    await flushPromises()
+    expect((await openBuildMenu(wrapper, 'a'))[0]).toBe('view-error')
+    await chooseFromBuildMenu('a', 'view-error')
     expect(mockModal.alert).toHaveBeenCalledWith({
       title: 'Error',
       message: 'Migration failed: takeover did not start.'
     })
     expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it.each([
+    ["Didn't start", { startFailed: true, message: 'Port 8188 is in use' }],
+    ['Crashed', { exitCode: 1 }]
+  ] as const)('names the error badge %s, like Home and the sidebar', async (label, error) => {
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    useSessionStore().errorInstances.set('a', { installationName: 'Alpha', ...error })
+    await flushPromises()
+
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
+    expect(tile.get('.chooser-tile-error-badge').text()).toBe(label)
   })
 
   it('focuses the existing window instead of relaunching a crashed build', async () => {
@@ -678,8 +708,79 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
-    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update$/)
-    expect(tile.get('.chooser-tile-body').text()).toMatch(/^Ready/)
+    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update available$/)
+    expect(tile.get('.chooser-tile-body').text()).toMatch(/^Never used/)
+  })
+
+  it.each([
+    ['a click', (link: HTMLElement) => userEvent.click(link)],
+    [
+      'Enter',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard('{Enter}')
+      }
+    ],
+    [
+      'Space',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard(' ')
+      }
+    ]
+  ])(
+    "opens the build's Update tab from Update available with %s, without starting or opening the build",
+    async (_how, activate) => {
+      const api = installMockApi([
+        makeInstall({
+          id: 'u',
+          name: 'Updatable',
+          version: 'v0.22.3',
+          statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' }
+        })
+      ])
+      const { wrapper, host } = mountChooserInPanel()
+      await flushPromises()
+
+      const tile = wrapper.get(`[data-testid="${TID.dashboardTile('u')}"]`)
+      const link = tile.get<HTMLButtonElement>('[data-testid="build-update-open"]')
+      expect(link.attributes('type')).toBe('button')
+      expect(link.attributes('aria-label')).toBe('Update available: open Update for Updatable')
+      expect(link.text()).toBe('Update available')
+      expect(link.find('svg').exists()).toBe(false)
+      await activate(link.element)
+      await flushPromises()
+
+      expect(api.openInstancePicker).toHaveBeenCalledExactlyOnceWith({
+        installationId: 'u',
+        initialTab: 'update',
+        autoAction: null
+      })
+      expect(wrapper.emitted('pick')).toBeUndefined()
+      expect(wrapper.emitted('open-details')).toBeUndefined()
+      expect(host.launch).not.toHaveBeenCalled()
+      expect(host.openDetails).not.toHaveBeenCalled()
+    }
+  )
+
+  it('hides Update available while the build is being updated', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'u',
+        name: 'Updatable',
+        version: 'v0.22.3',
+        statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' }
+      })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(true)
+
+    useSessionStore().operationInstances.set('u', { actionId: 'update-comfyui' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(false)
+    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · v0.22.3')
   })
 
   it('confirms an update over the Builds page from the ⋯ menu, without opening the build manager', async () => {
@@ -724,7 +825,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('open-details')).toBeUndefined()
     expect(host.showProgress.mock.calls[0]?.[0]).toMatchObject({
       installationId: 'u',
-      title: 'Updating to v0.44.2 — Updatable',
+      title: 'Updating to v0.44.2 · Updatable',
       returnTo: 'list',
       actionId: 'update-comfyui'
     })
@@ -744,14 +845,14 @@ describe('ChooserView', () => {
     expect(await openBuildMenu(wrapper, 'long')).toContain('migrate')
   })
 
-  it('shows a clickable red danger pill that opens its detail without launching', async () => {
+  it('shows a red danger status as plain text and opens its detail from the build menu', async () => {
     installMockApi([
       makeInstall({
         id: 'nf',
         name: 'Gone',
         statusTag: {
           style: 'danger',
-          label: 'Folder Not Found',
+          label: 'Folder not found',
           detail: 'Instance folder not found.\n\nC:/comfy/gone'
         }
       })
@@ -762,13 +863,14 @@ describe('ChooserView', () => {
     expect(tile.classes()).toContain('chooser-tile-errored')
     const tag = tile.find('.chooser-tile-danger-tag')
     expect(tag.exists()).toBe(true)
-    expect(tag.text()).toContain('Folder Not Found')
+    expect(tag.text()).toContain('Folder not found')
     expect(tile.find('.chooser-tile-error-badge').exists()).toBe(false)
+    expect(tile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
 
-    await tag.trigger('click')
-    await flushPromises()
+    expect(await openBuildMenu(wrapper, 'nf')).toContain('view-error')
+    await chooseFromBuildMenu('nf', 'view-error')
     expect(mockModal.alert).toHaveBeenCalledWith({
-      title: 'Folder Not Found',
+      title: 'Folder not found',
       message: 'Instance folder not found.\n\nC:/comfy/gone'
     })
     expect(wrapper.emitted('pick')).toBeUndefined()
@@ -827,10 +929,10 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(tabButtons(wrapper).map((tab) => tab.text())).toEqual([
-      'All4',
-      'This computer2',
-      'Cloud1',
-      'Remote1'
+      'All',
+      'This computer',
+      'Cloud',
+      'Remote'
     ])
     expect(tabButtons(wrapper)[0]!.attributes('data-state')).toBe('on')
 
@@ -927,7 +1029,10 @@ describe('ChooserView', () => {
   })
 
   it('offers a workspace refresh in the toolbar only when signed in', async () => {
-    installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
+    installMockApiSignedIn([makeInstall({ name: 'One', workspaceId: 'w1' })], [], {
+      id: 'w1',
+      name: 'Comfy Design Team'
+    })
     const wrapper = mountChooser()
     await flushPromises()
 
@@ -993,7 +1098,7 @@ describe('ChooserView', () => {
     buildMenuItem('local', 'promote-to-workspace')!.click()
     try {
       await wrapper.vm.$nextTick()
-      expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating...')
+      expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating…')
       expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
       expect(api.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith('local')
       expect(tile.find('[data-testid="chooser-tile-open"]').exists()).toBe(false)
@@ -1452,31 +1557,38 @@ describe('ChooserView', () => {
 })
 
 describe('ChooserView - why-Cloud explainer', () => {
-  const WHY_CLOUD = `[data-testid="${TID.dashboardTileWhyCloud('cloud-1')}"]`
-
   function cloudInstall(): Installation {
     return makeInstall({ id: 'cloud-1', name: 'Comfy Cloud', sourceCategory: 'cloud' })
   }
 
-  it('offers the explainer on the cloud tile, not on local tiles', async () => {
+  async function offersWhyCloud(wrapper: VueWrapper, id = 'cloud-1'): Promise<boolean> {
+    const items = await openBuildMenu(wrapper, id)
+    buildMenu(id)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    await vi.waitFor(() => expect(buildMenu(id)).toBeNull())
+    return items.includes('why-cloud')
+  }
+
+  async function openWhyCloud(wrapper: VueWrapper): Promise<void> {
+    await openBuildMenu(wrapper, 'cloud-1')
+    await chooseFromBuildMenu('cloud-1', 'why-cloud')
+  }
+
+  it('offers the explainer in the cloud tile menu, not on local tiles', async () => {
     installMockApi([cloudInstall(), makeInstall({ id: 'local-1', sourceCategory: 'local' })])
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(true)
-    expect(wrapper.find(`[data-testid="${TID.dashboardTileWhyCloud('local-1')}"]`).exists()).toBe(
-      false
-    )
+    expect(await offersWhyCloud(wrapper)).toBe(true)
+    expect(await offersWhyCloud(wrapper, 'local-1')).toBe(false)
   })
 
-  it('sits inline after the tile name, not in the action row', async () => {
+  it('puts no button inside the tile: the explainer lives in its menu', async () => {
     installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    const nameRow = wrapper.find('.chooser-tile-name-row')
-    expect(nameRow.find(WHY_CLOUD).exists()).toBe(true)
-    expect(nameRow.text()).toContain('Comfy Cloud')
-    expect(wrapper.findAll(WHY_CLOUD)).toHaveLength(1)
-    expect(wrapper.get('.chooser-tile-kebab').find(WHY_CLOUD).exists()).toBe(false)
+    const body = wrapper.get('.chooser-tile-body')
+    expect(body.text()).toContain('Comfy Cloud')
+    expect(body.findAll('button')).toHaveLength(0)
   })
 
   it('withholds the explainer from paid subscribers', async () => {
@@ -1484,17 +1596,15 @@ describe('ChooserView - why-Cloud explainer', () => {
     api.getCloudUserTier.mockResolvedValue('paid')
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    expect(await offersWhyCloud(wrapper)).toBe(false)
   })
 
   it('fails closed until the tier lookup succeeds', async () => {
     const api = installMockApi([cloudInstall()])
     api.getCloudUserTier.mockRejectedValue(new Error('offline'))
     const wrapper = mountChooser()
-
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    expect(await offersWhyCloud(wrapper)).toBe(false)
   })
 
   it('opens the modal without launching the install behind it', async () => {
@@ -1503,8 +1613,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     await flushPromises()
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(false)
 
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
     expect(wrapper.emitted('pick')).toBeUndefined()
@@ -1515,8 +1624,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     const api = installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     wrapper.findComponent(WhyTryCloudModal).vm.$emit('try-cloud')
     await flushPromises()
@@ -1530,8 +1638,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     api.runAction.mockResolvedValue({ ok: false })
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     wrapper.findComponent(WhyTryCloudModal).vm.$emit('try-cloud')
     await flushPromises()
@@ -1547,8 +1654,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     const api = installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     wrapper.findComponent(WhyTryCloudModal).vm.$emit('close')
     await flushPromises()
@@ -1561,11 +1667,11 @@ describe('ChooserView - why-Cloud explainer', () => {
     installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(true)
+    expect(await offersWhyCloud(wrapper)).toBe(true)
 
     useSessionStore().runningInstances.set('cloud-1', { installationId: 'cloud-1' } as never)
     await flushPromises()
 
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    expect(await offersWhyCloud(wrapper)).toBe(false)
   })
 })

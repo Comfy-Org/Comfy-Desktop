@@ -10,7 +10,6 @@ export const TID = {
 
   dashboardTile: (installId: string) => `dashboard-tile-${installId}`,
   dashboardTileKebab: (installId: string) => `dashboard-tile-kebab-${installId}`,
-  dashboardTileWhyCloud: (installId: string) => `dashboard-tile-why-cloud-${installId}`,
 
   contextMenuItem: (id: string) => `context-menu-item-${id}`,
 
@@ -53,12 +52,14 @@ export const TID = {
 
   lifecycleRelaunch: 'lifecycle-relaunch',
   lifecycleReturnDashboard: 'lifecycle-return-dashboard',
+  lifecycleViewLogs: 'lifecycle-view-logs',
 
   consoleTerminal: 'console-terminal',
   consoleSessionEnded: 'console-session-ended',
   consoleRestart: 'console-restart',
 
   progressErrorMessage: 'progress-error-message',
+  progressErrorDetail: 'progress-error-detail',
   progressLogs: 'progress-logs',
   progressReboot: 'progress-reboot',
   progressBack: 'progress-back',

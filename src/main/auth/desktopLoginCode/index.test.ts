@@ -17,7 +17,7 @@ const h = vi.hoisted(() => ({
   showCopyLinkBanner: vi.fn(),
   runBannerCleanup: vi.fn(),
   closeActiveBridge: vi.fn(),
-  settingsGet: vi.fn(),
+  telemetryConsent: vi.fn(),
   getDeviceId: vi.fn(() => 'machine-hash-1234'),
   createDesktopLoginCode: vi.fn(),
   exchangeDesktopLoginCode: vi.fn(),
@@ -45,7 +45,7 @@ vi.mock('../../lib/telemetry', () => ({
 
 vi.mock('../../lib/deviceId', () => ({ getDeviceId: h.getDeviceId }))
 
-vi.mock('../../settings', () => ({ get: h.settingsGet }))
+vi.mock('../../settings', () => ({ telemetryConsent: h.telemetryConsent }))
 
 vi.mock('../firebaseBridge/flowState', () => ({
   showCopyLinkBanner: h.showCopyLinkBanner,
@@ -135,7 +135,7 @@ afterEach(() => {
 
 describe('signInViaDesktopLoginCode', () => {
   it('falls back to the legacy bridge when code creation fails, without opening the browser', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockRejectedValue(new Error('create failed'))
     const mod = await loadOrchestrator()
 
@@ -149,7 +149,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('does not fall back when the view is destroyed before code creation fails', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     let destroyed = false
     h.createDesktopLoginCode.mockImplementation(async () => {
       destroyed = true
@@ -169,7 +169,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('completes the happy path: opens the browser, polls pending→complete, injects the user', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode
       .mockResolvedValueOnce({ status: 'pending' })
@@ -351,7 +351,7 @@ describe('signInViaDesktopLoginCode', () => {
 
   it('omits installation_id when telemetry consent is off or undecided', async () => {
     for (const consent of [false, undefined]) {
-      h.settingsGet.mockReturnValue(consent)
+      h.telemetryConsent.mockReturnValue(consent)
       h.createDesktopLoginCode.mockResolvedValue(GRANT)
       h.exchangeDesktopLoginCode.mockResolvedValue({
         status: 'complete',
@@ -372,7 +372,7 @@ describe('signInViaDesktopLoginCode', () => {
 
   it('keeps polling through retryable exchange errors', async () => {
     const { DesktopLoginCodeError } = await import('./client')
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode
       .mockRejectedValueOnce(new DesktopLoginCodeError('server hiccup', { retryable: true }))
@@ -390,7 +390,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('does not inject the session if the view navigated off the Cloud origin', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({
       status: 'complete',
@@ -446,7 +446,7 @@ describe('signInViaDesktopLoginCode', () => {
 
   it('fails in place on a terminal exchange error — no legacy restart after the browser opened', async () => {
     const { DesktopLoginCodeError } = await import('./client')
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockRejectedValue(
       new DesktopLoginCodeError('desktop login code exchange failed: 403', { status: 403 })
@@ -478,7 +478,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('gives up at the expiry deadline with a sign_in_failed event', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue({
       code: 'dlc_x',
       expires_in: 7,
@@ -507,7 +507,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('honors a redeem that landed in the last poll interval via a final exchange at the deadline', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue({
       code: 'dlc_x',
       expires_in: 7,
@@ -558,7 +558,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('aborts the prior poll loop on re-entry without reporting a failure', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
     const mod = await loadOrchestrator()
@@ -579,7 +579,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('cancels a prior code flow before falling back to the legacy bridge', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({ status: 'pending' })
     const mod = await loadOrchestrator()
@@ -602,7 +602,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('performs no tail side-effects when superseded after the exchange completed', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({
       status: 'complete',
@@ -660,7 +660,7 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('runs the code flow for a dev-project auth URL when the view is on a loopback dev origin', async () => {
-    h.settingsGet.mockReturnValue(true)
+    h.telemetryConsent.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({
       status: 'complete',

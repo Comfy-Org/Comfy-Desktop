@@ -4,12 +4,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppPageHost from './AppPageHost.vue'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const PAGE_LEFT = 260
 const PAGE_TOP = 12
 const PAGE_WIDTH = 900
+const WIDE_PAGE_WIDTH = 1100
 const PAGE_HEIGHT = 600
 const FRAME =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -91,6 +92,7 @@ beforeAll(() => browserPage.viewport(1280, 800))
 beforeEach(() => {
   vi.clearAllMocks()
   sidebarHovered.value = false
+  sidebarFocused.value = false
   stoppedListening = false
   stoppedListeningForOutputs = false
   page = document.createElement('div')
@@ -143,7 +145,9 @@ describe('AppPageHost', () => {
     const wrapper = await mountHost('loading')
 
     expect(wrapper.get('[data-testid="app-page-loading"]').isVisible()).toBe(true)
-    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe('Loading Remove Background')
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe(
+      'Loading Remove Background All apps'
+    )
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-busy')).toBe('true')
 
     tellStatus('ready')
@@ -154,19 +158,57 @@ describe('AppPageHost', () => {
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-busy')).toBe('false')
   })
 
-  it('lays the placeholder out where the app page puts its two panes: 360px, an 8px gap, the rest', async () => {
-    const wrapper = await mountHost('loading')
-    const [controls, results] = Array.from(
+  function placeholderPanes(wrapper: Awaited<ReturnType<typeof mountHost>>): DOMRect[] {
+    return Array.from(
       wrapper.get('[data-testid="app-page-loading"]').element.querySelectorAll(':scope > div')
     ).map((pane) => pane.getBoundingClientRect())
+  }
+
+  it('lays the placeholder out where a wide app page puts its two panes: 360px, an 8px gap, the rest', async () => {
+    const wrapper = await mountHost('loading')
+    page.style.width = `${WIDE_PAGE_WIDTH}px`
+    await nextFrame()
+    const [controls, results] = placeholderPanes(wrapper)
 
     expect(controls).toMatchObject({ x: PAGE_LEFT, y: PAGE_TOP, width: 360, height: PAGE_HEIGHT })
     expect(results).toMatchObject({
       x: PAGE_LEFT + 368,
       y: PAGE_TOP,
-      width: PAGE_WIDTH - 368,
+      width: WIDE_PAGE_WIDTH - 368,
       height: PAGE_HEIGHT
     })
+  })
+
+  it('narrows the placeholder controls to 300px, as the app page does, when the page is under 960px wide', async () => {
+    const wrapper = await mountHost('loading')
+    const [controls, results] = placeholderPanes(wrapper)
+
+    expect(controls).toMatchObject({ x: PAGE_LEFT, y: PAGE_TOP, width: 300, height: PAGE_HEIGHT })
+    expect(results).toMatchObject({
+      x: PAGE_LEFT + 308,
+      y: PAGE_TOP,
+      width: PAGE_WIDTH - 308,
+      height: PAGE_HEIGHT
+    })
+  })
+
+  it('keeps the 300px placeholder controls on a page exactly 960px wide, as the app page does', async () => {
+    const wrapper = await mountHost('loading')
+    page.style.width = '960px'
+    await nextFrame()
+    const [controls] = placeholderPanes(wrapper)
+
+    expect(controls?.width).toBe(300)
+  })
+
+  it('offers the way back to all apps while the app is still loading', async () => {
+    const wrapper = await mountHost('loading')
+
+    const back = wrapper.get('[data-testid="app-page-loading-back"]')
+    expect(back.text()).toBe('All apps')
+    await back.trigger('click')
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('says the app did not load, loads it again on Try again, and offers the way back', async () => {
@@ -265,7 +307,9 @@ describe('AppPageHost', () => {
       'sdr-to-hdr',
       expect.objectContaining({ justOpened: true })
     )
-    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe('Loading SDR to HDR')
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe(
+      'Loading SDR to HDR All apps'
+    )
   })
 
   it('swaps the app for a still frame while a menu covers part of it, then brings it back', async () => {
@@ -292,17 +336,91 @@ describe('AppPageHost', () => {
     showAppPage.mockClear()
 
     sidebarHovered.value = true
-    await nextFrame()
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
 
     expect(captureAppPage).toHaveBeenCalledTimes(1)
-    expect(hideAppPage).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="app-page-frozen-frame"]').exists()).toBe(true)
     expect(appPageShown.value).toBe(false)
 
     sidebarHovered.value = false
-    await nextFrame()
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+  })
+
+  it('swaps the app for a still frame while the keyboard is in the sidebar, then brings it back', async () => {
+    await mountHost()
+    showAppPage.mockClear()
+
+    sidebarFocused.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(false)
+
+    sidebarFocused.value = false
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+  })
+
+  it('shows no loading placeholder for an app that is up when no still frame could be taken', async () => {
+    captureAppPage.mockResolvedValue(null)
+    const wrapper = await mountHost()
+
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+
+    expect(wrapper.find('[data-testid="app-page-loading"]').exists()).toBe(false)
+  })
+
+  it('lets the sidebar know the page is covered when another app starts loading while a hide still waits for its picture', async () => {
+    const wrapper = await mountHost()
+    let giveFrame: (frame: string | null) => void = () => {}
+    captureAppPage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        giveFrame = resolve
+      })
+    )
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(captureAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+
+    await wrapper.setProps({ appId: 'sdr-to-hdr', title: 'SDR to HDR' })
+    await flushPromises()
+    giveFrame(FRAME)
+    await flushPromises()
+
+    expect(appPageShown.value).toBe(false)
+  })
+
+  it('starts loading another app picked from the sidebar at once, hidden, with the placeholder showing', async () => {
+    const wrapper = await mountHost()
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+    showAppPage.mockClear()
+    showAppPage.mockResolvedValue('loading')
+
+    await wrapper.setProps({ appId: 'sdr-to-hdr', title: 'SDR to HDR' })
+    await flushPromises()
 
     expect(showAppPage).toHaveBeenCalledTimes(1)
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'sdr-to-hdr',
+      expect.objectContaining({ justOpened: true, hidden: true })
+    )
+    expect(wrapper.find('[data-testid="app-page-frozen-frame"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe(
+      'Loading SDR to HDR All apps'
+    )
+    expect(appPageShown.value).toBe(false)
+
+    tellStatusOf('sdr-to-hdr', 'ready')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-loading"]').exists()).toBe(true)
+
+    sidebarHovered.value = false
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(2))
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'sdr-to-hdr',
+      expect.not.objectContaining({ hidden: true })
+    )
     expect(appPageShown.value).toBe(true)
   })
 
@@ -445,6 +563,42 @@ describe('AppPageHost outputs', () => {
     expect(wrapper.emitted('view-in-assets')).toEqual([['cutout-2.png']])
     expect(sendAppOutputAction).not.toHaveBeenCalled()
     expect(outputDialog()).toBeNull()
+  })
+
+  it('gives a result on this computer only Show in Finder as its main button, before Open workflow', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [{ ...first!, savedOn: 'computer', folder: '/Users/me/ComfyUI/output/apps' }, second!],
+      index: 0
+    })
+
+    expect(inOutputDialog('output-detail-download')).toBeNull()
+    const buttons = [
+      ...outputDialog()!.querySelectorAll<HTMLElement>('[data-testid^="output-detail-"]')
+    ]
+      .map((element) => element.dataset.testid)
+      .filter((id) => id === 'output-detail-show-in-folder' || id === 'output-detail-workflow')
+    expect(buttons).toEqual(['output-detail-show-in-folder', 'output-detail-workflow'])
+  })
+
+  it('keeps Download for a Cloud result and for a result on this computer whose folder Desktop does not know', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [
+        { ...first!, savedOn: 'cloud' },
+        { ...second!, savedOn: 'computer' }
+      ],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-download')).not.toBeNull()
+
+    inOutputDialog('output-detail-thumb-0')!.click()
+    await flushPromises()
+
+    expect(inOutputDialog('output-detail-download')).not.toBeNull()
   })
 
   it('closes the dialog when the page that sent the outputs is replaced', async () => {

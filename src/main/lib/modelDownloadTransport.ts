@@ -1,8 +1,20 @@
-import { net } from 'electron'
+import { net, session as electronSession } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
+import { diskSpaceShortfall } from './modelDownloadSpace'
+import {
+  DEFAULT_SEGMENT_TUNING,
+  planSegments,
+  segmentsFinished,
+  startSegmentedRun,
+  type SegmentRequest,
+  type SegmentRequestHandlers,
+  type SegmentResponse,
+  type SegmentTuning,
+  type SegmentedRun
+} from './modelDownloadSegments'
 import {
   installStagedAtFinal,
   quarantineOrphanStagedBytes,
@@ -12,7 +24,8 @@ import {
   stagingMetaPathFor,
   stagingPathFor,
   writeStagedMeta,
-  type StagedDownloadMeta
+  type StagedDownloadMeta,
+  type StagedSegment
 } from './modelDownloadStaging'
 
 export interface ModelTransferProgress {
@@ -37,6 +50,7 @@ export interface ModelTransferOptions {
   expectedSize?: number
   sha256?: string
   idleTimeoutMs?: number
+  segmentTuning?: Partial<SegmentTuning>
   onProgress?: (p: ModelTransferProgress) => void
 }
 
@@ -48,6 +62,20 @@ export interface ModelTransferHandle {
 
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000
 const MAX_REDIRECTS = 10
+const USER_AGENT = 'ComfyUI-Desktop-2'
+const PART_PARTITION_PREFIX = 'comfy-download-part-'
+
+function partSessionFor(slot: number): Electron.Session {
+  return electronSession.fromPartition(`${PART_PARTITION_PREFIX}${slot}`, { cache: false })
+}
+
+function originOf(value: string): string | null {
+  try {
+    return new URL(value).origin
+  } catch {
+    return null
+  }
+}
 
 function headerString(value: string | string[] | undefined): string | undefined {
   if (value === undefined) return undefined
@@ -64,7 +92,7 @@ function isSafeHeaderValue(value: string | undefined): value is string {
 }
 
 function resumeValidatorFor(
-  meta: StagedDownloadMeta
+  meta: Pick<StagedDownloadMeta, 'etag' | 'lastModified'>
 ): { kind: 'etag' | 'last-modified'; value: string } | null {
   if (isSafeHeaderValue(meta.etag) && !meta.etag.startsWith('W/')) {
     return { kind: 'etag', value: meta.etag }
@@ -73,6 +101,15 @@ function resumeValidatorFor(
     return { kind: 'last-modified', value: meta.lastModified }
   }
   return null
+}
+
+function acceptsByteRanges(headers: Record<string, string | string[]>): boolean {
+  const value = headerString(headers['accept-ranges'])
+  if (!value) return false
+  return value
+    .split(',')
+    .map((unit) => unit.trim().toLowerCase())
+    .includes('bytes')
 }
 
 export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHandle {
@@ -89,6 +126,8 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     onProgress
   } = opts
+  const tuning: SegmentTuning = { ...DEFAULT_SEGMENT_TUNING, ...opts.segmentTuning }
+  let knownSha256 = sha256
 
   const stagingPath = stagingPathFor(finalPath)
   const metaPath = stagingMetaPathFor(finalPath)
@@ -140,28 +179,38 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     }
   }
 
-  const failRetaining = (message: string): void => {
-    if (!claim()) return
+  let segmentedRun: SegmentedRun | null = null
+  let segmentsHalting: Promise<void> | null = null
+
+  const shutdown = (cb: () => void, persistSegments = true): void => {
     clearIdle()
     abortRequest()
-    closeStream(() => settle({ outcome: 'error', error: message }))
+    const run = segmentedRun
+    segmentedRun = null
+    const halting = run ? run.halt({ persist: persistSegments }) : segmentsHalting
+    if (!halting) {
+      closeStream(cb)
+      return
+    }
+    void halting.then(() => closeStream(cb))
+  }
+
+  const failRetaining = (message: string): void => {
+    if (!claim()) return
+    shutdown(() => settle({ outcome: 'error', error: message }))
   }
 
   const failDiscarding = (message: string): void => {
     if (!claim()) return
-    clearIdle()
-    abortRequest()
-    closeStream(() => {
+    shutdown(() => {
       removeStagedArtifacts(finalPath)
       settle({ outcome: 'error', error: message })
-    })
+    }, false)
   }
 
   const finalize = (finalBytes: number): void => {
     if (!claim()) return
-    clearIdle()
-    abortRequest()
-    closeStream(() => finalizeClaimed(finalBytes))
+    shutdown(() => finalizeClaimed(finalBytes))
   }
 
   const mirrorEnabled = settings.get('useChineseMirrors') === true
@@ -177,6 +226,258 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
   }
 
   let attemptGen = 0
+  let segmentsAllowed = true
+  let partSessionsRefused = false
+
+  const openRangeRequest =
+    (sourceUrl: string) =>
+    (
+      range: string,
+      ifRange: string,
+      handlers: SegmentRequestHandlers,
+      slot: number
+    ): SegmentRequest => {
+      const sourceOrigin = originOf(sourceUrl)
+      let redirectsLeft = MAX_REDIRECTS
+      let current: Electron.ClientRequest | null = null
+      let closed = false
+
+      const drop = (request: Electron.ClientRequest): void => {
+        try {
+          request.abort()
+        } catch {}
+      }
+
+      const send = (target: string, onPartSession: boolean): void => {
+        const request = net.request({
+          url: target,
+          ...(onPartSession
+            ? { session: partSessionFor(slot) }
+            : session
+              ? { session, useSessionCookies: true }
+              : {}),
+          redirect: 'manual'
+        })
+        current = request
+        const live = (): boolean => !closed && current === request
+        request.setHeader('User-Agent', USER_AGENT)
+        request.setHeader('Range', range)
+        request.setHeader('If-Range', ifRange)
+        request.on('redirect', (_status, _method, redirectUrl) => {
+          if (!live()) return
+          redirectsLeft--
+          if (redirectsLeft < 0) {
+            handlers.onError(new Error('too many redirects'))
+            return
+          }
+          if (!redirectUrl) {
+            handlers.onError(new Error('empty redirect location'))
+            return
+          }
+          const nextOrigin = originOf(redirectUrl)
+          if (
+            !onPartSession &&
+            !partSessionsRefused &&
+            sourceOrigin &&
+            nextOrigin &&
+            nextOrigin !== sourceOrigin
+          ) {
+            drop(request)
+            send(redirectUrl, true)
+            return
+          }
+          try {
+            request.followRedirect()
+          } catch (err) {
+            handlers.onError(err as Error)
+          }
+        })
+        request.on('response', (response) => {
+          if (!live()) return
+          if (onPartSession && (response.statusCode === 401 || response.statusCode === 403)) {
+            partSessionsRefused = true
+            drop(request)
+            redirectsLeft = MAX_REDIRECTS
+            send(sourceUrl, false)
+            return
+          }
+          handlers.onResponse(response as unknown as SegmentResponse)
+        })
+        request.on('error', (err: Error) => {
+          if (!live()) return
+          handlers.onError(err)
+        })
+        request.end()
+      }
+
+      send(sourceUrl, false)
+      return {
+        abort: () => {
+          closed = true
+          if (current) drop(current)
+        }
+      }
+    }
+
+  const fallBackToSingleStream = (sourceUrl: string): void => {
+    if (phase !== 'active') return
+    segmentsAllowed = false
+    const run = segmentedRun
+    segmentedRun = null
+    if (!run) return
+    const halting = run.halt({ persist: false })
+    segmentsHalting = halting
+    void halting.then(() => {
+      if (segmentsHalting === halting) segmentsHalting = null
+      if (phase !== 'active') return
+      knownSha256 = knownSha256 ?? readStagedMeta(metaPath)?.sha256
+      removeStagedArtifacts(finalPath)
+      issueAttempt(sourceUrl)
+    })
+  }
+
+  const runSegments = (
+    fd: number,
+    meta: StagedDownloadMeta & { segments: StagedSegment[] },
+    validator: { kind: 'etag' | 'last-modified'; value: string },
+    sourceUrl: string
+  ): void => {
+    const run = startSegmentedRun({
+      fd,
+      totalBytes: meta.expectedSize,
+      segments: meta.segments,
+      validator,
+      idleTimeoutMs,
+      tuning,
+      openRange: openRangeRequest(sourceUrl),
+      persist: (segments) => {
+        writeStagedMeta(metaPath, { ...meta, segments })
+      },
+      onProgress: (receivedBytes) => {
+        anyBytesThisTransfer = true
+        onProgress?.({ receivedBytes, totalBytes: meta.expectedSize })
+      },
+      onComplete: () => {
+        if (!claim()) return
+        shutdown(() => {
+          let actualSize = -1
+          try {
+            actualSize = fs.statSync(stagingPath).size
+          } catch {}
+          if (actualSize !== meta.expectedSize) {
+            settle({
+              outcome: 'error',
+              error: `Download incomplete: expected ${meta.expectedSize} bytes but got ${actualSize}`
+            })
+            return
+          }
+          finalizeClaimed(actualSize)
+        })
+      },
+      onFailure: (failure) => {
+        if (failure.kind === 'ranges-ignored') fallBackToSingleStream(sourceUrl)
+        else if (failure.kind === 'discard') failDiscarding(failure.message)
+        else failRetaining(failure.message)
+      }
+    })
+    segmentedRun = run
+    run.start()
+  }
+
+  const openStagingAt = (size: number, truncate: boolean): number | null => {
+    let fd: number
+    try {
+      fd = fs.openSync(stagingPath, truncate ? 'w' : 'r+')
+    } catch (err) {
+      failRetaining(`Download failed: cannot open staging file: ${(err as Error).message}`)
+      return null
+    }
+    if (truncate) {
+      try {
+        fs.ftruncateSync(fd, size)
+      } catch (err) {
+        try {
+          fs.closeSync(fd)
+        } catch {}
+        failRetaining(`Download failed: cannot size staging file: ${(err as Error).message}`)
+        return null
+      }
+    }
+    return fd
+  }
+
+  const segmentedMeta = (
+    base: Omit<StagedDownloadMeta, 'version' | 'segments'>,
+    segments: StagedSegment[],
+    fromMirror: boolean
+  ): StagedDownloadMeta & { segments: StagedSegment[] } => ({
+    ...base,
+    version: 3,
+    jobId,
+    directory,
+    filename,
+    installationId: installationId ?? undefined,
+    sha256: knownSha256 ?? base.sha256,
+    segments,
+    segmentsFromMirror: fromMirror ? true : undefined
+  })
+
+  const beginSegments = (
+    sourceUrl: string,
+    totalBytes: number,
+    segments: StagedSegment[],
+    validatorHeaders: { etag?: string; lastModified?: string },
+    validator: { kind: 'etag' | 'last-modified'; value: string },
+    priorSha256: string | undefined
+  ): void => {
+    const meta = segmentedMeta(
+      {
+        url,
+        expectedSize: totalBytes,
+        etag: validatorHeaders.etag,
+        lastModified: validatorHeaders.lastModified,
+        directory,
+        filename,
+        sha256: priorSha256
+      },
+      segments,
+      sourceUrl !== url
+    )
+    if (!writeStagedMeta(metaPath, meta)) {
+      failRetaining('Download failed: cannot write staging metadata')
+      return
+    }
+    const fd = openStagingAt(totalBytes, true)
+    if (fd === null) return
+    runSegments(fd, meta, validator, sourceUrl)
+  }
+
+  const resumeSegments = (meta: StagedDownloadMeta): boolean => {
+    const segments = meta.segments
+    const validator = resumeValidatorFor(meta)
+    if (!segments || !validator) return false
+    if (meta.segmentsFromMirror && !mirror && !(knownSha256 ?? meta.sha256)) return false
+    if (expectedSize && expectedSize !== meta.expectedSize) return false
+    let stagedSize = -1
+    try {
+      stagedSize = fs.statSync(stagingPath).size
+    } catch {}
+    if (stagedSize !== meta.expectedSize) return false
+    if (segmentsFinished(segments)) {
+      finalize(meta.expectedSize)
+      return true
+    }
+    const shortfall = diskSpaceShortfall(stagingPath, meta.expectedSize)
+    if (shortfall) {
+      failRetaining(shortfall)
+      return true
+    }
+    const sourceUrl = meta.segmentsFromMirror && mirror ? mirror : url
+    const fd = openStagingAt(meta.expectedSize, false)
+    if (fd === null) return true
+    runSegments(fd, segmentedMeta(meta, segments, sourceUrl !== url), validator, sourceUrl)
+    return true
+  }
 
   const issueAttempt = (attemptUrl: string): void => {
     if (phase !== 'active') return
@@ -186,39 +487,46 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     let resumeFrom = 0
     let existingMeta: StagedDownloadMeta | null = readStagedMeta(metaPath)
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
-    if (existingMeta && sha256 && existingMeta.sha256 && existingMeta.sha256 !== sha256) {
+    if (existingMeta && knownSha256 && existingMeta.sha256 && existingMeta.sha256 !== knownSha256) {
       removeStagedArtifacts(finalPath)
       existingMeta = null
     }
     const stagedContentMatches =
       existingMeta !== null &&
-      (existingMeta.url === url || (sha256 !== undefined && existingMeta.sha256 === sha256))
+      (existingMeta.url === url ||
+        (knownSha256 !== undefined && existingMeta.sha256 === knownSha256))
     if (existingMeta && stagedContentMatches && fs.existsSync(stagingPath)) {
-      resumeValidator = resumeValidatorFor(existingMeta)
-      if (resumeValidator) {
-        try {
-          resumeFrom = fs.statSync(stagingPath).size
-        } catch {
+      if (existingMeta.segments) {
+        if (segmentsAllowed && resumeSegments(existingMeta)) return
+        removeStagedArtifacts(finalPath)
+        existingMeta = null
+      } else {
+        resumeValidator = resumeValidatorFor(existingMeta)
+        if (resumeValidator) {
+          try {
+            resumeFrom = fs.statSync(stagingPath).size
+          } catch {
+            resumeFrom = 0
+          }
+        }
+        if (!resumeValidator || resumeFrom === 0) {
+          removeStagedArtifacts(finalPath)
+          existingMeta = null
+          resumeValidator = null
+          resumeFrom = 0
+        } else if (existingMeta.expectedSize > 0 && resumeFrom >= existingMeta.expectedSize) {
+          if (
+            resumeFrom === existingMeta.expectedSize &&
+            (!expectedSize || expectedSize === existingMeta.expectedSize)
+          ) {
+            finalize(resumeFrom)
+            return
+          }
+          removeStagedArtifacts(finalPath)
+          existingMeta = null
+          resumeValidator = null
           resumeFrom = 0
         }
-      }
-      if (!resumeValidator || resumeFrom === 0) {
-        removeStagedArtifacts(finalPath)
-        existingMeta = null
-        resumeValidator = null
-        resumeFrom = 0
-      } else if (existingMeta.expectedSize > 0 && resumeFrom >= existingMeta.expectedSize) {
-        if (
-          resumeFrom === existingMeta.expectedSize &&
-          (!expectedSize || expectedSize === existingMeta.expectedSize)
-        ) {
-          finalize(resumeFrom)
-          return
-        }
-        removeStagedArtifacts(finalPath)
-        existingMeta = null
-        resumeValidator = null
-        resumeFrom = 0
       }
     } else if (existingMeta) {
       removeStagedArtifacts(finalPath)
@@ -252,7 +560,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         directory,
         filename,
         installationId: installationId ?? undefined,
-        sha256: sha256 ?? undefined
+        sha256: knownSha256 ?? undefined
       })
       if (!durable) {
         failRetaining('Download failed: cannot write staging metadata')
@@ -283,7 +591,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     }
 
     try {
-      request.setHeader('User-Agent', 'ComfyUI-Desktop-2')
+      request.setHeader('User-Agent', USER_AGENT)
       if (resumeFrom > 0 && resumeValidator) {
         request.setHeader('Range', `bytes=${resumeFrom}-`)
         request.setHeader('If-Range', resumeValidator.value)
@@ -436,6 +744,37 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           return
         }
 
+        const shortfall = diskSpaceShortfall(stagingPath, effectiveSize)
+        if (shortfall) {
+          clearIdle()
+          failRetaining(shortfall)
+          return
+        }
+
+        if (!isResumed && segmentsAllowed && acceptsByteRanges(response.headers)) {
+          const segments = planSegments(totalFromHeaders, tuning)
+          const validatorHeaders = {
+            etag: headerString(response.headers['etag']),
+            lastModified: headerString(response.headers['last-modified'])
+          }
+          const validator = resumeValidatorFor(validatorHeaders)
+          if (segments && validator) {
+            clearIdle()
+            attemptGen++
+            abortRequest()
+            activeRequest = null
+            beginSegments(
+              attemptUrl,
+              totalFromHeaders,
+              segments,
+              validatorHeaders,
+              validator,
+              existingMeta?.sha256
+            )
+            return
+          }
+        }
+
         const meta: StagedDownloadMeta = {
           version: 2,
           jobId,
@@ -448,7 +787,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           directory,
           filename,
           installationId: installationId ?? undefined,
-          sha256: sha256 ?? existingMeta?.sha256
+          sha256: knownSha256 ?? existingMeta?.sha256
         }
         if (!writeStagedMeta(metaPath, meta)) {
           failRetaining('Download failed: cannot write staging metadata')
@@ -545,7 +884,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
 
   const finalizeClaimed = (finalBytes: number): void => {
     void (async () => {
-      const expectedSha256 = sha256 ?? readStagedMeta(metaPath)?.sha256
+      const expectedSha256 = knownSha256 ?? readStagedMeta(metaPath)?.sha256
       if (expectedSha256) {
         let actualSha256: string
         try {
@@ -583,9 +922,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
 
   const stop = (mode: 'pause' | 'cancel'): boolean => {
     if (!claim()) return false
-    clearIdle()
-    abortRequest()
-    closeStream(() => {
+    shutdown(() => {
       if (mode === 'cancel') {
         if (removeStagedArtifacts(finalPath)) {
           settle({ outcome: 'cancelled' })
@@ -598,7 +935,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
       } else {
         settle({ outcome: 'paused' })
       }
-    })
+    }, mode === 'pause')
     return true
   }
 

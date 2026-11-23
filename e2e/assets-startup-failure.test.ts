@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible, pickFromBuildsTileMenu } from './support/chooserHelpers'
-import { hasActiveLaunch } from './support/devHooks'
+import { getIpcInvocations, hasActiveLaunch } from './support/devHooks'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 
 const INSTALL_ID = 'inst-assets-startup-failure'
@@ -28,16 +28,55 @@ function coreRefusal(kind: string, ...message: string[]): string {
   )
 }
 
+interface ActiveLaunchPoll {
+  atMs: number
+  active: boolean
+}
+
+async function printWhyNoErrorBadge(
+  launchPickStartedAtMs: number,
+  activeLaunchPolls: ActiveLaunchPoll[]
+): Promise<void> {
+  const runActions = await getIpcInvocations(ctx!.app, 'run-action')
+  const panelState = await ctx!.panel.evaluate<string>(
+    `JSON.stringify(window.__e2eRenderer.getLaunchDiagnostics(${JSON.stringify(INSTALL_ID)}))`
+  )
+  console.log(
+    `[assets-startup-failure] no new error badge: launchPickStartedAtMs=${launchPickStartedAtMs} ` +
+      `activeLaunchPolls=${JSON.stringify(activeLaunchPolls)}\n` +
+      `run-action calls=${JSON.stringify(runActions)}\n` +
+      `panel=${panelState}`
+  )
+}
+
 async function launchAndReadError(stderr: string): Promise<string | null> {
   await writeFile(path.join(installPath, 'startup-failure'), stderr)
   await ctx!.panel.evaluate<boolean>(`(() => {
     document.querySelector('.chooser-tile-error-badge')?.setAttribute('data-earlier-failure', '')
     return true
   })()`)
+  const activeLaunchPolls: ActiveLaunchPoll[] = []
+  const launchPickStartedAtMs = Date.now()
   await pickFromBuildsTileMenu(ctx!.panel, INSTALL_ID, 'launch')
-  await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 60_000 }).toBe(false)
-  await ctx!.panel.waitForVisible(NEW_ERROR_BADGE, { timeout: 30_000 })
-  expect(await ctx!.panel.click(NEW_ERROR_BADGE)).toBe(true)
+  await expect
+    .poll(
+      async () => {
+        const active = await hasActiveLaunch(ctx!.app, INSTALL_ID)
+        activeLaunchPolls.push({ atMs: Date.now(), active })
+        return active
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(false)
+  try {
+    await ctx!.panel.waitForVisible(NEW_ERROR_BADGE, { timeout: 30_000 })
+  } catch (err) {
+    await printWhyNoErrorBadge(launchPickStartedAtMs, activeLaunchPolls).catch((error: unknown) =>
+      console.log(`[assets-startup-failure] diagnostics failed: ${(error as Error).message}`)
+    )
+    throw err
+  }
+  await pickFromBuildsTileMenu(ctx!.panel, INSTALL_ID, 'view-error')
   await ctx!.panel.waitForVisible('[data-testid="build-progress-step-detail"]', {
     timeout: 10_000
   })

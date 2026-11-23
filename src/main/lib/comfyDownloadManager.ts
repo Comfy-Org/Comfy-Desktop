@@ -298,6 +298,7 @@ interface RetryParams {
   sha256?: string
   destinationBaseDir?: string
   modelSource?: ModelDownloadSource
+  appId?: string | null
   existingFilePolicy?: 'deduplicate' | 'skip'
   templateInput?: ComfyTemplateInputReference
 }
@@ -633,6 +634,7 @@ export interface ModelJobOptions {
   destinationBaseDir?: string
   bypassRootLockFor?: string
   source?: ModelDownloadSource
+  appId?: string | null
   isRetry?: boolean
   onProgress?: (receivedBytes: number, totalBytes: number) => void
 }
@@ -886,7 +888,8 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
           directory,
           installationId: resolvedInstallId,
           source: opts.source,
-          isRetry: opts.isRetry
+          isRetry: opts.isRetry,
+          appId: opts.appId
         })
       : undefined
   telemetry?.updateBytes(0, opts.expectedSize)
@@ -902,7 +905,8 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     savePath,
     sha256,
     destinationBaseDir: opts.destinationBaseDir,
-    modelSource: opts.source
+    modelSource: opts.source,
+    appId: opts.appId
   })
 
   const makeProgress = (
@@ -1887,6 +1891,7 @@ export function retryDownload(ref: string): boolean {
       sha256: params.sha256,
       destinationBaseDir: params.destinationBaseDir,
       source: params.modelSource,
+      appId: params.appId,
       isRetry: true
     })
   }

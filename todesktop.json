@@ -11,6 +11,7 @@
     "!todesktop-targets/**"
   ],
   "appId": "com.todesktop.241012ess7yxs0e",
+  "appProtocolScheme": "comfy",
   "icon": "./assets/Comfy_Logo_x512.png",
   "packageManager": "pnpm",
   "nodeVersion": "24.22.3",
@@ -48,8 +49,8 @@
       "height": 400
     },
     "contents": [
-      { "x": 135, "y": 195 },
-      { "x": 405, "y": 195 }
+      { "x": 135, "y": 270 },
+      { "x": 405, "y": 190 }
     ]
   },
   "linux": {

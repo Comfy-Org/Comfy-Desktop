@@ -1,5 +1,5 @@
 import comfyWordmarkSource from '../components/icons/ComfyWordmark.vue?raw'
-import { formatSeconds } from './benchmarkGroups'
+import { formatSeconds } from './benchmarkTable'
 import {
   getRelativeSpeedOffset,
   getRelativeSpeedScale,

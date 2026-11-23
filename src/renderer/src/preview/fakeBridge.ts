@@ -81,6 +81,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
   const listeners = new Map<string, Set<AnyListener>>()
   const authListeners = new Set<(status: AuthStatus) => void>()
   let auth = seed.auth ?? SIGNED_OUT
+  let homeTourReplay = { id: 0, pending: false }
   let lastActivityAt = performance.now()
 
   function noteActivity(): void {
@@ -190,6 +191,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     openExternal: async () => {},
     getDiskSpace: async () => ({ free: machine.diskFreeBytes, total: machine.diskTotalBytes }),
     logsSnapshot: async () => '',
+    openLogsWindow: async () => {},
     validateInstallPath: async () => [],
     getInstallationSize: async () => ({ sizeBytes: 0 }),
     cancelInstallationSize: async () => {},
@@ -246,16 +248,29 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     closeHostWindow: async () => true,
     returnToDashboard: async () => true,
     closeCurrentPanel: () => {},
-    closeAnnouncement: () => {},
     signalOverlayReady: () => {},
     navigatePanel: () => {},
     openPageInNewWindow: () => {},
     listAssets: async () => ({ assets: [], total: 0 }),
-    listLocalAssets: async () => ({ assets: [], truncated: false }),
+    listOutputFolders: async () => ({
+      home: '/Users/you',
+      shared: '/Users/you/Documents/ComfyUI/output',
+      ofBuild: {}
+    }),
+    openOutputFolder: async () => true,
+    listLocalAssets: async () => ({
+      assets: [],
+      total: 0,
+      counts: { all: 0, image: 0, video: 0, audio: 0, '3d': 0 }
+    }),
     downloadAsset: async () => true,
     revealAsset: async () => true,
+    openAsset: async () => true,
     findCloudAsset: async () => ({ status: 'absent' }),
     copyAsset: async () => true,
+    readAssetModel: async () => null,
+    hasAssetWorkflow: async () => false,
+    openAssetWorkflow: async () => ({ opened: true }),
     trashAsset: async () => true,
     listHomeWorkflows: async () => HOME_WORKFLOWS,
     listCatalogWorkflows: async () => HOME_WORKFLOWS,
@@ -265,8 +280,13 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     listApps: async () => APP_CARDS,
     showAppPage: async () => 'ready',
     captureAppPage: async () => null,
+    getAppRuns: async () => [],
+    appSwitchStopsRun: async () => null,
     hideAppPage: () => {},
+    closeAppPage: () => {},
     sendAppOutputAction: () => {},
+    sendAppRequest: async () => true,
+    acceptDraftApp: async () => null,
     getBuildStorageSnapshot: async () => ({
       sharedDirectoriesFields: [],
       modelsDirs: settings.modelsDirs.map((path, index) => ({ path, isPrimary: index === 0 })),
@@ -359,6 +379,12 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       emit('onSettingsChanged', { key })
     },
     getSetting: async (key) => settings[key],
+    getHomeTourReplay: async () => ({ ...homeTourReplay }),
+    finishHomeTour: async (shownReplayId) => {
+      if (shownReplayId === homeTourReplay.id)
+        homeTourReplay = { ...homeTourReplay, pending: false }
+      emit('onHomeTourReplayChanged', { ...homeTourReplay, finished: true })
+    },
 
     getPendingBetaNotice: async () => null,
     acknowledgeBetaNotice: async () => {},
@@ -378,6 +404,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       ...machine.systemInfo,
       installation_count: installations.length
     }),
+    getChassisType: async () => machine.chassisType,
     getInstallationDdContext: async () => null,
     getInstallsInventory: async () => ({
       total_install_count: installations.length,
@@ -442,11 +469,15 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
 
     onAppPageStatusChanged: listen('onAppPageStatusChanged'),
     onAppPageClosed: listen('onAppPageClosed'),
+    onAppBackToListAsked: listen('onAppBackToListAsked'),
+    onAppsListChanged: listen('onAppsListChanged'),
+    onOpenDraftApp: listen('onOpenDraftApp'),
+    onAppRunsChanged: listen('onAppRunsChanged'),
+    onOpenRunningApp: listen('onOpenRunningApp'),
     onAppOutputs: listen('onAppOutputs'),
     onCreditBalanceChanged: listen('onCreditBalanceChanged'),
     onFirstUseSkip: listen('onFirstUseSkip'),
     onOpenFeedback: listen('onOpenFeedback'),
-    onOpenAnnouncement: listen('onOpenAnnouncement'),
     onCloseRequest: listen('onCloseRequest'),
     onReturnToDashboardRequest: listen('onReturnToDashboardRequest'),
     onAdoptPrompt: listen('onAdoptPrompt'),
@@ -485,6 +516,8 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     onErrorDetail: listen('onErrorDetail'),
     onSuggestChineseMirrors: listen('onSuggestChineseMirrors'),
     onSettingsChanged: listen('onSettingsChanged'),
+    onHomeTourReplayChanged: listen('onHomeTourReplayChanged'),
+    onShowHomePage: listen('onShowHomePage'),
     onPanelSwitch: listen('onPanelSwitch'),
     onPanelTriggerOverlay: listen('onPanelTriggerOverlay')
   })

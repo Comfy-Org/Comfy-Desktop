@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setChecked } from './testHelpers'
 
@@ -21,6 +21,9 @@ vi.mock('../components/TermsModal.vue', () => ({
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
+import { useModal } from '../composables/useModal'
+import { provideLocalDeviceKind } from '../composables/useLocalDeviceKind'
+import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
 import type { SetupConsent } from '../lib/setupConsent'
@@ -58,6 +61,7 @@ function installApi(overrides: ApiOverrides = {}): void {
     }),
     getDefaultInstallDir: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs'),
     getDiskSpace: vi.fn().mockResolvedValue({ free: overrides.free ?? 412 * GB, total: 1000 * GB }),
+    validateInstallPath: vi.fn().mockResolvedValue([]),
     getSources: vi.fn().mockResolvedValue([
       {
         id: 'standalone',
@@ -101,6 +105,7 @@ function installApi(overrides: ApiOverrides = {}): void {
 }
 
 beforeEach(() => {
+  useModal().dismiss()
   vi.mocked(emitTelemetryAction).mockClear()
   installApi()
 })
@@ -125,6 +130,57 @@ const install = async (w: Wrapper) => {
 }
 
 describe('Set up, the first screen', () => {
+  it('wraps a long computer name onto two lines and keeps it clear of Change', async () => {
+    const longName =
+      'Intel(R) Xeon(R) Platinum 8480+ Processor @ 2.10GHz with a very long model name'
+    vi.mocked(window.api.getSystemInfo).mockResolvedValue({
+      gpu_label: longName,
+      gpu_model: longName,
+      cpu_model: longName,
+      total_memory_gb: 16,
+      gpu_tier: 'high'
+    } as never)
+    const w = mount(FirstUseTakeover, { attachTo: document.body })
+    await flushPromises()
+
+    const name = w.get('[data-testid="setup-machine-name"]').element as HTMLElement
+    const change = w.get('[data-testid="setup-change"]').element as HTMLElement
+    expect(name.textContent?.trim()).toBe(longName)
+    expect(name.classList).toContain('line-clamp-2')
+    expect(name.classList).not.toContain('truncate')
+    expect(name.parentElement!.classList, 'gap before Change').toContain('mr-4')
+    expect(change.parentElement).toBe(name.parentElement!.parentElement)
+    w.unmount()
+  })
+
+  it('lists Hardware, then Version, with Location last', async () => {
+    const w = await mountSetup()
+
+    expect(
+      w.findAll('[data-testid^="setup-row-"]').map((row) => row.attributes('data-testid'))
+    ).toEqual(['setup-row-hardware', 'setup-row-version', 'setup-row-location'])
+  })
+
+  it.each([
+    ['Desktop', 'monitor'],
+    ['Notebook', 'pc-laptop']
+  ])('draws a Windows %s as a %s beside the detected hardware', async (chassis, expected) => {
+    installApi({ platform: 'win32' })
+    window.api.getChassisType = vi.fn().mockResolvedValue(chassis)
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          provideLocalDeviceKind()
+          return () => h(FirstUseTakeover)
+        }
+      })
+    )
+    await flushPromises()
+    expect(wrapper.getComponent(BuildDeviceArt).props('kind')).toBe(expected)
+    expect(window.api.getChassisType).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('shows what will be installed on this Mac before anything is chosen', async () => {
     const w = await mountSetup()
 
@@ -136,9 +192,11 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-machine')).toContain('36 GB memory')
     expect(text(w, 'setup-row-hardware')).toContain('Apple Silicon (MPS)')
     expect(text(w, 'setup-row-location')).toContain('~/ComfyUI-Installs/ComfyUI')
-    expect(text(w, 'setup-row-location')).toContain('412 GB free · ~2.7 GB required')
-    expect(text(w, 'setup-row-version')).toContain('ComfyUI v0.42.4 · Stable')
-    expect(text(w, 'setup-row-version')).toContain('1.2 GB download')
+    expect(text(w, 'setup-location-meta')).toBe('412 GB free')
+    expect(text(w, 'setup-version')).toBe('ComfyUI v0.42.4')
+    expect(text(w, 'setup-row-version')).toContain('Stable')
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
+    expect(text(w, 'setup-summary')).not.toMatch(/1\.2 GB|2\.7 GB|·/)
   })
 
   it('names the computer the way the platform does', async () => {
@@ -185,6 +243,30 @@ describe('Set up, the first screen', () => {
     expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(false)
   })
 
+  it('reads Checking… while it works out the setup, and still points at the terms', async () => {
+    const sources = await window.api.getSources()
+    let finishChecking: (value: typeof sources) => void = () => {}
+    window.api.getSources = vi.fn(
+      () =>
+        new Promise<typeof sources>((resolve) => {
+          finishChecking = resolve
+        })
+    )
+    const w = await mountSetup()
+    const button = () => w.find('[data-testid="setup-install"]')
+
+    expect(button().text()).toBe('Checking…')
+    expect(button().attributes('aria-busy')).toBe('true')
+    await install(w)
+    expect(w.emitted('install')).toBeUndefined()
+    expect(text(w, 'setup-agree-hint')).toBe('Agree to install.')
+
+    finishChecking(sources)
+    await flushPromises()
+    expect(button().text()).toBe('Install')
+    expect(button().attributes('aria-busy')).toBeUndefined()
+  })
+
   it('installs the plan it showed, after saving the consent choices', async () => {
     const w = await mountSetup()
     await setChecked(w.find('[data-testid="setup-consent-beta"] [role="checkbox"]'), false)
@@ -203,6 +285,221 @@ describe('Set up, the first screen', () => {
       'comfy.desktop.first_use.completed',
       expect.objectContaining({ exit_path: 'local-new' })
     )
+  })
+
+  it('Change location picks a new folder for the plan, and Install then uses it', async () => {
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue('/Volumes/Big/ComfyUI')
+    const w = await mountSetup()
+    type Exposed = { browseInstallLocation: () => Promise<void> }
+    await (w.vm as unknown as Exposed).browseInstallLocation()
+    await flushPromises()
+
+    expect(window.api.browseFolder).toHaveBeenCalledWith('/Users/ada/ComfyUI-Installs')
+    expect(window.api.getDiskSpace).toHaveBeenLastCalledWith('/Volumes/Big/ComfyUI')
+    expect(w.emitted('install')).toBeUndefined()
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Volumes/Big/ComfyUI')
+  })
+
+  it('hands a folder picked with Change location on to Change', async () => {
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue('/Volumes/Big/ComfyUI')
+    const w = await mountSetup()
+    await (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await w.find('[data-testid="setup-change"]').trigger('click')
+    await flushPromises()
+
+    expect(w.emitted('change')).toEqual([[expect.any(Object), '/Volumes/Big/ComfyUI']])
+    expect(w.emitted('location-change')).toEqual([['/Volumes/Big/ComfyUI']])
+  })
+
+  it('keeps the free space of the folder picked last when an earlier lookup lands late', async () => {
+    let finishFirst: (space: { free: number; total: number }) => void = () => {}
+    const getDiskSpace = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = resolve
+          })
+      )
+      .mockResolvedValue({ free: 412 * GB, total: 1000 * GB })
+    ;(window.api as unknown as Record<string, unknown>).getDiskSpace = getDiskSpace
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue('/Volumes/Big/ComfyUI')
+    const w = await mountSetup()
+    await (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await flushPromises()
+    finishFirst({ free: 1024 ** 3, total: 2 * 1024 ** 3 })
+    await flushPromises()
+
+    expect(text(w, 'setup-location-meta')).not.toContain('Only')
+  })
+
+  it('refuses a picked folder inside another build and offers Change location again', async () => {
+    const browseFolder = vi
+      .fn()
+      .mockResolvedValueOnce('/Users/ada/ComfyUI-Installs/Studio/inner')
+      .mockResolvedValueOnce('/Volumes/Big/ComfyUI')
+    const validateInstallPath = vi.fn(async (path: string) =>
+      path.includes('/Studio/') ? ['insideExistingInstall'] : []
+    )
+    Object.assign(window.api, { browseFolder, validateInstallPath })
+    const w = await mountSetup()
+    type Exposed = { browseInstallLocation: () => Promise<void> }
+    const picking = (w.vm as unknown as Exposed).browseInstallLocation()
+    await flushPromises()
+
+    const modal = useModal()
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe("Couldn't use this folder")
+    expect(modal.state.message).toContain('overlaps with an existing build')
+    expect(modal.state.buttonLabel).toBe('Change location')
+    expect(w.emitted('location-change')).toBeUndefined()
+
+    modal.close(true)
+    await picking
+    await flushPromises()
+
+    expect(browseFolder).toHaveBeenLastCalledWith('/Users/ada/ComfyUI-Installs/Studio/inner')
+    expect(w.emitted('location-change')).toEqual([['/Volumes/Big/ComfyUI']])
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Volumes/Big/ComfyUI')
+  })
+
+  it('drops a pending folder check once the takeover unmounts', async () => {
+    let finishCheck: (issues: string[]) => void = () => {}
+    Object.assign(window.api, {
+      browseFolder: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs/Studio/inner'),
+      validateInstallPath: vi.fn(() => new Promise<string[]>((resolve) => (finishCheck = resolve)))
+    })
+    const w = await mountSetup()
+    const picking = (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await flushPromises()
+    w.unmount()
+    finishCheck(['insideExistingInstall'])
+    await picking
+    await flushPromises()
+
+    expect(useModal().state.visible).toBe(false)
+    expect(w.emitted('location-change')).toBeUndefined()
+  })
+
+  it('keeps the old folder when a refused folder is closed with the ×', async () => {
+    Object.assign(window.api, {
+      browseFolder: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs/Studio/inner'),
+      validateInstallPath: vi.fn().mockResolvedValue(['insideExistingInstall'])
+    })
+    const w = await mountSetup()
+    const picking = (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await flushPromises()
+    useModal().dismiss()
+    await picking
+
+    expect(window.api.browseFolder).toHaveBeenCalledTimes(1)
+    expect(w.emitted('location-change')).toBeUndefined()
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Users/ada/ComfyUI-Installs')
+  })
+
+  it('keeps the old folder and offers Change location again when the folder check fails', async () => {
+    const browseFolder = vi
+      .fn()
+      .mockResolvedValueOnce('/Volumes/Big/ComfyUI')
+      .mockResolvedValueOnce('/Volumes/Big/ComfyUI')
+    const validateInstallPath = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ipc down'))
+      .mockResolvedValue([])
+    Object.assign(window.api, { browseFolder, validateInstallPath })
+    const w = await mountSetup()
+    type Exposed = { browseInstallLocation: () => Promise<void> }
+    const picking = (w.vm as unknown as Exposed).browseInstallLocation()
+    await flushPromises()
+
+    const modal = useModal()
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe("Couldn't use this folder")
+    expect(modal.state.message).toBe(
+      "Couldn't check this folder. Try again, or pick another location."
+    )
+    expect(modal.state.buttonLabel).toBe('Change location')
+    expect(w.emitted('location-change')).toBeUndefined()
+    expect(text(w, 'setup-location')).toBe('~/ComfyUI-Installs/ComfyUI')
+
+    modal.close(true)
+    await picking
+    await flushPromises()
+
+    expect(browseFolder).toHaveBeenCalledTimes(2)
+    expect(w.emitted('location-change')).toEqual([['/Volumes/Big/ComfyUI']])
+  })
+
+  it('drops a folder picked while Set up was opened again', async () => {
+    let finishPick: (path: string) => void = () => {}
+    Object.assign(window.api, {
+      browseFolder: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            finishPick = resolve
+          })
+      )
+    })
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {},
+      installRoot: '/Volumes/Studio SSD',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      name: 'Studio'
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+    type Exposed = {
+      browseInstallLocation: () => Promise<void>
+      open: () => Promise<void>
+    }
+    const picking = (w.vm as unknown as Exposed).browseInstallLocation()
+    await (w.vm as unknown as Exposed).open()
+    await flushPromises()
+    finishPick('/Volumes/Big/ComfyUI')
+    await picking
+    await flushPromises()
+
+    expect(w.emitted('location-change')).toBeUndefined()
+    expect(text(w, 'setup-location')).toContain('Studio SSD')
+  })
+
+  it('keeps the plan when the folder picker is cancelled', async () => {
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue(null)
+    const w = await mountSetup()
+    await (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Users/ada/ComfyUI-Installs')
   })
 
   it('shows and installs the setup saved in Change instead of working out a new one', async () => {
@@ -231,12 +528,97 @@ describe('Set up, the first screen', () => {
     expect(window.api.getFieldOptions).not.toHaveBeenCalled()
     expect(text(w, 'setup-hardware')).toBe('CPU')
     expect(text(w, 'setup-row-location')).toContain('/Volumes/Studio SSD/ComfyUI')
-    expect(text(w, 'setup-version')).toContain('v0.43.0')
-    expect(text(w, 'setup-version')).toContain('Latest on GitHub')
+    expect(text(w, 'setup-version')).toBe('ComfyUI v0.43.0 (nightly)')
+    expect(text(w, 'setup-row-version')).toContain('Latest on GitHub')
 
     await agree(w)
     await install(w)
     expect(w.emitted('install')).toEqual([[savedPlan]])
+  })
+
+  it('keeps Detected on the default hardware saved in Change, even when no option is marked recommended', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-amd',
+          label: 'AMD',
+          data: { variantId: 'win-amd', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      hardwareDetected: true
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).toContain('Detected')
+  })
+
+  it('leaves hardware picked by hand in Change without Detected', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-gpu',
+          label: 'NVIDIA',
+          data: { variantId: 'win-gpu', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      hardwareDetected: false
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+  })
+
+  it('keeps a saved not-detected flag even when the saved hardware is the recommended one', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-amd',
+          label: 'AMD',
+          recommended: true,
+          data: { variantId: 'win-amd', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      hardwareDetected: false
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+  })
+
+  it('falls back to the recommended mark for a saved plan without the detected flag', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-amd',
+          label: 'AMD',
+          recommended: true,
+          data: { variantId: 'win-amd', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).toContain('Detected')
   })
 
   it('names a team build saved in Change by its build and hardware, not as detected', async () => {
@@ -263,6 +645,7 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-hardware')).toBe('Windows - NVIDIA (CUDA 12.8)')
     expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
     expect(text(w, 'setup-version')).toBe('Ready Build')
+    expect(text(w, 'setup-download-size')).toBe('2.0 GB download')
   })
 
   it('opens every option with Change before the EULA is ticked, and saves nothing yet', async () => {
@@ -329,11 +712,48 @@ describe('Set up, the first screen', () => {
     expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(true)
   })
 
-  it('warns in the location row when the disk is too small', async () => {
-    installApi({ free: 1.5 * GB })
+  it.each([
+    [2849 * GB, '2.8 TB free'],
+    [1.5 * GB, 'Only 1.5 GB free, about 2.7 GB needed to install'],
+    [0, 'Only 0 MB free, about 2.7 GB needed to install']
+  ] as const)('shows %s bytes available beside the install path', async (free, expected) => {
+    installApi({ free })
     const w = await mountSetup()
-    expect(text(w, 'setup-location-meta')).toBe('Only 1.5 GB free · ~2.7 GB required')
+    expect(text(w, 'setup-location-meta')).toBe(expected)
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
   })
+
+  it('shows the download size even when the drive cannot report free space', async () => {
+    window.api.getDiskSpace = vi.fn().mockRejectedValue(new Error('unavailable'))
+    const w = await mountSetup()
+    expect(text(w, 'setup-location-meta')).toBe('')
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
+  })
+
+  it.each([
+    [GB, 0, '1.0 GB download'],
+    [0, 3 * GB, ''],
+    [0, 0, '']
+  ] as const)(
+    'only shows the download label when the saved build has a download size',
+    async (downloadBytes, requiredBytes, expected) => {
+      const w = mount(FirstUseTakeover, {
+        props: {
+          savedPlan: {
+            sourceId: 'standalone',
+            selections: {},
+            installRoot: '/builds',
+            downloadBytes,
+            requiredBytes
+          }
+        }
+      })
+      await flushPromises()
+      const summary = w.find('[data-testid="setup-download-size"]')
+      expect(summary.exists() ? summary.text() : '').toBe(expected)
+      expect(w.find('[data-testid="setup-download-info"]').exists()).toBe(false)
+    }
+  )
 
   it('offers a retry and Change when the download server cannot be reached', async () => {
     installApi({ releaseFails: true })
@@ -371,6 +791,7 @@ describe('Set up, the first screen', () => {
     const migrate = await mountSetup({ hasLegacyDesktop: true })
     await agree(migrate)
     expect(text(migrate, 'setup-install')).toBe('Migrate')
+    expect(migrate.find('[data-testid="setup-download-size"]').exists()).toBe(false)
     await install(migrate)
     expect(migrate.emitted('chain-migrate')).toEqual([[{ express: false }]])
     expect(migrate.emitted('install')).toBeUndefined()

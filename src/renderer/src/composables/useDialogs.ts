@@ -27,7 +27,6 @@ export interface AlertOpts {
   title: string
   message?: string
   buttonLabel?: string
-  tone?: 'primary' | 'danger'
   messageDetails?: ModalDetailGroup[]
 }
 
@@ -75,7 +74,6 @@ export interface AlertState {
   title: string
   message: string
   buttonLabel?: string
-  tone: 'primary' | 'danger'
   messageDetails: ModalDetailGroup[]
 }
 
@@ -130,7 +128,6 @@ const state = reactive<DialogState>({
     title: '',
     message: '',
     buttonLabel: undefined,
-    tone: 'primary',
     messageDetails: []
   },
   confirm: {
@@ -221,7 +218,6 @@ export function useDialogs() {
         title: opts.title,
         message: opts.message ?? '',
         buttonLabel: opts.buttonLabel,
-        tone: opts.tone ?? 'primary',
         messageDetails: cloneDetails(opts.messageDetails)
       }
       state.kind = 'alert'

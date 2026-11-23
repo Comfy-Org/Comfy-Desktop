@@ -27,6 +27,8 @@ import {
   _test_addRunningSession,
   _test_clearRunningSessions
 } from './shared'
+import { comfyFoldersOf } from '../outputFolders'
+import type { InstallationRecord } from '../../installations'
 
 const INSTALL = 'install-under-test'
 
@@ -98,6 +100,23 @@ describe('launch tracking (_beginLaunch/_endLaunch/_hasActiveLaunch)', () => {
     expect(_hasActiveLaunch(INSTALL)).toBe(true)
     _endLaunch(INSTALL, fresh)
     expect(_hasActiveLaunch(INSTALL)).toBe(false)
+  })
+})
+
+describe('_test_addRunningSession', () => {
+  const runningInstall = { id: INSTALL } as InstallationRecord
+
+  it('gives the running session the folders it was launched with', () => {
+    const launchFolders = { output: '/launched/output', input: '/launched/input' }
+    _test_addRunningSession(INSTALL, 'install-under-test-name', undefined, undefined, launchFolders)
+
+    expect(comfyFoldersOf(runningInstall)).toEqual(launchFolders)
+  })
+
+  it('leaves a running session seeded without folders with none', () => {
+    _test_addRunningSession(INSTALL, 'install-under-test-name')
+
+    expect(comfyFoldersOf(runningInstall)).toEqual({ output: null, input: null })
   })
 })
 

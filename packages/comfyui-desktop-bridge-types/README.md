@@ -41,15 +41,21 @@ while omitting part of it.
 
 ## Comfy pages hosted in Desktop's Apps view
 
-A Comfy page that Desktop shows in its Apps view gets three objects instead,
+A Comfy page that Desktop shows in its Apps view gets these objects instead,
 and nothing else of the bridge above: `window.comfyDesktopAuth`, Desktop's
-account session, `window.comfyDesktopLocal`, a ComfyUI on this computer, and
-`window.comfyDesktopTelemetry`, the page's usage events.
+account session, `window.comfyDesktopLocal`, a ComfyUI on this computer,
+`window.comfyDesktopTelemetry`, the page's usage events,
+`window.comfyDesktopOutputs`, Desktop's output dialog,
+`window.comfyDesktopAssets`, the person's pictures for the page's inputs, and
+`window.comfyDesktopRuns`, where the page says when a run starts and ends.
 
 ```ts
 import type {
+  ComfyDesktopHostedAssetsBridge,
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
+  ComfyDesktopHostedOutputsBridge,
+  ComfyDesktopHostedRunsBridge,
   ComfyDesktopHostedTelemetryBridge
 } from '@comfyorg/comfyui-desktop-bridge-types'
 
@@ -58,14 +64,20 @@ declare global {
     comfyDesktopAuth?: ComfyDesktopHostedAuthBridge
     comfyDesktopLocal?: ComfyDesktopHostedLocalBridge
     comfyDesktopTelemetry?: ComfyDesktopHostedTelemetryBridge
+    comfyDesktopOutputs?: ComfyDesktopHostedOutputsBridge
+    comfyDesktopAssets?: ComfyDesktopHostedAssetsBridge
+    comfyDesktopRuns?: ComfyDesktopHostedRunsBridge
   }
 }
 ```
 
 The page reads the session with `getState()`, follows it with `onChanged()`,
 asks for the workspace credential with `getWorkspaceToken(workspaceId)` each
-time it calls Comfy Cloud, and starts a sign-in with `requestSignIn()`. It
-cannot sign Desktop out or switch workspace.
+time it calls Comfy Cloud, and starts a sign-in with `requestSignIn()`.
+`getCloudOrigin()` gives the Comfy Cloud address Desktop's account belongs to,
+such as `https://cloud.comfy.org`, so the page sends those calls to the same
+Cloud as Desktop. Desktop builds before it do not have it, so check for it
+first. It cannot sign Desktop out or switch workspace.
 
 For a run on this computer the page asks `getLocal({ minVersion })` which of
 the person's builds Desktop would use, starts it with `startLocal()`, and then
@@ -94,8 +106,8 @@ sends while the view loads another app is dropped.
 
 - A name starts with a lowercase letter, then lowercase letters, digits and
   `_`, up to 48 characters in all (`^[a-z][a-z0-9_]{0,47}$`), so `2_click` is
-  dropped. `app_opened` and `app_page_failed` are Desktop's own and are
-  refused, and so is `error`.
+  dropped. `app_opened`, `app_page_failed`, `run_finished` and `setup` are
+  Desktop's own and are refused, and so is `error`.
 - Desktop keeps up to 16 properties. A key starts with a lowercase letter,
   then lowercase letters, digits and `_`, up to 32 characters in all
   (`^[a-z][a-z0-9_]{0,31}$`), so `{ Run: true }` is dropped. A value is a
@@ -114,7 +126,21 @@ sends while the view loads another app is dropped.
 
 The page is not told when Desktop drops an event.
 
-All three objects are absent in a browser, so a page keeps its own sign-in and
+`comfyDesktopAssets` gives the page references to pictures and videos, never
+paths. `recent({ kinds, where })` lists the newest app results: for
+`where: 'local'`, the files under `output/apps/` of the build the page's local
+runs go to (the shared output folder by default) and no other output files;
+for `where: 'cloud'`, the signed-in workspace's Comfy Cloud outputs.
+`fromFile(file, { kinds })` takes a file the person dropped or chose; only its
+path reaches Desktop, which checks it is a regular file of an allowed kind and
+at most 2 GiB. `read(ref)` gives the bytes for a preview, up to 512 MiB. When a
+run starts, `valueFor(ref, { where })` gives the value for `LoadImage.image` or
+`LoadVideo.file`, such as `apps/remove-background/cutout_00001_.png [output]`;
+a file outside the build's folders is copied once into `input/desktop/`. A
+reference works only in the page document that received it. On any error the
+page uploads the picture as before.
+
+All these objects are absent in a browser, so a page keeps its own sign-in and
 its own way to reach a local ComfyUI as the fallback, and sends no events.
 
 ## Provenance

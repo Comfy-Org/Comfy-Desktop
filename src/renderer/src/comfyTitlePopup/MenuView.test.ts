@@ -5,7 +5,7 @@ import MenuView from './MenuView.vue'
 import type { TitlePopupMenuItem } from '../../../types/ipc'
 
 const items: TitlePopupMenuItem[] = [
-  { id: 'performance-test', label: 'Performance Tests' },
+  { id: 'performance-test', label: 'Performance tests' },
   { id: 'benchmarks', label: 'Benchmarks' },
   { kind: 'separator' },
   { id: 'settings', label: 'Settings' }
@@ -40,13 +40,13 @@ describe('MenuView keyboard', () => {
   it('moves through the items with the arrow keys, skipping the separator and wrapping', () => {
     mountMenu()
     press('ArrowDown')
-    expect(focusedLabel()).toBe('Performance Tests')
+    expect(focusedLabel()).toBe('Performance tests')
     press('ArrowDown')
     expect(focusedLabel()).toBe('Benchmarks')
     press('ArrowDown')
     expect(focusedLabel()).toBe('Settings')
     press('ArrowDown')
-    expect(focusedLabel()).toBe('Performance Tests')
+    expect(focusedLabel()).toBe('Performance tests')
     press('ArrowUp')
     expect(focusedLabel()).toBe('Settings')
   })
@@ -56,7 +56,7 @@ describe('MenuView keyboard', () => {
     press('End')
     expect(focusedLabel()).toBe('Settings')
     press('Home')
-    expect(focusedLabel()).toBe('Performance Tests')
+    expect(focusedLabel()).toBe('Performance tests')
   })
 
   it('opens the focused item with Enter or Space', () => {
@@ -167,5 +167,50 @@ describe('MenuView rows', () => {
       global: { plugins: [i18n] }
     })
     expect(wrapper.find('li.item').text()).toBe('Reset Zoom (144%)')
+  })
+
+  it('lists apps with their picture, name and state, and opens the one picked', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'en',
+      messages: {
+        en: {
+          titleBar: { ready: 'Ready' },
+          apps: { rail: { running: '{app}, making something', finished: '{app}, ready' } }
+        }
+      }
+    })
+    wrapper = mount(MenuView, {
+      props: {
+        items: [
+          {
+            id: 'running-app:remove-background',
+            label: 'Remove Background',
+            app: { picture: 'data:image/png;base64,iVBORw0KGgo=', state: 'running' }
+          },
+          {
+            id: 'running-app:sdr-to-hdr',
+            label: 'SDR to HDR',
+            app: { picture: null, state: 'ready' }
+          }
+        ]
+      },
+      attachTo: document.body,
+      global: { plugins: [i18n] }
+    })
+    const [running, ready] = wrapper.findAll('[data-testid="title-popup-app"]')
+
+    expect(running?.text()).toBe('Remove Background')
+    expect(running?.find('img').attributes('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
+    expect(running?.find('[data-testid="title-popup-app-running"]').exists()).toBe(true)
+    expect(running?.attributes('aria-label')).toBe('Remove Background, making something')
+    expect(ready?.text()).toBe('SDR to HDR Ready')
+    expect(ready?.find('img').exists()).toBe(false)
+    expect(ready?.find('[data-testid="title-popup-app-ready"]').exists()).toBe(true)
+    expect(ready?.attributes('aria-label')).toBe('SDR to HDR, ready')
+    expect(wrapper.find('ul').classes()).toContain('gap-0.5')
+
+    await ready?.trigger('click')
+    expect(wrapper.emitted('activate')).toEqual([['running-app:sdr-to-hdr']])
   })
 })

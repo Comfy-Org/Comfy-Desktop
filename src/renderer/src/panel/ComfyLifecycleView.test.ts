@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
+import { provideBuildLogs } from '../composables/useBuildProgress'
 import type { Installation } from '../types/ipc'
 import { TID } from '../../../shared/testIds'
 
@@ -21,6 +24,7 @@ interface MockApi {
   getRunningInstances: ReturnType<typeof vi.fn>
   getLastCrashError: ReturnType<typeof vi.fn>
   returnToDashboard: ReturnType<typeof vi.fn>
+  openLogsWindow: ReturnType<typeof vi.fn>
   onInstanceLaunching: ReturnType<typeof vi.fn>
   onInstanceLaunchFailed: ReturnType<typeof vi.fn>
   onInstanceStarted: ReturnType<typeof vi.fn>
@@ -37,6 +41,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     getRunningInstances: vi.fn().mockResolvedValue([]),
     getLastCrashError: vi.fn().mockResolvedValue(null),
     returnToDashboard: vi.fn().mockResolvedValue(true),
+    openLogsWindow: vi.fn().mockResolvedValue(undefined),
     onInstanceLaunching: vi.fn(() => () => {}),
     onInstanceLaunchFailed: vi.fn(() => () => {}),
     onInstanceStarted: vi.fn(() => () => {}),
@@ -80,13 +85,13 @@ describe('ComfyLifecycleView', () => {
     expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(false)
     const button = wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`)
     expect(button.exists()).toBe(true)
-    expect(button.text()).toContain('Relaunch ComfyUI')
+    expect(button.text()).toContain('Restart ComfyUI')
   })
 
-  it('labels the stopped-surface back button "Return to Home" and routes to the dashboard', async () => {
+  it('labels the stopped-surface back button "Back to Home" and routes to the dashboard', async () => {
     const wrapper = mountView()
     await flushPromises()
-    const back = wrapper.findAll('button').find((b) => b.text().includes('Return to Home'))
+    const back = wrapper.findAll('button').find((b) => b.text().includes('Back to Home'))
     expect(back?.exists()).toBe(true)
     expect(back!.attributes('data-testid')).toBe(TID.lifecycleReturnDashboard)
     await back!.trigger('click')
@@ -448,5 +453,163 @@ describe('ComfyLifecycleView', () => {
     await flushPromises()
     const api = (window as unknown as { api: MockApi }).api
     expect(api.returnToDashboard).toHaveBeenCalled()
+  })
+
+  describe('starting placeholder', () => {
+    function mountWithLogs(
+      installation: Installation | null = SAMPLE_INSTALL,
+      installationId = ref('inst-1')
+    ) {
+      const viewLogs = vi.fn()
+      const Host = defineComponent({
+        setup() {
+          provideBuildLogs(viewLogs)
+          return () => h(ComfyLifecycleView, { installationId: installationId.value, installation })
+        }
+      })
+      return { wrapper: mount(Host), viewLogs }
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('shows the build name and version under the title', async () => {
+      const { wrapper } = mountWithLogs({ ...SAMPLE_INSTALL, version: 'v0.3.62' })
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      await flushPromises()
+      expect(wrapper.find('.lifecycle-placeholder__build').text()).toBe(
+        'My Local Install · v0.3.62'
+      )
+    })
+
+    it('shows only the name when the version is missing or unknown', async () => {
+      const { wrapper } = mountWithLogs({ ...SAMPLE_INSTALL, version: 'unknown' })
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      await flushPromises()
+      expect(wrapper.find('.lifecycle-placeholder__build').text()).toBe('My Local Install')
+    })
+
+    it('shows no build line for an unnamed build, even with a version', async () => {
+      const { wrapper } = mountWithLogs({ ...SAMPLE_INSTALL, name: '', version: 'v0.3.62' })
+      useSessionStore().launchingInstances.set('inst-1', { installationName: '' })
+      await flushPromises()
+      expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(true)
+      expect(wrapper.find('.lifecycle-placeholder__build').exists()).toBe(false)
+    })
+
+    it('shows no build line when there is no installation', async () => {
+      const { wrapper } = mountWithLogs(null)
+      useSessionStore().launchingInstances.set('inst-1', { installationName: '' })
+      await flushPromises()
+      expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(true)
+      expect(wrapper.find('.lifecycle-placeholder__build').exists()).toBe(false)
+    })
+
+    function seedLocalOperation(opKind: Operation['opKind']): void {
+      useProgressStore().operations.set('inst-1', {
+        opKind,
+        finished: false,
+        steps: null,
+        activePhase: null,
+        flatPercent: -1,
+        flatStatus: '',
+        cancelRequested: false
+      } as unknown as Operation)
+    }
+
+    function seedLocalLaunchOperation(): void {
+      seedLocalOperation('launch')
+    }
+
+    it('offers View logs only after 15 seconds of starting, and opens the build logs', async () => {
+      vi.useFakeTimers()
+      const { wrapper, viewLogs } = mountWithLogs()
+      seedLocalLaunchOperation()
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      await flushPromises()
+      const logs = () => wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+      expect(logs().exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(14_999)
+      expect(logs().exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(logs().exists()).toBe(true)
+      expect(logs().text()).toBe('View logs')
+      await logs().trigger('click')
+      expect(viewLogs).toHaveBeenCalledWith('inst-1')
+      const api = (window as unknown as { api: MockApi }).api
+      expect(api.openLogsWindow).not.toHaveBeenCalled()
+    })
+
+    it('opens the log window when the launch has no local progress operation', async () => {
+      vi.useFakeTimers()
+      const { wrapper, viewLogs } = mountWithLogs()
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(15_000)
+      const logs = wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+      expect(logs.exists()).toBe(true)
+      await logs.trigger('click')
+      await flushPromises()
+      const api = (window as unknown as { api: MockApi }).api
+      expect(api.openLogsWindow).toHaveBeenCalledExactlyOnceWith('inst-1')
+      expect(viewLogs).not.toHaveBeenCalled()
+    })
+
+    it.each(['update', 'install'] as const)(
+      'opens the log window, not the build logs, while an unfinished %s operation is running',
+      async (opKind) => {
+        vi.useFakeTimers()
+        const { wrapper, viewLogs } = mountWithLogs()
+        seedLocalOperation(opKind)
+        useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+        await flushPromises()
+        await vi.advanceTimersByTimeAsync(15_000)
+        const logs = wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+        expect(logs.exists()).toBe(true)
+        await logs.trigger('click')
+        await flushPromises()
+        const api = (window as unknown as { api: MockApi }).api
+        expect(api.openLogsWindow).toHaveBeenCalledExactlyOnceWith('inst-1')
+        expect(viewLogs).not.toHaveBeenCalled()
+      }
+    )
+
+    it('announces View logs politely when it appears', async () => {
+      vi.useFakeTimers()
+      const { wrapper } = mountWithLogs()
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(15_000)
+      const logs = wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+      expect(logs.element.closest('[aria-live]')?.getAttribute('aria-live')).toBe('polite')
+    })
+
+    it('restarts the 15 second wait when the view switches to another starting build', async () => {
+      vi.useFakeTimers()
+      const installationId = ref('inst-1')
+      const { wrapper } = mountWithLogs(SAMPLE_INSTALL, installationId)
+      const sessionStore = useSessionStore()
+      sessionStore.launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      sessionStore.launchingInstances.set('inst-2', { installationName: 'Other build' })
+      await flushPromises()
+      const logs = () => wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+      await vi.advanceTimersByTimeAsync(10_000)
+      installationId.value = 'inst-2'
+      await nextTick()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(logs().exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(logs().exists()).toBe(true)
+    })
+
+    it('does not offer View logs while stopping, however long it takes', async () => {
+      vi.useFakeTimers()
+      const { wrapper } = mountWithLogs()
+      useSessionStore().stoppingInstances.add('inst-1')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`).exists()).toBe(false)
+    })
   })
 })

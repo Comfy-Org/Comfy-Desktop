@@ -511,7 +511,7 @@ async function closeExtraWindowsKeepComfyHost(): Promise<void> {
   await keepOnlyComfyHostWindow(ctx.app)
 }
 
-test('picker Dashboard opens a chooser without stopping the running install @sec-setup @real-comfy', async () => {
+test('title bar Home opens Home without stopping the running install @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: no running install-backed host exists')
   const before = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow }) => {
@@ -520,9 +520,8 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
     })
   )
 
-  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
-  await popup.waitForVisible('.picker-home', { timeout: 10_000 })
-  expect(await popup.click('.picker-home')).toBe(true)
+  await ctx.titleBar.waitForVisible('.title-home-button', { timeout: 10_000 })
+  expect(await ctx.titleBar.click('.title-home-button')).toBe(true)
 
   await waitForWebContents(ctx.app, 'panel.html')
   await expectChooserVisible(ctx.panel)
@@ -747,7 +746,7 @@ async function openBuildStopMenu(tab?: string) {
   await closeExtraWindowsKeepComfyHost()
   const [buildWindowId] = await desktopWindowIds()
   const buildTitleBar = new WebContentsPage(ctx.app, await ctx.titleBar.url())
-  const homeWindowId = await openDashboardWindowViaPickerHome({ stayOnHome: true })
+  const homeWindowId = await openHomeWindowViaTitleBar({ stayOnHome: true })
   const popup = await openPickerInWindow(ctx.app, buildTitleBar, tab)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
   await popup.clickUntilVisible(
@@ -1497,7 +1496,7 @@ test('per-install Manager security level + network mode land in Manager config.i
 
   const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'config')
 
-  const trigger = 'button.ui-select-trigger[aria-label="Manager Security Level"]'
+  const trigger = 'button.ui-select-trigger[aria-label="Manager security level"]'
   await popup.waitForVisible(trigger, { timeout: 15_000 })
   expect(await popup.textOf(trigger)).toContain(initialLabel)
 
@@ -1505,7 +1504,7 @@ test('per-install Manager security level + network mode land in Manager config.i
 
   await expect.poll(readRecordLevel, { timeout: 10_000, intervals: [100, 250] }).toBe(target.value)
 
-  const modeTrigger = 'button.ui-select-trigger[aria-label="Manager Network Mode"]'
+  const modeTrigger = 'button.ui-select-trigger[aria-label="Manager network mode"]'
   await popup.waitForVisible(modeTrigger, { timeout: 15_000 })
   expect(await popup.textOf(modeTrigger)).toContain(initialModeLabel)
   await popup.selectOption(modeTrigger, targetMode.label)
@@ -2458,12 +2457,10 @@ function desktopWindowIds(): Promise<number[]> {
   )
 }
 
-async function openDashboardWindowViaPickerHome({ stayOnHome = false } = {}): Promise<number> {
+async function openHomeWindowViaTitleBar({ stayOnHome = false } = {}): Promise<number> {
   const beforeWinIds = await desktopWindowIds()
-  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
-  await popup.waitForVisible('.picker-home', { timeout: 10_000 })
-  expect(await popup.click('.picker-home')).toBe(true)
-  await closeTitlePopupIfOpen(ctx.app)
+  await ctx.titleBar.waitForVisible('.title-home-button', { timeout: 10_000 })
+  expect(await ctx.titleBar.click('.title-home-button')).toBe(true)
   let newWindowId = 0
   await expect
     .poll(
@@ -2536,7 +2533,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   _remoteExpectedFile = path.join(_remoteOutputRoot, 'nested', 'output_00001_.png')
   expect(existsSync(_remoteOutputRoot), 'unique output root unexpectedly pre-exists').toBe(false)
 
-  _remoteDashboardWindowId = await openDashboardWindowViaPickerHome()
+  _remoteDashboardWindowId = await openHomeWindowViaTitleBar()
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
   await waitForButtonEnabled(
@@ -2802,7 +2799,7 @@ test('cleans up the remote connection: window closed, record untracked, local in
     })
     .toBe(true)
 
-  await openDashboardWindowViaPickerHome()
+  await openHomeWindowViaTitleBar()
   await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(_remoteInstallId)), { timeout: 15_000 })
   await untrackViaManageDrawer(_remoteInstallId)
   await expect

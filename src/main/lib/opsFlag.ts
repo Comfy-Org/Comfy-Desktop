@@ -125,6 +125,8 @@ export function writePersistedEntry(
 export interface OpsFlag<T> {
   init(opts: { distinctId: string; timeoutMs?: number }): Promise<void>
   get(): Promise<T>
+  getLive(): Promise<T>
+  saved(): T | undefined
   refresh(): Promise<void>
   _resetForTest(): void
 }
@@ -150,6 +152,7 @@ export function makeOpsFlag<T>(opts: {
   let fetchSeq = 0
   let initOpts: { distinctId: string; timeoutMs?: number } | null = null
   let refreshPromise: Promise<void> | null = null
+  let bootFetch: Promise<void> = Promise.resolve()
 
   function readPersisted(): T | undefined {
     if (!persist) return undefined
@@ -217,13 +220,14 @@ export function makeOpsFlag<T>(opts: {
       })
   }
 
-  return {
+  const flag: OpsFlag<T> = {
     init(bootOpts) {
       if (initPromise) return initPromise
       initOpts = bootOpts
       const saved = readPersisted()
       if (saved !== undefined) cached = saved
       const fetched = fetchAndApply(bootOpts, saved === undefined, 'init')
+      bootFetch = fetched
       initPromise = saved !== undefined ? Promise.resolve() : fetched
       return initPromise
     },
@@ -232,6 +236,7 @@ export function makeOpsFlag<T>(opts: {
       refreshPromise = fetchAndApply(initOpts, false, 'refresh')
       return refreshPromise
     },
+    saved: readPersisted,
     async get() {
       if (initPromise) {
         try {
@@ -244,12 +249,18 @@ export function makeOpsFlag<T>(opts: {
       }
       return cached
     },
+    async getLive() {
+      await bootFetch
+      return flag.get()
+    },
     _resetForTest() {
       cached = fallback
+      bootFetch = Promise.resolve()
       initPromise = null
       initOpts = null
       refreshPromise = null
       generation += 1
     }
   }
+  return flag
 }

@@ -24,6 +24,7 @@ class FakeSocket implements RelaySocket {
 
 let sockets: FakeSocket[]
 let heard: unknown[]
+let opened: number
 
 function relayUnderTest() {
   return createLocalRelay(
@@ -32,7 +33,8 @@ function relayUnderTest() {
       const socket = new FakeSocket(url)
       sockets.push(socket)
       return socket
-    }
+    },
+    () => opened++
   )
 }
 
@@ -46,6 +48,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   sockets = []
   heard = []
+  opened = 0
 })
 
 afterEach(() => {
@@ -132,6 +135,46 @@ describe("following a ComfyUI's socket", () => {
 
     expect(socket.closed).toBe(true)
     expect(sockets).toHaveLength(1)
+  })
+})
+
+describe('telling Desktop the socket opened', () => {
+  it('says so on the first open too, after tries that failed, so runs sent meanwhile are checked', () => {
+    const relay = relayUnderTest()
+    relay.follow(8188)
+    lastSocket().emit('close')
+    vi.advanceTimersByTime(1_000)
+
+    lastSocket().emit('open')
+
+    expect(opened).toBe(1)
+  })
+
+  it('says so each time the socket opens again after it dropped', () => {
+    const relay = relayUnderTest()
+    relay.follow(8188)
+    lastSocket().emit('open')
+
+    lastSocket().emit('close')
+    vi.advanceTimersByTime(1_000)
+    lastSocket().emit('open')
+    expect(opened).toBe(2)
+
+    lastSocket().emit('error')
+    vi.advanceTimersByTime(1_000)
+    lastSocket().emit('open')
+    expect(opened).toBe(3)
+  })
+
+  it('says so when it opens on another port, as after ComfyUI restarted', () => {
+    const relay = relayUnderTest()
+    relay.follow(8188)
+    lastSocket().emit('open')
+
+    relay.follow(8190)
+    lastSocket().emit('open')
+
+    expect(opened).toBe(2)
   })
 })
 

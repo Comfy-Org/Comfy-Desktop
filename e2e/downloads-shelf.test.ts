@@ -324,7 +324,7 @@ test('the open popup repaints live when tray state changes @windows @macos @linu
     .toBe(2)
 })
 
-test('View All Downloads opens the full downloads popup with the seeded rows @windows @macos @linux', async () => {
+test('View all downloads opens the full downloads popup with the seeded rows @windows @macos @linux', async () => {
   await seedDownloads(ctx.app, {
     active: [
       makeEntry({ url: 'u-dl', filename: 'dl.safetensors', status: 'downloading', progress: 0.5 })
@@ -393,7 +393,7 @@ async function openFullDownloadsPopup(): Promise<void> {
   await waitForPopupVisible(ctx.app)
   await popup.waitForSelector('.downloads-link', { timeout: 5_000 })
   await waitForStableBounds(ctx.app)
-  expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
+  expect(await popup.clickByText('.downloads-link', 'View all')).toBe(true)
   await popup.waitForSelector('.dlm-panel', { timeout: 5_000 })
 }
 

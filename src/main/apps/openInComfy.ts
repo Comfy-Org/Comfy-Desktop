@@ -8,7 +8,7 @@ import { meetsCatalogWorkflowMinimum } from '../../shared/catalogWorkflowCompati
 import { isInstallationInWorkspace } from '../../shared/workspaces'
 import { syncCloudWindowWorkspace } from '../lib/cloudWorkspace'
 import { setActivePanel } from '../host/panelView'
-import { getEntryByInstallationId } from '../host/registry'
+import { getEntryByInstallationId, maximizeIfPendingReveal } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -16,18 +16,22 @@ import * as i18n from '../lib/i18n'
 import type { ActionResult } from '../lib/ipc/sessionActions/types'
 import { _hasActiveLaunch, _onLaunch, _runningSessions } from '../lib/ipc/shared'
 import type { SessionInfo } from '../lib/ipc/shared'
+import { titleForListedApp } from './appsCatalog'
+import { busyAppOn } from './localAppEvents'
 import { chooseLocalBuild, runningPortOf, usableLocalBuilds } from './localBuild'
 import type { LocalBuild } from './localBuild'
 import { launchOnce, launchQuietly, otherLaunchSettled, pageBuildId } from './localComfy'
+import type { EmbeddedWorkflow } from '../lib/embeddedWorkflow'
 import {
   COMFY_STATE_SCRIPT,
   isComfyPage,
   MARK_PAGE_STALE_SCRIPT,
-  openEditorWorkflowScript,
+  openGraphScript,
   openWorkflowScript,
-  readOpenRequest
+  readOpenRequest,
+  workflowName
 } from './openRequest'
-import type { ComfyPageState, OpenRefusal, WorkflowRequest } from './openRequest'
+import type { ComfyPageState, OpenRefusal, OpenRequest, WorkflowRequest } from './openRequest'
 
 export const WINDOW_TIMEOUT_MS = 20_000
 export const NO_WORKFLOW_GRACE_MS = 5_000
@@ -77,15 +81,42 @@ function refusalText(refusal: OpenRefusal): string {
   }
 }
 
-export async function localBuilds(): Promise<ComfyDesktopLocalBuild[]> {
-  return (await usableLocalBuilds())
+function describeBuilds(
+  builds: LocalBuild[],
+  askingAppId: string | null
+): ComfyDesktopLocalBuild[] {
+  return [...builds]
     .sort((a, b) => b.lastLaunchedAt - a.lastLaunchedAt)
     .map((build) => ({
       id: build.id,
       name: build.name,
       ...(build.version === null ? {} : { version: build.version }),
-      running: build.port !== null
+      running: build.port !== null,
+      ...busyWithOf(build.id, askingAppId)
     }))
+}
+
+export async function localBuilds(
+  askingAppId: string | null = null
+): Promise<ComfyDesktopLocalBuild[]> {
+  return describeBuilds(await usableLocalBuilds(), askingAppId)
+}
+
+export async function localBuildsForEach(
+  askingAppIds: readonly (string | null)[]
+): Promise<ComfyDesktopLocalBuild[][]> {
+  const builds = await usableLocalBuilds()
+  return askingAppIds.map((askingAppId) => describeBuilds(builds, askingAppId))
+}
+
+function busyWithOf(
+  buildId: string,
+  askingAppId: string | null
+): Pick<ComfyDesktopLocalBuild, 'busyWith'> {
+  const appId = busyAppOn(buildId, askingAppId)
+  if (appId === null) return {}
+  const title = titleForListedApp(appId)
+  return { busyWith: title === null ? { appId } : { appId, title } }
 }
 
 function pickLocal(builds: LocalBuild[], wanted: string | null): LocalBuild | null {
@@ -96,12 +127,12 @@ function pickLocal(builds: LocalBuild[], wanted: string | null): LocalBuild | nu
 }
 
 async function localTarget(
-  page: WebContents,
+  page: WebContents | null,
   build?: string,
   scope?: CatalogWorkflowScope
 ): Promise<Target> {
   const builds = await usableLocalBuilds()
-  const picked = pickLocal(builds, build ?? pageBuildId(page))
+  const picked = pickLocal(builds, build ?? (page ? pageBuildId(page) : null))
   if (build !== undefined && picked?.id !== build) {
     return { error: i18n.t('apps.local.openUnknownBuild') }
   }
@@ -217,6 +248,7 @@ async function windowFor(installationId: string): Promise<ComfyWindowEntry | nul
 
 function bringForward(entry: ComfyWindowEntry): void {
   if (entry.window.isMinimized()) entry.window.restore()
+  maximizeIfPendingReveal(entry.window)
   entry.window.show()
   entry.window.focus()
   if (entry.activePanel !== 'progress') setActivePanel(entry.windowKey, 'comfy')
@@ -233,9 +265,7 @@ async function pageState(entry: ComfyWindowEntry): Promise<ComfyPageState> {
   return state === 'ready' || state === 'no-workflow' ? state : 'starting'
 }
 
-async function loadWorkflow(entry: ComfyWindowEntry, request: WorkflowRequest): Promise<boolean> {
-  const script =
-    'graph' in request ? openEditorWorkflowScript(request) : openWorkflowScript(request)
+async function loadWorkflow(entry: ComfyWindowEntry, script: string): Promise<boolean> {
   const opened: unknown = await settledWithin<unknown>(
     entry.comfyView.webContents.executeJavaScript(script, true),
     LOAD_TIMEOUT_MS,
@@ -246,7 +276,7 @@ async function loadWorkflow(entry: ComfyWindowEntry, request: WorkflowRequest): 
 
 async function loadInto(
   installationId: string,
-  request: WorkflowRequest,
+  script: string,
   scope?: CatalogWorkflowScope
 ): Promise<boolean> {
   const giveUpAt = Date.now() + READY_TIMEOUT_MS
@@ -260,37 +290,86 @@ async function loadInto(
       withoutWorkflowSince !== null && Date.now() - withoutWorkflowSince >= NO_WORKFLOW_GRACE_MS
     if (state === 'ready' || waitedForWorkflow) {
       if (scope && !scope.isCurrent()) return false
-      return loadWorkflow(entry, request)
+      return loadWorkflow(entry, script)
     }
     await pause(READY_POLL_MS)
   }
   return false
 }
 
-async function openIn(
-  page: WebContents,
-  request: WorkflowRequest,
-  scope?: CatalogWorkflowScope
+interface CatalogPlacement {
+  scope: CatalogWorkflowScope
+  where: 'local' | 'cloud'
+}
+
+async function inCatalogWorkspace(
+  entry: ComfyWindowEntry,
+  { scope, where }: CatalogPlacement
+): Promise<boolean> {
+  if (!scope.isCurrent()) return false
+  if (where === 'cloud') {
+    const synced = await syncCloudWindowWorkspace(entry, { pickerWorkspaceId: scope.workspaceId })
+    if (!synced) return false
+  }
+  return scope.isCurrent()
+}
+
+async function openScriptIn(
+  target: Target,
+  script: string,
+  catalog?: CatalogPlacement
 ): Promise<ComfyDesktopOpenInComfy> {
-  const target =
-    request.where === 'local'
-      ? await localTarget(page, request.build, scope)
-      : await cloudTarget(scope)
   if ('error' in target) return { opened: false, error: target.error }
   const entry = await windowFor(target.id)
   if (!entry) return { opened: false, error: i18n.t('apps.local.openNoWindow') }
-  if (scope) {
-    const inCurrentWorkspace =
-      scope.isCurrent() &&
-      (request.where !== 'cloud' ||
-        (await syncCloudWindowWorkspace(entry, { pickerWorkspaceId: scope.workspaceId })))
-    if (!inCurrentWorkspace || !scope.isCurrent()) {
-      return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
-    }
+  if (catalog && !(await inCatalogWorkspace(entry, catalog))) {
+    return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
   }
   bringForward(entry)
-  if (await loadInto(target.id, request, scope)) return { opened: true }
+  if (await loadInto(target.id, script, catalog?.scope)) return { opened: true }
   return { opened: false, error: i18n.t('apps.local.openNotTaken') }
+}
+
+async function openIn(
+  page: WebContents | null,
+  request: OpenRequest
+): Promise<ComfyDesktopOpenInComfy> {
+  const target =
+    request.where === 'local' ? await localTarget(page, request.build) : await cloudTarget()
+  return openScriptIn(target, openWorkflowScript(request))
+}
+
+export type WorkflowPlace = { where: 'cloud' } | { where: 'local'; build: string }
+
+async function openGraphIn(
+  place: WorkflowPlace,
+  graph: Record<string, unknown>,
+  name: string
+): Promise<ComfyDesktopOpenInComfy> {
+  const target =
+    place.where === 'local' ? await localTarget(null, place.build) : await cloudTarget()
+  return openScriptIn(target, openGraphScript(graph, workflowName(name)))
+}
+
+export async function openEmbeddedWorkflow(
+  place: WorkflowPlace,
+  workflow: EmbeddedWorkflow,
+  name: string
+): Promise<ComfyDesktopOpenInComfy> {
+  try {
+    if (workflow.format === 'graph') return await openGraphIn(place, workflow.data, name)
+    const request = readOpenRequest({ prompt: workflow.data, name, ...place })
+    if (typeof request === 'string') return { opened: false, error: refusalText(request) }
+    return await openIn(null, request)
+  } catch {
+    return { opened: false, error: i18n.t('apps.local.openNotTaken') }
+  }
+}
+
+function catalogScript(request: WorkflowRequest): string {
+  return 'graph' in request
+    ? openGraphScript(request.graph, request.name)
+    : openWorkflowScript(request)
 }
 
 export async function openCatalogInComfy(
@@ -299,7 +378,11 @@ export async function openCatalogInComfy(
   scope: CatalogWorkflowScope
 ): Promise<ComfyDesktopOpenInComfy> {
   try {
-    return await openIn(page, request, scope)
+    const target =
+      request.where === 'local'
+        ? await localTarget(page, request.build, scope)
+        : await cloudTarget(scope)
+    return await openScriptIn(target, catalogScript(request), { scope, where: request.where })
   } catch {
     return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
   }

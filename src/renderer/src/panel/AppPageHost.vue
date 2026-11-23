@@ -17,7 +17,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useCoveredByPage } from '../composables/useCoveredByPage'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import type {
   AppOutputAction,
   AppOutputs,
@@ -37,9 +37,10 @@ const { t } = useI18n()
 
 const host = useTemplateRef<HTMLElement>('host')
 const coveredByPage = useCoveredByPage(host)
-const covered = computed(() => coveredByPage.value || sidebarHovered.value)
+const covered = computed(() => coveredByPage.value || sidebarHovered.value || sidebarFocused.value)
 const status = ref<AppPageStatus | null>(null)
 const frozenFrame = ref<string | null>(null)
+const loadedHidden = ref(false)
 const outputs = shallowRef<OutputDetailItem[] | null>(null)
 const outputIndex = ref(0)
 const outputsShown = ref(0)
@@ -84,9 +85,20 @@ async function reveal(): Promise<void> {
   const placement = takePlacement()
   if (!placement) return
   appPageShown.value = true
+  loadedHidden.value = false
   const shown = await window.api.showAppPage(appId, placement)
   if (turn !== latestTurn) return
   status.value = shown
+}
+
+async function loadHidden(): Promise<void> {
+  const turn = ++latestTurn
+  const placement = takePlacement()
+  if (!placement) return
+  appPageShown.value = false
+  const loading = await window.api.showAppPage(appId, { ...placement, hidden: true })
+  if (turn !== latestTurn) return
+  status.value = loading
 }
 
 async function conceal(): Promise<void> {
@@ -105,6 +117,10 @@ async function conceal(): Promise<void> {
 function outputKind(mimeType: string): AssetKind | null {
   const kind = mimeType.split('/')[0]
   return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : null
+}
+
+function savedFolder(output: AppOutputs['items'][number]): string | null {
+  return output.savedOn === 'computer' ? output.folder || null : null
 }
 
 function releaseOutputs(): void {
@@ -128,8 +144,9 @@ function showOutputs(shown: AppOutputs): void {
     previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
     thumbnailUrl: null,
     workflow: output.workflow,
-    savedIn: output.savedOn === 'computer' ? (output.folder ?? null) : null,
-    inCloud: output.savedOn === 'cloud'
+    savedIn: savedFolder(output),
+    inCloud: output.savedOn === 'cloud',
+    mainAction: savedFolder(output) ? null : 'download'
   }))
   outputIndex.value = shown.index
   outputsShown.value += 1
@@ -164,10 +181,16 @@ watch(
   () => appId,
   () => {
     justOpened = true
-    status.value = null
     frozenFrame.value = null
     releaseOutputs()
-    if (!covered.value) void reveal()
+    if (covered.value) {
+      status.value = 'loading'
+      loadedHidden.value = true
+      void loadHidden()
+    } else {
+      status.value = null
+      void reveal()
+    }
   }
 )
 
@@ -200,7 +223,7 @@ onBeforeUnmount(() => {
 <template>
   <section
     ref="host"
-    class="relative min-h-0 w-full flex-auto overflow-hidden rounded-shell"
+    class="@container relative min-h-0 w-full flex-auto overflow-hidden rounded-shell"
     :aria-label="title"
     :aria-busy="status === 'loading'"
     :data-status="status ?? 'pending'"
@@ -215,15 +238,28 @@ onBeforeUnmount(() => {
       data-testid="app-page-frozen-frame"
     />
     <div
-      v-else-if="status === 'loading'"
+      v-else-if="status === 'loading' || (status === 'ready' && loadedHidden)"
       class="flex size-full gap-2"
       data-testid="app-page-loading"
     >
       <span class="sr-only">{{ t('apps.pageLoading', { app: title }) }}</span>
       <div
-        class="flex w-90 shrink-0 flex-col gap-3 rounded-shell bg-sidebar-background px-5 pt-4 pb-5"
+        class="flex w-90 shrink-0 flex-col gap-3 rounded-shell bg-sidebar-background px-5 pt-4 pb-5 @max-[60.0625rem]:w-75"
       >
-        <Skeleton class="h-6 w-2/3 rounded-md" />
+        <div class="flex items-center justify-between gap-3">
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="md"
+            class="-ml-2 gap-1.5"
+            data-testid="app-page-loading-back"
+            @click="emit('close')"
+          >
+            <ChevronLeft :size="15" aria-hidden="true" />
+            {{ t('apps.allApps') }}
+          </Button>
+          <Skeleton class="h-6 w-1/3 rounded-md" />
+        </div>
         <Skeleton class="mt-2 aspect-3/2 w-full rounded-card" />
         <Skeleton class="h-4 w-1/3 rounded-md" />
         <Skeleton class="h-20 w-full rounded-card" />

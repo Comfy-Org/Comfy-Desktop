@@ -219,6 +219,39 @@ describe('makeOpsFlag persistence', () => {
     expect(readFlagsFile()).toBe(stored)
   })
 
+  it('get answers from the saved value at once, while getLive waits for the boot fetch', async () => {
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
+    const flag = makePersistedFlag()
+    let release: (v: unknown) => void = () => {}
+    getOpsFlagResult.mockReturnValue(
+      new Promise((r) => {
+        release = r
+      })
+    )
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.get()).toBe('disabled')
+    let answered = false
+    const live = flag.getLive().finally(() => {
+      answered = true
+    })
+    await settle()
+    expect(answered, 'still waiting for the boot fetch').toBe(false)
+    release(flagResult('degraded'))
+    expect(await live).toBe('degraded')
+  })
+
+  it('getLive falls back to the saved value when the boot fetch is unreachable', async () => {
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.getLive()).toBe('disabled')
+  })
+
   it('overwrites the persisted entry when the fetch resolves a defined result', async () => {
     writeFlagsFile(
       JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
@@ -269,6 +302,41 @@ describe('makeOpsFlag persistence', () => {
       'other-flag': { value: 'on', payload: null, fetchedAt: NOW },
       'test-flag': { value: 'degraded', payload: null, fetchedAt: NOW }
     })
+  })
+
+  it('reads the saved value at once, before init and without asking PostHog', () => {
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'degraded', payload: null, fetchedAt: NOW } })
+    )
+    const flag = makePersistedFlag()
+
+    expect(flag.saved()).toBe('degraded')
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['no file', null],
+    ['a corrupt file', '{ not json at all'],
+    [
+      'an unrecognised entry',
+      JSON.stringify({ 'test-flag': { value: 'garbage', payload: null, fetchedAt: NOW } })
+    ],
+    [
+      'an entry for another key',
+      JSON.stringify({ 'other-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    ]
+  ])('reads no saved value from %s', (_what, contents) => {
+    if (contents !== null) writeFlagsFile(contents)
+
+    expect(makePersistedFlag().saved()).toBeUndefined()
+  })
+
+  it('reads no saved value for a flag that is not persisted', () => {
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
+
+    expect(makeTestFlag().saved()).toBeUndefined()
   })
 
   it('falls back to the static fallback when the persisted file is missing', async () => {

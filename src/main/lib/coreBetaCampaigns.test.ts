@@ -681,29 +681,30 @@ describe('enrolledAgentOverride', () => {
   const of = (a: CampaignAnswer, registry = listed) => ({ registry, answers: new Map([[KEY, a]]) })
 
   it('returns the override an enrolling answer for the agent carries', () => {
-    expect(enrolledAgentOverride(of(fresh(answer('enrol'))), NOW, 'machine_derived')).toEqual({
+    expect(enrolledAgentOverride(of(fresh(answer('enrol'))), {}, NOW, 'machine_derived')).toEqual({
       override: { 'comfy-agent': '0.2.3' }
     })
   })
 
   it('names no override for an enrolling answer that carries none', () => {
     const payload: CampaignAnswer = { ...fresh(answer('enrol')), payload: { grants: [] } }
-    expect(enrolledAgentOverride(of(payload), NOW, 'machine_derived')).toEqual({
+    expect(enrolledAgentOverride(of(payload), {}, NOW, 'machine_derived')).toEqual({
       override: undefined
     })
   })
 
   it('is null for an answer a launch could not enrol on', () => {
     const enrol = fresh(answer('enrol'))
-    expect(enrolledAgentOverride(of(fresh(answer('hold'))), NOW, 'machine_derived')).toBeNull()
-    expect(enrolledAgentOverride(of(enrol), NOW, 'random_fallback'), 'id class').toBeNull()
+    expect(enrolledAgentOverride(of(fresh(answer('hold'))), {}, NOW, 'machine_derived')).toBeNull()
+    expect(enrolledAgentOverride(of(enrol), {}, NOW, 'random_fallback'), 'id class').toBeNull()
     expect(
-      enrolledAgentOverride(of(enrol), NOW + ENROL_MAX_AGE_MS + 1, 'machine_derived'),
+      enrolledAgentOverride(of(enrol), {}, NOW + ENROL_MAX_AGE_MS + 1, 'machine_derived'),
       'too old to enrol'
     ).toBeNull()
     expect(
       enrolledAgentOverride(
         of(enrol, [{ key: KEY, args: ['--enable-assets'] }]),
+        {},
         NOW,
         'machine_derived'
       ),
@@ -712,6 +713,7 @@ describe('enrolledAgentOverride', () => {
     expect(
       enrolledAgentOverride(
         { registry: [], answers: new Map([[KEY, enrol]]) },
+        {},
         NOW,
         'machine_derived'
       ),
@@ -721,6 +723,50 @@ describe('enrolledAgentOverride', () => {
       ...enrol,
       grants: enrol.grants.map((g) => ({ ...g, grant: { ...g.grant, arg: '--enable-assets' } }))
     }
-    expect(enrolledAgentOverride(of(assets), NOW, 'machine_derived'), 'grants no agent').toBeNull()
+    expect(
+      enrolledAgentOverride(of(assets), {}, NOW, 'machine_derived'),
+      'grants no agent'
+    ).toBeNull()
+  })
+
+  it("keeps a member on its campaign's override after the campaign stops enrolling", () => {
+    const later = 'core-beta-later'
+    const registry = [
+      { key: KEY, args: ['--enable-agent'] },
+      { key: later, args: ['--enable-agent'] }
+    ]
+    const laterAnswer = fresh(
+      answer('enrol', {
+        ...agentPayload(),
+        agent_requirements_override: { 'comfy-agent': '0.9.0' }
+      })
+    )
+    const answers = new Map([
+      [KEY, fresh(answer('hold'))],
+      [later, laterAnswer]
+    ])
+    expect(enrolledAgentOverride({ registry, answers }, member, NOW, 'machine_derived')).toEqual({
+      override: { 'comfy-agent': '0.2.3' }
+    })
+    expect(
+      enrolledAgentOverride({ registry, answers }, {}, NOW, 'machine_derived'),
+      'a non-member enrols on the open campaign'
+    ).toEqual({ override: { 'comfy-agent': '0.9.0' } })
+  })
+
+  it('holds a member to the 7-day answer age rather than the 48 h enrol age', () => {
+    const twoDaysOld = answer('hold', agentPayload(), NOW - ENROL_MAX_AGE_MS - 1)
+    expect(enrolledAgentOverride(of(twoDaysOld), member, NOW, 'machine_derived')).toEqual({
+      override: { 'comfy-agent': '0.2.3' }
+    })
+    const tooOld = answer('hold', agentPayload(), NOW - HOLD_MAX_AGE_MS - 1)
+    expect(enrolledAgentOverride(of(tooOld), member, NOW, 'machine_derived')).toBeNull()
+  })
+
+  it('does not count a record from another enrolment epoch as membership', () => {
+    const otherEpoch = { [KEY]: { '--enable-agent': { epoch: 9, enrolledAt: NOW } } }
+    expect(
+      enrolledAgentOverride(of(fresh(answer('hold'))), otherEpoch, NOW, 'machine_derived')
+    ).toBeNull()
   })
 })

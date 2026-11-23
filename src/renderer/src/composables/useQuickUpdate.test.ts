@@ -50,7 +50,7 @@ const inst = {
 function updateAction(channel: string, overrides: Partial<ActionDef> = {}): ActionDef {
   return {
     id: 'update-comfyui',
-    label: 'Update Now',
+    label: 'Update now',
     style: 'primary',
     enabled: true,
     showProgress: true,
@@ -65,7 +65,7 @@ function channelSections(current: string, actions: Record<string, ActionDef[]>):
   return [
     {
       tab: 'update',
-      title: 'Update Channel',
+      title: 'Update channel',
       fields: [
         {
           id: 'updateChannel',
@@ -125,7 +125,7 @@ describe('useQuickUpdate', () => {
     const progress = onShowProgress.mock.calls[0]![0]
     expect(progress).toMatchObject({
       installationId: 'inst-1',
-      title: 'Updating stable — ComfyUI',
+      title: 'Updating stable · ComfyUI',
       returnTo: 'list',
       actionId: 'update-comfyui',
       actionData: { channel: 'stable' }

@@ -78,6 +78,18 @@ describe('comfyPreload model access bridge', () => {
     mocks.send.mockReset()
   })
 
+  it('tells Desktop whether the page is waiting on the user', () => {
+    const bridge = hostedBridge()
+
+    bridge.setAttentionNeeded(true)
+    bridge.setAttentionNeeded(false)
+
+    expect(mocks.send.mock.calls).toEqual([
+      ['desktop2-attention-needed', true],
+      ['desktop2-attention-needed', false]
+    ])
+  })
+
   it('forwards hosted frontend exceptions through the scrubbed Desktop telemetry channel', () => {
     const bridge = hostedBridge()
     const error = new Error('boom')

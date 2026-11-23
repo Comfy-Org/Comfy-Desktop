@@ -17,6 +17,7 @@ export type PreviewPlatform = 'darwin' | 'win32' | 'linux'
 export interface PreviewMachine {
   platform: PreviewPlatform
   systemInfo: SystemInfo
+  chassisType: string
   gpu: GPUInfo
   installRoot: string
   diskFreeBytes: number
@@ -54,6 +55,7 @@ function variantOption(
 const MACHINES: Record<PreviewPlatform, PreviewMachine> = {
   darwin: {
     platform: 'darwin',
+    chassisType: 'Notebook',
     systemInfo: {
       ...SHARED_SYSTEM_INFO,
       gpu_vendor: 'apple',
@@ -88,6 +90,7 @@ const MACHINES: Record<PreviewPlatform, PreviewMachine> = {
   },
   win32: {
     platform: 'win32',
+    chassisType: 'Desktop',
     systemInfo: {
       ...SHARED_SYSTEM_INFO,
       gpu_vendor: 'nvidia',
@@ -124,6 +127,7 @@ const MACHINES: Record<PreviewPlatform, PreviewMachine> = {
   },
   linux: {
     platform: 'linux',
+    chassisType: 'Desktop',
     systemInfo: {
       ...SHARED_SYSTEM_INFO,
       gpu_vendor: 'nvidia',
@@ -280,19 +284,19 @@ export const APP_CARDS: AppCard[] = [
     id: 'image-upscaler',
     title: 'Image upscaler',
     description: 'Make a small picture four times larger without losing detail.',
-    coverUrl: null
+    covers: []
   },
   {
     id: 'background-remover',
     title: 'Background remover',
     description: 'Cut a subject out of its background in one step.',
-    coverUrl: null
+    covers: []
   },
   {
     id: 'sketch-to-image',
     title: 'Sketch to image',
     description: 'Turn a rough drawing into a finished picture.',
-    coverUrl: null
+    covers: []
   }
 ]
 

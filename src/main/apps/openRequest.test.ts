@@ -9,6 +9,7 @@ import {
   isBuildId,
   isComfyPage,
   MARK_PAGE_STALE_SCRIPT,
+  openGraphScript,
   openWorkflowScript,
   readOpenRequest,
   workflowName
@@ -179,6 +180,20 @@ describe('the script that tells whether ComfyUI has finished starting', () => {
     expect(stateOf(page(opening))).toBe('starting')
   })
 
+  it('is starting until ComfyUI has put back the tabs from the last session', () => {
+    const restoringTabs = {
+      ...app,
+      extensionManager: { spinner: false, workflow: { ...idle, tabsRestored: false } }
+    }
+    const restoredTabs = {
+      ...app,
+      extensionManager: { spinner: false, workflow: { ...idle, tabsRestored: true } }
+    }
+
+    expect(stateOf(page(restoringTabs))).toBe('starting')
+    expect(stateOf(page(restoredTabs))).toBe('ready')
+  })
+
   it('has no workflow until ComfyUI has opened its first one', () => {
     const empty = {
       ...app,
@@ -259,5 +274,31 @@ describe('the ComfyUI page a workflow loads into', () => {
     ['not a url', 'http://127.0.0.1:8188', false]
   ])('%s for a ComfyUI at %s is %s', (pageUrl, comfyUrl, expected) => {
     expect(isComfyPage(pageUrl, comfyUrl)).toBe(expected)
+  })
+})
+
+describe('the script that loads a saved graph into the ComfyUI page', () => {
+  const graph = { nodes: [{ id: 1, type: 'Note', widgets_values: ['"});globalThis.hacked=1;//'] }] }
+
+  it('hands the graph and name to loadGraphData as data, never as code', async () => {
+    const calls: unknown[][] = []
+    const context = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      loadGraphData: (...args: unknown[]) => {
+        calls.push(args)
+      }
+    })
+
+    expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(true)
+    expect(calls).toEqual([[graph, true, true, 'fox']])
+    expect(context['hacked']).toBeUndefined()
+  })
+
+  it('says it did not open in a ComfyUI that cannot load a graph', async () => {
+    const context = page({ graph: {}, canvas: {}, loadApiJson: () => undefined })
+
+    expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(false)
   })
 })

@@ -4,6 +4,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import { FileText, RefreshCw } from '@lucide/vue'
 import BaseModal from '../../components/ui/BaseModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 
 export interface ExtraModelPathDir {
   type: string
@@ -42,6 +43,7 @@ const { t } = useI18n()
   <BaseModal
     :open="open"
     size="md"
+    close-outside
     :aria-label="t('comfyUISettings.extraModelPathsModalTitle')"
     @close="emit('close')"
   >
@@ -89,26 +91,27 @@ const { t } = useI18n()
           <InfoTooltip :text="t('tooltips.extraModelPathsDefault')" />
         </span>
       </div>
-      <Button
+      <div
         v-if="section.basePath"
-        variant="textonly"
-        size="unset"
-        type="button"
-        class="empm-base-path static mb-1.5 inline-block max-w-full truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal font-mono appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-        :class="
-          section.basePathExists
-            ? 'text-text-muted hover:text-[var(--action)] focus-visible:text-[var(--action)]'
-            : 'is-missing text-danger hover:text-danger focus-visible:text-danger'
-        "
-        :title="
-          section.basePathExists
-            ? t('comfyUISettings.openBaseFolder')
-            : t('comfyUISettings.dirMissingTitle', { dir: section.basePath })
-        "
-        @click="emit('open-path', section.basePath)"
+        class="empm-base-path-row mb-1.5 flex min-w-0 items-center gap-1"
       >
-        {{ section.basePath }}
-      </Button>
+        <span
+          class="empm-base-path block min-w-0 max-w-full truncate text-left text-[12px] leading-[1.5] font-normal font-mono"
+          :class="section.basePathExists ? 'text-text-muted' : 'is-missing text-danger'"
+          :title="
+            section.basePathExists
+              ? section.basePath
+              : t('comfyUISettings.dirMissingTitle', { dir: section.basePath })
+          "
+          >{{ section.basePath }}</span
+        >
+        <RevealFolderButton
+          v-if="section.basePathExists"
+          class="empm-base-path-reveal -my-1"
+          :path="section.basePath"
+          @click="emit('open-path', section.basePath)"
+        />
+      </div>
 
       <ul
         class="empm-dirs m-0 flex list-none flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-0"
@@ -121,25 +124,18 @@ const { t } = useI18n()
           <span class="empm-dir-type min-w-[92px] flex-none text-[11px] font-semibold opacity-85">{{
             d.rawType
           }}</span>
-          <Button
-            variant="textonly"
-            size="unset"
-            type="button"
-            class="empm-dir-path static inline-block min-w-0 max-w-full flex-[0_1_auto] truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-            :class="
-              d.dirExists
-                ? 'text-neutral-100 hover:text-[var(--action)] focus-visible:text-[var(--action)]'
-                : 'is-missing text-danger hover:text-danger focus-visible:text-danger'
-            "
-            :title="
-              d.dirExists
-                ? t('models.openDir')
-                : t('comfyUISettings.dirMissingTitle', { dir: d.dir })
-            "
-            @click="emit('open-path', d.dir)"
+          <span
+            class="empm-dir-path block min-w-0 max-w-full flex-[0_1_auto] truncate text-left text-[12px] leading-[1.5] font-normal"
+            :class="d.dirExists ? 'text-neutral-100' : 'is-missing text-danger'"
+            :title="d.dirExists ? d.dir : t('comfyUISettings.dirMissingTitle', { dir: d.dir })"
+            >{{ d.dir }}</span
           >
-            {{ d.dir }}
-          </Button>
+          <RevealFolderButton
+            v-if="d.dirExists"
+            class="empm-dir-reveal -my-1.5"
+            :path="d.dir"
+            @click="emit('open-path', d.dir)"
+          />
         </li>
       </ul>
     </section>

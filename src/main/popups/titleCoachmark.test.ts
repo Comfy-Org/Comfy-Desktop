@@ -1,27 +1,117 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({
-  app: {
-    isPackaged: false,
-    getPath: () => '/tmp',
-    getVersion: () => '0.0.0-test',
-    getLocale: () => 'en'
-  },
-  ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
-  WebContentsView: class {},
-  BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
-}))
+vi.mock('electron', () => {
+  const handlers = new Map<string, (...args: unknown[]) => void>()
+  return {
+    app: {
+      isPackaged: false,
+      getPath: () => '/tmp',
+      getVersion: () => '0.0.0-test',
+      getLocale: () => 'en'
+    },
+    ipcMain: {
+      handle: vi.fn(),
+      off: vi.fn(),
+      on: (channel: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(channel, handler)
+      },
+      _handlers: handlers
+    },
+    WebContentsView: class {},
+    BrowserWindow: { getAllWindows: () => [] },
+    nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
+  }
+})
 
-vi.mock('./embeddedPopupView', () => ({ EmbeddedPopupView: class {} }))
+vi.mock('./embeddedPopupView', () => {
+  let seq = 0
+  class FakeEmbeddedPopupView {
+    static instances: FakeEmbeddedPopupView[] = []
+    readonly popup: {
+      webContents: {
+        id: number
+        send: (channel: string, payload: unknown) => void
+        isDestroyed: () => boolean
+      }
+      setBounds: (...a: unknown[]) => void
+      getBounds: () => { x: number; y: number; width: number; height: number }
+    }
+    readonly parentWindow: {
+      id: number
+      isDestroyed: () => boolean
+      getContentBounds: () => { width: number; height: number }
+    }
+    readonly popupWebContentsId: number
+    readonly parentWindowId: number
+    rendererReady = false
+    isOpen = false
+    pendingShowTimer: unknown = null
+    sends: Array<{ channel: string; payload: unknown }> = []
+    showCount = 0
+    private readonly onHide?: () => void
+    constructor(opts: { parent: { id: number }; onHide?: () => void }) {
+      this.popupWebContentsId = ++seq
+      this.parentWindowId = opts.parent.id
+      this.onHide = opts.onHide
+      this.parentWindow = {
+        id: opts.parent.id,
+        isDestroyed: () => false,
+        getContentBounds: () => ({ width: 1200, height: 800 })
+      }
+      this.popup = {
+        webContents: {
+          id: this.popupWebContentsId,
+          send: (channel: string, payload: unknown) => {
+            this.sends.push({ channel, payload })
+          },
+          isDestroyed: () => false
+        },
+        setBounds: () => {},
+        getBounds: () => ({ x: 0, y: 0, width: 300, height: 96 })
+      }
+      FakeEmbeddedPopupView.instances.push(this)
+    }
+    isDestroyed(): boolean {
+      return false
+    }
+    scheduleShowFallback(_ms: number, _cb: () => void): void {
+      this.pendingShowTimer = Symbol('timer')
+    }
+    showOnTop(): void {
+      this.pendingShowTimer = null
+      this.isOpen = true
+      this.showCount += 1
+    }
+    hide(): void {
+      this.pendingShowTimer = null
+      this.isOpen = false
+      this.onHide?.()
+    }
+  }
+  return { EmbeddedPopupView: FakeEmbeddedPopupView }
+})
 
+import { ipcMain } from 'electron'
+import type { BrowserWindow } from 'electron'
+import { EmbeddedPopupView } from './embeddedPopupView'
 import {
   buildCoachmarkConfig,
+  openCoachmarkPopup,
   positionCoachmark,
+  registerTitleCoachmarkIpc,
   COACHMARK_BEAK_EDGE_MARGIN,
   COACHMARK_SHADOW_GUTTER,
   COACHMARK_VERTICAL_GAP
 } from './titleCoachmark'
+
+type FakeView = InstanceType<typeof EmbeddedPopupView> & {
+  pendingShowTimer: unknown
+  showCount: number
+  sends: Array<{ channel: string; payload: unknown }>
+}
+const ipcHandlers = (ipcMain as unknown as { _handlers: Map<string, (...a: unknown[]) => void> })
+  ._handlers
+const viewInstances = (EmbeddedPopupView as unknown as { instances: FakeView[] }).instances
 
 describe('buildCoachmarkConfig', () => {
   it('stamps the coachmark variant and carries title + body + dismiss copy', () => {
@@ -178,5 +268,107 @@ describe('positionCoachmark', () => {
       parentBounds
     })
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(parentBounds.width)
+  })
+})
+
+describe('coachmark render-ack guard (first-use lockdown re-race)', () => {
+  interface FakeParent {
+    id: number
+    isDestroyed: () => boolean
+    on: () => void
+  }
+  let currentParent: FakeParent | null = null
+
+  beforeAll(() => {
+    registerTitleCoachmarkIpc({
+      findParentByTitleBarSender: () =>
+        currentParent ? (currentParent as unknown as BrowserWindow) : null,
+      findTitleBarByParent: () => null
+    })
+  })
+
+  function makeParent(id: number): FakeParent {
+    const parent: FakeParent = { id, isDestroyed: () => false, on: () => {} }
+    currentParent = parent
+    return parent
+  }
+
+  function openCard(parent: FakeParent): { view: FakeView; token: string } {
+    openCoachmarkPopup({
+      parent: parent as unknown as BrowserWindow,
+      title: 'A beta feature is on',
+      body: 'This instance started with a beta feature enabled.',
+      dismissLabel: 'Got it',
+      actionLabel: 'Settings',
+      leftX: 500,
+      rightX: 540,
+      bottomY: 36
+    })
+    const view = viewInstances[viewInstances.length - 1]!
+    ipcHandlers.get('comfy-titletooltip:ready')?.({ sender: { id: view.popupWebContentsId } })
+    const setConfig = view.sends.filter((s) => s.channel === 'comfy-titletooltip:set-config').at(-1)
+    const token = (setConfig?.payload as { configToken: string }).configToken
+    return { view, token }
+  }
+
+  function fireRendered(view: FakeView, token: string): void {
+    ipcHandlers.get('comfy-titletooltip:rendered')?.(
+      { sender: { id: view.popupWebContentsId } },
+      { width: 280, height: 90, configToken: token }
+    )
+  }
+
+  function reassertLockdownHide(): void {
+    ipcHandlers.get('comfy-window:hide-titlebar-coachmark')?.({ sender: { id: 1 } })
+  }
+
+  it('shows the card when the render ack lands while a show is still pending', () => {
+    const { view, token } = openCard(makeParent(9101))
+    expect(view.showCount).toBe(0)
+    expect(view.pendingShowTimer).not.toBeNull()
+
+    fireRendered(view, token)
+
+    expect(view.showCount).toBe(1)
+    expect(view.isOpen).toBe(true)
+  })
+
+  it('does not resurrect a hidden card when a late render ack arrives', () => {
+    const { view, token } = openCard(makeParent(9102))
+
+    reassertLockdownHide()
+    expect(view.isOpen).toBe(false)
+    expect(view.pendingShowTimer).toBeNull()
+
+    fireRendered(view, token)
+
+    expect(view.showCount).toBe(0)
+    expect(view.isOpen).toBe(false)
+  })
+
+  it('keeps a visible-then-hidden card hidden on a repeat ack, and only the new token reopens it', () => {
+    const parent = makeParent(9103)
+    const { view, token } = openCard(parent)
+    fireRendered(view, token)
+    expect(view.showCount).toBe(1)
+
+    reassertLockdownHide()
+    expect(view.isOpen).toBe(false)
+
+    fireRendered(view, token)
+    expect(view.showCount).toBe(1)
+    expect(view.isOpen).toBe(false)
+
+    const reopened = openCard(parent)
+    expect(reopened.view).toBe(view)
+    expect(reopened.token).not.toBe(token)
+
+    fireRendered(view, token)
+    expect(view.showCount).toBe(1)
+    expect(view.isOpen).toBe(false)
+
+    fireRendered(view, reopened.token)
+    expect(view.showCount).toBe(2)
+    expect(view.isOpen).toBe(true)
   })
 })

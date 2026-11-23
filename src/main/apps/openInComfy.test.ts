@@ -22,7 +22,8 @@ const mocks = vi.hoisted(() => ({
   otherLaunchSettled: vi.fn(),
   onLaunch: vi.fn(),
   setActivePanel: vi.fn(),
-  syncCloudWindowWorkspace: vi.fn()
+  syncCloudWindowWorkspace: vi.fn(),
+  maximizeIfPendingReveal: vi.fn()
 }))
 
 vi.mock('../lib/cloudWorkspace', () => ({
@@ -30,7 +31,8 @@ vi.mock('../lib/cloudWorkspace', () => ({
 }))
 vi.mock('../host/panelView', () => ({ setActivePanel: mocks.setActivePanel }))
 vi.mock('../host/registry', () => ({
-  getEntryByInstallationId: (id: string) => mocks.windows.get(id)
+  getEntryByInstallationId: (id: string) => mocks.windows.get(id),
+  maximizeIfPendingReveal: mocks.maximizeIfPendingReveal
 }))
 vi.mock('../installations', () => ({
   CLOUD_SOURCE_ID: 'cloud',
@@ -45,6 +47,9 @@ vi.mock('../lib/ipc/shared', () => ({
   _onLaunch: (info: unknown) => mocks.onLaunch(info),
   _hasActiveLaunch: (id: string) => mocks.launchesUnderWay.has(id),
   _runningSessions: mocks.sessions
+}))
+vi.mock('./appsCatalog', () => ({
+  titleForListedApp: (id: string) => (id === 'remove-background' ? 'Remove Background' : null)
 }))
 vi.mock('./localBuild', () => ({
   usableLocalBuilds: async () => mocks.builds,
@@ -65,11 +70,14 @@ import {
   _resetForTest,
   LOAD_TIMEOUT_MS,
   localBuilds,
+  localBuildsForEach,
   NO_WORKFLOW_GRACE_MS,
   openCatalogInComfy,
+  openEmbeddedWorkflow,
   openInComfy,
   WINDOW_TIMEOUT_MS
 } from './openInComfy'
+import { _resetForTest as forgetRuns, finishRun, runAccepted } from './localAppEvents'
 import { COMFY_STATE_SCRIPT, MARK_PAGE_STALE_SCRIPT } from './openRequest'
 import type { ComfyPageState } from './openRequest'
 
@@ -140,7 +148,11 @@ class FakeWindow {
   }
 
   loaded(): string[] {
-    return this.scripts.filter((script) => script.includes('loadApiJson(JSON.parse'))
+    return this.scripts.filter((script) => script.includes('app.loadApiJson(data,name)'))
+  }
+
+  loadedGraphs(): string[] {
+    return this.scripts.filter((script) => script.includes('app.loadGraphData(data'))
   }
 }
 
@@ -182,6 +194,7 @@ function openWindowsOnLaunch(): void {
 beforeEach(() => {
   vi.clearAllMocks()
   _resetForTest()
+  forgetRuns()
   mocks.records = [
     { id: STUDIO.id, name: STUDIO.name, sourceId: 'standalone', status: 'installed' },
     { id: LAB.id, name: LAB.name, sourceId: 'standalone', status: 'installed' }
@@ -214,6 +227,21 @@ describe('opening a run workflow in the ComfyUI on this computer', () => {
     expect(mocks.setActivePanel).toHaveBeenCalledWith(7, 'comfy')
     expect(mocks.launchOnce).not.toHaveBeenCalled()
     expect(mocks.onLaunch).not.toHaveBeenCalled()
+  })
+
+  it('maximizes a window still waiting for its first reveal before it shows it', async () => {
+    runLocal(STUDIO.id, 8190, 'window')
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8190/')
+    const shownWhenMaximized: boolean[] = []
+    mocks.maximizeIfPendingReveal.mockImplementationOnce(() => {
+      shownWhenMaximized.push(studio.shown)
+    })
+
+    await openInComfy(PAGE, ON_THIS_COMPUTER)
+
+    expect(mocks.maximizeIfPendingReveal).toHaveBeenCalledExactlyOnceWith(studio.window)
+    expect(shownWhenMaximized).toEqual([false])
+    expect(studio.shown).toBe(true)
   })
 
   it('shows a window for the build when it runs without one', async () => {
@@ -533,6 +561,49 @@ describe('the builds a page can pick from', () => {
     ])
   })
 
+  it('name the app a build is busy with, so the page can mark it Busy', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+
+    expect(await localBuilds()).toEqual([
+      {
+        id: STUDIO.id,
+        name: STUDIO.name,
+        running: false,
+        busyWith: { appId: 'remove-background', title: 'Remove Background' }
+      },
+      { id: LAB.id, name: LAB.name, running: false }
+    ])
+  })
+
+  it('leave the name out for an app the catalog has no name for, and never name the asking app', async () => {
+    runAccepted('run-1', STUDIO.id, 'unlisted-app', 1)
+    runAccepted('run-2', LAB.id, 'remove-background', 2)
+
+    const builds = await localBuilds('remove-background')
+
+    expect(builds[0]?.busyWith).toEqual({ appId: 'unlisted-app' })
+    expect(builds[1]).not.toHaveProperty('busyWith')
+  })
+
+  it('show a build as free again once its run ends', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+    finishRun('run-1', { outcome: 'success', at: 2 })
+
+    expect((await localBuilds())[0]).not.toHaveProperty('busyWith')
+  })
+
+  it('can be described for several asking apps with one look at the builds', async () => {
+    runAccepted('run-1', STUDIO.id, 'remove-background', 1)
+
+    const [forCutout, forAds] = await localBuildsForEach(['remove-background', 'product-ads'])
+
+    expect(forCutout?.[0]).not.toHaveProperty('busyWith')
+    expect(forAds?.[0]?.busyWith).toEqual({
+      appId: 'remove-background',
+      title: 'Remove Background'
+    })
+  })
+
   it('come most recently launched first, which the page labels Last used', async () => {
     mocks.builds = [
       { ...STUDIO, lastLaunchedAt: 100 },
@@ -571,7 +642,7 @@ describe('opening a catalog graph in a workspace build', () => {
         scope
       )
     ).toEqual({ opened: true })
-    expect(entry.scripts.some((script) => script.includes('loadGraphData(JSON.parse'))).toBe(true)
+    expect(entry.loadedGraphs()).toHaveLength(1)
   })
 
   it('refuses to open a build in a different workspace or below the catalog minimum', async () => {
@@ -607,6 +678,59 @@ describe('opening a catalog graph in a workspace build', () => {
     expect(mocks.syncCloudWindowWorkspace).toHaveBeenCalledWith(entry, {
       pickerWorkspaceId: 'team'
     })
-    expect(entry.scripts.some((script) => script.includes('loadGraphData(JSON.parse'))).toBe(true)
+    expect(entry.loadedGraphs()).toHaveLength(1)
+  })
+})
+
+describe('opening the workflow saved in a file', () => {
+  const GRAPH = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+
+  it('loads the graph into the build it is asked for, and not the one an app page used', async () => {
+    runLocal(STUDIO.id, 8190, 'window')
+    runLocal(LAB.id, 8191, 'window')
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8190/')
+    const lab = windowFor(LAB.id, 'http://127.0.0.1:8191/')
+
+    expect(
+      await openEmbeddedWorkflow(
+        { where: 'local', build: LAB.id },
+        { format: 'graph', data: GRAPH },
+        'ComfyUI_00001_'
+      )
+    ).toEqual({ opened: true })
+
+    expect(lab.loadedGraphs()).toHaveLength(1)
+    expect(lab.loadedGraphs()[0]).toContain('"ComfyUI_00001_"')
+    expect(studio.loadedGraphs()).toHaveLength(0)
+  })
+
+  it('loads a file that only has a prompt into Comfy Cloud', async () => {
+    mocks.records.push(CLOUD)
+    runCloud(CLOUD.id)
+    const cloud = windowFor(CLOUD.id, CLOUD_URL)
+
+    expect(
+      await openEmbeddedWorkflow({ where: 'cloud' }, { format: 'api', data: PROMPT }, 'fox')
+    ).toEqual({ opened: true })
+
+    expect(cloud.loaded()).toHaveLength(1)
+  })
+
+  it('refuses a prompt that holds a Comfy key and opens nothing', async () => {
+    expect(
+      await openEmbeddedWorkflow({ where: 'cloud' }, { format: 'api', data: WITH_KEY }, 'x')
+    ).toEqual({ opened: false, error: 'apps.local.openCarriesKeys' })
+    expect(mocks.launchOnce).not.toHaveBeenCalled()
+    expect(mocks.onLaunch).not.toHaveBeenCalled()
+  })
+
+  it('refuses a build that is not one of this computer builds', async () => {
+    expect(
+      await openEmbeddedWorkflow(
+        { where: 'local', build: 'inst-gone' },
+        { format: 'graph', data: GRAPH },
+        'x'
+      )
+    ).toEqual({ opened: false, error: 'apps.local.openUnknownBuild' })
   })
 })

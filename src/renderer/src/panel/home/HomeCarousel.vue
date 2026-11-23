@@ -1,7 +1,24 @@
-<script setup lang="ts" generic="Card extends { id: string; title: string; description: string }">
-import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+<script
+  setup
+  lang="ts"
+  generic="Card extends Pick<AppCard, 'id' | 'title' | 'description' | 'badges'>"
+>
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  reactive,
+  ref,
+  useId,
+  useTemplateRef,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
+import AppBadges from '../AppBadges.vue'
+import { badgeDescriptionIds, glassPictureOf } from '../appCardBadges'
+import CoverRotation from '../../components/CoverRotation.vue'
+import type { AppCard, AppCover } from '../../types/ipc'
 
 interface ArcSlot {
   transform: string
@@ -17,6 +34,8 @@ const ARC_REACH = 2
 const OFFSTAGE = ARC_REACH + 1
 const DRAG_PIXELS_PER_CARD = 150
 const DRAG_START_PIXELS = 6
+const WHEEL_PIXELS_PER_CARD = 40
+const WHEEL_GESTURE_GAP_MS = 180
 const ARC_SLOTS: Record<number, ArcSlot> = {
   0: { transform: 'translateX(0) rotateY(0deg) scale(1)', opacity: 1, dim: 0, layer: 3 },
   1: {
@@ -39,10 +58,10 @@ const ARC_SLOTS: Record<number, ArcSlot> = {
   }
 }
 
-const { cards, kind, pictureOf } = defineProps<{
+const { cards, kind, picturesOf } = defineProps<{
   cards: readonly Card[]
   kind: 'apps' | 'workflows'
-  pictureOf: (card: Card) => string | null
+  picturesOf: (card: Card) => readonly AppCover[]
 }>()
 
 const emit = defineEmits<{ open: [card: Card] }>()
@@ -51,8 +70,24 @@ const { t } = useI18n()
 
 const frontPosition = ref(0)
 const jumpedAcross = ref(new Set<string>())
-const loadedPictures = ref(new Set<string>())
 const brokenPictures = ref(new Set<string>())
+const pictureShowing = reactive(new Map<string, number | null>())
+const keyboardFocusedId = ref<string | null>(null)
+const badgeIdPrefix = useId()
+
+function badgeIdPrefixFor(card: Card): string {
+  return `${badgeIdPrefix}-${card.id}`
+}
+
+function badgesDescribing(card: Card): string | undefined {
+  return badgeDescriptionIds(badgeIdPrefixFor(card), card.badges)
+}
+
+function noteCardFocus(card: Card, event: FocusEvent): void {
+  const button = event.currentTarget
+  keyboardFocusedId.value =
+    button instanceof HTMLElement && button.matches(':focus-visible') ? card.id : null
+}
 
 const listsApps = computed(() => kind === 'apps')
 const wraps = computed(() => cards.length > ARC_REACH * 2)
@@ -133,11 +168,7 @@ function slotStyle(offset: number): Record<string, string> {
 }
 
 function showsPicture(card: Card): boolean {
-  return pictureOf(card) !== null && !brokenPictures.value.has(card.id)
-}
-
-function markPictureLoaded(card: Card): void {
-  loadedPictures.value = new Set(loadedPictures.value).add(card.id)
+  return picturesOf(card).length > 0 && !brokenPictures.value.has(card.id)
 }
 
 function markPictureBroken(card: Card): void {
@@ -185,7 +216,41 @@ function startDrag(event: PointerEvent): void {
   window.addEventListener('pointercancel', stopDrag)
 }
 
-onBeforeUnmount(stopDrag)
+let wheelDistance = 0
+let wheelTurned = false
+let wheelGestureTimer: ReturnType<typeof setTimeout> | undefined
+
+function endWheelGesture(): void {
+  wheelDistance = 0
+  wheelTurned = false
+}
+
+function wheelPixels(delta: number, mode: number): number {
+  return mode === WheelEvent.DOM_DELTA_PIXEL ? delta : delta * WHEEL_PIXELS_PER_CARD
+}
+
+function onWheel(event: WheelEvent): void {
+  const deltaX = wheelPixels(event.deltaX, event.deltaMode)
+  const deltaY = wheelPixels(event.deltaY, event.deltaMode)
+  const upOrDown = deltaX === 0
+  const sideways = upOrDown ? deltaY : deltaX
+  if (sideways === 0 || (!event.shiftKey && Math.abs(deltaY) > Math.abs(sideways))) return
+  if (upOrDown && !event.shiftKey && !wheelTurned && (sideways < 0 ? atFirst.value : atLast.value))
+    return
+  event.preventDefault()
+  clearTimeout(wheelGestureTimer)
+  wheelGestureTimer = setTimeout(endWheelGesture, WHEEL_GESTURE_GAP_MS)
+  if (wheelTurned) return
+  wheelDistance += sideways
+  if (!upOrDown && Math.abs(wheelDistance) < WHEEL_PIXELS_PER_CARD) return
+  wheelTurned = true
+  moveTo(frontPosition.value + Math.sign(upOrDown ? sideways : wheelDistance))
+}
+
+onBeforeUnmount(() => {
+  stopDrag()
+  clearTimeout(wheelGestureTimer)
+})
 
 async function turn(direction: number): Promise<void> {
   const focused = document.activeElement
@@ -205,12 +270,18 @@ function activate(placed: { card: Card; offset: number }): void {
 </script>
 
 <template>
-  <div class="group/arc relative" @keydown.left.prevent="turn(-1)" @keydown.right.prevent="turn(1)">
+  <div
+    class="group/arc relative"
+    @keydown.left.prevent="turn(-1)"
+    @keydown.right.prevent="turn(1)"
+    @wheel="onWheel"
+  >
     <ul
       ref="arc"
       class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
       :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
       data-testid="home-carousel"
+      :data-home-tour="listsApps ? 'apps-carousel' : undefined"
       @pointerdown="startDrag"
     >
       <li v-for="placed in arcCards" :key="placed.card.id" class="contents">
@@ -225,23 +296,22 @@ function activate(placed: { card: Card; offset: number }): void {
           ]"
           :style="slotStyle(placed.offset)"
           :aria-label="labelFor(placed)"
+          :aria-describedby="badgesDescribing(placed.card)"
           :aria-current="placed.offset === 0 ? 'true' : undefined"
           :aria-hidden="placed.onStage ? undefined : 'true'"
           :tabindex="placed.onStage ? undefined : -1"
           data-testid="home-carousel-card"
           :data-arc-offset="placed.offset"
           @click="activate(placed)"
+          @focus="noteCardFocus(placed.card, $event)"
+          @blur="keyboardFocusedId = null"
         >
-          <img
+          <CoverRotation
             v-if="showsPicture(placed.card)"
-            :src="pictureOf(placed.card) ?? undefined"
-            alt=""
-            draggable="false"
-            class="absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none"
-            :class="loadedPictures.has(placed.card.id) ? 'opacity-100' : 'opacity-0'"
-            :data-loaded="loadedPictures.has(placed.card.id)"
-            @load="markPictureLoaded(placed.card)"
-            @error="markPictureBroken(placed.card)"
+            :pictures="picturesOf(placed.card)"
+            :paused="placed.offset !== 0"
+            @broken="markPictureBroken(placed.card)"
+            @showing="pictureShowing.set(placed.card.id, $event)"
           />
           <span
             v-else
@@ -257,6 +327,18 @@ function activate(placed: { card: Card; offset: number }): void {
             class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
             aria-hidden="true"
           />
+          <AppBadges
+            v-if="placed.card.badges?.length"
+            :badges="placed.card.badges"
+            :description-id-prefix="badgeIdPrefixFor(placed.card)"
+            :revealed="keyboardFocusedId === placed.card.id"
+            :glass-picture="
+              showsPicture(placed.card)
+                ? glassPictureOf(picturesOf(placed.card), pictureShowing.get(placed.card.id))
+                : null
+            "
+            class="absolute top-3 left-3 max-w-[calc(100%-4.25rem)]"
+          />
           <span
             class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
             :class="
@@ -269,14 +351,27 @@ function activate(placed: { card: Card; offset: number }): void {
           >
             <ArrowUpRight :size="16" :stroke-width="2.25" />
           </span>
-          <span
-            class="absolute inset-x-3.5 bottom-4 flex flex-col"
-            data-testid="home-carousel-name"
-          >
-            <span class="truncate text-sm/[17px] font-medium text-white">
+          <span class="absolute inset-x-3.5 bottom-4 grid" data-testid="home-carousel-name">
+            <span
+              class="truncate text-sm/[17px] font-medium text-white transition-[translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] motion-reduce:transition-none"
+              :class="
+                placed.offset === 0 &&
+                placed.card.description &&
+                'group-hover/card:-translate-y-[18px] group-focus-visible/card:-translate-y-[18px]'
+              "
+              data-testid="home-carousel-title"
+            >
               {{ placed.card.title }}
             </span>
-            <span v-if="placed.card.description" class="truncate text-[13px]/[18px] text-white/70">
+            <span
+              v-if="placed.card.description"
+              class="translate-y-1.5 self-end truncate text-[13px]/[18px] text-white/70 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] motion-reduce:transition-none"
+              :class="
+                placed.offset === 0 &&
+                'group-hover/card:translate-y-0 group-hover/card:opacity-100 group-focus-visible/card:translate-y-0 group-focus-visible/card:opacity-100'
+              "
+              data-testid="home-carousel-description"
+            >
               {{ placed.card.description }}
             </span>
           </span>

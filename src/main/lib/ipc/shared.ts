@@ -31,6 +31,7 @@ import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
 import { download } from '../download'
 import { createCache } from '../cache'
 import { holdAgentPrefetch } from '../agentRequirementsLaunch'
+import { AGENT_CLIENT_ENV_VARS, type AgentClientContext } from '../agentClientContext'
 import { extractNested as extract } from '../extract'
 import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
@@ -40,6 +41,7 @@ import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
 import type { AcceleratorSnapshot } from '../hardwareTap'
+import type { ComfyFolders } from '../outputFolders'
 import {
   spawnProcess,
   waitForPort,
@@ -124,7 +126,7 @@ import type { Theme, ResolvedTheme, QuitActiveItem, BetaArgView } from '../../..
 import { findLockingProcesses } from '../file-lock-info'
 import { markStopRequested } from '../comfyProcessRecord'
 import type { LaunchCmd } from '../process'
-import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
+import { getComfyArgsSchema, filterUnsupportedArgs, dropValuelessArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
 import { getComfyFeatureFlagRegistry } from '../comfy-feature-flags'
 import type { FeatureFlagRegistry } from '../comfy-feature-flags'
@@ -245,6 +247,7 @@ export {
   findLockingProcesses,
   getComfyArgsSchema,
   filterUnsupportedArgs,
+  dropValuelessArgs,
   getComfyFeatureFlagRegistry
 }
 export type {
@@ -277,7 +280,8 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
   'CM_USE_PYGIT2',
-  '__COMFYUI_DESKTOP_VERSION__'
+  '__COMFYUI_DESKTOP_VERSION__',
+  ...AGENT_CLIENT_ENV_VARS
 ])
 
 const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'comfybuilder'])
@@ -295,6 +299,7 @@ export interface SessionInfo {
   flushTelemetry?: () => void
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
   coreBetaArgs?: readonly BetaArgView[]
+  launchFolders?: ComfyFolders
 }
 
 export interface LaunchCallbackInfo {
@@ -793,6 +798,9 @@ export async function performCopy(
       copiedAt: _copiedAt,
       copiedFromName: _copiedFromName,
       copyReason: _copyReason,
+      lastLaunchedAt: _lastLaunchedAt,
+      lastLaunchedAtByCategory: _lastLaunchedAtByCategory,
+      lastStoppedAt: _lastStoppedAt,
       ...inherited
     } = inst
 
@@ -883,7 +891,8 @@ export function sanitizeEnvVars(raw: unknown): Record<string, string> {
 
 export function buildLaunchEnv(
   inst: InstallationRecord,
-  sessionPath?: string
+  sessionPath?: string,
+  clientContext?: AgentClientContext
 ): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
   const desktopManaged = DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
@@ -899,6 +908,14 @@ export function buildLaunchEnv(
       : {})
   }
   if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  for (const key of Object.keys(env)) {
+    if ((AGENT_CLIENT_ENV_VARS as readonly string[]).includes(key.toUpperCase())) delete env[key]
+  }
+  if (clientContext) {
+    env.AGENT_CLIENT_CONTEXT = 'desktop'
+    env.AGENT_CLIENT_CHANNEL = clientContext.channel
+    if (clientContext.gpuTier) env.AGENT_CLIENT_GPU_TIER = clientContext.gpuTier
+  }
   return env
 }
 
@@ -952,7 +969,8 @@ export function _addSession(
     installationName,
     flushTelemetry,
     getAcceleratorInfo,
-    coreBetaArgs
+    coreBetaArgs,
+    launchFolders
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   retries?: { portRetries: number; rebootRetries: number },
@@ -968,6 +986,7 @@ export function _addSession(
     flushTelemetry,
     getAcceleratorInfo,
     coreBetaArgs,
+    launchFolders,
     startedAt: Date.now()
   })
   _launchingInstances.delete(installationId)
@@ -999,12 +1018,38 @@ export function _addSession(
     })
 }
 
+const _pendingStopStamps = new Set<Promise<unknown>>()
+
+function markSessionStopped(installationId: string, session: SessionInfo): void {
+  const write = installations
+    .update(session.sourceInstallationId ?? installationId, { lastStoppedAt: Date.now() })
+    .catch((err) => {
+      console.error('Failed to mark installation stopped:', err)
+    })
+  _pendingStopStamps.add(write)
+  void write.finally(() => _pendingStopStamps.delete(write))
+}
+
+export function hasPendingStopStamps(): boolean {
+  return _pendingStopStamps.size > 0
+}
+
+export async function settleStopStamps(timeoutMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+  })
+  await Promise.race([Promise.all(_pendingStopStamps), deadline])
+  clearTimeout(timer)
+}
+
 export function _removeSession(installationId: string): void {
   const session = _runningSessions.get(installationId)
   if (!session) return
   flushOperationOutput(installationId)
   if (session.port) removePortLock(session.port)
   _runningSessions.delete(installationId)
+  markSessionStopped(installationId, session)
   _broadcastToRenderer('instance-stopped', { installationId })
   sessionLifecycleEvents.emit('changed')
 }
@@ -1379,6 +1424,7 @@ export async function stopRunning(
     if (session.port) removePortLock(session.port)
     markStopRequested(installationId)
     _runningSessions.delete(installationId)
+    markSessionStopped(installationId, session)
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
     }
@@ -1397,6 +1443,7 @@ export async function stopRunning(
     for (const [id, session] of sessions) {
       if (session.port) removePortLock(session.port)
       markStopRequested(id)
+      markSessionStopped(id, session)
     }
     _runningSessions.clear()
     const kills: Promise<unknown>[] = []
@@ -1508,7 +1555,8 @@ export function _test_addRunningSession(
   installationId: string,
   installationName: string,
   flushTelemetry?: () => void,
-  coreBetaArgs?: readonly BetaArgView[]
+  coreBetaArgs?: readonly BetaArgView[],
+  launchFolders?: ComfyFolders
 ): void {
   _runningSessions.set(installationId, {
     proc: null,
@@ -1518,6 +1566,7 @@ export function _test_addRunningSession(
     installationName,
     flushTelemetry,
     coreBetaArgs,
+    launchFolders,
     startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {
@@ -1532,6 +1581,7 @@ export function _test_addRunningSession(
 export function _test_clearRunningSessions(): void {
   const ids = Array.from(_runningSessions.keys())
   _runningSessions.clear()
+  _pendingStopStamps.clear()
   for (const id of ids) {
     _broadcastToRenderer('instance-stopped', { installationId: id })
   }

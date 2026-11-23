@@ -135,6 +135,10 @@ export async function writeFakeComfyInstall(opts: {
   const sh = [
     '#!/bin/sh',
     'case "$*" in',
+    '  *--list-feature-flags*)',
+    "    echo '{}'",
+    '    exit 0',
+    '    ;;',
     '  *--help*)',
     "    cat <<'COMFY_USAGE'",
     helpText(),

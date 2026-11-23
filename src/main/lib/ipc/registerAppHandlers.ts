@@ -43,6 +43,7 @@ import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { defaultBenchmarksDir } from '../paths'
 import { deriveGpuTier } from '../../../shared/gpuTier'
+import { setHardwareProbe } from '../agentClientContext'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { installationIdOf, sessionKindOf } from '../../../shared/performanceTestSession'
 import {
@@ -540,6 +541,7 @@ export function registerAppHandlers(): void {
     })
     return hardwareProbe
   }
+  setHardwareProbe(probeHardwareCached)
 
   async function getSystemInfo(): Promise<SystemInfo> {
     const hardware = await probeHardwareCached()
@@ -569,6 +571,18 @@ export function registerAppHandlers(): void {
   }
 
   ipcMain.handle('get-system-info', getSystemInfo)
+
+  let chassisType: Promise<string | null> | undefined
+  ipcMain.handle('get-chassis-type', () => {
+    chassisType ??= si
+      .chassis()
+      .then(({ type }) => type || null)
+      .catch(() => {
+        chassisType = undefined
+        return null
+      })
+    return chassisType
+  })
 
   async function probeHardware(): Promise<Record<string, unknown>> {
     const gpu = await detectGPUCached()

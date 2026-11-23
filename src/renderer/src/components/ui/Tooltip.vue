@@ -19,6 +19,7 @@ const props = withDefaults(
     interactive?: boolean
     keepOpenOnClick?: boolean
     shouldOpen?: () => boolean
+    shownWhile?: boolean
   }>(),
   {
     text: undefined,
@@ -28,7 +29,8 @@ const props = withDefaults(
     disabled: false,
     interactive: false,
     keepOpenOnClick: false,
-    shouldOpen: undefined
+    shouldOpen: undefined,
+    shownWhile: false
   }
 )
 defineOptions({ inheritAttrs: false })
@@ -38,11 +40,24 @@ const wanted = ref(false)
 const gateOpen = inject(TOOLTIP_GATE, () => true)
 const labelId = useId()
 const unavailable = computed(() => props.disabled || (!props.text && !slots.content))
+const dismissed = ref(false)
+function refresh(): void {
+  const requested = wanted.value || (props.shownWhile && !dismissed.value)
+  open.value = requested && !unavailable.value && gateOpen() && (props.shouldOpen?.() ?? true)
+}
 function setOpen(next: boolean): void {
   wanted.value = next
-  open.value = next && !unavailable.value && gateOpen() && (props.shouldOpen?.() ?? true)
+  refresh()
 }
-watch(gateOpen, () => setOpen(wanted.value))
+watch(gateOpen, refresh)
+watch(
+  () => props.shownWhile,
+  () => {
+    dismissed.value = false
+    refresh()
+  },
+  { immediate: true }
+)
 function onFocusOut(event: FocusEvent): void {
   setOpen(
     props.interactive &&
@@ -51,6 +66,7 @@ function onFocusOut(event: FocusEvent): void {
   )
 }
 function close(): void {
+  dismissed.value = true
   setOpen(false)
 }
 function onKeydown(event: KeyboardEvent): void {
@@ -96,6 +112,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', close))
         :aria-labelledby="interactive && text ? labelId : undefined"
         :collision-padding="8"
         @keydown.capture="onKeydown"
+        @escape-key-down="close"
         @focusout="onFocusOut"
       >
         <span v-if="interactive && text" :id="labelId" hidden>{{ text }}</span>

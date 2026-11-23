@@ -29,15 +29,22 @@ export function deleteAction(installation: { installPath: string }): ActionDef {
   }
 }
 
-export function untrackAction(): ActionDef {
+export type ForgetTarget = 'localBuild' | 'remoteConnection'
+
+const FORGET_CONFIRM_MESSAGE_KEYS: Record<ForgetTarget, string> = {
+  localBuild: 'actions.untrackConfirmMessage',
+  remoteConnection: 'actions.untrackRemoteConfirmMessage'
+}
+
+export function untrackAction(target: ForgetTarget = 'localBuild'): ActionDef {
   return {
     id: 'remove',
     label: t('actions.untrack'),
-    style: 'danger',
+    style: 'default',
     enabled: true,
     confirm: {
       title: t('actions.untrackConfirmTitle'),
-      message: t('actions.untrackConfirmMessage')
+      message: t(FORGET_CONFIRM_MESSAGE_KEYS[target])
     }
   }
 }
@@ -92,10 +99,16 @@ export function renameAction(currentName: string): ActionDef {
   }
 }
 
+export function revealInFolderLabel(platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'darwin') return t('assets.showInFinder')
+  if (platform === 'win32') return t('assets.showInExplorer')
+  return t('assets.showInFolder')
+}
+
 export function openFolderAction(installPath: string): ActionDef {
   return {
     id: 'open-folder',
-    label: t('actions.openDirectory'),
+    label: revealInFolderLabel(),
     style: 'default',
     enabled: !!installPath
   }

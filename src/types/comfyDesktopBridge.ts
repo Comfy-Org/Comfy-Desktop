@@ -141,6 +141,10 @@ export interface ComfyDesktop2AuthBridge {
    *  as `getWorkspaceToken`. Desktop mints and renews it; null means use the
    *  workspace token. Absent on Desktop builds before it. */
   getPartnerNodeToken?(workspaceId: string): Promise<string | null>
+  /** The Comfy Cloud origin Desktop's account belongs to, such as
+   *  `https://cloud.comfy.org`; send the workspace token's calls there. Null
+   *  when the session is disabled. Absent on Desktop builds before it. */
+  getCloudOrigin?(): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
   /** Signs Desktop out of its account (every view follows) and resolves with
@@ -176,7 +180,8 @@ export type ComfyDesktopHostedAuthBridge = Required<
     ComfyDesktop2AuthBridge,
     'getState' | 'getWorkspaceToken' | 'getPartnerNodeToken' | 'requestSignIn' | 'onChanged'
   >
->
+> &
+  Pick<ComfyDesktop2AuthBridge, 'getCloudOrigin'>
 
 /** What a hosted page needs from the ComfyUI on this computer. */
 export interface ComfyDesktopLocalRequirements {
@@ -282,6 +287,19 @@ export interface ComfyDesktopLocalBuild {
   version?: string
   /** True when it is running now. Absent on Desktop builds that predate it. */
   running?: boolean
+  /**
+   * Another app in Desktop's Apps view whose run this build is working on, or
+   * the first run in its queue ahead of the asking app's own runs. Never the
+   * app that asks, and never an app queued behind it. A build runs one
+   * workflow at a time, so a new run waits in its queue until that one ends.
+   * `title` is the app's name for the person, such as `Remove Background`. It
+   * is absent when Desktop has no name for the app, so the page can say
+   * `another app` in its own words and language. `busyWith` is absent
+   * when no other app in the Apps view has a run on this build: the build can
+   * still be busy with a run from somewhere else, such as its ComfyUI window.
+   * Absent on Desktop builds that predate it.
+   */
+  busyWith?: { appId: string; title?: string }
 }
 
 /**
@@ -309,16 +327,52 @@ export interface ComfyDesktopHostedLocalBridge {
   openInComfy?(request: ComfyDesktopOpenInComfyRequest): Promise<ComfyDesktopOpenInComfy>
   /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
   localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
+  /**
+   * Calls back with the builds `localBuilds` would give whenever a run from an
+   * app in the Apps view starts or ends on a build. Runs from anywhere else,
+   * such as a build's ComfyUI window, do not call it. Absent on Desktop builds
+   * that predate it.
+   */
+  onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
+}
+
+/** Whether a Comfy page hosted in Desktop's Apps view has a run going. */
+export interface ComfyDesktopRunState {
+  running: boolean
+}
+
+/**
+ * Run state from a Comfy page hosted in Desktop's Apps view. Desktop exposes
+ * it to that page as `window.comfyDesktopRuns`. Desktop keeps a page with a
+ * run going alive when the person switches to another app, shows a spinner on
+ * the app's picture in the rail and a running indicator in the title bar, and
+ * asks before a window closes or Desktop quits while a run is going.
+ */
+export interface ComfyDesktopHostedRunsBridge {
+  /**
+   * Reports whether the page has any run going. Send `running: true` when the
+   * person presses Run, and keep it through every queue wait. Send
+   * `running: false` only when the page has no run left: each report replaces
+   * the page's whole state, so with two runs going, report false only after
+   * the last one finishes, fails or is cancelled. Once a page calls this,
+   * Desktop uses only these reports for that page. Pages that never call it
+   * are followed through their run progress toast (`.cs-toasts .cs-toast`).
+   */
+  reportRun(state: ComfyDesktopRunState): void
 }
 
 /**
  * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop
  * exposes it to that page as `window.comfyDesktopTelemetry` and sends an event
  * as `comfy.desktop.apps.<name>` only when the person allows telemetry.
- * `name` matches `^[a-z][a-z0-9_]{0,47}$`; `app_opened` and `app_page_failed`
- * are refused because Desktop sends them itself, and so is `error`. Desktop
- * sends at most 60 events a minute for one app and 1,000 page events a
- * session, and drops the rest. Desktop keeps at most 16
+ * `name` matches `^[a-z][a-z0-9_]{0,47}$`. Desktop sends these app events
+ * itself and refuses them from a page: `app_opened`, `app_page_failed`,
+ * `run_finished` (how a run on this computer ended, as `outcome`: `success`,
+ * `failed`, `cancelled`, or `refused` when a partner API refused the run's
+ * content) and `setup` (Desktop installing or starting the ComfyUI an app runs
+ * on); it refuses `error` too.
+ * Desktop sends at most 60 events a minute for one app and 1,000 page events
+ * a session, and drops the rest. Desktop keeps at most 16
  * properties, each named `^[a-z][a-z0-9_]{0,31}$` with a boolean, a finite
  * number or a slug of at most 64 characters (`^[a-z0-9][a-z0-9._-]{0,63}$`),
  * and drops anything else. Desktop sets `app_id` itself, to the app whose
@@ -410,6 +464,114 @@ export interface ComfyDesktopHostedOutputsBridge {
   onOutputAction(callback: (action: ComfyDesktopOutputAction) => void): () => void
 }
 
+/** A kind of picture an app input takes. Desktop tells it by the file's extension. */
+export type ComfyDesktopAssetKind = 'image' | 'video'
+
+/** Where a run goes: `local` is This computer, `cloud` is Comfy Cloud. */
+export type ComfyDesktopAssetWhere = 'local' | 'cloud'
+
+/**
+ * A picture Desktop holds for a page, named by an opaque `ref` that works
+ * only in the page document that received it. The page never learns a path.
+ */
+export interface ComfyDesktopAssetRef {
+  ref: string
+  /** The file name to show, such as `cutout_00001_.png`. */
+  name: string
+  kind: ComfyDesktopAssetKind
+  where: ComfyDesktopAssetWhere
+  /** The app that made it, the `<app>` in `output/apps/<app>/...`, or null. */
+  app: string | null
+  /** Milliseconds since the epoch: the file's modified time, or the Cloud asset's creation time. */
+  createdAt: number
+  /** Its size in bytes. */
+  size: number
+  /** A small `data:` URL whose long side is at most 256 px, or null when none is cheap to make. */
+  thumb: string | null
+}
+
+/**
+ * Why Desktop could not answer: `missing` (the file or reference is gone),
+ * `elsewhere` (the reference is for the other place, has no run value
+ * there, or Desktop could not reach it), `too-large`, `wrong-kind`,
+ * `not-a-file` (a folder),
+ * `no-path` (a pasted or made-up file with no path on disk) or `signed-out`.
+ */
+export type ComfyDesktopAssetError =
+  'missing' | 'elsewhere' | 'too-large' | 'wrong-kind' | 'not-a-file' | 'no-path' | 'signed-out'
+
+export interface ComfyDesktopAssetFailure {
+  error: ComfyDesktopAssetError
+}
+
+/** `limit` is 12 when absent, and at most 48. */
+export interface ComfyDesktopAssetRecentRequest {
+  kinds: ComfyDesktopAssetKind[]
+  where: ComfyDesktopAssetWhere
+  limit?: number
+}
+
+export interface ComfyDesktopAssetFileRequest {
+  kinds: ComfyDesktopAssetKind[]
+}
+
+export interface ComfyDesktopAssetValueRequest {
+  where: ComfyDesktopAssetWhere
+}
+
+export interface ComfyDesktopAssetBytes {
+  bytes: ArrayBuffer
+  mime: string
+}
+
+/** What to put in `LoadImage.image` or `LoadVideo.file`. */
+export interface ComfyDesktopAssetValue {
+  value: string
+}
+
+/**
+ * The person's pictures for the inputs of a Comfy page hosted in Desktop's
+ * Apps view. Desktop exposes it to that page as `window.comfyDesktopAssets`.
+ * The page gets references, never paths, and asks Desktop for the run value
+ * of a reference when a run starts. Absent on Desktop builds that predate it.
+ */
+export interface ComfyDesktopHostedAssetsBridge {
+  /**
+   * Newest first. `local`: the files under `output/apps/` of the build the
+   * page's local runs go to, which is the shared output folder by default, and
+   * no other output files. `cloud`: the signed-in workspace's Comfy Cloud
+   * outputs, as Desktop's Assets page lists them; empty when signed out.
+   */
+  recent(request: ComfyDesktopAssetRecentRequest): Promise<ComfyDesktopAssetRef[]>
+  /**
+   * A file the person dropped or chose. Only its path reaches Desktop, which
+   * takes it when it is a regular file (after following links), of a kind in
+   * `kinds` by its extension, and at most 2 GiB. A file with no path on disk
+   * answers `no-path`, and the page uploads it as before. The answer's
+   * `thumb` is null, since the page already has the file to show.
+   */
+  fromFile(
+    file: File,
+    request: ComfyDesktopAssetFileRequest
+  ): Promise<ComfyDesktopAssetRef | ComfyDesktopAssetFailure>
+  /** The bytes, for the page's preview and its saved run. Above 512 MiB answers `too-large`. Desktop fetches a Cloud reference with its own sign-in. */
+  read(ref: string): Promise<ComfyDesktopAssetBytes | ComfyDesktopAssetFailure>
+  /**
+   * The value for a run going to `where`. A file on this computer, for a run
+   * on This computer: inside the build's output folder
+   * `<path/with/forward/slashes> [output]`, inside its input folder
+   * `<path> [input]`, and anywhere else `desktop/<hash>.<ext> [input]` after
+   * Desktop copies it once into `input/desktop/`, reusing an earlier copy. A
+   * Cloud output, for a run on Comfy Cloud: `<loader path> [output]`. A
+   * reference for the other place answers `elsewhere`, and the page uploads
+   * the bytes from `read` as before. A file that is gone answers `missing`.
+   */
+  valueFor(
+    ref: string,
+    request: ComfyDesktopAssetValueRequest
+  ): Promise<ComfyDesktopAssetValue | ComfyDesktopAssetFailure>
+}
+
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>
@@ -472,6 +634,11 @@ export interface ComfyDesktop2Bridge {
   cancelDownload?: (url: string) => Promise<boolean>
   onDownloadProgress?: (callback: (data: ComfyDownloadProgress) => void) => () => void
   reportTheme?: (bg: string, text: string) => void
+  /** Tells Desktop whether the hosted frontend is waiting on the user, such as an agent
+   *  approval or question. While `true` and the window is not focused, Desktop flashes the
+   *  taskbar entry (Windows, Linux) or bounces the dock icon once (macOS); focusing the
+   *  window or sending `false` stops it. Absent on Desktop builds predating it. */
+  setAttentionNeeded?: (needed: boolean) => void
   Terminal?: ComfyDesktop2TerminalBridge
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge

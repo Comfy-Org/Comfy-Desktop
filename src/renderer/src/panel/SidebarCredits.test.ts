@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
+import { userEvent } from 'vitest/browser'
 import SidebarCredits from './SidebarCredits.vue'
 import { useAuthStore } from '../stores/authStore'
 import type { CreditBalanceState } from '../types/ipc'
@@ -13,7 +14,16 @@ const balanceListeners = new Set<(state: CreditBalanceState) => void>()
 const pageClosedListeners = new Set<() => void>()
 const wrappers: VueWrapper[] = []
 
-beforeEach(() => {
+async function parkPointerAwayFromTheRow(): Promise<void> {
+  const corner = document.createElement('div')
+  corner.style.cssText = 'position:fixed;right:0;bottom:0;width:4px;height:4px'
+  document.body.appendChild(corner)
+  await userEvent.hover(corner)
+  corner.remove()
+}
+
+beforeEach(async () => {
+  await parkPointerAwayFromTheRow()
   vi.clearAllMocks()
   balanceListeners.clear()
   pageClosedListeners.clear()
@@ -51,6 +61,7 @@ function row(wrapper: VueWrapper) {
 }
 
 async function announce(state: CreditBalanceState) {
+  refreshCreditBalance.mockResolvedValue(state)
   for (const listener of balanceListeners) listener(state)
   await flushPromises()
 }

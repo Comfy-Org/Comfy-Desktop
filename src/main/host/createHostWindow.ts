@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { WebContentsView } from 'electron'
 import path from 'path'
+import { titleBarApps, TITLE_BAR_APPS_CHANNEL } from '../apps/appPageView'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
@@ -44,6 +45,13 @@ import { recordDashboardSurface, recordInstanceSurface } from '../lib/lastSessio
 import * as settings from '../settings'
 import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
+import {
+  defaultWindowBoundsMatching,
+  defaultWindowBoundsUnderCursor,
+  fitWindowToDisplay,
+  fitWindowToWorkArea,
+  type FittedWindow
+} from '../lib/defaultWindowSize'
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
@@ -63,9 +71,6 @@ import {
   unregisterHostEntry
 } from './registry'
 import type { ComfyWindowEntry, ComfyPanelKey } from './registry'
-
-const DEFAULT_HOST_WIDTH = 1280
-const DEFAULT_HOST_HEIGHT = 900
 
 export type CloseConsultResult = 'cleared' | 'aborted' | 'defer'
 
@@ -151,7 +156,7 @@ const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'Comfy_Logo_x256.png
 const APP_VERSION = getAppVersion()
 
 export const CHOOSER_HOST_TITLE_TEXT = 'Comfy Desktop'
-export const CHOOSER_HOST_WINDOW_TITLE = `${CHOOSER_HOST_TITLE_TEXT} — v${APP_VERSION}`
+export const CHOOSER_HOST_WINDOW_TITLE = `${CHOOSER_HOST_TITLE_TEXT} · v${APP_VERSION}`
 
 const CHOOSER_HOST_BOUNDS_KEY = 'chooser'
 
@@ -233,6 +238,7 @@ export interface CreateHostWindowOpts {
   initialTitleBarText: string
   initialSourceCategory: string | null
   initiallyHidden?: boolean
+  nearWindow?: BrowserWindow
 }
 
 export interface CreateHostWindowResult {
@@ -246,10 +252,9 @@ export interface CreateHostWindowResult {
 
 const CASCADE_STEP_PX = 30
 
-export function cascadeOffsetForCollisions(
-  windowOptions: Partial<Electron.BrowserWindowConstructorOptions>,
-  existingOrigins: ReadonlyArray<{ x: number; y: number }>
-): Partial<Electron.BrowserWindowConstructorOptions> {
+export function cascadeOffsetForCollisions<
+  T extends Partial<Electron.BrowserWindowConstructorOptions>
+>(windowOptions: T, existingOrigins: ReadonlyArray<{ x: number; y: number }>): T {
   if (typeof windowOptions.x !== 'number' || typeof windowOptions.y !== 'number') {
     return windowOptions
   }
@@ -283,14 +288,55 @@ function liveBoundsKeyFor(entry: ComfyWindowEntry): string {
   return entry.installationId ?? CHOOSER_HOST_BOUNDS_KEY
 }
 
-function findLiveSiblingOrigin(boundsKey: string): { x: number; y: number } | null {
+function liveBoundsOf(win: BrowserWindow | undefined): Electron.Rectangle | null {
+  if (!win || win.isDestroyed()) return null
+  return win.getBounds()
+}
+
+function findLiveSiblingBounds(boundsKey: string): Electron.Rectangle | null {
   for (const [, entry] of comfyWindows) {
     if (entry.window.isDestroyed()) continue
     if (liveBoundsKeyFor(entry) !== boundsKey) continue
-    const { x, y } = entry.window.getBounds()
-    return { x, y }
+    return entry.window.getBounds()
   }
   return null
+}
+
+export interface HostWindowPlacement {
+  bounds: FittedWindow
+  maximizeNow: boolean
+  maximizeOnReveal: boolean
+}
+
+export function placeHostWindow(
+  boundsKey: string,
+  initiallyHidden: boolean,
+  sibling: Electron.Rectangle | null,
+  existingOrigins: ReadonlyArray<{ x: number; y: number }>,
+  requester: Electron.Rectangle | null = null
+): HostWindowPlacement {
+  const saved = boundsKey === CHOOSER_HOST_BOUNDS_KEY ? undefined : getSavedBounds(boundsKey)
+  const anchor = requester ?? sibling
+  const fresh = anchor
+    ? defaultWindowBoundsMatching(anchor)
+    : saved
+      ? null
+      : defaultWindowBoundsUnderCursor()
+  const initialOptions = fresh
+    ? {
+        x: anchor?.x ?? fresh.x,
+        y: anchor?.y ?? fresh.y,
+        width: fresh.width,
+        height: fresh.height
+      }
+    : getWindowOptions(boundsKey)
+  const cascaded = cascadeOffsetForCollisions(initialOptions, existingOrigins)
+  const maximize = saved ? saved.maximized : fresh?.maximize === true
+  return {
+    bounds: fresh ? fitWindowToWorkArea(cascaded, fresh.workArea) : fitWindowToDisplay(cascaded),
+    maximizeNow: maximize && !initiallyHidden,
+    maximizeOnReveal: maximize && initiallyHidden
+  }
 }
 
 export function isWindowLayoutable(
@@ -353,20 +399,16 @@ export async function confirmHostWindowClose(
 export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowResult {
   const fx = getFactories()
   const windowKey = nextWindowKey()
-  const isChooserKey = opts.boundsKey === CHOOSER_HOST_BOUNDS_KEY
-  const saved = isChooserKey ? undefined : getSavedBounds(opts.boundsKey)
-  const sibling = findLiveSiblingOrigin(opts.boundsKey)
-  const initialOptions = sibling
-    ? { x: sibling.x, y: sibling.y, width: DEFAULT_HOST_WIDTH, height: DEFAULT_HOST_HEIGHT }
-    : isChooserKey
-      ? { width: DEFAULT_HOST_WIDTH, height: DEFAULT_HOST_HEIGHT }
-      : getWindowOptions(opts.boundsKey)
-  const windowOptions = cascadeOffsetForCollisions(initialOptions, liveHostOrigins())
+  const placement = placeHostWindow(
+    opts.boundsKey,
+    opts.initiallyHidden === true,
+    findLiveSiblingBounds(opts.boundsKey),
+    liveHostOrigins(),
+    liveBoundsOf(opts.nearWindow)
+  )
   const comfyWindow = new BrowserWindow({
-    ...windowOptions,
+    ...placement.bounds,
     show: !opts.initiallyHidden,
-    minWidth: 800,
-    minHeight: 600,
     icon: APP_ICON,
     title: opts.windowTitle,
     backgroundColor: COMFY_BG,
@@ -413,7 +455,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     const activeComfyView = entry?.comfyView ?? comfyView
 
     const mode = entry ? computeBodyMode(entry) : 'comfy'
-    const isOverlayMode = mode === 'feedback' || mode === 'announcement'
+    const isOverlayMode = mode === 'feedback'
     const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)
@@ -455,7 +497,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     if (delayedRelayoutTimer) clearTimeout(delayedRelayoutTimer)
   })
 
-  if (saved?.maximized) comfyWindow.maximize()
+  if (placement.maximizeNow) comfyWindow.maximize()
 
   if (process.platform === 'darwin') {
     const sendFullscreen = (fullscreen: boolean): void => {
@@ -512,6 +554,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       updater.getCurrentUpdateState()
     )
     titleBarView.webContents.send('comfy-titlebar:downloads-changed', getDownloadsTrayState())
+    titleBarView.webContents.send(TITLE_BAR_APPS_CHANNEL, titleBarApps(windowKey))
     const installId = entry?.installationId ?? null
     if (installId !== null) {
       void fx.computeInstallUpdateAvailable(installId).then((state) => {
@@ -604,6 +647,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     sourceCategory: opts.initialSourceCategory,
     previewInstallationId: null,
     coldStartPendingReveal: false,
+    maximizeOnReveal: placement.maximizeOnReveal,
     _installCleanup: null,
     detachInstall: () => {}
   }
@@ -689,8 +733,7 @@ export function buildComfyView(
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
-    const liveEntry = comfyWindows.get(windowKey)
-    if (!liveEntry || isChooserHost(liveEntry)) return
+    if (!comfyWindows.has(windowKey)) return
     e.preventDefault()
   })
   attachContextMenu(comfyWindow, comfyContents)
@@ -755,6 +798,7 @@ export function applyChooserHostThemeToAll(): void {
 export interface OpenChooserHostWindowOptions {
   deferColdStartReveal?: boolean
   dashboardPage?: NewWindowDashboardPage
+  nearWindow?: BrowserWindow
 }
 
 export function openChooserHostWindow(
@@ -781,7 +825,8 @@ export function openChooserHostWindow(
     titleBarInstallationIdParam: '',
     initialTitleBarText: CHOOSER_HOST_TITLE_TEXT,
     initialSourceCategory: null,
-    initiallyHidden: true
+    initiallyHidden: true,
+    nearWindow: opts.nearWindow
   })
 
   entry.coldStartPendingReveal = !opts.deferColdStartReveal

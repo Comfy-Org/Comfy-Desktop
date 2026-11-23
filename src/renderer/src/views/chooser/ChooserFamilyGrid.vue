@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUpdate, useTemplateRef, type ComponentPublicInstance } from 'vue'
+import { onBeforeUpdate, useTemplateRef, type ComponentPublicInstance } from 'vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
-import { homeBuildTones } from '../../panel/home/homeBuild'
-import { useInstallationStore } from '../../stores/installationStore'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import type { Installation } from '../../types/ipc'
 
@@ -11,23 +9,21 @@ const props = withDefaults(
     installations: Installation[]
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
+    loggedOut?: boolean
   }>(),
   {
     showFreeRunsPill: false,
-    showWhyCloud: false
+    showWhyCloud: false,
+    loggedOut: false
   }
 )
 
 const emit = defineEmits<{
   pick: [installation: Installation]
   'open-details': [installation: Installation]
-  'view-error': [installation: Installation]
-  'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
 
-const installationStore = useInstallationStore()
-const tones = computed(() => homeBuildTones(props.installations, installationStore.installations))
 const autoStart = useAutoStartBuild()
 
 interface TileBox {
@@ -96,18 +92,16 @@ function unlockTileSize(el: Element): void {
       @leave-cancelled="unlockTileSize"
     >
       <ChooserInstallTile
-        v-for="(installation, index) in props.installations"
+        v-for="installation in props.installations"
         :key="`install:${installation.id}`"
         :installation="installation"
-        :tone="tones[index]"
         :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
         :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
         :auto-start="autoStart.startsOnOpen(installation.id)"
+        :logged-out="props.loggedOut"
         @why-cloud="emit('why-cloud')"
         @pick="emit('pick', $event)"
         @open-details="emit('open-details', $event)"
-        @view-error="emit('view-error', $event)"
-        @view-danger="emit('view-danger', $event)"
       />
     </TransitionGroup>
   </div>

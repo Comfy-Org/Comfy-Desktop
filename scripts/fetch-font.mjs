@@ -70,14 +70,16 @@ function main() {
   }
 
   if (softFail) {
-    console.error('--soft-fail set: exiting 0 despite failures. The app will fall back to Inter.')
+    console.error(
+      '--soft-fail set: exiting 0 despite failures. The --font-display token will fall back to Inter.'
+    )
     return
   }
 
   console.error('')
   console.error(
-    'Refusing to continue. A release build that proceeds without PP Formula ships with the ' +
-      'Inter fallback instead of the brand display face. Fix auth (gcloud / Workload Identity), ' +
+    'Refusing to continue. A release build must bundle PP Formula so the --font-display token ' +
+      'resolves to the brand face if a screen uses it. Fix auth (gcloud / Workload Identity), ' +
       'network, or the bucket object name, or rerun with --soft-fail for local dev only.'
   )
   process.exit(1)

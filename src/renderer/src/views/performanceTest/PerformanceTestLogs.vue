@@ -3,6 +3,7 @@ import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CollapsibleSectionToggle from '../../components/CollapsibleSectionToggle.vue'
 import { lastNonEmptyLine } from '../../lib/performanceTestResults'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 const FOLLOW_THRESHOLD_PX = 24
 const MONOSPACE = "font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace]"
@@ -51,7 +52,8 @@ watch(expanded, async (open) => {
   >
     <div class="flex min-h-10 min-w-0 items-center">
       <CollapsibleSectionToggle
-        class="shrink-0 self-center text-[11px] font-semibold tracking-[0.04em] text-subtle-foreground uppercase hover:text-foreground [&_.collapsible-section-toggle__chevron]:size-3.5"
+        class="shrink-0 self-center hover:text-foreground [&_.collapsible-section-toggle__chevron]:size-3.5"
+        :class="SECTION_TITLE_CLASS"
         :expanded="expanded"
         :label="t('settings.logs')"
         @toggle="expanded = !expanded"

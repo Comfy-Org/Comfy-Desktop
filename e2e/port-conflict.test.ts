@@ -66,14 +66,21 @@ async function injectConflict(): Promise<void> {
   })()`)
 }
 
-test('port-conflict banner + dual-action footer render when result.portConflict is set @windows @macos @linux', async () => {
+test('a port conflict asks in a dialog over the builds, not on a full-screen page @windows @macos @linux', async () => {
   await injectConflict()
 
-  await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictBanner), { timeout: 10_000 })
-  await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictUsePort), { timeout: 5_000 })
+  await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictUsePort), { timeout: 10_000 })
   await ctx.panel.waitForVisible(byTestId(TID.progressPortConflictKill), { timeout: 5_000 })
+  expect(await ctx.panel.exists('.brand-progress')).toBe(false)
+  expect(await ctx.panel.isVisible('.chooser-view')).toBe(true)
 
-  expect(await ctx.panel.exists(byTestId(TID.progressReboot))).toBe(false)
+  expect(await ctx.panel.clickByText('button', 'Cancel')).toBe(true)
+  await expect
+    .poll(() => ctx.panel.exists(byTestId(TID.progressPortConflictUsePort)), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(false)
 })
 
 test('Kill Process confirms, hits killPortProcess, then re-invokes op.apiCall @windows @macos @linux', async () => {

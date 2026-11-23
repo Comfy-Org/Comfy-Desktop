@@ -3,22 +3,32 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
+import { useNow } from '@vueuse/core'
+import { Ellipsis, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
-import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import {
+  buildFailure,
+  inPlaceTaskLabel,
+  launchFailed,
+  useBuildProgress
+} from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
+import { useLocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import { useProgressStore } from '../../stores/progressStore'
 import {
   buildDeviceKind,
   HOME_BUILD_TONES,
+  homeBuildTone,
   isBuildUpdating,
   isCloudBuild,
-  type HomeBuildTone
+  buildUsageLabel
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
+import BuildMetaLine from '../../panel/home/BuildMetaLine.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
+import { openInstallManager } from '../../lib/openInstallManager'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -30,37 +40,37 @@ interface Props {
   lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
   showMenu?: boolean
   showFreeRunsPill?: boolean
-  tone?: HomeBuildTone
   autoStart?: boolean
+  loggedOut?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   lifecycleStatus: undefined,
-  showMenu: true,
-  tone: 'ember'
+  showMenu: true
 })
 
 const emit = defineEmits<{
   pick: [installation: Installation]
   'open-details': [installation: Installation]
-  'view-error': [installation: Installation]
-  'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const localDeviceKind = useLocalDeviceKind()
 const sessionStore = useSessionStore()
 
 const inst = computed(() => props.installation)
 const install = useBuildProgress(() => props.installation)
 const progressStore = useProgressStore()
 
-function viewError(): void {
-  if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
-  else emit('view-error', inst.value)
-}
+const failure = computed(() => buildFailure(inst.value, sessionStore, progressStore, t))
+
 const isBusy = computed(() => install.progress.value !== null)
 const isUninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const isUpdatingHere = computed(() => {
+  const kind = install.progress.value?.kind
+  return kind === 'update' || kind === 'working'
+})
 const isPromoting = computed(() => isPromotingToWorkspace(inst.value))
 const progressLabel = computed(() => {
   const current = install.progress.value
@@ -71,12 +81,14 @@ const progressLabel = computed(() => {
       ? t('uninstallProgress.status')
       : t('uninstallProgress.tileStatus', { percent: current.percent })
   }
+  const inPlace = inPlaceTaskLabel(current, t)
+  if (inPlace !== null) return inPlace
   const phase = t(current.kind === 'launch' ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
   return current.percent == null
     ? phase
     : t('installProgress.detail', { phase, percent: current.percent })
 })
-const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
+const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(props.installation)])
 
 const isRunning = computed(() =>
   props.lifecycleStatus == null
@@ -93,13 +105,20 @@ const isStopping = computed(() =>
     ? sessionStore.isStopping(inst.value.id)
     : props.lifecycleStatus === 'stopping'
 )
-const isUpdating = computed(() =>
-  isBuildUpdating(inst.value, sessionStore.operationInstances.get(inst.value.id)?.actionId)
+const isUpdating = computed(
+  () =>
+    !isUpdatingHere.value &&
+    isBuildUpdating(inst.value, sessionStore.operationInstances.get(inst.value.id)?.actionId)
 )
 const hasError = computed(() =>
   props.lifecycleStatus == null
     ? sessionStore.errorInstances.has(inst.value.id)
     : props.lifecycleStatus === 'error'
+)
+const errorLabel = computed(() =>
+  failure.value && inst.value.statusTag?.style !== 'danger'
+    ? failure.value.label
+    : t('chooser.statusError')
 )
 
 const canActivate = computed(
@@ -159,14 +178,22 @@ const statusPill = computed<{
   return null
 })
 
-const showWhyCloudTrigger = computed(
-  () => props.showWhyCloud && !hasError.value && !statusPill.value && !dangerTag.value
+const offersWhyCloud = computed(
+  () =>
+    props.showWhyCloud &&
+    !hasError.value &&
+    !isRunning.value &&
+    !statusPill.value &&
+    !dangerTag.value
 )
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
+const needsLogIn = computed(() => props.loggedOut && isCloudBuild(inst.value))
+const now = useNow({ interval: 60_000 })
 const restingLabel = computed(() => {
-  if (isCloudBuild(inst.value)) return t('home.buildAlwaysOn')
-  return startsWithDesktop.value ? t('home.autoStartOn') : t('home.buildReady')
+  if (startsWithDesktop.value) return t('home.autoStartOn')
+  if (needsLogIn.value) return t('home.buildLogInToUse')
+  return buildUsageLabel(inst.value, now.value.getTime(), t, locale.value)
 })
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
@@ -196,10 +223,12 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const updateNote = computed(() =>
-  !isUninstalling.value && inst.value.statusTag?.style === 'update' && !isUpdating.value
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdateNote = computed(
+  () =>
+    !isUninstalling.value &&
+    !isUpdatingHere.value &&
+    inst.value.statusTag?.style === 'update' &&
+    !isUpdating.value
 )
 
 const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
@@ -278,9 +307,8 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     ref="tile"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] transition-colors select-none"
-    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]']"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] px-[18px] transition-colors select-none"
+    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-(--build-card-hover)']"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
     @click="open"
@@ -325,7 +353,7 @@ function openContextMenu(event: MouseEvent): void {
     <BuildDeviceArt
       v-else
       class="chooser-tile-icon pointer-events-none relative shrink-0"
-      :kind="buildDeviceKind(inst)"
+      :kind="buildDeviceKind(inst, localDeviceKind)"
       :glow="toneStyle.glow"
     />
 
@@ -352,30 +380,14 @@ function openContextMenu(event: MouseEvent): void {
           />
           <span class="truncate">{{ progressLabel }}</span>
         </span>
-        <Button
-          v-else-if="hasError && canActivate"
-          variant="destructive-textonly"
-          size="unset"
-          type="button"
-          class="chooser-tile-error-badge pointer-events-auto h-4 gap-1 text-xs/4 font-medium"
-          :title="t('chooser.viewErrorTooltip')"
-          @click.stop="viewError"
+        <span
+          v-else-if="(hasError || dangerTag) && canActivate"
+          class="flex min-w-0 items-center gap-1.5 text-destructive"
+          :class="hasError ? 'chooser-tile-error-badge' : 'chooser-tile-danger-tag'"
         >
-          <OctagonAlert :size="12" />
-          {{ t('chooser.statusError') }}
-        </Button>
-        <Button
-          v-else-if="dangerTag && canActivate"
-          variant="destructive-textonly"
-          size="unset"
-          type="button"
-          class="chooser-tile-danger-tag pointer-events-auto h-4 min-w-0 gap-1 text-xs/4 font-medium"
-          :title="t('chooser.viewErrorTooltip')"
-          @click.stop="emit('view-danger', inst)"
-        >
-          <OctagonAlert :size="12" />
-          <span class="truncate">{{ dangerTag.label }}</span>
-        </Button>
+          <OctagonAlert :size="12" class="shrink-0" aria-hidden="true" />
+          <span class="truncate">{{ hasError ? errorLabel : dangerTag?.label }}</span>
+        </span>
         <span
           v-else-if="statusPill"
           class="chooser-tile-status flex min-w-0 items-center gap-1.5"
@@ -395,23 +407,17 @@ function openContextMenu(event: MouseEvent): void {
           <span class="truncate">{{ t(statusPill.label) }}</span>
         </span>
         <span v-else class="flex min-w-0 items-center gap-1.5">
-          <span
-            v-if="isCloudBuild(inst)"
-            class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
-            aria-hidden="true"
-          />
           <Power
-            v-else-if="startsWithDesktop"
+            v-if="startsWithDesktop"
             :size="12"
             class="shrink-0"
             aria-hidden="true"
             :data-testid="`chooser-tile-starts-with-desktop-${inst.id}`"
           />
-          <Check v-else :size="12" class="shrink-0" aria-hidden="true" />
           <span class="truncate">{{ restingLabel }}</span>
         </span>
         <span
-          v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
+          v-if="props.showFreeRunsPill && !hasError && !isRunning && !statusPill && !dangerTag"
           class="chooser-cloud-runs-pill ml-1 inline-flex h-4 shrink-0 items-center rounded-[5px] bg-foreground/10 px-1.5 text-[11px] font-medium whitespace-nowrap text-foreground"
           data-testid="chooser-cloud-runs-pill"
           ><span class="block lowercase first-letter:uppercase">{{
@@ -427,29 +433,16 @@ function openContextMenu(event: MouseEvent): void {
           class="chooser-tile-name mt-0 block max-w-full min-w-0 text-[15px]/[21px] font-semibold text-foreground [&.tooltip-wrap]:block"
           :text="inst.name"
         />
-        <Tooltip v-if="showWhyCloudTrigger" class="flex-none" :text="t('firstUse.whyTryCloud')">
-          <Button
-            variant="muted-textonly"
-            size="icon-sm"
-            type="button"
-            class="chooser-tile-why-cloud pointer-events-auto flex-none"
-            :aria-label="t('firstUse.whyTryCloud')"
-            :data-testid="TID.dashboardTileWhyCloud(inst.id)"
-            @click.stop="emit('why-cloud')"
-          >
-            <Info :size="13" />
-          </Button>
-        </Tooltip>
       </div>
-      <div
-        v-if="metaLine || updateNote"
-        class="chooser-tile-meta-line mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
-      >
-        <span v-if="metaLine" class="min-w-0 truncate">{{ metaLine }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ metaLine ? ' · ' : '' }}{{ updateNote }}</span
-        >
-      </div>
+      <BuildMetaLine
+        v-if="metaLine || showsUpdateNote"
+        class="chooser-tile-meta-line mt-0.5"
+        :text="leadingFact"
+        :trailing="trailingFact"
+        :build-name="inst.name"
+        :show-update="showsUpdateNote"
+        @open-update="openInstallManager(inst, { initialTab: 'update' })"
+      />
     </div>
 
     <Button
@@ -480,6 +473,8 @@ function openContextMenu(event: MouseEvent): void {
       :anchor="menuAnchor"
       :align="moreButton ? 'end' : 'start'"
       :return-focus="menuReturnFocus"
+      :why-cloud="offersWhyCloud"
+      @why-cloud="emit('why-cloud')"
     />
   </div>
 </template>
