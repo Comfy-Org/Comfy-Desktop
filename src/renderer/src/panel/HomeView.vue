@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, ArrowRight, ChevronRight } from '@lucide/vue'
+import { AppWindow, ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import EmptyState from '../components/ui/EmptyState.vue'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -86,8 +86,13 @@ const builds = computed(() => {
   return [...installing, ...settled].filter((build) => shown.has(build.id))
 })
 const showNewBuildSlot = computed(
-  () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
+  () =>
+    !installationStore.loading &&
+    (builds.value.length < HOME_BUILD_LIMIT || builds.value.every((build) => isCloudBuild(build)))
 )
+const NARROW_BUILD_LIMIT = 2
+const newBuildTileFitsNarrow = computed(() => builds.value.length < NARROW_BUILD_LIMIT)
+const buildRowSize = computed(() => builds.value.length + (showNewBuildSlot.value ? 1 : 0))
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
   if (!latest) return new Set<string>()
@@ -282,22 +287,36 @@ onMounted(() => {
           <h2 id="home-builds" class="m-0" :class="SECTION_TITLE_CLASS">
             {{ t('sidebar.builds') }}
           </h2>
-          <Button
-            type="button"
-            variant="muted-textonly"
-            size="unset"
-            :class="TEXT_LINK_CLASS"
-            data-testid="home-all-builds"
-            @click="emit('show-builds')"
-          >
-            {{ t('home.allBuilds') }}
-            <ChevronRight :size="13" aria-hidden="true" />
-          </Button>
+          <div class="flex items-center gap-1">
+            <Button
+              v-if="!showNewBuildSlot || !newBuildTileFitsNarrow"
+              type="button"
+              variant="muted-textonly"
+              size="unset"
+              :class="[TEXT_LINK_CLASS, showNewBuildSlot && 'hidden @max-[56rem]/home-builds:flex']"
+              data-testid="home-new-build-link"
+              @click="emit('new-build')"
+            >
+              <Plus :size="13" aria-hidden="true" />
+              {{ t('sidebar.newBuild') }}
+            </Button>
+            <Button
+              type="button"
+              variant="muted-textonly"
+              size="unset"
+              :class="TEXT_LINK_CLASS"
+              data-testid="home-all-builds"
+              @click="emit('show-builds')"
+            >
+              {{ t('home.allBuilds') }}
+              <ChevronRight :size="13" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
           :class="[
-            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
+            buildRowSize > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
             '@max-[40rem]/home-builds:grid-cols-1'
           ]"
         >
@@ -316,7 +335,11 @@ onMounted(() => {
               @open="openBuild(build)"
             />
           </li>
-          <li v-if="showNewBuildSlot" class="min-w-0">
+          <li
+            v-if="showNewBuildSlot"
+            class="min-w-0"
+            :class="!newBuildTileFitsNarrow && '@max-[56rem]/home-builds:hidden'"
+          >
             <HomeNewBuildTile @open="emit('new-build')" />
           </li>
         </ul>

@@ -9,6 +9,8 @@ import type { Installation } from '../types/ipc'
 
 const MIN_WINDOW_PAGE_WIDTH = 532
 const NORMAL_WINDOW_PAGE_WIDTH = 1172
+const MIN_WINDOW_BUILDS_WIDTH = 452
+const NORMAL_WINDOW_BUILDS_WIDTH = 932
 
 const CLOUD: Installation = {
   id: 'cloud',
@@ -17,6 +19,15 @@ const CLOUD: Installation = {
   sourceLabel: 'Cloud',
   sourceCategory: 'cloud',
   lastLaunchedAt: 100
+}
+const OTHER_LOCAL: Installation = {
+  id: 'other-local',
+  name: 'SDXL Playground',
+  sourceLabel: 'Standalone',
+  sourceCategory: 'local',
+  version: 'v0.41.0',
+  installPath: '/Users/someone/Documents/ComfyUI/Builds/SDXL Playground',
+  lastLaunchedAt: 150
 }
 const LOCAL: Installation = {
   id: 'local',
@@ -125,12 +136,55 @@ describe('Home with no local build', () => {
     expect(wrapper.emitted('new-build')).toHaveLength(2)
     wrapper.unmount()
   })
+})
 
-  it('hides the New build tile once a local build exists', async () => {
-    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+async function buildsRowAt(width: number, installations: Installation[]) {
+  const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, installations)
+  const section = host.querySelector<HTMLElement>('section:has([data-testid="home-all-builds"])')!
+  section.style.width = `${width}px`
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  return wrapper
+}
 
-    expect(host.querySelector('[data-testid="home-build"]')).not.toBeNull()
-    expect(host.querySelector('[data-testid="home-new-build"]')).toBeNull()
+function shown(selector: string): boolean {
+  const el = host.querySelector<HTMLElement>(selector)
+  if (!el) return false
+  const rect = el.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0
+}
+
+describe('Home with local builds', () => {
+  it.each([
+    ['one build', 'the minimum window width', MIN_WINDOW_BUILDS_WIDTH, [LOCAL], true],
+    ['one build', 'a normal window width', NORMAL_WINDOW_BUILDS_WIDTH, [LOCAL], true],
+    ['two builds', 'the minimum window width', MIN_WINDOW_BUILDS_WIDTH, [LOCAL, CLOUD], false],
+    ['two builds', 'a normal window width', NORMAL_WINDOW_BUILDS_WIDTH, [LOCAL, CLOUD], true],
+    [
+      'a full row',
+      'a normal window width',
+      NORMAL_WINDOW_BUILDS_WIDTH,
+      [LOCAL, OTHER_LOCAL, CLOUD],
+      false
+    ]
+  ] as const)(
+    'with %s, at %s, offers New build in a free slot or else next to All builds',
+    async (_builds, _width, width, installations, tileFits) => {
+      const wrapper = await buildsRowAt(width, [...installations])
+
+      expect(shown('[data-testid="home-new-build"]'), 'New build tile').toBe(tileFits)
+      expect(shown('[data-testid="home-new-build-link"]'), 'New build link').toBe(!tileFits)
+      expect(shown('[data-testid="home-build"]'), 'the builds keep their cards').toBe(true)
+      wrapper.unmount()
+    }
+  )
+
+  it('opens New build from the link next to All builds when the row is full', async () => {
+    const wrapper = await buildsRowAt(NORMAL_WINDOW_BUILDS_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD])
+
+    host.querySelector<HTMLElement>('[data-testid="home-new-build-link"]')!.click()
+
+    expect(wrapper.emitted('new-build')).toHaveLength(1)
+    expect(host.querySelectorAll('[data-testid="home-build"]')).toHaveLength(3)
     wrapper.unmount()
   })
 })
