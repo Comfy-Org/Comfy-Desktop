@@ -86,13 +86,8 @@ const builds = computed(() => {
   return [...installing, ...settled].filter((build) => shown.has(build.id))
 })
 const showNewBuildSlot = computed(
-  () =>
-    !installationStore.loading &&
-    (builds.value.length < HOME_BUILD_LIMIT || builds.value.every((build) => isCloudBuild(build)))
+  () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
 )
-const NARROW_BUILD_LIMIT = 2
-const newBuildTileFitsNarrow = computed(() => builds.value.length < NARROW_BUILD_LIMIT)
-const buildRowSize = computed(() => builds.value.length + (showNewBuildSlot.value ? 1 : 0))
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
   if (!latest) return new Set<string>()
@@ -289,11 +284,11 @@ onMounted(() => {
           </h2>
           <div class="flex items-center gap-1">
             <Button
-              v-if="!showNewBuildSlot || !newBuildTileFitsNarrow"
+              v-if="!showNewBuildSlot && !installationStore.loading"
               type="button"
               variant="muted-textonly"
               size="unset"
-              :class="[TEXT_LINK_CLASS, showNewBuildSlot && 'hidden @max-[56rem]/home-builds:flex']"
+              :class="TEXT_LINK_CLASS"
               data-testid="home-new-build-link"
               @click="emit('new-build')"
             >
@@ -316,7 +311,7 @@ onMounted(() => {
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
           :class="[
-            buildRowSize > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
+            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
             '@max-[40rem]/home-builds:grid-cols-1'
           ]"
         >
@@ -335,11 +330,7 @@ onMounted(() => {
               @open="openBuild(build)"
             />
           </li>
-          <li
-            v-if="showNewBuildSlot"
-            class="min-w-0"
-            :class="!newBuildTileFitsNarrow && '@max-[56rem]/home-builds:hidden'"
-          >
+          <li v-if="showNewBuildSlot" class="min-w-0">
             <HomeNewBuildTile @open="emit('new-build')" />
           </li>
         </ul>

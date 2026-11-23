@@ -9,8 +9,6 @@ import type { Installation } from '../types/ipc'
 
 const MIN_WINDOW_PAGE_WIDTH = 532
 const NORMAL_WINDOW_PAGE_WIDTH = 1172
-const MIN_WINDOW_BUILDS_WIDTH = 452
-const NORMAL_WINDOW_BUILDS_WIDTH = 932
 
 const CLOUD: Installation = {
   id: 'cloud',
@@ -136,15 +134,15 @@ describe('Home with no local build', () => {
     expect(wrapper.emitted('new-build')).toHaveLength(2)
     wrapper.unmount()
   })
-})
 
-async function buildsRowAt(width: number, installations: Installation[]) {
-  const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, installations)
-  const section = host.querySelector<HTMLElement>('section:has([data-testid="home-all-builds"])')!
-  section.style.width = `${width}px`
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-  return wrapper
-}
+  it('hides the New build tile once a local build exists', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+
+    expect(host.querySelector('[data-testid="home-build"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="home-new-build"]')).toBeNull()
+    wrapper.unmount()
+  })
+})
 
 function shown(selector: string): boolean {
   const el = host.querySelector<HTMLElement>(selector)
@@ -153,38 +151,37 @@ function shown(selector: string): boolean {
   return rect.width > 0 && rect.height > 0
 }
 
-describe('Home with local builds', () => {
+describe('New build next to All builds', () => {
   it.each([
-    ['one build', 'the minimum window width', MIN_WINDOW_BUILDS_WIDTH, [LOCAL], true],
-    ['one build', 'a normal window width', NORMAL_WINDOW_BUILDS_WIDTH, [LOCAL], true],
-    ['two builds', 'the minimum window width', MIN_WINDOW_BUILDS_WIDTH, [LOCAL, CLOUD], false],
-    ['two builds', 'a normal window width', NORMAL_WINDOW_BUILDS_WIDTH, [LOCAL, CLOUD], true],
-    [
-      'a full row',
-      'a normal window width',
-      NORMAL_WINDOW_BUILDS_WIDTH,
-      [LOCAL, OTHER_LOCAL, CLOUD],
-      false
-    ]
+    ['one local build', 'the minimum window width', MIN_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD]],
+    ['one local build', 'a normal window width', NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD]],
+    ['a full row', 'the minimum window width', MIN_WINDOW_PAGE_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD]],
+    ['a full row', 'a normal window width', NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD]]
   ] as const)(
-    'with %s, at %s, offers New build in a free slot or else next to All builds',
-    async (_builds, _width, width, installations, tileFits) => {
-      const wrapper = await buildsRowAt(width, [...installations])
+    'with %s, at %s, offers New build as a link, not a tile',
+    async (_builds, _width, width, installations) => {
+      const wrapper = await homeAt(width, [...installations])
 
-      expect(shown('[data-testid="home-new-build"]'), 'New build tile').toBe(tileFits)
-      expect(shown('[data-testid="home-new-build-link"]'), 'New build link').toBe(!tileFits)
-      expect(shown('[data-testid="home-build"]'), 'the builds keep their cards').toBe(true)
+      expect(shown('[data-testid="home-new-build-link"]'), 'New build link').toBe(true)
+      expect(host.querySelector('[data-testid="home-new-build"]'), 'New build tile').toBeNull()
       wrapper.unmount()
     }
   )
 
-  it('opens New build from the link next to All builds when the row is full', async () => {
-    const wrapper = await buildsRowAt(NORMAL_WINDOW_BUILDS_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD])
+  it('leaves the link out while the New build tile is in the row', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [CLOUD])
+
+    expect(shown('[data-testid="home-new-build"]')).toBe(true)
+    expect(host.querySelector('[data-testid="home-new-build-link"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('opens New build from the link', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
 
     host.querySelector<HTMLElement>('[data-testid="home-new-build-link"]')!.click()
 
     expect(wrapper.emitted('new-build')).toHaveLength(1)
-    expect(host.querySelectorAll('[data-testid="home-build"]')).toHaveLength(3)
     wrapper.unmount()
   })
 })
