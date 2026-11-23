@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, ArrowUpRight, Plus, Search } from '@lucide/vue'
+import { AppWindow, ArrowUpRight, PanelsTopLeft, Plus, Search, Workflow } from '@lucide/vue'
+import { useEventListener, useLocalStorage } from '@vueuse/core'
 import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -12,6 +13,17 @@ import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import CatalogWorkflowsGallery from './CatalogWorkflowsGallery.vue'
+import ExploreLayoutOptions from './ExploreLayoutOptions.vue'
+import ExploreWorkflowFilters from './ExploreWorkflowFilters.vue'
+import {
+  CARD_SIZES,
+  NO_FILTERS,
+  WORKFLOW_SORTS,
+  workflowFacets,
+  type CardSize,
+  type WorkflowFilters,
+  type WorkflowSort
+} from './exploreWorkflows'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { badgeDescriptionIds, glassPictureOf } from './appCardBadges'
@@ -45,8 +57,18 @@ const activeTab = computed<ExploreTab>(() =>
   appsEnabled.value === false ? 'workflows' : tab.value
 )
 const tabOptions = computed(() => [
-  { value: 'apps' as const, label: t('sidebar.apps'), testId: 'explore-apps-tab' },
-  { value: 'workflows' as const, label: t('sidebar.workflows'), testId: 'explore-workflows-tab' }
+  {
+    value: 'apps' as const,
+    label: t('sidebar.apps'),
+    testId: 'explore-apps-tab',
+    icon: PanelsTopLeft
+  },
+  {
+    value: 'workflows' as const,
+    label: t('sidebar.workflows'),
+    testId: 'explore-workflows-tab',
+    icon: Workflow
+  }
 ])
 const queries = reactive<Record<ExploreTab, string>>({ apps: '', workflows: '' })
 const query = computed({
@@ -56,6 +78,35 @@ const query = computed({
   }
 })
 const workflowsVisited = ref(false)
+const listedWorkflows = ref<CatalogWorkflow[]>([])
+const facets = computed(() => workflowFacets(listedWorkflows.value))
+const filters = ref<WorkflowFilters>({ ...NO_FILTERS })
+const storedSize = useLocalStorage<string>('comfy.desktop.explore.workflowSize', 'medium')
+const storedSort = useLocalStorage<string>('comfy.desktop.explore.workflowSort', 'popular')
+const cardSize = computed<CardSize>({
+  get: () =>
+    CARD_SIZES.includes(storedSize.value as CardSize) ? (storedSize.value as CardSize) : 'medium',
+  set: (value) => {
+    storedSize.value = value
+  }
+})
+const workflowSort = computed<WorkflowSort>({
+  get: () =>
+    WORKFLOW_SORTS.includes(storedSort.value as WorkflowSort)
+      ? (storedSort.value as WorkflowSort)
+      : 'popular',
+  set: (value) => {
+    storedSort.value = value
+  }
+})
+const searchField = ref<HTMLElement | null>(null)
+const searchShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ /' : 'Ctrl /'
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== '/' || !(event.metaKey || event.ctrlKey) || openApp.value) return
+  event.preventDefault()
+  searchField.value?.querySelector('input')?.focus()
+})
 const showsSearch = computed(
   () =>
     activeTab.value === 'workflows' ||
@@ -327,15 +378,34 @@ onBeforeUnmount(() => {
           :options="tabOptions"
           :label="t('sidebar.explore')"
         />
-        <div v-if="showsSearch" class="ml-auto w-full max-w-[220px]">
-          <BaseInput
-            v-model="query"
-            class="h-8 [&_input]:text-ui"
-            :placeholder="t(`${activeTab}.search`)"
-            :aria-label="t(`${activeTab}.search`)"
-          >
-            <template #leading><Search :size="14" /></template>
-          </BaseInput>
+        <div class="ml-auto flex min-w-0 items-center gap-2">
+          <ExploreWorkflowFilters
+            v-if="activeTab === 'workflows' && listedWorkflows.length > 0"
+            v-model="filters"
+            :facets="facets"
+          />
+          <div v-if="showsSearch" ref="searchField" class="w-[220px] min-w-0">
+            <BaseInput
+              v-model="query"
+              class="h-[34px] [&_input]:text-ui"
+              :placeholder="t(`${activeTab}.search`)"
+              :aria-label="t(`${activeTab}.search`)"
+            >
+              <template #leading><Search :size="14" /></template>
+              <template #trailing>
+                <kbd
+                  class="rounded-[5px] bg-accent px-1.5 font-[inherit] text-[11px]/4 text-muted-foreground"
+                  aria-hidden="true"
+                  >{{ searchShortcut }}</kbd
+                >
+              </template>
+            </BaseInput>
+          </div>
+          <ExploreLayoutOptions
+            v-if="activeTab === 'workflows'"
+            v-model:size="cardSize"
+            v-model:sort="workflowSort"
+          />
         </div>
       </div>
 
@@ -346,6 +416,11 @@ onBeforeUnmount(() => {
       >
         <CatalogWorkflowsGallery
           :query="queries.workflows"
+          :filters="filters"
+          :sort="workflowSort"
+          :size="cardSize"
+          @loaded="listedWorkflows = $event"
+          @clear-filters="filters = { ...NO_FILTERS }"
           @open-workflow="emit('open-workflow', $event)"
           @clear-search="queries.workflows = ''"
         />

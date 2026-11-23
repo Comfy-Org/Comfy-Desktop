@@ -3,7 +3,7 @@ import { readOpenRequest } from '../apps/openRequest'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { fetchJSON } from '../lib/fetch'
 import { isTrustedCloudUrl } from '../lib/trustedCloudUrl'
-import type { CatalogWorkflow } from '../../types/ipc'
+import type { CatalogWorkflow, CatalogWorkflowLicense, CatalogWorkflowMedia } from '../../types/ipc'
 
 export const HUB_ORIGIN = 'https://comfy.org'
 export const HOME_WORKFLOW_LIMIT = 12
@@ -19,6 +19,10 @@ const CACHE_TTL_MS = 10 * 60 * 1000
 const MAX_TEXT_LENGTH = 4096
 const THUMBNAIL_KEYS = ['$.static_thumb', '$.thumbnail', '$.hero'] as const
 const IMAGE_TYPE_PREFIX = 'image/'
+const VIDEO_TYPE_PREFIX = 'video/'
+const MAX_MEDIA = 6
+const MAX_LIST_ITEMS = 24
+const TUTORIAL_HOSTS = new Set(['docs.comfy.org', 'comfy.org', 'www.comfy.org'])
 
 interface ResolvedWorkflow {
   card: CatalogWorkflow
@@ -90,6 +94,95 @@ function thumbnailUrlFor(data: JsonRecord): string | null {
   return null
 }
 
+function catalogMediaUrl(mediaPath: unknown): string | null {
+  if (typeof mediaPath !== 'string' || !mediaPath.startsWith(CATALOG_MEDIA_PATH_PREFIX)) return null
+  const url = new URL(mediaPath, HUB_ORIGIN)
+  return url.origin === HUB_ORIGIN ? url.toString() : null
+}
+
+function mediaSize(value: unknown): [number | null, number | null] {
+  if (!Array.isArray(value) || value.length !== 2) return [null, null]
+  const [width, height] = value
+  return typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0
+    ? [width, height]
+    : [null, null]
+}
+
+function mediaFor(data: JsonRecord): CatalogWorkflowMedia[] {
+  const media = asRecord(data.website_media)
+  const mediaTypes = asRecord(data.website_media_types)
+  const sizes = asRecord(data.website_media_sizes)
+  if (!media) return []
+  const exampleKeys = Object.keys(media)
+    .filter((key) => /^\$\.examples\[\d+\]\.media$/.test(key))
+    .sort((a, b) => Number(/\d+/.exec(a)?.[0]) - Number(/\d+/.exec(b)?.[0]))
+  const found: CatalogWorkflowMedia[] = []
+  for (const key of [...exampleKeys, '$.hero']) {
+    const url = catalogMediaUrl(media[key])
+    const type = mediaTypes?.[key]
+    if (!url || typeof type !== 'string') continue
+    const kind = type.startsWith(IMAGE_TYPE_PREFIX)
+      ? 'image'
+      : type.startsWith(VIDEO_TYPE_PREFIX)
+        ? 'video'
+        : null
+    if (!kind) continue
+    const [width, height] = mediaSize(sizes?.[key])
+    found.push({ url, kind, width, height })
+    if (found.length >= MAX_MEDIA) break
+  }
+  return found
+}
+
+function textList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const items = value.flatMap((entry) => {
+    const item = text(entry)
+    return item && item.length <= 80 ? [item] : []
+  })
+  return [...new Set(items)].slice(0, MAX_LIST_ITEMS)
+}
+
+function modelsFor(data: JsonRecord, website: JsonRecord | null): string[] {
+  const named = textList(website?.models)
+  if (named.length > 0) return named
+  const labels = Array.isArray(data.model_labels) ? data.model_labels : []
+  return textList(labels.map((label) => asRecord(label)?.display_name)).slice(0, 1)
+}
+
+function licenseFor(data: JsonRecord): CatalogWorkflowLicense | null {
+  if (data.open_source === true) return 'open-source'
+  if (data.open_source === false) return 'partner'
+  return textList(data.tags).includes('API') ? 'partner' : null
+}
+
+function countFor(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+
+function dateFor(value: unknown): string | null {
+  const date = text(value)
+  return date && /^\d{4}-\d{2}-\d{2}/.test(date) && !Number.isNaN(Date.parse(date))
+    ? date.slice(0, 10)
+    : null
+}
+
+function tutorialUrlFor(value: unknown): string | null {
+  const href = text(value)
+  if (!href) return null
+  try {
+    const url = new URL(href)
+    return url.protocol === 'https:' && TUTORIAL_HOSTS.has(url.hostname) ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+function authorFor(data: JsonRecord, website: JsonRecord | null): string | null {
+  const author = text(asRecord(data.website_author)?.name) ?? text(website?.author)
+  return author && author.length <= 80 ? author : null
+}
+
 function editorGraphUrlFor(data: JsonRecord): string | null {
   const media = asRecord(data.website_media)
   const mediaTypes = asRecord(data.website_media_types)
@@ -135,6 +228,17 @@ export function toCatalogWorkflow(item: unknown, locale: string): ResolvedWorkfl
       description: text(translation?.description) ?? text(data.description) ?? '',
       thumbnailUrl: thumbnailUrlFor(data),
       minComfyUIVersion: minimum ? semver.valid(minimum) : null,
+      hubUrl,
+      longDescription: text(translation?.long_description) ?? text(data.long_description),
+      author: authorFor(data, website),
+      generationType: text(data.generation_type) ?? text(website?.modality),
+      useCases: textList(website?.categories),
+      models: modelsFor(data, website),
+      uses: countFor(data.usage),
+      license: licenseFor(data),
+      publishedAt: dateFor(data.date),
+      media: mediaFor(data),
+      tutorialUrl: tutorialUrlFor(data.documentation_url),
       canOpenLocal: editorGraphUrl !== null,
       canOpenCloud:
         cloudPrompt !== null ||

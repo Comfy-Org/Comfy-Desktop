@@ -2208,7 +2208,18 @@ describe('PanelApp', () => {
       thumbnailUrl: null,
       canOpenLocal: true,
       canOpenCloud: true,
-      minComfyUIVersion: null
+      minComfyUIVersion: null,
+      hubUrl: 'https://comfy.org/hub/workflows/upscale-detail',
+      longDescription: null,
+      author: null,
+      generationType: null,
+      useCases: [],
+      models: [],
+      uses: null,
+      license: null,
+      publishedAt: null,
+      media: [],
+      tutorialUrl: null
     }
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)

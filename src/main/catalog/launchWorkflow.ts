@@ -1,11 +1,21 @@
-import { net, type WebContents } from 'electron'
+import type { WebContents } from 'electron'
 import type { ComfyDesktopOpenInComfy } from '../../types/comfyDesktopBridge'
-import type { CatalogWorkflowTarget } from '../../types/ipc'
+import type { CatalogWorkflowDownload, CatalogWorkflowTarget } from '../../types/ipc'
 import { PERSONAL_WORKSPACE_ID } from '../../shared/workspaces'
 import { openCatalogInComfy } from '../apps/openInComfy'
-import { isBuildId, isEditorWorkflow, MAX_WORKFLOW_BYTES, workflowName } from '../apps/openRequest'
+import { isBuildId, workflowName } from '../apps/openRequest'
 import { getCloudSession } from '../devplatform/session'
+import * as installations from '../installations'
 import { t } from '../lib/i18n'
+import { missingModelFiles } from '../lib/modelDownloadPaths'
+import { isTerminal } from '../sources/standalone/templateDownloadCore'
+import {
+  forgetTemplateDownload,
+  startTemplateDownloadTask,
+  subscribeTemplateDownload
+} from '../sources/standalone/templateDownloadTask'
+import { fetchEditorGraph } from './editorGraph'
+import { catalogWorkflowModels } from './workflowNeeds'
 import { listedWorkflow } from './workflows'
 
 function readTarget(value: unknown): CatalogWorkflowTarget | null {
@@ -31,40 +41,57 @@ async function canOpenCloudWorkspace(
   return (await session.listWorkspaces()).some(({ id }) => id === workspaceId)
 }
 
-async function fetchEditorGraph(url: string): Promise<Record<string, unknown>> {
-  const response = await net.fetch(url, {
-    credentials: 'omit',
-    redirect: 'error',
-    signal: AbortSignal.timeout(8000)
+function readOptions(value: unknown): { downloadMissing: boolean } {
+  const options = typeof value === 'object' && value !== null ? value : {}
+  return { downloadMissing: (options as { downloadMissing?: unknown }).downloadMissing === true }
+}
+
+function downloadTaskId(id: string, build: string): string {
+  return `catalog-workflow:${id}:${build}`
+}
+
+async function downloadMissingModels(
+  page: WebContents,
+  id: string,
+  build: string,
+  graph: Record<string, unknown>
+): Promise<string | null> {
+  const installation = await installations.get(build)
+  if (!installation) return t('workflowLaunch.openFailed')
+  const missing = await missingModelFiles(build, await catalogWorkflowModels(graph))
+  if (missing.length === 0) return null
+  const taskId = downloadTaskId(id, build)
+  startTemplateDownloadTask(taskId, installation, id, 0, { sendOutput: () => {} }, graph)
+  return new Promise((resolve) => {
+    const stop = subscribeTemplateDownload(taskId, (summary) => {
+      if (!page.isDestroyed()) {
+        const progress: CatalogWorkflowDownload = {
+          id,
+          build,
+          receivedBytes: summary.receivedBytes,
+          totalBytes: summary.totalBytes
+        }
+        page.send('catalog:workflow-download', progress)
+      }
+      if (!isTerminal(summary.status)) return
+      queueMicrotask(() => {
+        stop()
+        forgetTemplateDownload(taskId)
+      })
+      resolve(summary.status === 'done' ? null : t('workflowLaunch.downloadFailed'))
+    })
   })
-  if (!response.ok || !response.body) throw new Error('Workflow download failed')
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let bytes = 0
-  let text = ''
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      bytes += value.byteLength
-      if (bytes > MAX_WORKFLOW_BYTES) throw new Error('Workflow is too large')
-      text += decoder.decode(value, { stream: true })
-    }
-  } finally {
-    await reader.cancel().catch(() => {})
-  }
-  const graph: unknown = JSON.parse(text + decoder.decode())
-  if (!isEditorWorkflow(graph)) throw new Error('Invalid editor workflow')
-  return graph
 }
 
 export async function launchCatalogWorkflow(
   page: WebContents,
   id: unknown,
   rawTarget: unknown,
-  rawWorkspaceId: unknown
+  rawWorkspaceId: unknown,
+  rawOptions?: unknown
 ): Promise<ComfyDesktopOpenInComfy> {
   const target = readTarget(rawTarget)
+  const { downloadMissing } = readOptions(rawOptions)
   const workspaceId = readWorkspaceId(rawWorkspaceId)
   const workflow = typeof id === 'string' ? listedWorkflow(id) : undefined
   if (
@@ -95,6 +122,11 @@ export async function launchCatalogWorkflow(
       ? await fetchEditorGraph(workflow.editorGraphUrl).catch(() => null)
       : null
     if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }
+    if (graph && target.where === 'local' && downloadMissing) {
+      const failure = await downloadMissingModels(page, workflow.card.id, target.build, graph)
+      if (failure) return { opened: false, error: failure }
+      if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }
+    }
     if (graph) return await openCatalogInComfy(page, { ...target, graph, name }, scope)
     if (target.where === 'cloud' && workflow.cloudPrompt) {
       return await openCatalogInComfy(

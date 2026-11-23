@@ -6,38 +6,62 @@ import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import EmptyState from '../components/ui/EmptyState.vue'
 import type { CatalogWorkflow } from '../types/ipc'
+import {
+  activeFilterCount,
+  filterWorkflows,
+  sortWorkflows,
+  type CardSize,
+  type WorkflowFilters,
+  type WorkflowSort
+} from './exploreWorkflows'
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
 const SKELETON_CARD_COUNT = 8
-const GRID_CLASS = 'm-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-3 @5xl:grid-cols-4'
+const GRID_COLUMNS: Record<CardSize, string> = {
+  small: 'grid-cols-2 @3xl:grid-cols-4 @5xl:grid-cols-5',
+  medium: 'grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4',
+  large: 'grid-cols-1 @3xl:grid-cols-2 @5xl:grid-cols-3'
+}
 
-const { query } = defineProps<{ query: string }>()
+const {
+  query,
+  filters,
+  sort = 'popular',
+  size = 'medium'
+} = defineProps<{
+  query: string
+  filters: WorkflowFilters
+  sort?: WorkflowSort
+  size?: CardSize
+}>()
 
 const emit = defineEmits<{
   'open-workflow': [workflow: CatalogWorkflow]
   'clear-search': []
+  'clear-filters': []
+  loaded: [workflows: CatalogWorkflow[]]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+const gridClass = computed(() => ['m-0 grid list-none gap-3.5 p-0', GRID_COLUMNS[size]])
+const filtered = computed(() => activeFilterCount(filters) > 0)
 
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
 const thumbnailsThatFailed = reactive(new Set<string>())
 
-const matchingWorkflows = computed(() => {
-  const needle = query.trim().toLocaleLowerCase()
-  if (!needle) return workflows.value
-  return workflows.value.filter((workflow) =>
-    `${workflow.title}\n${workflow.description}`.toLocaleLowerCase().includes(needle)
-  )
-})
+const matchingWorkflows = computed(() =>
+  sortWorkflows(filterWorkflows(workflows.value, filters, query), sort, locale.value)
+)
 
 async function loadWorkflows(): Promise<void> {
   state.value = 'loading'
   try {
     workflows.value = await window.api.listCatalogWorkflows()
     state.value = 'ready'
+    emit('loaded', workflows.value)
   } catch {
     state.value = 'failed'
   }
@@ -49,7 +73,7 @@ onMounted(() => void loadWorkflows())
 <template>
   <ul
     v-if="state === 'loading'"
-    :class="GRID_CLASS"
+    :class="gridClass"
     aria-busy="true"
     data-testid="workflows-loading"
   >
@@ -94,21 +118,39 @@ onMounted(() => void loadWorkflows())
     data-testid="workflows-no-matches"
     :icon="Workflow"
     :title="t('common.nothingMatches')"
-    :text="t('workflows.noMatches', { query: query.trim() })"
+    :text="
+      query.trim()
+        ? t('workflows.noMatches', { query: query.trim() })
+        : t('workflows.noFilterMatches')
+    "
   >
-    <Button
-      type="button"
-      variant="secondary"
-      size="md"
-      class="px-3 text-[13px]/5"
-      data-testid="workflows-clear-search"
-      @click="emit('clear-search')"
-    >
-      {{ t('common.clearSearch') }}
-    </Button>
+    <div class="flex items-center gap-2">
+      <Button
+        v-if="query.trim()"
+        type="button"
+        variant="secondary"
+        size="md"
+        class="px-3 text-[13px]/5"
+        data-testid="workflows-clear-search"
+        @click="emit('clear-search')"
+      >
+        {{ t('common.clearSearch') }}
+      </Button>
+      <Button
+        v-if="filtered"
+        type="button"
+        variant="secondary"
+        size="md"
+        class="px-3 text-[13px]/5"
+        data-testid="workflows-clear-filters"
+        @click="emit('clear-filters')"
+      >
+        {{ t('workflows.filters.clear') }}
+      </Button>
+    </div>
   </EmptyState>
 
-  <ul v-else :class="GRID_CLASS" data-testid="workflows-grid">
+  <ul v-else :class="gridClass" data-testid="workflows-grid">
     <li v-for="workflow in matchingWorkflows" :key="workflow.id" class="min-w-0">
       <button
         type="button"

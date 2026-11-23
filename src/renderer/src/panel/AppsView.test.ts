@@ -60,15 +60,47 @@ const GENJUTSU: AppCard = {
   badges: [NEW_CHIP]
 }
 
-const UPSCALE_WORKFLOW: CatalogWorkflow = {
+function catalogWorkflow(
+  over: Partial<CatalogWorkflow> & Pick<CatalogWorkflow, 'id' | 'title'>
+): CatalogWorkflow {
+  return {
+    description: '',
+    thumbnailUrl: COVER,
+    canOpenLocal: true,
+    canOpenCloud: true,
+    minComfyUIVersion: null,
+    hubUrl: `https://comfy.org/hub/workflows/${over.id}`,
+    longDescription: null,
+    author: null,
+    generationType: null,
+    useCases: [],
+    models: [],
+    uses: null,
+    license: null,
+    publishedAt: null,
+    media: [],
+    tutorialUrl: null,
+    ...over
+  }
+}
+
+const UPSCALE_WORKFLOW = catalogWorkflow({
   id: 'upscale-workflow',
   title: 'Upscale detail',
   description: 'Restore a low-resolution picture.',
-  thumbnailUrl: COVER,
-  canOpenLocal: true,
-  canOpenCloud: true,
-  minComfyUIVersion: null
-}
+  useCases: ['upscale-and-restore'],
+  models: ['SeedVR2'],
+  publishedAt: '2025-05-01'
+})
+const VIDEO_WORKFLOW = catalogWorkflow({
+  id: 'ltx-video',
+  title: 'LTX-2.3: Image to Video',
+  description: 'Bring a still picture to life.',
+  canOpenLocal: false,
+  useCases: ['generate-video'],
+  models: ['LTX-2.3'],
+  publishedAt: '2026-01-16'
+})
 
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const listApps = vi.fn<() => Promise<AppCard[]>>()
@@ -909,6 +941,79 @@ describe('AppsView', () => {
 })
 
 describe('Explore Workflows', () => {
+  function cardIds(wrapper: Awaited<ReturnType<typeof mountApps>>): string[] {
+    return wrapper
+      .findAll('[data-testid="workflows-grid"] [data-testid^="workflow-card-"]')
+      .map((card) => card.attributes('data-testid')!.replace('workflow-card-', ''))
+  }
+
+  function onMenu(testId: string): HTMLElement {
+    const found = document.body.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+    if (!found) throw new Error(`${testId} is not on the page`)
+    return found
+  }
+
+  it('narrows the workflows by use case and where they run, and clears the filters again', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await flushPromises()
+    expect(cardIds(wrapper)).toEqual(['upscale-workflow', 'ltx-video'])
+
+    await userEvent.click(wrapper.get('[data-testid="explore-filters"]').element)
+    await userEvent.click(onMenu('explore-filter-useCase'))
+    await userEvent.click(onMenu('explore-filter-useCase-generate-video'))
+    await flushPromises()
+
+    expect(cardIds(wrapper)).toEqual(['ltx-video'])
+    expect(wrapper.get('[data-testid="explore-filters-count"]').text()).toBe('1')
+    expect(onMenu('explore-filter-value-useCase').textContent?.trim()).toBe('Video generation')
+
+    await userEvent.click(onMenu('explore-filter-runsOn'))
+    await userEvent.click(onMenu('explore-filter-runsOn-local'))
+    await flushPromises()
+    await userEvent.keyboard('{Escape}')
+
+    expect(cardIds(wrapper)).toEqual([])
+    expect(wrapper.get('[data-testid="explore-filters-count"]').text()).toBe('2')
+    await wrapper.get('[data-testid="workflows-clear-filters"]').trigger('click')
+    await flushPromises()
+
+    expect(cardIds(wrapper)).toEqual(['upscale-workflow', 'ltx-video'])
+    expect(wrapper.find('[data-testid="explore-filters-count"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('sorts newest first and keeps the chosen card size for next time', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await flushPromises()
+    const columns = () =>
+      getComputedStyle(
+        wrapper.get('[data-testid="workflows-grid"]').element
+      ).gridTemplateColumns.split(' ').length
+    const mediumColumns = columns()
+
+    await userEvent.click(wrapper.get('[data-testid="explore-layout"]').element)
+    await userEvent.click(onMenu('explore-size-large'))
+    await userEvent.click(onMenu('explore-sort'))
+    onMenu('explore-sort-newest').click()
+    await flushPromises()
+
+    expect(cardIds(wrapper)).toEqual(['ltx-video', 'upscale-workflow'])
+    expect(columns()).toBeLessThan(mediumColumns)
+    wrapper.unmount()
+
+    const again = await mountApps()
+    await again.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await flushPromises()
+    expect(cardIds(again)).toEqual(['ltx-video', 'upscale-workflow'])
+    again.unmount()
+  })
+
   it('loads catalog workflows on demand with independent searches for Apps and Workflows', async () => {
     const wrapper = await mountApps()
 

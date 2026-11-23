@@ -1,10 +1,18 @@
 import type { BridgeSeed, FakeBridge } from './fakeBridge'
-import { INSTALL_STEPS, everydayBuilds, localAssets, type PreviewMachine } from './fixtures'
+import {
+  EXPLORE_WORKFLOWS,
+  INSTALL_STEPS,
+  WORKFLOW_NEEDS,
+  everydayBuilds,
+  localAssets,
+  type PreviewMachine
+} from './fixtures'
 
 export interface PreviewStage {
   bridge: FakeBridge
   see(selector: string): Promise<HTMLElement>
   click(selector: string): Promise<void>
+  press(selector: string, key: string): Promise<void>
 }
 
 export interface PreviewScenario {
@@ -45,6 +53,43 @@ async function acceptTermsAndInstall({ see, click }: PreviewStage): Promise<void
   await see('[data-testid="setup-version"]')
   await click('[data-testid="setup-consent-tos"] [role="checkbox"]')
   await click('[data-testid="setup-install"]')
+}
+
+const SIGNED_IN = {
+  signedIn: true,
+  email: 'someone@comfy.org',
+  workspaceId: 'w-personal',
+  workspaceName: 'Personal Workspace',
+  workspaceType: 'personal'
+} as const
+
+function exploreSeed(machine: PreviewMachine): BridgeSeed {
+  return {
+    installations: everydayBuilds(machine),
+    auth: SIGNED_IN,
+    replies: {
+      listCatalogWorkflows: async () => EXPLORE_WORKFLOWS,
+      catalogWorkflowNeeds: async () => WORKFLOW_NEEDS,
+      catalogLocalBuildVersions: async () => ({
+        'inst-comfyui': '0.42.4',
+        'inst-video-experiments': '0.42.4'
+      })
+    }
+  }
+}
+
+const LTX_WORKFLOW_ID = 'ae574655-5f6e-44c4-bd2a-cb8aa4dbbbc9'
+
+async function openExploreWorkflows({ click, see }: PreviewStage): Promise<void> {
+  await click('[data-testid="app-sidebar-apps"]')
+  await click('[data-testid="explore-workflows-tab"]')
+  await see('[data-testid="workflows-grid"]')
+}
+
+async function openWorkflowPage(stage: PreviewStage): Promise<void> {
+  await openExploreWorkflows(stage)
+  await stage.click(`[data-testid="workflow-card-${LTX_WORKFLOW_ID}"]`)
+  await stage.see('[data-testid="workflow-needs-state"]')
 }
 
 export const SCENARIOS: PreviewScenario[] = [
@@ -112,6 +157,52 @@ export const SCENARIOS: PreviewScenario[] = [
     seed: (machine) => ({ installations: everydayBuilds(machine) }),
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-apps"]')
+    }
+  },
+  {
+    id: 'explore-workflows',
+    title: 'Explore: Workflows',
+    ready: '[data-testid="workflows-grid"]',
+    seed: exploreSeed,
+    arrange: openExploreWorkflows
+  },
+  {
+    id: 'explore-workflow-filters',
+    title: 'Explore: Workflows, filters open',
+    ready: '[data-testid="explore-filter-useCase"]',
+    seed: exploreSeed,
+    arrange: async (stage) => {
+      await openExploreWorkflows(stage)
+      await stage.press('[data-testid="explore-filters"]', 'Enter')
+    }
+  },
+  {
+    id: 'workflow-page',
+    title: 'Workflow page',
+    ready: '[data-testid="catalog-workflow-action"]',
+    seed: exploreSeed,
+    arrange: openWorkflowPage
+  },
+  {
+    id: 'workflow-page-graph',
+    title: 'Workflow page: graph',
+    ready: '[data-testid="workflow-graph-node"]',
+    seed: exploreSeed,
+    arrange: async (stage) => {
+      await openWorkflowPage(stage)
+      await stage.click('[data-testid="workflow-tab-graph"]')
+    }
+  },
+  {
+    id: 'workflow-page-download',
+    title: 'Workflow page: models to download',
+    ready: '[data-testid="catalog-workflow-note"]',
+    seed: exploreSeed,
+    arrange: async (stage) => {
+      await openWorkflowPage(stage)
+      await stage.press('[data-testid="catalog-workflow-target"]', 'Enter')
+      await stage.click('[data-testid="catalog-workflow-target-local:inst-video-experiments"]')
+      await stage.click('[data-testid="workflow-needs"]')
     }
   },
   {

@@ -63,9 +63,101 @@ describe('Home example workflows from the Comfy content catalog', () => {
         thumbnailUrl: 'https://comfy.org/catalog-media/picked-for-desktop/v1',
         canOpenLocal: false,
         canOpenCloud: false,
-        minComfyUIVersion: null
+        minComfyUIVersion: null,
+        hubUrl: 'https://comfy.org/hub/workflows/picked-for-desktop',
+        longDescription: null,
+        author: null,
+        generationType: null,
+        useCases: [],
+        models: [],
+        uses: null,
+        license: null,
+        publishedAt: null,
+        media: [],
+        tutorialUrl: null
       }
     ])
+  })
+
+  it('carries what Explore filters and the workflow page show', async () => {
+    serveCatalog({
+      desktop: [
+        catalogItem({
+          uid: 'ltx',
+          data: {
+            long_description: 'Turn one picture into a short clip.',
+            website_author: { name: 'ComfyUI' },
+            generation_type: 'animate-images',
+            compatibility: {
+              website: { categories: ['generate-video', 'edit-video'], models: ['LTX-2.3'] }
+            },
+            usage: 17826,
+            open_source: true,
+            date: '2026-01-16',
+            documentation_url: 'https://docs.comfy.org/tutorials/ltx',
+            website_media: {
+              '$.examples[0].media': '/catalog-media/ltx/example',
+              '$.hero': '/catalog-media/ltx/hero',
+              '$.static_thumb': '/catalog-media/ltx/thumb'
+            },
+            website_media_types: {
+              '$.examples[0].media': 'video/mp4',
+              '$.hero': 'image/webp',
+              '$.static_thumb': 'image/webp'
+            },
+            website_media_sizes: { '$.hero': [400, 400] }
+          }
+        })
+      ],
+      everything: []
+    })
+
+    const [workflow] = await listHomeWorkflows('en')
+
+    expect(workflow).toMatchObject({
+      longDescription: 'Turn one picture into a short clip.',
+      author: 'ComfyUI',
+      generationType: 'animate-images',
+      useCases: ['generate-video', 'edit-video'],
+      models: ['LTX-2.3'],
+      uses: 17826,
+      license: 'open-source',
+      publishedAt: '2026-01-16',
+      tutorialUrl: 'https://docs.comfy.org/tutorials/ltx',
+      media: [
+        {
+          url: 'https://comfy.org/catalog-media/ltx/example',
+          kind: 'video',
+          width: null,
+          height: null
+        },
+        { url: 'https://comfy.org/catalog-media/ltx/hero', kind: 'image', width: 400, height: 400 }
+      ]
+    })
+  })
+
+  it('leaves out tutorial links that leave Comfy and media that is not a picture or video', async () => {
+    serveCatalog({
+      desktop: [
+        catalogItem({
+          uid: 'odd',
+          data: {
+            documentation_url: 'https://example.com/tutorial',
+            website_media: {
+              '$.hero': '/catalog-media/odd/hero',
+              '$.static_thumb': '/catalog-media/odd/t'
+            },
+            website_media_types: { '$.hero': 'application/json', '$.static_thumb': 'image/webp' }
+          }
+        })
+      ],
+      everything: []
+    })
+
+    const [workflow] = await listHomeWorkflows('en')
+
+    expect(workflow?.tutorialUrl).toBeNull()
+    expect(workflow?.media).toEqual([])
   })
 
   it("falls back to the catalog's own order while no workflow is marked for Desktop", async () => {

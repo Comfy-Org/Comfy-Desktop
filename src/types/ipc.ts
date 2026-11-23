@@ -239,6 +239,15 @@ export interface AppOutputAction {
   index: number
 }
 
+export interface CatalogWorkflowMedia {
+  url: string
+  kind: 'image' | 'video'
+  width: number | null
+  height: number | null
+}
+
+export type CatalogWorkflowLicense = 'open-source' | 'partner'
+
 export interface CatalogWorkflow {
   id: string
   title: string
@@ -247,6 +256,36 @@ export interface CatalogWorkflow {
   canOpenLocal: boolean
   canOpenCloud: boolean
   minComfyUIVersion: string | null
+  hubUrl: string
+  longDescription: string | null
+  author: string | null
+  generationType: string | null
+  useCases: string[]
+  models: string[]
+  uses: number | null
+  license: CatalogWorkflowLicense | null
+  publishedAt: string | null
+  media: CatalogWorkflowMedia[]
+  tutorialUrl: string | null
+}
+
+export interface CatalogWorkflowModel {
+  filename: string
+  directory: string
+  sizeBytes: number | null
+}
+
+export interface CatalogWorkflowNeeds {
+  graph: Record<string, unknown> | null
+  models: CatalogWorkflowModel[]
+  missingByBuild: Record<string, string[]>
+}
+
+export interface CatalogWorkflowDownload {
+  id: string
+  build: string
+  receivedBytes: number
+  totalBytes: number
 }
 
 export type CatalogWorkflowTarget = { where: 'cloud' } | { where: 'local'; build: string }
@@ -1339,11 +1378,14 @@ export interface ElectronApi {
   listCatalogWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   catalogLocalBuildVersions(): Promise<Record<string, string | null>>
+  catalogWorkflowNeeds(id: string): Promise<CatalogWorkflowNeeds | null>
   launchCatalogWorkflow(
     id: string,
     target: CatalogWorkflowTarget,
-    workspaceId: string
+    workspaceId: string,
+    options?: { downloadMissing?: boolean }
   ): Promise<ComfyDesktopOpenInComfy>
+  onCatalogWorkflowDownload(callback: (progress: CatalogWorkflowDownload) => void): () => void
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>

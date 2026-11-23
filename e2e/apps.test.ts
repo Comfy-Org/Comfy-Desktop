@@ -458,12 +458,13 @@ test('See all workflows on Home opens the full catalog and a workflow loads into
   const dialogTitle = '[role="dialog"] h2'
   await ctx.panel.waitForVisible(dialogTitle)
   expect(await ctx.panel.textOf(dialogTitle)).toBe(EXPLORE_WORKFLOW_TITLE)
-  expect(
-    await ctx.panel.evaluate<string>(
-      'document.querySelector("[data-testid=catalog-workflow-target]")?.value'
-    )
-  ).toBe('cloud')
-  expect(await ctx.panel.click('[role="dialog"] button[type="submit"]')).toBe(true)
+  await expect
+    .poll(() => ctx.panel.textOf('[data-testid="catalog-workflow-target"]'), LONG_WAIT)
+    .toContain('Comfy Cloud')
+  await expect
+    .poll(() => ctx.panel.textOf('[data-testid="catalog-workflow-action"]'), LONG_WAIT)
+    .toContain('Run on Comfy Cloud')
+  expect(await ctx.panel.click('[data-testid="catalog-workflow-action"]')).toBe(true)
 
   const editor = new WebContentsPage(ctx.app, CLOUD_EDITOR_PATH)
   await editor.waitForSelector('#loaded-workflow', LONG_WAIT)
