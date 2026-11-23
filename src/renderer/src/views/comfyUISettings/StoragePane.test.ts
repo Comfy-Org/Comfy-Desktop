@@ -625,12 +625,15 @@ describe('StoragePane', () => {
       expect(value).toEqual(['/a/models', '/b/models', '/c/models'])
     })
 
-    it('opens the folder when a model path is clicked', async () => {
+    it('opens the folder from the reveal button, not the model path text', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[1]!.find('.models-dir-name').element.tagName).not.toBe('BUTTON')
       await rows[1]!.find('.models-dir-name').trigger('click')
+      expect(api.openPathCalls).toEqual([])
+      await rows[1]!.find('.models-dir-actions .reveal-folder-button').trigger('click')
       expect(api.openPathCalls).toEqual(['/a/models'])
     })
 
@@ -859,11 +862,11 @@ describe('StoragePane', () => {
       expect(value).toBe('/ext/in')
     })
 
-    it('opens the effective input folder when its path is clicked', async () => {
+    it('opens the effective input folder from its reveal button', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(makeIoSections({ inputDir: '/ext/in' }))
       await nextTick()
-      await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-name').trigger('click')
+      await wrapper.findAll('.storage-dir-row')[0]!.find('.reveal-folder-button').trigger('click')
       expect(api.openPathCalls).toEqual(['/ext/in'])
     })
   })
@@ -945,14 +948,14 @@ describe('StoragePane', () => {
       expect(emitted[1]![1]).toBe(false)
     })
 
-    it('opens a shared dir when its path is clicked', async () => {
+    it('opens a shared dir from its reveal button', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: true }),
         makeSharedIoSnapshot()
       )
       await nextTick()
-      await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-name').trigger('click')
+      await wrapper.findAll('.storage-dir-row')[0]!.find('.reveal-folder-button').trigger('click')
       expect(api.openPathCalls).toEqual(['/shared/in'])
     })
 
@@ -1115,6 +1118,13 @@ describe('StoragePane', () => {
       expect(extraRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
     })
 
+    it('gives the yaml row no reveal button because it opens details, not a folder', async () => {
+      installMockApi()
+      const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
+      await nextTick()
+      expect(findExtraRow(wrapper).find('.reveal-folder-button').exists()).toBe(false)
+    })
+
     it('opens the detail modal listing per-type dirs when the row is clicked', async () => {
       installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
@@ -1168,15 +1178,34 @@ describe('StoragePane', () => {
       expect(api.openPathCalls).not.toContain('/own/extra_model_paths.yaml')
     })
 
-    it('opens a per-type dir from the modal when its path is clicked', async () => {
+    it('opens a per-type dir from the reveal button beside its path in the modal', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
       await nextTick()
-      const dirBtns = Array.from(document.querySelectorAll('.empm-dir-path')) as HTMLButtonElement[]
-      dirBtns.find((b) => b.textContent === '/ext/base/checkpoints')!.click()
+      const dirRows = Array.from(document.querySelectorAll<HTMLElement>('.empm-dir'))
+      const present = dirRows.find(
+        (row) => row.querySelector('.empm-dir-path')?.textContent === '/ext/base/checkpoints'
+      )!
+      expect(present.querySelector('.empm-dir-path')!.tagName).not.toBe('BUTTON')
+      present.querySelector<HTMLButtonElement>('.reveal-folder-button')!.click()
       expect(api.openPathCalls).toContain('/ext/base/checkpoints')
+    })
+
+    it('offers no reveal button for a per-type dir that does not exist', async () => {
+      installMockApi()
+      const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
+      await nextTick()
+      await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
+      await nextTick()
+      const missing = Array.from(document.querySelectorAll<HTMLElement>('.empm-dir')).find(
+        (row) => row.querySelector('.empm-dir-path')?.textContent === '/ext/base/t2i_adapter'
+      )!
+      expect(missing.querySelector('.reveal-folder-button')).toBeNull()
+      expect(missing.querySelector('.empm-dir-path')!.getAttribute('title')).toContain(
+        '/ext/base/t2i_adapter'
+      )
     })
 
     it('marks a missing per-type dir red (is-missing) instead of a badge', async () => {

@@ -8,7 +8,6 @@ import {
   Check,
   ChartColumn,
   ChevronDown,
-  FolderOpen,
   ImageDown,
   RefreshCw,
   Search,
@@ -662,7 +661,6 @@ onActivated(() => {
               :title="benchmarksFolderPath"
               @click="selectBenchmarksFolder"
             >
-              <FolderOpen :size="16" aria-hidden="true" />
               {{ t('benchmarks.openFolder') }}
             </Button>
           </template>
