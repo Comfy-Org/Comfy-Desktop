@@ -24,7 +24,7 @@ import type {
   VersionStatsValue
 } from '../../types/ipc'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
-import { revealInFolderKey } from '../../composables/usePlatform'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 
 interface Props {
   sections: DetailSection[]
@@ -68,7 +68,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const revealFolderKey = revealInFolderKey(window.api?.platform)
 
 function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -460,23 +459,17 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
                 class="settings-v2-readonly-path flex min-w-0 items-center gap-2 justify-self-stretch w-full text-right"
               >
-                <Button
-                  v-if="canOpenFilesystemPath(field)"
-                  variant="textonly"
-                  size="unset"
-                  type="button"
-                  class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-                  :title="t(revealFolderKey)"
-                  :aria-label="`${t(revealFolderKey)}: ${readonlyDisplayValue(field)}`"
-                  @click="emit('open-path', readonlyDisplayValue(field))"
-                >
-                  {{ readonlyDisplayValue(field) }}
-                </Button>
                 <span
-                  v-else
                   class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100 w-full text-right justify-self-end settings-v2-field-readonly-path min-w-0 flex-1 truncate"
+                  :title="readonlyDisplayValue(field)"
                   >{{ readonlyDisplayValue(field) }}</span
                 >
+                <RevealFolderButton
+                  v-if="canOpenFilesystemPath(field)"
+                  class="settings-v2-field-readonly-open -my-1"
+                  :path="readonlyDisplayValue(field)"
+                  @click="emit('open-path', readonlyDisplayValue(field))"
+                />
                 <BaseCopyButton :value="readonlyDisplayValue(field)" />
               </div>
 

@@ -87,6 +87,7 @@ import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import { SUMMARY_BOX_CLASS, SUMMARY_GRID_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
+import BrowseFolderButton from '../components/BrowseFolderButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
@@ -2020,16 +2021,11 @@ defineExpose({ open })
                 :title="locationMeta || undefined"
                 >{{ locationMeta }}</span
               >
-              <Button
-                size="sm"
-                variant="secondary"
-                type="button"
-                class="config-path-browse -my-1 flex-none rounded-lg px-3"
+              <BrowseFolderButton
+                class="config-path-browse -my-1"
                 data-testid="config-summary-browse"
                 @click="handleBrowse"
-              >
-                {{ $t('common.browse') }}
-              </Button>
+              />
             </span>
           </SetupSummaryRow>
           <SetupSummaryRow

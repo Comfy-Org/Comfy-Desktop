@@ -141,13 +141,18 @@ describe('SettingsSectionList', () => {
   })
 
   describe('readonly path rows', () => {
-    it('renders a clickable button that emits open-path for a path value', async () => {
+    it('shows a path value as plain text with a reveal button that emits open-path', async () => {
       const wrapper = mountReadonly([
         { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' }
       ])
+      const text = wrapper.find('.settings-v2-field-readonly-path')
+      expect(text.element.tagName).not.toBe('BUTTON')
+      expect(text.text()).toBe('/home/user/ComfyUI')
+      expect(text.attributes('title')).toBe('/home/user/ComfyUI')
       const btn = wrapper.find('button.settings-v2-field-readonly-open')
       expect(btn.exists()).toBe(true)
-      expect(btn.text()).toBe('/home/user/ComfyUI')
+      expect(btn.classes()).toContain('reveal-folder-button')
+      expect(btn.attributes('aria-label')).toContain('/home/user/ComfyUI')
       await btn.trigger('click')
       expect(wrapper.emitted('open-path')?.[0]).toEqual(['/home/user/ComfyUI'])
     })

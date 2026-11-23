@@ -1067,6 +1067,15 @@ describe('BenchmarksView', () => {
     expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
   })
 
+  it('labels the folder picker with text and no open-folder icon', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const picker = wrapper.get('.benchmarks__open-folder')
+    expect(picker.text()).toBe('Select folder')
+    expect(picker.find('svg[class*="lucide-folder-open"]').exists()).toBe(false)
+  })
+
   it('shows a skeleton while loading', async () => {
     listMock().mockReturnValue(new Promise(() => {}))
     const wrapper = mountView()
