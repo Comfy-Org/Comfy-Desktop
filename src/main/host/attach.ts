@@ -292,6 +292,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `})()`
 
   const onDomReady = (): void => {
+    if (comfyContents.getURL() === 'about:blank') return
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {

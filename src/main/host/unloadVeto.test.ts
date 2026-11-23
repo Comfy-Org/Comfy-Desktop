@@ -24,10 +24,4 @@ describe('unloadVeto', () => {
 
     expect(takeUnloadVeto(contents)).toBe(false)
   })
-
-  it('counts a navigation that fails as having left', async () => {
-    await expect(
-      leavesWithoutVeto(contents, () => Promise.reject(new Error('ERR_ABORTED')))
-    ).resolves.toBe(true)
-  })
 })

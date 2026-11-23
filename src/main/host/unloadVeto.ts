@@ -17,13 +17,7 @@ export async function leavesWithoutVeto(
   const veto = new Promise<false>((resolve) => (vetoed = () => resolve(false)))
   vetoListeners.set(contents, vetoed)
   try {
-    return await Promise.race([
-      veto,
-      leave().then(
-        () => true,
-        () => true
-      )
-    ])
+    return await Promise.race([veto, leave().then(() => true)])
   } finally {
     vetoListeners.delete(contents)
   }

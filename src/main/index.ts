@@ -203,7 +203,7 @@ import {
   consultPanelRendererClose,
   detachOrphanedInstallHosts,
   preClearedClose,
-  leavesPageOrDiscardsUnsavedWork,
+  returnPanelHostToDashboard,
   returnToDashboard
 } from './host/detach'
 import { closeBuildWindow } from './host/closeBuildWindow'
@@ -850,9 +850,7 @@ ipcMain.handle('return-to-dashboard', async (event) => {
     if (entry.window.isDestroyed()) continue
     if (!isInstallHost(entry)) continue
     if (entry.panelView?.webContents !== event.sender) continue
-    if (!(await leavesPageOrDiscardsUnsavedWork(entry)) || entry.window.isDestroyed()) return false
-    entry.detachInstall()
-    return true
+    return returnPanelHostToDashboard(entry)
   }
   return false
 })

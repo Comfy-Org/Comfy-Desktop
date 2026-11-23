@@ -69,6 +69,7 @@ import {
   confirmAndCloseHostWindow,
   detachOrphanedInstallHosts,
   preClearedClose,
+  returnPanelHostToDashboard,
   returnToDashboard
 } from './detach'
 
@@ -583,6 +584,29 @@ describe('returning to the dashboard from a running ComfyUI', () => {
         'This will stop the current ComfyUI.',
         DISCARD
       ])
+      expect(entry.detachInstall).toHaveBeenCalledTimes(1)
+    })
+
+    it('asks once for overlapping requests from the panel, and Cancel keeps the page for both', async () => {
+      const entry = openRunningComfy()
+
+      const answers = await Promise.all([
+        returnPanelHostToDashboard(entry),
+        returnPanelHostToDashboard(entry)
+      ])
+
+      expect(answers).toEqual([false, false])
+      expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([DISCARD])
+      expect(entry.detachInstall).not.toHaveBeenCalled()
+    })
+
+    it('returns to the dashboard from the panel once the person discards', async () => {
+      mocks.agrees = true
+      const entry = openRunningComfy()
+
+      await expect(returnPanelHostToDashboard(entry)).resolves.toBe(true)
+
+      expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([DISCARD])
       expect(entry.detachInstall).toHaveBeenCalledTimes(1)
     })
 

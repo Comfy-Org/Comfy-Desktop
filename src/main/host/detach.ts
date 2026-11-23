@@ -137,7 +137,23 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
   entry.detachInstall()
 }
 
-export async function leavesPageOrDiscardsUnsavedWork(entry: ComfyWindowEntry): Promise<boolean> {
+export async function returnPanelHostToDashboard(entry: ComfyWindowEntry): Promise<boolean> {
+  if (!(await leavesPageOrDiscardsUnsavedWork(entry)) || entry.window.isDestroyed()) return false
+  entry.detachInstall()
+  return true
+}
+
+const pendingLeaves = new WeakMap<ComfyWindowEntry, Promise<boolean>>()
+
+function leavesPageOrDiscardsUnsavedWork(entry: ComfyWindowEntry): Promise<boolean> {
+  const pending = pendingLeaves.get(entry)
+  if (pending) return pending
+  const leaving = askToLeave(entry).finally(() => pendingLeaves.delete(entry))
+  pendingLeaves.set(entry, leaving)
+  return leaving
+}
+
+async function askToLeave(entry: ComfyWindowEntry): Promise<boolean> {
   const contents = entry.comfyView.webContents
   if (contents.isDestroyed()) return true
   if (await leavesWithoutVeto(contents, () => navigatorFor(entry).blank())) return true

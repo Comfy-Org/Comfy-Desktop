@@ -131,15 +131,33 @@ test.beforeAll(async () => {
   }, pageId)
 })
 
+function unloadVetoes(): Promise<number> {
+  return ctx.app.evaluate(
+    () => (globalThis as unknown as { __unloadVetoes?: number }).__unloadVetoes ?? 0
+  )
+}
+
+function windowTitles(): Promise<string[]> {
+  return ctx.app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().map((win) => win.getTitle())
+  )
+}
+
 test('cancelling the unsaved-changes prompt keeps the page @linux', async () => {
+  const titlesBefore = await windowTitles()
   const returning = returnFirstInstallHostToDashboard(ctx.app)
   await answerDiscardPrompt('cancel')
   await returning
 
+  expect(
+    await windowTitles(),
+    'the window went back to the dashboard although the person cancelled'
+  ).toEqual(titlesBefore)
   expect(await pageUrl(), 'the page was replaced although the person cancelled').toBe(remoteUrl)
 })
 
 test('return to dashboard replaces a page that asks to stay once the person discards @linux', async () => {
+  const vetoesBefore = await unloadVetoes()
   const returning = returnFirstInstallHostToDashboard(ctx.app)
   await answerDiscardPrompt('confirm')
   expect(await returning).not.toBeNull()
@@ -149,9 +167,7 @@ test('return to dashboard replaces a page that asks to stay once the person disc
     .toBe('about:blank')
 
   expect(
-    await ctx.app.evaluate(
-      () => (globalThis as unknown as { __unloadVetoes?: number }).__unloadVetoes ?? 0
-    ),
-    'the page never vetoed the unload, so neither the prompt nor the override was exercised'
-  ).toBeGreaterThanOrEqual(2)
+    (await unloadVetoes()) - vetoesBefore,
+    'the page should veto both the attempt that asked and the unload Desktop then overrode'
+  ).toBe(2)
 })
