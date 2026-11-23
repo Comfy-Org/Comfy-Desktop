@@ -680,6 +680,31 @@ describe('opening a catalog graph in a workspace build', () => {
     })
     expect(entry.loadedGraphs()).toHaveLength(1)
   })
+
+  it('drops a Cloud import once a later launch has moved the same window to another workspace', async () => {
+    vi.useFakeTimers()
+    const entry = new FakeWindow(CLOUD_URL)
+    entry.state = 'starting'
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(true)
+    const request = { graph, where: 'cloud', name: 'Example' } as const
+
+    const first = openCatalogInComfy(PAGE, request, scope)
+    await vi.advanceTimersByTimeAsync(1_000)
+    const second = openCatalogInComfy(PAGE, request, { ...scope, workspaceId: 'studio' })
+    await vi.advanceTimersByTimeAsync(1_000)
+    entry.state = 'ready'
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await first).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    expect(await second).toEqual({ opened: true })
+    expect(entry.loadedGraphs()).toHaveLength(1)
+    expect(mocks.syncCloudWindowWorkspace).toHaveBeenLastCalledWith(entry, {
+      pickerWorkspaceId: 'studio'
+    })
+  })
 })
 
 describe('opening the workflow saved in a file', () => {

@@ -52,6 +52,8 @@ export interface CatalogWorkflowScope {
 
 const sessionShownInWindow = new Map<string, number>()
 const cloudLaunches = new Map<string, Promise<ActionResult>>()
+const workspaceClaims = new Map<string, number>()
+let lastWorkspaceClaim = 0
 
 function pause(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -302,6 +304,22 @@ interface CatalogPlacement {
   where: 'local' | 'cloud'
 }
 
+function claimWindowWorkspace(
+  installationId: string,
+  { scope, where }: CatalogPlacement
+): CatalogPlacement {
+  if (where !== 'cloud') return { scope, where }
+  const claim = ++lastWorkspaceClaim
+  workspaceClaims.set(installationId, claim)
+  return {
+    where,
+    scope: {
+      ...scope,
+      isCurrent: () => scope.isCurrent() && workspaceClaims.get(installationId) === claim
+    }
+  }
+}
+
 async function inCatalogWorkspace(
   entry: ComfyWindowEntry,
   { scope, where }: CatalogPlacement
@@ -322,11 +340,15 @@ async function openScriptIn(
   if ('error' in target) return { opened: false, error: target.error }
   const entry = await windowFor(target.id)
   if (!entry) return { opened: false, error: i18n.t('apps.local.openNoWindow') }
-  if (catalog && !(await inCatalogWorkspace(entry, catalog))) {
+  const placement = catalog ? claimWindowWorkspace(target.id, catalog) : undefined
+  if (placement && !(await inCatalogWorkspace(entry, placement))) {
     return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
   }
   bringForward(entry)
-  if (await loadInto(target.id, script, catalog?.scope)) return { opened: true }
+  if (await loadInto(target.id, script, placement?.scope)) return { opened: true }
+  if (placement && !placement.scope.isCurrent()) {
+    return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
+  }
   return { opened: false, error: i18n.t('apps.local.openNotTaken') }
 }
 
@@ -404,4 +426,5 @@ export async function openInComfy(
 export function _resetForTest(): void {
   sessionShownInWindow.clear()
   cloudLaunches.clear()
+  workspaceClaims.clear()
 }
