@@ -158,28 +158,40 @@ describe('New build next to All builds', () => {
     ['a full row', 'the minimum window width', MIN_WINDOW_PAGE_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD]],
     ['a full row', 'a normal window width', NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, OTHER_LOCAL, CLOUD]]
   ] as const)(
-    'with %s, at %s, offers New build as a link, not a tile',
+    'with %s, at %s, offers New build as the + next to the Builds title, not a tile',
     async (_builds, _width, width, installations) => {
       const wrapper = await homeAt(width, [...installations])
 
-      expect(shown('[data-testid="home-new-build-link"]'), 'New build link').toBe(true)
+      expect(shown('[data-testid="home-new-build-button"]'), 'New build button').toBe(true)
       expect(host.querySelector('[data-testid="home-new-build"]'), 'New build tile').toBeNull()
       wrapper.unmount()
     }
   )
 
-  it('leaves the link out while the New build tile is in the row', async () => {
+  it('keeps the + next to the Builds title while the New build tile is in the row', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [CLOUD])
 
     expect(shown('[data-testid="home-new-build"]')).toBe(true)
-    expect(host.querySelector('[data-testid="home-new-build-link"]')).toBeNull()
+    expect(shown('[data-testid="home-new-build-button"]')).toBe(true)
     wrapper.unmount()
   })
 
-  it('opens New build from the link', async () => {
+  it('goes to all builds from the Builds title', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+    const title = host.querySelector<HTMLElement>('[data-testid="home-all-builds"]')!
+
+    expect(title.closest('h2')?.id).toBe('home-builds')
+    expect(title.textContent?.trim()).toBe('Builds')
+    title.click()
+
+    expect(wrapper.emitted('show-builds')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('opens New build from the +', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
 
-    host.querySelector<HTMLElement>('[data-testid="home-new-build-link"]')!.click()
+    host.querySelector<HTMLElement>('[data-testid="home-new-build-button"]')!.click()
 
     expect(wrapper.emitted('new-build')).toHaveLength(1)
     wrapper.unmount()

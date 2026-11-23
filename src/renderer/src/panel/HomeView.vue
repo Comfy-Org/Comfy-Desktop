@@ -33,6 +33,8 @@ import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 type LoadState = 'loading' | 'ready' | 'unavailable'
 
 const HOME_BUILD_LIMIT = 3
+const BUILDS_TITLE_LINK_CLASS =
+  '-mx-2 -my-1 h-8 gap-1 rounded-lg px-2 hover:bg-secondary hover:text-foreground'
 const TEXT_LINK_CLASS =
   '-my-1 h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
 
@@ -279,34 +281,32 @@ onMounted(() => {
         data-home-tour="home-builds"
       >
         <div class="mb-2.5 flex h-6 items-center justify-between">
-          <h2 id="home-builds" class="m-0" :class="SECTION_TITLE_CLASS">
-            {{ t('sidebar.builds') }}
-          </h2>
-          <div class="flex items-center gap-1">
-            <Button
-              v-if="!showNewBuildSlot && !installationStore.loading"
-              type="button"
-              variant="muted-textonly"
-              size="unset"
-              :class="TEXT_LINK_CLASS"
-              data-testid="home-new-build-link"
-              @click="emit('new-build')"
-            >
-              <Plus :size="13" aria-hidden="true" />
-              {{ t('sidebar.newBuild') }}
-            </Button>
+          <h2 id="home-builds" class="m-0">
             <Button
               type="button"
               variant="muted-textonly"
               size="unset"
-              :class="TEXT_LINK_CLASS"
+              :class="[SECTION_TITLE_CLASS, BUILDS_TITLE_LINK_CLASS]"
+              :title="t('home.allBuilds')"
               data-testid="home-all-builds"
               @click="emit('show-builds')"
             >
-              {{ t('home.allBuilds') }}
+              {{ t('sidebar.builds') }}
               <ChevronRight :size="13" aria-hidden="true" />
             </Button>
-          </div>
+          </h2>
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="icon"
+            class="size-8 shrink-0"
+            :aria-label="t('sidebar.newBuild')"
+            :title="t('sidebar.newBuild')"
+            data-testid="home-new-build-button"
+            @click="emit('new-build')"
+          >
+            <Plus :size="16" aria-hidden="true" />
+          </Button>
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
