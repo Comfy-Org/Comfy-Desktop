@@ -716,24 +716,6 @@ describe('ComfyUISettingsContent', () => {
       }
     })
 
-    it('clears Restart to apply once the build starts again with the new settings', async () => {
-      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
-      useComfyUISettingsState.clearPendingRestartStub.mockClear()
-      try {
-        await mountContent({
-          currentView: 'dashboard',
-          currentCategory: null,
-          activeInstallationId: null
-        })
-        markRunning('inst-1')
-        await flushPromises()
-
-        expect(useComfyUISettingsState.clearPendingRestartStub).toHaveBeenCalledWith('inst-1')
-      } finally {
-        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
-      }
-    })
-
     it('keeps Restart to apply after switching to another build and back', async () => {
       markRunning('inst-1')
       useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])

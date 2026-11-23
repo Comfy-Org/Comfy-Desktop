@@ -793,14 +793,6 @@ const RESTART_TO_APPLY: NavDecision = { verb: 'restart', primaryLabel: 'instance
 
 const showsOpenBesideRestart = computed(() => hasPendingRestart.value && restartsFromPage.value)
 
-watch(
-  () => [installation.value?.id, installCta.runningAnywhere.value] as const,
-  ([id, running], [previousId, wasRunning]) => {
-    const startedAgain = id !== undefined && id === previousId && running && !wasRunning
-    if (startedAgain && pendingRestartFieldIds.value.size > 0) clearPendingRestart(id)
-  }
-)
-
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
   if (!selectedInstall) return
