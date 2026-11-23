@@ -69,34 +69,36 @@ export function useRestartBuild(): (inst: Installation) => Promise<void> {
   const sessionStore = useSessionStore()
 
   return async function restart(inst: Installation): Promise<void> {
-    if (restartsInFlight.has(inst.id)) return
-    restartsInFlight.add(inst.id)
-    try {
-      await confirmStopAndLaunch(inst)
-    } finally {
-      restartsInFlight.delete(inst.id)
-    }
-  }
-
-  async function confirmStopAndLaunch(inst: Installation): Promise<void> {
     const confirmed = await modal.confirm({
       title: t('actions.restartConfirmTitle'),
       message: t('actions.restartConfirmMessage'),
       confirmLabel: t('actions.restartConfirm')
     })
-    if (!confirmed) return
+    if (!confirmed || restartsInFlight.has(inst.id)) return
+    restartsInFlight.add(inst.id)
+    let stopFailure: unknown
+    try {
+      stopFailure = await stopAndLaunch(inst)
+    } finally {
+      restartsInFlight.delete(inst.id)
+    }
+    if (stopFailure === undefined) return
+    await modal.alert({
+      title: t('actions.restart'),
+      message: (stopFailure as Error)?.message || String(stopFailure)
+    })
+  }
+
+  async function stopAndLaunch(inst: Installation): Promise<unknown> {
     try {
       await window.api.stopComfyUI(inst.id)
     } catch (err) {
-      await modal.alert({
-        title: t('actions.restart'),
-        message: (err as Error)?.message || String(err)
-      })
-      return
+      return err ?? new Error(String(err))
     }
     await until(() => sessionStore.isRunning(inst.id)).toBe(false, { timeout: STOP_WAIT_MS })
-    if (sessionStore.isRunning(inst.id)) return
+    if (sessionStore.isRunning(inst.id)) return undefined
     await host.launch(inst, { isRestart: true })
+    return undefined
   }
 }
 
