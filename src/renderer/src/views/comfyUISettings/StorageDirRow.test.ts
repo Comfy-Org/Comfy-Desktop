@@ -3,7 +3,7 @@ import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-uti
 import { nextTick } from 'vue'
 import StorageDirRow from './StorageDirRow.vue'
 
-const FOLDER_OPEN_ICON = 'svg[class*="lucide-folder-open"]'
+const REVEAL_ICON = 'svg[class*="lucide-folder-search"]'
 const mounted: VueWrapper[] = []
 
 function mountRow(props: Record<string, unknown>) {
@@ -52,16 +52,16 @@ describe.each([
   it('opens the folder from the reveal button in the actions area', async () => {
     const wrapper = mountRow({ listAligned })
     const reveal = wrapper.get('.storage-dir-actions .reveal-folder-button')
-    expect(reveal.find(FOLDER_OPEN_ICON).exists()).toBe(true)
+    expect(reveal.find(REVEAL_ICON).exists()).toBe(true)
     expect(reveal.attributes('aria-label')).toBe('Show in Explorer: /data/input')
     await reveal.trigger('click')
     expect(wrapper.emitted('open')).toHaveLength(1)
     expect(wrapper.emitted('browse')).toBeUndefined()
   })
 
-  it('shows FolderOpen only on the reveal button', () => {
+  it('shows the reveal icon only on the reveal button', () => {
     const wrapper = mountRow({ listAligned, resettable: true })
-    const icons = wrapper.findAll(FOLDER_OPEN_ICON)
+    const icons = wrapper.findAll(REVEAL_ICON)
     expect(icons).toHaveLength(1)
     expect(icons[0]!.element.closest('.reveal-folder-button')).not.toBeNull()
   })

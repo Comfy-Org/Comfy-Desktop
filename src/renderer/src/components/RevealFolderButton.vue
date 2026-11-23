@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { FolderOpen } from '@lucide/vue'
+import { FolderSearch } from '@lucide/vue'
 import { revealInFolderKey } from '../composables/usePlatform'
 
 const props = defineProps<{ path?: string }>()
@@ -26,6 +26,6 @@ const ariaLabel = computed(() =>
     :title="revealLabel"
     @click="(event: MouseEvent) => emit('click', event)"
   >
-    <FolderOpen :size="14" aria-hidden="true" />
+    <FolderSearch :size="14" aria-hidden="true" />
   </Button>
 </template>

@@ -4,7 +4,7 @@ import { nextTick } from 'vue'
 import '../../assets/main.css'
 import SharedFoldersList, { type SharedFolderRow } from './SharedFoldersList.vue'
 
-const FOLDER_OPEN_ICON = 'svg[class*="lucide-folder-open"]'
+const REVEAL_ICON = 'svg[class*="lucide-folder-search"]'
 const MODELS: SharedFolderRow = {
   key: 'models-0',
   kind: 'models',
@@ -65,16 +65,16 @@ describe('SharedFoldersList', () => {
   it('opens the folder from the reveal button', async () => {
     const wrapper = mountList()
     const reveal = wrapper.findAll('.shared-folder-row')[1]!.get('.reveal-folder-button')
-    expect(reveal.find(FOLDER_OPEN_ICON).exists()).toBe(true)
+    expect(reveal.find(REVEAL_ICON).exists()).toBe(true)
     expect(reveal.attributes('title')).toBe('Show in Finder')
     await reveal.trigger('click')
     expect(wrapper.emitted('open')).toEqual([[EXTRA]])
     expect(wrapper.emitted('browse')).toBeUndefined()
   })
 
-  it('shows FolderOpen only on reveal buttons', () => {
+  it('shows the reveal icon only on reveal buttons', () => {
     const wrapper = mountList()
-    const icons = wrapper.findAll(FOLDER_OPEN_ICON)
+    const icons = wrapper.findAll(REVEAL_ICON)
     expect(icons).toHaveLength(2)
     for (const icon of icons) {
       expect(icon.element.closest('.reveal-folder-button')).not.toBeNull()

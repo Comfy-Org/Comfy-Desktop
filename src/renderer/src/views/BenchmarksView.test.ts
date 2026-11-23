@@ -1073,7 +1073,7 @@ describe('BenchmarksView', () => {
 
     const picker = wrapper.get('.benchmarks__open-folder')
     expect(picker.text()).toBe('Select folder')
-    expect(picker.find('svg[class*="lucide-folder-open"]').exists()).toBe(false)
+    expect(picker.find('svg[class*="lucide-folder-search"]').exists()).toBe(false)
   })
 
   it('shows a skeleton while loading', async () => {

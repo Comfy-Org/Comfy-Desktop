@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import RevealFolderButton from './RevealFolderButton.vue'
 
-const FOLDER_OPEN_ICON = 'svg[class*="lucide-folder-open"]'
+const REVEAL_ICON = 'svg[class*="lucide-folder-search"]'
 
 function setPlatform(platform: string): void {
   ;(window as unknown as { api: Record<string, unknown> }).api = { platform }
@@ -13,11 +13,11 @@ afterEach(() => {
 })
 
 describe('RevealFolderButton', () => {
-  it('renders the FolderOpen icon titled with the reveal text', () => {
+  it('renders the FolderSearch icon titled with the reveal text', () => {
     setPlatform('win32')
     const wrapper = mount(RevealFolderButton)
     const button = wrapper.get('button.reveal-folder-button')
-    expect(button.find(FOLDER_OPEN_ICON).exists()).toBe(true)
+    expect(button.find(REVEAL_ICON).exists()).toBe(true)
     expect(button.attributes('title')).toBe('Show in Explorer')
     expect(button.attributes('aria-label')).toBe('Show in Explorer')
     expect(button.text()).toBe('')

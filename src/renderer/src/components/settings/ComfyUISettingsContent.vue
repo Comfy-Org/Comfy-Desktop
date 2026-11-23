@@ -17,7 +17,7 @@ import {
   LayoutDashboard,
   Copy,
   CopyPlus,
-  FolderOpen,
+  FolderSearch,
   ArrowRightLeft,
   Pencil,
   Trash2,
@@ -597,7 +597,7 @@ function actionIcon(id: string): Component {
       return CopyPlus
     case 'open-folder':
     case 'reveal-in-folder':
-      return FolderOpen
+      return FolderSearch
     case 'share':
       return Download
     case 'migrate-to-standalone':
