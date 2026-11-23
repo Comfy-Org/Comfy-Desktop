@@ -200,6 +200,17 @@ describe('New build next to All builds', () => {
     wrapper.unmount()
   })
 
+  it('names the + in a tooltip', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
+
+    host.querySelector<HTMLElement>('[data-testid="home-new-build-button"]')!.focus()
+
+    await expect
+      .poll(() => document.querySelector('[role="tooltip"]')?.textContent?.trim())
+      .toBe('New build')
+    wrapper.unmount()
+  })
+
   it('opens New build from the +', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
 

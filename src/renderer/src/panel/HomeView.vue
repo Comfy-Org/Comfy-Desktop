@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import EmptyState from '../components/ui/EmptyState.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
@@ -282,32 +283,37 @@ onMounted(() => {
       >
         <div class="mb-2.5 flex h-6 items-center justify-between">
           <h2 id="home-builds" class="m-0">
+            <Tooltip :text="t('home.allBuilds')">
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="unset"
+                :class="[SECTION_TITLE_CLASS, BUILDS_TITLE_LINK_CLASS]"
+                data-testid="home-all-builds"
+                @click="emit('show-builds')"
+              >
+                {{ t('sidebar.builds') }}
+                <ChevronRight :size="13" aria-hidden="true" />
+              </Button>
+            </Tooltip>
+          </h2>
+          <Tooltip
+            v-if="!showNewBuildSlot && !installationStore.loading"
+            :text="t('sidebar.newBuild')"
+            class="shrink-0"
+          >
             <Button
               type="button"
-              variant="muted-textonly"
-              size="unset"
-              :class="[SECTION_TITLE_CLASS, BUILDS_TITLE_LINK_CLASS]"
-              :title="t('home.allBuilds')"
-              data-testid="home-all-builds"
-              @click="emit('show-builds')"
+              variant="secondary"
+              size="icon"
+              class="size-8 rounded-lg"
+              :aria-label="t('sidebar.newBuild')"
+              data-testid="home-new-build-button"
+              @click="emit('new-build')"
             >
-              {{ t('sidebar.builds') }}
-              <ChevronRight :size="13" aria-hidden="true" />
+              <Plus :size="16" aria-hidden="true" />
             </Button>
-          </h2>
-          <Button
-            v-if="!showNewBuildSlot && !installationStore.loading"
-            type="button"
-            variant="secondary"
-            size="icon"
-            class="size-8 shrink-0 rounded-lg"
-            :aria-label="t('sidebar.newBuild')"
-            :title="t('sidebar.newBuild')"
-            data-testid="home-new-build-button"
-            @click="emit('new-build')"
-          >
-            <Plus :size="16" aria-hidden="true" />
-          </Button>
+          </Tooltip>
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
