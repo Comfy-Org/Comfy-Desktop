@@ -444,6 +444,8 @@ test("Home shows the website's apps, and the one in front opens inside Desktop, 
 })
 
 test('See all workflows on Home opens the full catalog and a workflow loads into Comfy Cloud @macos @windows @linux', async () => {
+  expect(await cutoutPage().click('#back')).toBe(true)
+  await ctx.panel.waitForVisible(SIDEBAR_HOME)
   expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="home-workflows-tab"]')
   expect(await ctx.panel.click('[data-testid="home-workflows-tab"]')).toBe(true)

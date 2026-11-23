@@ -232,6 +232,7 @@ async function loadNeeds(): Promise<void> {
 
 async function launch(choice: TargetChoice): Promise<void> {
   if (pending.value) return
+  pickedKey.value = choice.key
   pending.value = true
   error.value = ''
   progress.value = null

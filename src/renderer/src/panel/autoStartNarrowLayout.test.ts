@@ -179,6 +179,7 @@ describe('Auto start on Home build cards in the smallest window with the sidebar
     page.style.cssText = `position: absolute; left: 0; top: 0; width: ${HOME_WIDTH_IN_SMALLEST_WINDOW}px`
     const wrapper = track(mount(HomeView, { attachTo: page }))
     await flushPromises()
+    await userEvent.hover(page, { position: { x: 1, y: 1 }, force: true })
 
     const studioStatus = onlyIn(
       wrapper,

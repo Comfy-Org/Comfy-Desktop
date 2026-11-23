@@ -66,6 +66,7 @@ vi.mock('./localComfy', () => ({
   pageBuildId: () => mocks.pageBuild
 }))
 
+import { releaseWindowWorkspaceClaim } from './workspaceClaims'
 import {
   _resetForTest,
   LOAD_TIMEOUT_MS,
@@ -704,6 +705,54 @@ describe('opening a catalog graph in a workspace build', () => {
     expect(mocks.syncCloudWindowWorkspace).toHaveBeenLastCalledWith(entry, {
       pickerWorkspaceId: 'studio'
     })
+  })
+})
+
+describe('who owns a Comfy Cloud window while a catalog graph waits to load', () => {
+  const graph = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+  const request = { graph, where: 'cloud', name: 'Example' } as const
+  const scope = { workspaceId: 'team', minComfyUIVersion: null, isCurrent: () => true }
+
+  function cloudWindowStillStarting(): FakeWindow {
+    const entry = new FakeWindow(CLOUD_URL)
+    entry.state = 'starting'
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(true)
+    return entry
+  }
+
+  it('drops the import when the window is focused for another workspace meanwhile', async () => {
+    vi.useFakeTimers()
+    const entry = cloudWindowStillStarting()
+
+    const opening = openCatalogInComfy(PAGE, request, scope)
+    await vi.advanceTimersByTimeAsync(1_000)
+    releaseWindowWorkspaceClaim(CLOUD.id)
+    entry.state = 'ready'
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await opening).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    expect(entry.loadedGraphs()).toHaveLength(0)
+  })
+
+  it('lets a launch whose page has gone stop without taking the window from a newer one', async () => {
+    vi.useFakeTimers()
+    const entry = cloudWindowStillStarting()
+    let firstPageOpen = true
+
+    const second = openCatalogInComfy(PAGE, request, scope)
+    await vi.advanceTimersByTimeAsync(1_000)
+    firstPageOpen = false
+    const first = openCatalogInComfy(PAGE, request, { ...scope, isCurrent: () => firstPageOpen })
+    await vi.advanceTimersByTimeAsync(1_000)
+    entry.state = 'ready'
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await first).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    expect(await second).toEqual({ opened: true })
+    expect(entry.loadedGraphs()).toHaveLength(1)
   })
 })
 

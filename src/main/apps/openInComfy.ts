@@ -18,6 +18,7 @@ import { _hasActiveLaunch, _onLaunch, _runningSessions } from '../lib/ipc/shared
 import type { SessionInfo } from '../lib/ipc/shared'
 import { titleForListedApp } from './appsCatalog'
 import { busyAppOn } from './localAppEvents'
+import { _resetWorkspaceClaimsForTest, claimWindowForWorkspace } from './workspaceClaims'
 import { chooseLocalBuild, runningPortOf, usableLocalBuilds } from './localBuild'
 import type { LocalBuild } from './localBuild'
 import { launchOnce, launchQuietly, otherLaunchSettled, pageBuildId } from './localComfy'
@@ -52,8 +53,6 @@ export interface CatalogWorkflowScope {
 
 const sessionShownInWindow = new Map<string, number>()
 const cloudLaunches = new Map<string, Promise<ActionResult>>()
-const workspaceClaims = new Map<string, number>()
-let lastWorkspaceClaim = 0
 
 function pause(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -309,15 +308,8 @@ function claimWindowWorkspace(
   { scope, where }: CatalogPlacement
 ): CatalogPlacement {
   if (where !== 'cloud') return { scope, where }
-  const claim = ++lastWorkspaceClaim
-  workspaceClaims.set(installationId, claim)
-  return {
-    where,
-    scope: {
-      ...scope,
-      isCurrent: () => scope.isCurrent() && workspaceClaims.get(installationId) === claim
-    }
-  }
+  const stillOwned = claimWindowForWorkspace(installationId)
+  return { where, scope: { ...scope, isCurrent: () => scope.isCurrent() && stillOwned() } }
 }
 
 async function inCatalogWorkspace(
@@ -340,6 +332,9 @@ async function openScriptIn(
   if ('error' in target) return { opened: false, error: target.error }
   const entry = await windowFor(target.id)
   if (!entry) return { opened: false, error: i18n.t('apps.local.openNoWindow') }
+  if (catalog && !catalog.scope.isCurrent()) {
+    return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
+  }
   const placement = catalog ? claimWindowWorkspace(target.id, catalog) : undefined
   if (placement && !(await inCatalogWorkspace(entry, placement))) {
     return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
@@ -426,5 +421,5 @@ export async function openInComfy(
 export function _resetForTest(): void {
   sessionShownInWindow.clear()
   cloudLaunches.clear()
-  workspaceClaims.clear()
+  _resetWorkspaceClaimsForTest()
 }

@@ -243,6 +243,28 @@ describe('opening a catalog workflow', () => {
     )
   })
 
+  it('retries the target it launched even when local builds turn up while it opens', async () => {
+    let answerVersions: (versions: Record<string, string | null>) => void = () => {}
+    catalogLocalBuildVersions.mockReturnValue(new Promise((resolve) => (answerVersions = resolve)))
+    launchCatalogWorkflow.mockResolvedValue({ opened: false, error: 'Cloud is busy.' })
+    const dialog = await mountDialog([LAB, CLOUD])
+    expect(dialog.get('[data-testid="catalog-workflow-target"]').text()).toContain('Comfy Cloud')
+
+    await dialog.get('[data-testid="catalog-workflow-action"]').trigger('click')
+    answerVersions({ lab: '0.16.0' })
+    await flushPromises()
+
+    expect(dialog.get('[data-testid="catalog-workflow-target"]').text()).toContain('Comfy Cloud')
+    await dialog.get('[data-testid="catalog-workflow-action"]').trigger('click')
+    await flushPromises()
+    expect(launchCatalogWorkflow).toHaveBeenLastCalledWith(
+      'ltx',
+      { where: 'cloud' },
+      'selected-workspace',
+      { downloadMissing: false }
+    )
+  })
+
   it('keeps the dialog open with the reason when the launch fails', async () => {
     launchCatalogWorkflow.mockResolvedValueOnce({
       opened: false,
