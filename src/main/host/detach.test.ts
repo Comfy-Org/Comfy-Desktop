@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   }[],
   stopAppsBuilds: vi.fn(async () => {}),
   keepComfyRunning: undefined as boolean | undefined,
-  pageVetoesLeaving: false
+  pageVetoesLeaving: false,
+  pendingAnswer: undefined as Promise<boolean> | undefined
 }))
 
 vi.mock('electron', () => ({
@@ -38,7 +39,7 @@ vi.mock('../popups/systemModal', async (importOriginal) => ({
   ...(await importOriginal<typeof SystemModalModule>()),
   openSystemModalAsync: async (options: (typeof mocks.asked)[number]) => {
     mocks.asked.push(options)
-    return mocks.agrees
+    return mocks.pendingAnswer ?? mocks.agrees
   }
 }))
 vi.mock('../settings', async (importOriginal) => {
@@ -135,6 +136,7 @@ afterEach(() => {
   _runningSessions.clear()
   mocks.keepComfyRunning = undefined
   mocks.pageVetoesLeaving = false
+  mocks.pendingAnswer = undefined
 })
 
 describe('closeAllHostWindows', () => {
@@ -597,6 +599,21 @@ describe('returning to the dashboard from a running ComfyUI', () => {
 
       expect(answers).toEqual([false, false])
       expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([DISCARD])
+      expect(entry.detachInstall).not.toHaveBeenCalled()
+    })
+
+    it('shares the open discard prompt with a request that arrives while the person decides', async () => {
+      let answer!: (agreed: boolean) => void
+      mocks.pendingAnswer = new Promise((resolve) => (answer = resolve))
+      const entry = openRunningComfy()
+
+      const first = returnPanelHostToDashboard(entry)
+      await vi.waitFor(() => expect(mocks.asked).toHaveLength(1))
+      const second = returnPanelHostToDashboard(entry)
+      answer(false)
+
+      await expect(Promise.all([first, second])).resolves.toEqual([false, false])
+      expect(mocks.asked).toHaveLength(1)
       expect(entry.detachInstall).not.toHaveBeenCalled()
     })
 
