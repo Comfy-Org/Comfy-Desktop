@@ -7,7 +7,7 @@ import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch 
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
 import AppBadges from '../AppBadges.vue'
-import { badgeDescriptionIds } from '../appCardBadges'
+import { badgeDescriptionIds, glassPictureOf } from '../appCardBadges'
 import CoverRotation from '../../components/CoverRotation.vue'
 import type { AppCard, AppCover } from '../../types/ipc'
 
@@ -321,6 +321,9 @@ function activate(placed: { card: Card; offset: number }): void {
             :badges="placed.card.badges"
             :description-id-prefix="badgeIdPrefixFor(placed.card)"
             :revealed="keyboardFocusedId === placed.card.id"
+            :glass-picture="
+              showsPicture(placed.card) ? glassPictureOf(picturesOf(placed.card)) : null
+            "
             class="absolute top-3 left-3 max-w-[calc(100%-4.25rem)]"
           />
           <span

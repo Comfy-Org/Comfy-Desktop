@@ -12,7 +12,7 @@ import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import { badgeDescriptionIds } from './appCardBadges'
+import { badgeDescriptionIds, glassPictureOf } from './appCardBadges'
 import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
 import type { AppCard, DraftClosingStop } from '../types/ipc'
 
@@ -418,6 +418,7 @@ onBeforeUnmount(() => {
                   :badges="app.badges"
                   :description-id-prefix="badgeIdPrefixFor(app)"
                   :revealed="keyboardFocusedId === app.id"
+                  :glass-picture="coversThatFailed.has(app.id) ? null : glassPictureOf(app.covers)"
                   class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
                 />
               </span>
