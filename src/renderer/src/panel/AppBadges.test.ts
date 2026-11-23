@@ -48,7 +48,7 @@ function tooltipText(): string {
 }
 
 describe('AppBadges', () => {
-  it('draws the crown alone in a square of glass, with no words beside it, when a card has a crown', () => {
+  it('draws the crown alone in a square of frosted glass, with no words beside it, when a card has a crown', () => {
     const wrapper = mountBadges({ badges: [NEW_CHIP, CROWN, VIDEO_LABEL] })
 
     expect(
@@ -58,11 +58,31 @@ describe('AppBadges', () => {
     const box = square.element.getBoundingClientRect()
     expect(box.width).toBe(28)
     expect(box.height).toBe(28)
-    expect(getComputedStyle(square.element).backdropFilter).toContain('blur(14px)')
+    expect(getComputedStyle(square.element).backdropFilter).toContain('blur(40px)')
     expect(
       (wrapper.get('[data-testid="app-badges"]').element as HTMLElement).innerText.trim()
     ).toBe('')
   })
+
+  it.each([
+    ['crown', [CROWN], 'app-badge-square'],
+    ['chip', [NEW_CHIP], 'app-badge-new']
+  ] as const)(
+    'keeps the picture behind the %s out of sight, with an almost opaque frosted fill from top to bottom',
+    (_style, badges, testId) => {
+      const wrapper = mountBadges({ badges: [...badges] })
+      const glass =
+        testId === 'app-badge-square'
+          ? wrapper.get(`[data-testid="${testId}"]`).element
+          : wrapper.get(`[data-testid="${testId}"] > span`).element
+      const alphas = [
+        ...getComputedStyle(glass).backgroundImage.matchAll(/rgba?\([^)]*?([\d.]+)\)/g)
+      ].map((match) => Number(match[1]))
+
+      expect(alphas.length, 'gradient stops').toBeGreaterThanOrEqual(2)
+      for (const alpha of alphas) expect(alpha).toBeGreaterThanOrEqual(0.94)
+    }
+  )
 
   it("puts the other badges' words in the crown's one-line tooltip", async () => {
     const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP, VIDEO_LABEL] })

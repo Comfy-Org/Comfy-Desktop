@@ -15,6 +15,9 @@ const {
   revealed?: boolean
 }>()
 
+const FROSTED_GLASS_CLASS =
+  'bg-[linear-gradient(180deg,rgb(44_44_48/0.94),rgb(18_18_20/0.96))] backdrop-blur-[40px] shadow-[inset_0_1px_0_rgb(255_255_255/0.16),inset_0_0_0_1px_rgb(255_255_255/0.08),0_2px_6px_rgb(0_0_0/0.35)]'
+
 const { t, locale } = useI18n()
 
 const drawn = computed(() =>
@@ -63,7 +66,7 @@ const foldedIntoCrown = computed(() =>
     >
       <span
         v-if="item.badge.style === 'crown'"
-        class="grid size-7 place-items-center rounded-lg bg-[rgb(14_14_16/0.28)] backdrop-blur-[14px] backdrop-saturate-150"
+        :class="[FROSTED_GLASS_CLASS, 'grid size-7 place-items-center rounded-lg']"
         aria-hidden="true"
         data-testid="app-badge-square"
       >
@@ -76,7 +79,10 @@ const foldedIntoCrown = computed(() =>
       </span>
       <span
         v-else-if="item.badge.style === 'chip'"
-        class="flex h-7 items-center rounded-full bg-[rgb(14_14_16/0.28)] px-2.5 text-2xs/tight font-medium whitespace-nowrap text-white backdrop-blur-[14px] backdrop-saturate-150"
+        :class="[
+          FROSTED_GLASS_CLASS,
+          'flex h-7 items-center rounded-full px-2.5 text-2xs/tight font-medium whitespace-nowrap text-white'
+        ]"
         aria-hidden="true"
       >
         {{ item.text }}
