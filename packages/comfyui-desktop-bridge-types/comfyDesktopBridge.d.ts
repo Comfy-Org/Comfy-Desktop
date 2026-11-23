@@ -261,9 +261,9 @@ export interface ComfyDesktopLocalDownload {
  * `run_failed` from Desktop itself, with `prompt_id` and `reason` in `data`.
  * Desktop sends `run_failed` when a run the page started ends with no answer
  * from ComfyUI. `reason` is `comfyui_exited` when the ComfyUI closed or
- * restarted during the run, which often means that the computer ran out of
- * memory. Desktop sends it to every open app page, so a page acts only on a
- * `prompt_id` it started. Desktop builds that predate it never send it.
+ * restarted during the run, for any cause. Desktop sends it to every open app
+ * page, so a page acts only on a `prompt_id` it started. Desktop builds that
+ * predate it never send it.
  */
 export interface ComfyDesktopLocalEvent {
   type: string
