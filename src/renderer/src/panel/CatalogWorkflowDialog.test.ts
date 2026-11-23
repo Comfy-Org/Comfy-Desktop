@@ -6,6 +6,7 @@ import CatalogWorkflowDialog from './CatalogWorkflowDialog.vue'
 
 const launchCatalogWorkflow = vi.fn<ElectronApi['launchCatalogWorkflow']>()
 const openCatalogWorkflow = vi.fn<ElectronApi['openCatalogWorkflow']>()
+const catalogLocalBuildVersions = vi.fn<ElectronApi['catalogLocalBuildVersions']>()
 
 const workflow: CatalogWorkflow = {
   id: 'upscale',
@@ -36,24 +37,39 @@ const cloud: Installation = {
   status: 'installed'
 }
 
-function mountDialog(installations: Installation[], item = workflow) {
-  return mount(CatalogWorkflowDialog, {
+async function mountDialog(installations: Installation[], item = workflow) {
+  const dialog = mount(CatalogWorkflowDialog, {
     props: { workflow: item, installations, workspaceId: 'selected-workspace' },
     global: { stubs: { DesktopDialogSurface: { template: '<section><slot /></section>' } } }
   })
+  await flushPromises()
+  return dialog
 }
 
 beforeEach(() => {
   launchCatalogWorkflow.mockReset().mockResolvedValue({ opened: true })
   openCatalogWorkflow.mockReset().mockResolvedValue(true)
-  vi.stubGlobal('api', { launchCatalogWorkflow, openCatalogWorkflow })
+  catalogLocalBuildVersions.mockReset().mockResolvedValue({ studio: '0.16.0', old: '0.15.0' })
+  vi.stubGlobal('api', { launchCatalogWorkflow, openCatalogWorkflow, catalogLocalBuildVersions })
 })
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('CatalogWorkflowDialog', () => {
+  it('judges a local build by the ComfyUI version Desktop launches, not the tag it recorded', async () => {
+    const taggedOlder: Installation = {
+      ...compatibleBuild,
+      version: '0.15.0',
+      comfyVersion: { baseTag: 'v0.15.0', baseTagVerified: true }
+    }
+    const dialog = await mountDialog([taggedOlder, oldBuild])
+
+    expect(dialog.findAll('option').map((option) => option.text())).toEqual(['Studio'])
+    expect(dialog.text()).not.toContain('This workflow needs ComfyUI 0.16.0 or newer')
+  })
+
   it('opens the selected compatible local build and omits older builds', async () => {
-    const dialog = mountDialog([oldBuild, compatibleBuild, cloud])
+    const dialog = await mountDialog([oldBuild, compatibleBuild, cloud])
     expect(dialog.findAll('option').map((option) => option.text())).toEqual([
       'Studio',
       'Comfy Cloud'
@@ -71,7 +87,7 @@ describe('CatalogWorkflowDialog', () => {
   })
 
   it('offers Cloud and explains how to update an incompatible local build', async () => {
-    const dialog = mountDialog([oldBuild, cloud])
+    const dialog = await mountDialog([oldBuild, cloud])
     expect(dialog.text()).toContain('This workflow needs ComfyUI 0.16.0 or newer')
 
     await dialog.get('form').trigger('submit')
@@ -86,7 +102,7 @@ describe('CatalogWorkflowDialog', () => {
 
   it('keeps the picker open on failure and retries the chosen target', async () => {
     launchCatalogWorkflow.mockResolvedValueOnce({ opened: false, error: 'Could not start Studio.' })
-    const dialog = mountDialog([compatibleBuild, cloud])
+    const dialog = await mountDialog([compatibleBuild, cloud])
 
     await dialog.get('form').trigger('submit')
     await flushPromises()
@@ -105,7 +121,7 @@ describe('CatalogWorkflowDialog', () => {
   })
 
   it('offers the Hub for a catalog entry without a supported build target', async () => {
-    const dialog = mountDialog([compatibleBuild, cloud], {
+    const dialog = await mountDialog([compatibleBuild, cloud], {
       ...workflow,
       canOpenLocal: false,
       canOpenCloud: false

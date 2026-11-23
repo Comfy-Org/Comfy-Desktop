@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { usableLocalBuilds } from '../../apps/localBuild'
 import { launchCatalogWorkflow } from '../../catalog/launchWorkflow'
 import {
   hubUrlForListedWorkflow,
@@ -12,6 +13,10 @@ export function registerCatalogHandlers(): void {
   ipcMain.handle('catalog:list-home-workflows', () => listHomeWorkflows(getLocale()))
 
   ipcMain.handle('catalog:list-workflows', () => listCatalogWorkflows(getLocale()))
+
+  ipcMain.handle('catalog:local-build-versions', async () =>
+    Object.fromEntries((await usableLocalBuilds()).map((build) => [build.id, build.version]))
+  )
 
   ipcMain.handle(
     'catalog:launch-workflow',

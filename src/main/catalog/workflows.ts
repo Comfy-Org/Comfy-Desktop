@@ -223,6 +223,12 @@ interface CacheEntry {
   workflows: ResolvedWorkflow[]
 }
 
+const listedById = new Map<string, ResolvedWorkflow>()
+
+function rememberListed(workflows: ResolvedWorkflow[]): void {
+  for (const workflow of workflows) listedById.set(workflow.card.id, workflow)
+}
+
 function workflowCache(fetchWorkflows: (locale: string) => Promise<ResolvedWorkflow[]>) {
   let cache: CacheEntry | null = null
   let inFlight: { locale: string; request: Promise<ResolvedWorkflow[]> } | null = null
@@ -236,6 +242,7 @@ function workflowCache(fetchWorkflows: (locale: string) => Promise<ResolvedWorkf
       }
       const request = fetchWorkflows(locale)
         .then((workflows) => {
+          rememberListed(workflows)
           if (inFlight?.request === request) cache = { locale, loadedAt: Date.now(), workflows }
           return workflows
         })
@@ -248,9 +255,6 @@ function workflowCache(fetchWorkflows: (locale: string) => Promise<ResolvedWorkf
         })
       inFlight = { locale, request }
       return (await request).map(({ card }) => card)
-    },
-    get entry(): CacheEntry | null {
-      return cache
     },
     reset(): void {
       cache = null
@@ -271,9 +275,7 @@ export function listCatalogWorkflows(locale: string): Promise<CatalogWorkflow[]>
 }
 
 export function listedWorkflow(id: string): ResolvedWorkflow | undefined {
-  const entries = [home.entry, catalog.entry].filter((entry) => entry !== null)
-  entries.sort((a, b) => b.loadedAt - a.loadedAt)
-  return entries.flatMap(({ workflows }) => workflows).find(({ card }) => card.id === id)
+  return listedById.get(id)
 }
 
 export function hubUrlForListedWorkflow(id: string): string | null {
@@ -283,4 +285,5 @@ export function hubUrlForListedWorkflow(id: string): string | null {
 export function _resetCatalogWorkflowsForTest(): void {
   home.reset()
   catalog.reset()
+  listedById.clear()
 }

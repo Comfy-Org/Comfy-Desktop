@@ -212,6 +212,25 @@ describe('opening an example workflow', () => {
   it('opens nothing before Home has loaded the list', () => {
     expect(hubUrlForListedWorkflow('shown')).toBeNull()
   })
+
+  it('opens a card from a list that arrived while the language was being switched', async () => {
+    let answerEnglish: (page: unknown) => void = () => {}
+    mockedFetchJSON
+      .mockImplementationOnce(() => new Promise((resolve) => (answerEnglish = resolve)))
+      .mockResolvedValue({ items: [catalogItem({ uid: 'chinese-card' })] })
+
+    const english = listHomeWorkflows('en')
+    await listHomeWorkflows('zh')
+    answerEnglish({ items: [catalogItem({ uid: 'english-card' })] })
+
+    expect((await english).map((card) => card.id)).toEqual(['english-card'])
+    expect(hubUrlForListedWorkflow('english-card')).toBe(
+      'https://comfy.org/hub/workflows/english-card'
+    )
+    expect(hubUrlForListedWorkflow('chinese-card')).toBe(
+      'https://comfy.org/hub/workflows/chinese-card'
+    )
+  })
 })
 
 describe('the dedicated workflow catalog', () => {

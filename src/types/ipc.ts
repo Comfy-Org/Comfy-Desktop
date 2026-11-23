@@ -1,5 +1,4 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
-import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 import type { GpuTier } from '../shared/gpuTier'
 import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
@@ -1339,6 +1338,7 @@ export interface ElectronApi {
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   listCatalogWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  catalogLocalBuildVersions(): Promise<Record<string, string | null>>
   launchCatalogWorkflow(
     id: string,
     target: CatalogWorkflowTarget,

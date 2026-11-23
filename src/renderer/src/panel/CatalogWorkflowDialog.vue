@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import { isCompatibleLocalWorkflowBuild } from '../../../shared/catalogWorkflowCompatibility'
-import { isComfyCloud } from './home/homeBuild'
+import type { LocalBuildVersions } from '../../../shared/catalogWorkflowCompatibility'
+import { isCloudBuild } from './home/homeBuild'
 import type { CatalogWorkflow, CatalogWorkflowTarget, Installation } from '../types/ipc'
 
 const props = defineProps<{
@@ -22,12 +23,22 @@ interface BuildChoice {
   target: CatalogWorkflowTarget
 }
 
+const launchableVersions = ref<LocalBuildVersions>({})
+
+onMounted(async () => {
+  launchableVersions.value = await window.api.catalogLocalBuildVersions().catch(() => ({}))
+})
+
 const options = computed<BuildChoice[]>(() => {
   const { workflow, installations } = props
   const choices: BuildChoice[] = []
   if (workflow.canOpenLocal) {
     for (const build of installations) {
-      if (!isCompatibleLocalWorkflowBuild(build, workflow.minComfyUIVersion)) continue
+      if (
+        !isCompatibleLocalWorkflowBuild(build, launchableVersions.value, workflow.minComfyUIVersion)
+      ) {
+        continue
+      }
       choices.push({
         key: `local:${build.id}`,
         label: build.name,
@@ -35,7 +46,7 @@ const options = computed<BuildChoice[]>(() => {
       })
     }
   }
-  const cloud = installations.find(isComfyCloud)
+  const cloud = installations.find(isCloudBuild)
   if (workflow.canOpenCloud && cloud) {
     choices.push({ key: 'cloud', label: cloud.name, target: { where: 'cloud' } })
   }
@@ -50,7 +61,9 @@ const needsUpdate = computed(
   () =>
     noCompatibleLocalBuild.value &&
     props.workflow.minComfyUIVersion &&
-    props.installations.some((build) => isCompatibleLocalWorkflowBuild(build, null))
+    props.installations.some((build) =>
+      isCompatibleLocalWorkflowBuild(build, launchableVersions.value, null)
+    )
 )
 const pickedKey = ref('')
 const pending = ref(false)

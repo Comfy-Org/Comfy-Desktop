@@ -154,8 +154,7 @@ describe('AppSidebar', () => {
     expect(wrapper.emitted('navigate')).toEqual([['apps']])
   })
 
-  it('names the app left open under Apps, and opens Apps on it', async () => {
-    getAppsEnabled.mockResolvedValue(true)
+  it('names the app left open under Explore, and opens Explore on it', async () => {
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
     })
@@ -163,7 +162,7 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Explore',
       'Character Swap',
       'Assets',
       'Builds',
@@ -181,7 +180,6 @@ describe('AppSidebar', () => {
   })
 
   it('leaves out the row for the app left open while Apps itself is shown', async () => {
-    getAppsEnabled.mockResolvedValue(true)
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'apps', appInProgress: CHARACTER_SWAP }
     })
@@ -191,7 +189,6 @@ describe('AppSidebar', () => {
   })
 
   it('names the app left open in the tooltip of its row on the folded rail', async () => {
-    getAppsEnabled.mockResolvedValue(true)
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'assets', appInProgress: CHARACTER_SWAP }
     })
@@ -205,17 +202,9 @@ describe('AppSidebar', () => {
     expect(tooltipOf(wrapper, 'app-sidebar-app-in-progress')).toBe('Back to Character Swap')
   })
 
-  it('shows no app row with no app left open, or with Apps switched off', async () => {
-    getAppsEnabled.mockResolvedValue(true)
+  it('shows no app row with no app left open', async () => {
     const none = await mountSidebar('home')
     expect(none.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
-
-    getAppsEnabled.mockResolvedValue(false)
-    const off = mount(AppSidebar, {
-      props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
-    })
-    await flushPromises()
-    expect(off.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
   it('folds to the app rail while an app is open, with no toggle, and keeps the saved choice', async () => {
@@ -739,8 +728,8 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
-    const assets = wrapper.get('[data-testid="app-sidebar-assets"]').element.getBoundingClientRect()
-    expect(assets.top - home.bottom).toBe(4)
+    const explore = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
+    expect(explore.top - home.bottom).toBe(4)
     wrapper.unmount()
   })
 
