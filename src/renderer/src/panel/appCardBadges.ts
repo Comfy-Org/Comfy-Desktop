@@ -16,7 +16,9 @@ export function badgeDescriptionIds(
   return badges.map((badge) => badgeDescriptionId(prefix, badge)).join(' ')
 }
 
-export function glassPictureOf(covers: readonly AppCover[]): string | null {
-  const first = covers[0]
-  return first ? (first.stillUrl ?? first.url) : null
+export function glassPictureOf(
+  covers: readonly AppCover[],
+  showing: number | null = 0
+): string | null {
+  return covers[showing ?? 0]?.stillUrl ?? null
 }

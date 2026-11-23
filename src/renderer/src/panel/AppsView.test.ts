@@ -174,6 +174,32 @@ afterEach(() => {
   delete document.documentElement.dataset.theme
 })
 
+describe('AppsView badge glass', () => {
+  it('puts the still of the cover the card is showing behind its crown, the same picture by identity', async () => {
+    const covers = [
+      { url: picture('red'), stillUrl: picture('darkred') },
+      { url: picture('green'), stillUrl: picture('darkgreen') }
+    ]
+    const wrapper = await mountApps([{ ...CUTOUT, covers, badges: [CROWN] }])
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+
+    await expect.poll(() => srcOf(card, 'shown')).not.toBeNull()
+    const glass = card.get('[data-testid="app-badge-glass-picture"]')
+    expect(glass.attributes('src')).toBe(srcOf(card, 'shown'))
+    expect(covers.map((cover) => cover.stillUrl)).toContain(glass.attributes('src'))
+  })
+
+  it('keeps the frosted fill, with no moving picture inside the badge, when the cover has no still', async () => {
+    const wrapper = await mountApps([
+      { ...CUTOUT, covers: [{ url: picture('red'), stillUrl: null }], badges: [CROWN] }
+    ])
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+
+    expect(card.find('[data-testid="app-badge-square"]').exists()).toBe(true)
+    expect(card.find('[data-testid="app-badge-glass-picture"]').exists()).toBe(false)
+  })
+})
+
 describe('AppsView', () => {
   it('lists every app as a card with its picture, name and one line on what it does', async () => {
     const wrapper = await mountApps()

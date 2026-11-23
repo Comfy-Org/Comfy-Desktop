@@ -39,6 +39,7 @@ const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const requestOpen = ref(false)
 const coversThatFailed = reactive(new Set<string>())
+const coverShowing = reactive(new Map<string, number | null>())
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
@@ -405,6 +406,7 @@ onBeforeUnmount(() => {
                   :paused="!playsCover(app)"
                   load-on-play
                   @broken="coversThatFailed.add(app.id)"
+                  @showing="coverShowing.set(app.id, $event)"
                 />
                 <span
                   v-else
@@ -418,7 +420,11 @@ onBeforeUnmount(() => {
                   :badges="app.badges"
                   :description-id-prefix="badgeIdPrefixFor(app)"
                   :revealed="keyboardFocusedId === app.id"
-                  :glass-picture="coversThatFailed.has(app.id) ? null : glassPictureOf(app.covers)"
+                  :glass-picture="
+                    coversThatFailed.has(app.id)
+                      ? null
+                      : glassPictureOf(app.covers, coverShowing.get(app.id))
+                  "
                   class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
                 />
               </span>
