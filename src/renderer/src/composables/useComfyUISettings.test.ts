@@ -350,6 +350,41 @@ describe('useComfyUISettings — refreshing after an operation', () => {
   })
 })
 
+describe('useComfyUISettings — app language', () => {
+  beforeEach(() => {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+  })
+
+  it('re-reads the build page text in the new language when the app language changes', async () => {
+    const api = installMockApi()
+    let announceLocale: (() => void) | undefined
+    const unsubscribe = vi.fn()
+    Object.assign(api, {
+      onLocaleChanged: vi.fn((cb: () => void) => {
+        announceLocale = cb
+        return unsubscribe
+      })
+    })
+    const scope = effectScope()
+    scope.run(() => {
+      useComfyUISettings({
+        installation: ref<Installation | null>(makeInstall('a', 'A')),
+        onShowProgress: vi.fn()
+      })
+    })
+    await nextTick()
+    await Promise.resolve()
+    vi.mocked(api.getDetailSections).mockClear()
+
+    announceLocale?.()
+    await nextTick()
+    expect(api.getDetailSections).toHaveBeenCalledExactlyOnceWith('a')
+
+    scope.stop()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+})
+
 describe('useComfyUISettings.runAction — stop-warning augment + self-stopping apiCall (FLOW 1 + FLOW 3)', () => {
   beforeEach(() => {
     setActivePinia(createTestingPinia({ stubActions: false }))

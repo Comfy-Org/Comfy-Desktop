@@ -24,7 +24,8 @@ const mockInstallations: Installation[] = [
 stubWindowApi({
   getInstallations: vi.fn(),
   onInstallationsChanged: vi.fn(),
-  onInstallationsVersionsUpdated: vi.fn()
+  onInstallationsVersionsUpdated: vi.fn(),
+  onLocaleChanged: vi.fn()
 })
 
 describe('useInstallationStore', () => {
@@ -39,6 +40,17 @@ describe('useInstallationStore', () => {
   it('should have empty initial state', () => {
     expect(store.installations).toEqual([])
     expect(store.loading).toBe(true)
+  })
+
+  it('re-reads the builds in the new language when the app language changes', async () => {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+    useInstallationStore()
+    const announceLocale = vi.mocked(window.api.onLocaleChanged).mock.lastCall?.[0]
+    vi.mocked(window.api.getInstallations).mockResolvedValue(mockInstallations)
+
+    announceLocale?.({ locale: 'zh', messages: {} })
+
+    expect(window.api.getInstallations).toHaveBeenCalledOnce()
   })
 
   describe('fetchInstallations', () => {

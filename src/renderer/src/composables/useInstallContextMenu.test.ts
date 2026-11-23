@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { defineComponent, h } from 'vue'
-import { mount } from '@vue/test-utils'
+import { config, mount } from '@vue/test-utils'
+import type { I18n } from 'vue-i18n'
+import zh from '@locales/zh.json'
 
 const modalMock = {
   confirm: vi.fn(),
@@ -119,6 +121,29 @@ it('groups common desktop-card actions in the requested order', () => {
     'share',
     'untrack'
   ])
+})
+
+describe('menu language', () => {
+  const appI18n = () =>
+    config.global.plugins.find(
+      (plugin): plugin is I18n<object, object, object, string, false> =>
+        typeof plugin === 'object' && plugin !== null && 'global' in plugin
+    )!
+
+  afterEach(() => {
+    appI18n().global.locale.value = 'en'
+  })
+
+  it('names Show in Finder in the app language', () => {
+    const i18n = appI18n()
+    i18n.global.setLocaleMessage('zh', zh)
+    i18n.global.locale.value = 'zh'
+    const { menu } = mountHarness(makeInstall())
+
+    expect(findItem(menu.ctxMenuItems.value, 'reveal-in-folder')?.label).toBe(
+      zh.assets.showInFinder
+    )
+  })
 })
 
 it('leaves Forget out for a build adopted from an existing folder', () => {
