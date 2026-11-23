@@ -266,10 +266,9 @@ export interface ComfyDesktopLocalDownload {
  *
  * - `comfyui_crashed`: the ComfyUI process ended with an error, and Desktop did
  *   not stop it.
- * - `comfyui_stopped`: Desktop stopped the ComfyUI, as Stop, Restart, Update,
- *   closing its window and deleting its build do, or it closed with no error.
- * - `unknown`: Desktop cannot tell. The ComfyUI may still run without the run,
- *   or have restarted itself.
+ * - `comfyui_stopped`: the ComfyUI was stopped or restarted, by Desktop or by
+ *   itself, or it closed with no error.
+ * - `unknown`: Desktop cannot tell, as when the ComfyUI runs on without the run.
  */
 export interface ComfyDesktopLocalEvent {
   type: string
@@ -331,10 +330,10 @@ export interface ComfyDesktopMachine {
    * The memory of one graphics card in gigabytes, rounded to a whole number:
    * the card with the most memory, among the cards of the vendor Desktop
    * detects (NVIDIA, else AMD, else Intel) when it detects one. A build can use
-   * another card. It is what the system reports, which can be less than the
-   * card has. `0` is less than half a gigabyte. Absent when Desktop cannot read
-   * it, as on Apple silicon Macs, where the GPU shares the memory of the
-   * computer, and with `noGpu`.
+   * another card. It is what the system reports, which can be more or less
+   * than the card has. `0` is less than half a gigabyte. Absent when Desktop
+   * cannot read it, as on Apple silicon Macs, where the GPU shares the memory
+   * of the computer, and with `noGpu`.
    */
   gpuMemoryGb?: number
   /**

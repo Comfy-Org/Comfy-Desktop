@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setHardwareProbe } from '../lib/agentClientContext'
 import { machine } from './machine'
 
-const gpu = (model: string, vendor = '') => ({ vendor, model, vram_mb: null, driver_version: null })
-const VMWARE = gpu('VMware SVGA 3D', 'VMware, Inc.')
-const HYPER_V = gpu('Microsoft Hyper-V Video', 'Microsoft')
+const gpu = (model: string) => ({ vendor: '', model, vram_mb: null, driver_version: null })
+const VMWARE = gpu('VMware SVGA 3D')
+const HYPER_V = gpu('Microsoft Hyper-V Video')
+const REMOTE_DESKTOP = gpu('Microsoft Remote Display Adapter')
+const NO_DRIVER = gpu('Microsoft Basic Display Adapter')
 
 function probeFinds(hardware: Record<string, unknown>): void {
   setHardwareProbe(async () => hardware)
@@ -58,32 +60,45 @@ describe('the GPU memory Desktop tells an app page', () => {
 })
 
 describe('no GPU, as Desktop tells an app page', () => {
-  const NONE = { gpu_vendor: null, gpu_vram_mb: 1024, gpu_vram_gb: 1 }
+  const VIRTUAL = {
+    gpu_vendor: null,
+    gpu_model: 'VMware SVGA 3D',
+    gpu_vram_mb: 1024,
+    gpu_vram_gb: 1
+  }
 
-  it.each(['win32', 'linux'] as const)(
+  it.each([
+    ['win32', [VMWARE, HYPER_V]],
+    ['linux', [gpu('Virtio 1.0 GPU')]],
+    ['linux', [gpu('QXL paravirtual graphic card'), gpu('Hyper-V virtual VGA')]]
+  ] as const)(
     'is said on %s when each display adapter is a virtual machine one',
-    async (platform) => {
-      probeFinds({ ...NONE, gpus: [VMWARE, HYPER_V] })
+    async (platform, gpus) => {
+      probeFinds({ ...VIRTUAL, gpus })
 
       expect(await machine(platform)).toEqual({ platform, noGpu: true })
     }
   )
 
   it.each([
-    ['the probe lists no adapter, as when it fails', { gpus: [] }],
-    ['there is also a card Desktop cannot measure', { gpus: [VMWARE, gpu('Adreno X1-85')] }],
-    ['Desktop found a vendor', { gpu_vendor: 'nvidia', gpus: [HYPER_V] }],
-    ['an adapter is a remote desktop, which can hide the card', { gpus: [gpu('Remote Desktop')] }],
-    ['an adapter has no driver', { gpus: [gpu('Microsoft Basic Display Adapter')] }]
-  ])('is not said when %s', async (_case, hardware) => {
-    probeFinds({ ...NONE, gpu_vram_mb: null, gpu_vram_gb: null, ...hardware })
+    ['the probe lists no adapter, as when it fails', 'win32', []],
+    ['Linux names no model, as for VMware', 'linux', [gpu('')]],
+    ['there is also a card Desktop cannot measure', 'win32', [VMWARE, gpu('Adreno X1-85')]],
+    ['an adapter is a remote desktop, which can hide the card', 'win32', [VMWARE, REMOTE_DESKTOP]],
+    ['an adapter has no driver', 'win32', [VMWARE, NO_DRIVER]],
+    ['it is a Mac', 'darwin', [VMWARE]]
+  ] as const)(
+    'is not said when %s, and neither is the memory of a virtual adapter',
+    async (_case, platform, gpus) => {
+      probeFinds({ ...VIRTUAL, gpus })
+
+      expect(await machine(platform)).toEqual({ platform })
+    }
+  )
+
+  it('is not said when Desktop found a vendor', async () => {
+    probeFinds({ ...VIRTUAL, gpu_vendor: 'nvidia', gpus: [HYPER_V] })
 
     expect(await machine('win32')).toEqual({ platform: 'win32' })
-  })
-
-  it('is never said on a Mac', async () => {
-    probeFinds({ ...NONE, gpu_vram_mb: null, gpu_vram_gb: null, gpus: [VMWARE] })
-
-    expect(await machine('darwin')).toEqual({ platform: 'darwin' })
   })
 })

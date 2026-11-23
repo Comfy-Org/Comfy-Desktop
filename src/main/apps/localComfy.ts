@@ -211,6 +211,10 @@ function stopFollowingStoppedBuilds(crashedId?: string): void {
   }
 }
 
+function loseRunsOnRestart(buildId: string): void {
+  failRunsOn(buildId, 'comfyui_stopped')
+}
+
 function tellPagesOfLostRun(promptId: string, reason: LostRunReason): void {
   sendToPages({ type: 'run_failed', data: { prompt_id: promptId, reason } })
 }
@@ -219,6 +223,7 @@ function watchSessions(): void {
   if (watchingSessions) return
   watchingSessions = true
   sessionLifecycleEvents.on('changed', stopFollowingStoppedBuilds)
+  sessionLifecycleEvents.on('restarting', loseRunsOnRestart)
   onRunLost(tellPagesOfLostRun)
 }
 
@@ -851,7 +856,10 @@ export function _resetForTest(): void {
   downloadsUnderWay = 0
   for (const relay of relayByBuild.values()) relay.stop()
   relayByBuild.clear()
-  if (watchingSessions) sessionLifecycleEvents.off('changed', stopFollowingStoppedBuilds)
+  if (watchingSessions) {
+    sessionLifecycleEvents.off('changed', stopFollowingStoppedBuilds)
+    sessionLifecycleEvents.off('restarting', loseRunsOnRestart)
+  }
   watchingSessions = false
   startedHere.clear()
   keptRunning.clear()

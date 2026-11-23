@@ -94,9 +94,16 @@ const QUIET_EVENT = {
   sender: { isDestroyed: () => false, send: () => {} }
 } as unknown as IpcMainInvokeEvent
 const FAKE_COMFY = `
+const fs = require('node:fs')
 const http = require('node:http')
+if (fs.existsSync('broken')) process.exit(1)
 http.createServer((req, res) => {
-  if (req.url === '/api/exit-with-no-error') process.exit(0)
+  if (req.url === '/exit') process.exit(0)
+  if (req.url === '/restart-broken') {
+    fs.writeFileSync('broken', '')
+    fs.writeFileSync(process.env.__COMFY_CLI_SESSION__ + '.reboot', '')
+    process.exit(0)
+  }
   res.setHeader('content-type', 'application/json')
   res.end(JSON.stringify({ prompt_id: '${RUN}', number: 1 }))
 }).listen(Number(process.argv[2]), '127.0.0.1')
@@ -125,6 +132,9 @@ async function launch(): Promise<void> {
   const launched = await handleLaunch(context())
   expect(launched.ok, launched.message).toBe(true)
 }
+
+const ask = (url: string): Promise<unknown> =>
+  fetch(`http://127.0.0.1:${port}${url}`).catch(() => {})
 
 async function startARunFromThePage(): Promise<void> {
   await local.localState(PAGE, {})
@@ -166,6 +176,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   local._resetForTest()
+  fs.rmSync(path.join(workDir, 'broken'), { force: true })
   const running = [..._runningSessions.values()]
   _runningSessions.clear()
   await Promise.all(running.map((session) => (session.proc ? killProcessTree(session.proc) : null)))
@@ -180,18 +191,11 @@ afterAll(() => {
 describe('what the app page hears when its ComfyUI process ends', { timeout: 30_000 }, () => {
   it.each([
     ['crashes', 'comfyui_crashed', () => _runningSessions.get(BUILD)?.proc?.kill('SIGKILL')],
-    [
-      'exits with no error',
-      'comfyui_stopped',
-      () => fetch(`http://127.0.0.1:${port}/api/exit-with-no-error`).catch(() => {})
-    ],
-    [
-      'is stopped, as Stop, Update and closing its window do',
-      'comfyui_stopped',
-      () => stopRunning(BUILD)
-    ],
-    ['is stopped with the others, as quitting does', 'comfyui_stopped', () => stopRunning()],
-    ['is restarted', 'comfyui_stopped', () => stopRunning(BUILD).then(launch)],
+    ['exits with no error', 'comfyui_stopped', () => ask('/exit')],
+    ['restarts itself and then fails to start', 'comfyui_stopped', () => ask('/restart-broken')],
+    ['is stopped, as by Stop or Update', 'comfyui_stopped', () => stopRunning(BUILD)],
+    ['is stopped with the others, as by quitting', 'comfyui_stopped', () => stopRunning()],
+    ['is restarted by Desktop', 'comfyui_stopped', () => stopRunning(BUILD).then(launch)],
     ['belongs to a build that is deleted', 'comfyui_stopped', () => handleRemove(context())]
   ])('when it %s: %s', async (_case, reason, end) => {
     await end()

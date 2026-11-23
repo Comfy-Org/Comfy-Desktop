@@ -4,7 +4,7 @@ import { isPartnerRefusal } from './partnerRefusal'
 
 export const RUN_FINISHED_EVENT = 'comfy.desktop.apps.run_finished'
 export const SETUP_EVENT = 'comfy.desktop.apps.setup'
-export const COMFYUI_EXITED = 'comfyui_exited'
+const COMFYUI_EXITED = 'comfyui_exited'
 const BLOCKED_BRANCH = 'ExecutionBlocked'
 
 const MAX_RUNS = 200
@@ -48,7 +48,7 @@ interface EarlyRun {
 const runs = new Map<string, Run>()
 const earlyRuns = new Map<string, EarlyRun>()
 const runWatchers = new Set<() => void>()
-const lostRunWatchers = new Set<(promptId: string, reason: LostRunReason) => void>()
+let runLost: (promptId: string, reason: LostRunReason) => void = () => {}
 
 function runsChanged(): void {
   for (const watcher of runWatchers) watcher()
@@ -60,7 +60,7 @@ export function onRunsChanged(watcher: () => void): () => void {
 }
 
 export function onRunLost(watcher: (promptId: string, reason: LostRunReason) => void): void {
-  lostRunWatchers.add(watcher)
+  runLost = watcher
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -135,7 +135,7 @@ export function finishRun(promptId: string, end: RunEnd): void {
   if (!run) return
   runs.delete(promptId)
   sendRunFinished(run, end)
-  if (end.lost) for (const watcher of lostRunWatchers) watcher(promptId, end.lost)
+  if (end.lost) runLost(promptId, end.lost)
   runsChanged()
 }
 
@@ -309,7 +309,7 @@ export function setupStarted(stage: SetupStage, appId: string | null): SetupStep
 
 export function _resetForTest(): void {
   runWatchers.clear()
-  lostRunWatchers.clear()
+  runLost = () => {}
   runs.clear()
   earlyRuns.clear()
 }

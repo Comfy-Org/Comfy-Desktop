@@ -12,6 +12,7 @@ import {
   _getPublicSessions,
   _getLaunchingInstances,
   _getStoppingInstallationIds,
+  _runningSessions,
   hasRunningSessionForInstallation,
   stopRunning
 } from './shared'
@@ -59,6 +60,8 @@ export function registerSessionHandlers(): void {
       `[launch] stopping what holds port ${port} at the user's request: ` +
         (holders.length > 0 ? `pids ${holders.join(', ')}` : 'no listener could be listed')
     )
+    const own = [..._runningSessions].find(([, session]) => session.port === port)
+    if (own) await stopRunning(own[0])
     await killByPort(port)
     await new Promise((r) => setTimeout(r, 500))
     const remaining = await findPidsByPort(port)

@@ -1723,6 +1723,17 @@ describe('run_finished, for an app run on this computer', () => {
     expect(sentToPage()).toEqual([{ type: 'run_failed', data: { prompt_id: RUN, reason } }])
   })
 
+  it('tells the page that its run was stopped when the ComfyUI restarts', async () => {
+    await runFromApp()
+
+    sessionLifecycleEvents.emit('restarting', STUDIO)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sentToPage()).toEqual([
+      { type: 'run_failed', data: { prompt_id: RUN, reason: 'comfyui_stopped' } }
+    ])
+  })
+
   it('tells the page that it does not know why, when the ComfyUI that runs lost the run', async () => {
     comfy.historyEntry = null
     await runFromApp()

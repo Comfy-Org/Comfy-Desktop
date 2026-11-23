@@ -38,7 +38,6 @@ import {
   _resetForTest,
   buildsWithRuns,
   busyAppOn,
-  COMFYUI_EXITED,
   errorClassOf,
   failRunsOn,
   finishRun,
@@ -736,7 +735,11 @@ describe('run_finished for a refused run read from history', () => {
       }
     })
 
-    settleRun(RUN, fromHistory, { outcome: 'failed', errorClass: COMFYUI_EXITED, at: T0 + 30_000 })
+    settleRun(RUN, fromHistory, {
+      outcome: 'failed',
+      errorClass: 'comfyui_exited',
+      at: T0 + 30_000
+    })
 
     expect(sent(RUN_FINISHED_EVENT)).toEqual([
       expect.objectContaining({
