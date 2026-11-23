@@ -180,7 +180,8 @@ describe('BuildOverview — ComfyUI card', () => {
     })
     const update = w.get('[data-testid="build-overview-update"]').text()
     expect(update).toContain('v0.3.65 available')
-    expect(update).toContain('Saves a snapshot first · Checked 5m ago')
+    expect(update).toContain('Saves a snapshot first')
+    expect(update, 'the check time gives way to the snapshot note').not.toContain('Checked')
     expect(w.find('[data-testid="update-action-check-update"]').exists()).toBe(false)
 
     await w.get('[data-testid="update-action-update-comfyui"]').trigger('click')

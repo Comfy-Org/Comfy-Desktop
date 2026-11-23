@@ -87,7 +87,7 @@ export const COMFY_STATE_SCRIPT =
   `if(workspace.spinner===true)return 'starting';` +
   `var workflows=workspace.workflow;` +
   `if(!workflows)return 'ready';` +
-  `if(workflows.isBusy===true)return 'starting';` +
+  `if(workflows.isBusy===true||workflows.tabsRestored===false)return 'starting';` +
   `return workflows.activeWorkflow?'ready':'no-workflow'})()`
 
 function loadScript(call: string, data: Record<string, unknown>, name: string): string {

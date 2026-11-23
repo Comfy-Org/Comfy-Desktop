@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as UpdaterModule from './updater'
+import type { InstallAttemptRecord, ShipItReport } from './update-install-attempt'
+import type * as UpdateInstallAttemptModule from './update-install-attempt'
 
 let mockPlatform = 'linux'
 let mockAppImage: string | undefined
@@ -81,6 +83,39 @@ vi.mock('./startup-attempt-marker', () => ({
     if (sidecarClears) sidecarMarker = null
   })
 }))
+
+let installAttempt: InstallAttemptRecord | null = null
+let installAttemptClears = true
+let installAttemptWrites = true
+let shipItReport: ShipItReport = { logFound: false, ranAfterTrigger: null, errorTail: null }
+
+vi.mock('./update-install-attempt', async (importOriginal) => {
+  const actual = await importOriginal<typeof UpdateInstallAttemptModule>()
+  return {
+    ...actual,
+    writeInstallAttempt: vi.fn((record: InstallAttemptRecord) => {
+      if (!installAttemptWrites) return false
+      installAttempt = record
+      return true
+    }),
+    readInstallAttempt: vi.fn(() => installAttempt),
+    clearInstallAttempt: vi.fn(() => {
+      if (!installAttemptClears) return false
+      installAttempt = null
+      return true
+    }),
+    markInstallAttemptExit: vi.fn((quitReason: string) => {
+      if (!installAttempt || installAttempt.exitedAt || installAttempt.reportedOutcome) return
+      installAttempt = {
+        ...installAttempt,
+        exitedAt: new Date().toISOString(),
+        exitQuitReason: quitReason
+      }
+    }),
+    readMacBundleId: vi.fn(() => 'com.example.desktop'),
+    readShipItReport: vi.fn(() => shipItReport)
+  }
+})
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 
@@ -432,6 +467,10 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     sidecarPersists = true
     sidecarReadable = true
     sidecarClears = true
+    installAttempt = null
+    installAttemptClears = true
+    installAttemptWrites = true
+    shipItReport = { logFound: false, ranAfterTrigger: null, errorTail: null }
     mockAppVersion = '1.0.0'
     delete process.env.E2E
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
@@ -554,6 +593,266 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     updater.register()
     updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).toHaveBeenCalled()
+  })
+
+  describe('install attempt follow-up on the next launch', () => {
+    const triggeredAt = '2026-11-22T10:00:00.000Z'
+
+    beforeEach(() => {
+      vi.spyOn(console, 'info').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('saves the install request and reports where the app runs from', async () => {
+      const updater = await bootUpdater()
+      for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
+      updater.installUpdate()
+
+      expect(installAttempt).toMatchObject({
+        attemptId: expect.any(String),
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt: expect.any(String)
+      })
+      expect(findEmitCalls('comfy.desktop.app_update.install_triggered')[0]?.[1]).toMatchObject({
+        target_version: '1.0.1',
+        update_attempt_id: installAttempt?.attemptId,
+        app_location: null,
+        app_location_writable: false
+      })
+      expect(console.info).toHaveBeenCalledWith(
+        expect.stringContaining('[app-update] installing 1.0.1 over 1.0.0 (source=install_call')
+      )
+    })
+
+    it('saves nothing when no update version is known', async () => {
+      const updater = await bootUpdater()
+      updater.installUpdate()
+      expect(installAttempt).toBeNull()
+    })
+
+    it('stamps the quit that follows the install request', async () => {
+      const updater = await bootUpdater()
+      for (const cb of listeners['update-downloaded'] || []) cb({ version: '1.0.1' })
+      updater.installUpdate()
+      updater.recordProcessExit()
+
+      expect(installAttempt).toMatchObject({
+        exitedAt: expect.any(String),
+        exitQuitReason: 'update-install'
+      })
+    })
+
+    it('reports a Mac update that did not apply, with what ShipIt wrote', async () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      installAttempt = {
+        attemptId: 'attempt-mac',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt,
+        exitedAt: '2026-11-22T10:00:04.000Z',
+        exitQuitReason: 'update-install'
+      }
+      shipItReport = {
+        logFound: true,
+        ranAfterTrigger: true,
+        errorTail: 'Installation error: Operation not permitted'
+      }
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+
+      const outcomes = findEmitCalls('comfy.desktop.app_update.install_outcome')
+      expect(outcomes).toHaveLength(1)
+      expect(outcomes[0]?.[1]).toMatchObject({
+        update_attempt_id: 'attempt-mac',
+        target_version: '1.0.1',
+        outcome: 'not_installed',
+        install_source: 'install_call',
+        from_version: '1.0.0',
+        exited_after_trigger: true,
+        seconds_trigger_to_exit: 4,
+        exit_quit_reason: 'update-install',
+        app_location: 'other',
+        shipit_log_found: true,
+        shipit_ran_after_trigger: true,
+        shipit_error_tail: 'Installation error: Operation not permitted'
+      })
+      expect(installAttempt).toBeNull()
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('previous install of 1.0.1 over 1.0.0: not_installed')
+      )
+    })
+
+    it('reports an install request the app never quit for', async () => {
+      installAttempt = {
+        attemptId: 'attempt-stuck',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt
+      }
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')[0]?.[1]).toMatchObject({
+        outcome: 'not_installed',
+        exited_after_trigger: false,
+        seconds_trigger_to_exit: null,
+        exit_quit_reason: null,
+        shipit_log_found: null
+      })
+    })
+
+    it('reports an applied update without reading ShipIt', async () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      installAttempt = {
+        attemptId: 'attempt-done',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt
+      }
+      mockAppVersion = '1.0.1'
+      const { readShipItReport } = await import('./update-install-attempt')
+      vi.mocked(readShipItReport).mockClear()
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')[0]?.[1]).toMatchObject({
+        update_attempt_id: 'attempt-done',
+        outcome: 'installed',
+        shipit_log_found: null,
+        shipit_error_tail: null
+      })
+      expect(readShipItReport).not.toHaveBeenCalled()
+    })
+
+    it('reports a relaunch on a version that is neither the old nor the new one', async () => {
+      installAttempt = {
+        attemptId: 'attempt-other',
+        targetVersion: '1.0.2',
+        fromVersion: '1.0.0',
+        source: 'startup_install',
+        triggeredAt
+      }
+      mockAppVersion = '1.0.1'
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')[0]?.[1]).toMatchObject({
+        outcome: 'other_version',
+        install_source: 'startup_install'
+      })
+    })
+
+    it('reports each install request once', async () => {
+      installAttempt = {
+        attemptId: 'attempt-once',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt
+      }
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(1)
+    })
+
+    it('reports nothing when no install was requested', async () => {
+      const updater = await bootUpdater()
+      await updater.applyPendingUpdateOnStartup()
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(0)
+    })
+
+    it('marks a record it cannot delete as reported and reports it only once', async () => {
+      installAttemptClears = false
+      installAttempt = {
+        attemptId: 'attempt-stuck-file',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt
+      }
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(installAttempt).toMatchObject({
+        attemptId: 'attempt-stuck-file',
+        reportedOutcome: 'not_installed'
+      })
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(1)
+
+      vi.resetModules()
+      const relaunched = await bootUpdater()
+      await relaunched.applyPendingUpdateOnStartup()
+      relaunched.recordProcessExit()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(1)
+      expect(installAttempt).not.toHaveProperty('exitedAt')
+    })
+
+    it('reports nothing when the record can be neither deleted nor marked', async () => {
+      installAttemptClears = false
+      installAttemptWrites = false
+      installAttempt = {
+        attemptId: 'attempt-read-only',
+        targetVersion: '1.0.1',
+        fromVersion: '1.0.0',
+        source: 'install_call',
+        triggeredAt
+      }
+      const updater = await bootUpdater()
+
+      await updater.applyPendingUpdateOnStartup()
+
+      expect(findEmitCalls('comfy.desktop.app_update.install_outcome')).toHaveLength(0)
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '[app-update] could not clear or mark the install attempt for 1.0.1'
+        )
+      )
+    })
+
+    it('scrubs credentials and home paths from updater errors in the console', async () => {
+      await bootUpdater()
+      for (const cb of listeners.error || [])
+        cb(
+          new Error(
+            'Cannot download "https://updates.example.com/app-1.0.1.zip?token=s3cr3t-value", redirected to https://objects.example.com/releases/app-1.0.1.zip?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=abc123sig&sig=azsig456 status 403: EACCES /Users/alice/Library/Caches/updater/pending'
+          )
+        )
+
+      const lines = vi
+        .mocked(console.warn)
+        .mock.calls.map((call) => String(call[0]))
+        .filter((line) => line.startsWith('[app-update]'))
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain('failed')
+      expect(lines[0]).not.toContain('s3cr3t-value')
+      expect(lines[0]).not.toContain('alice')
+      expect(lines[0]).not.toContain('abc123sig')
+      expect(lines[0]).not.toContain('azsig456')
+      expect(lines[0]).not.toContain('AKIAEXAMPLE')
+      expect(lines[0]).toContain(
+        'https://objects.example.com/releases/app-1.0.1.zip?[query removed]'
+      )
+      expect(lines[0]).toContain('https://updates.example.com/app-1.0.1.zip?[query removed]')
+    })
   })
 
   it('does not mislabel a later check failure as applying the staged update', async () => {
@@ -1332,6 +1631,8 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
     sidecarPersists = true
     sidecarReadable = true
     sidecarClears = true
+    installAttemptClears = true
+    installAttemptWrites = true
     mockAppVersion = '1.0.24'
     fakeUpdater = {
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {

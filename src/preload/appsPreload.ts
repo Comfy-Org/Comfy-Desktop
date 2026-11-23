@@ -15,12 +15,13 @@ import type {
 } from '../types/comfyDesktopBridge'
 import { createRunReporter } from './appRunWatcher'
 
-const auth: ComfyDesktopHostedAuthBridge = {
+const auth: Required<ComfyDesktopHostedAuthBridge> = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
   getWorkspaceToken: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:get-workspace-token', workspaceId),
   getPartnerNodeToken: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:get-partner-node-token', workspaceId),
+  getCloudOrigin: () => ipcRenderer.invoke('desktop2-auth:get-cloud-origin'),
   requestSignIn: () => ipcRenderer.invoke('desktop2-auth:request-sign-in'),
   onChanged: (callback) => {
     const handler = (_event: IpcRendererEvent, state: ComfyDesktop2AuthState): void =>

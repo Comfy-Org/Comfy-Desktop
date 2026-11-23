@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   isAppsPage: true,
   appsEnabled: true,
+  pageAdmitted: true,
   localState: vi.fn(),
   startLocal: vi.fn(),
   localFetch: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   document: 1,
   whileChecking: () => {},
   pages: [] as { send: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }[],
+  refusedPages: new Set<unknown>(),
   runsChanged: null as (() => void) | null,
   runEnded: null as
     ((promptId: string, end: { outcome: string; errorClass?: string }) => void) | null,
@@ -40,6 +42,7 @@ vi.mock('../../apps/appPageView', () => ({
     mocks.loadedApp ? { appId: mocks.loadedApp, document: mocks.document } : null
 }))
 vi.mock('../../apps/appsPages', () => ({
+  appsPageAdmits: async (page: unknown) => mocks.pageAdmitted && !mocks.refusedPages.has(page),
   isAppsPageSender: () => mocks.isAppsPage,
   liveAppsPages: () => mocks.pages
 }))
@@ -93,10 +96,12 @@ beforeEach(() => {
   mocks.handlers.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
+  mocks.pageAdmitted = true
   mocks.loadedApp = 'product-ads'
   mocks.document = 1
   mocks.whileChecking = () => {}
   mocks.pages = []
+  mocks.refusedPages = new Set()
   mocks.localState.mockResolvedValue({ state: 'stopped', own: true, name: 'Studio' })
   mocks.startLocal.mockResolvedValue(RUNNING)
   mocks.localFetch.mockResolvedValue({ status: 200, contentType: 'application/json', body: null })
@@ -169,7 +174,11 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
 
   it.each([
     ['a sender that is not the hosted Apps page', { isAppsPage: false, appsEnabled: true }],
-    ['the Apps page while Apps is switched off', { isAppsPage: true, appsEnabled: false }]
+    ['the Apps page while Apps is switched off', { isAppsPage: true, appsEnabled: false }],
+    [
+      'a draft app page whose draft was dropped',
+      { isAppsPage: true, appsEnabled: true, pageAdmitted: false }
+    ]
   ])('does nothing for %s', async (_who, state) => {
     Object.assign(mocks, state)
 
@@ -276,6 +285,18 @@ describe('telling app pages that a build became busy or free', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(page.send).not.toHaveBeenCalled()
+  })
+
+  it('tells a draft page Desktop no longer admits nothing, and the other pages as usual', async () => {
+    const page = { send: vi.fn(), isDestroyed: () => false }
+    const refused = { send: vi.fn(), isDestroyed: () => false }
+    mocks.pages = [page, refused]
+    mocks.refusedPages.add(refused)
+
+    await runsChange()
+
+    expect(page.send).toHaveBeenCalledExactlyOnceWith(APPS_LOCAL_CHANNELS.buildsChanged, BUILDS)
+    expect(refused.send).not.toHaveBeenCalled()
   })
 
   it('tells no page once Apps is turned off', async () => {

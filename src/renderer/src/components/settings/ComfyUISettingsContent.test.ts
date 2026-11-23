@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { computed, ref, nextTick } from 'vue'
@@ -115,7 +115,13 @@ describe('ComfyUISettingsContent', () => {
     ;(window as unknown as { api: Record<string, unknown> }).api = {
       onErrorDetail: vi.fn(() => () => {}),
       onInstanceProgress: vi.fn(() => () => {}),
-      getDiskSpace: vi.fn().mockResolvedValue(null)
+      getDiskSpace: vi.fn().mockResolvedValue(null),
+      getSetting: vi.fn().mockResolvedValue(undefined),
+      onSettingsChanged: vi.fn(() => () => {}),
+      comfybuilder: {
+        getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+        onAuthChanged: vi.fn(() => () => {})
+      }
     }
     useComfyUISettingsState.pinBottomActions.value = [{ id: 'untrack', label: 'Forget' }]
   })
@@ -1278,7 +1284,7 @@ describe('ComfyUISettingsContent', () => {
     it('edits the name in the page title and points the Rename item at it', async () => {
       useComfyUISettingsState.pinBottomActions.value = [
         { id: 'rename', label: 'Rename' },
-        { id: 'untrack', label: 'Forget' }
+        { id: 'remove', label: 'Forget' }
       ]
       useComfyUISettingsState.runActionStub.mockClear()
       const target = mountTitleTarget()
@@ -1295,9 +1301,9 @@ describe('ComfyUISettingsContent', () => {
       expect(document.activeElement).toBe(name)
       expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
 
-      moreMenu(w).vm.$emit('pick', { id: 'untrack', label: 'Forget' })
+      moreMenu(w).vm.$emit('pick', { id: 'remove', label: 'Forget' })
       expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
-        id: 'untrack',
+        id: 'remove',
         label: 'Forget'
       })
     })
@@ -1365,6 +1371,178 @@ describe('ComfyUISettingsContent', () => {
         id: 'rename',
         label: 'Rename'
       })
+    })
+  })
+  describe('one build menu on the build page', () => {
+    const RUNNING_INSTALL = {
+      ...SAMPLE_INSTALL,
+      installPath: '/builds/my-install'
+    } as unknown as Installation
+
+    function pageMenu(w: VueWrapper) {
+      return w.findAllComponents({ name: 'MoreMenu' })[0]!
+    }
+
+    async function mountRunningPage(props: Record<string, unknown> = {}) {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'copy', label: 'Duplicate' },
+        { id: 'open-folder', label: 'Show in folder' },
+        { id: 'share', label: 'Export snapshot' },
+        { id: 'git-pull', label: 'Pull latest' },
+        { id: 'remove', label: 'Forget' },
+        { id: 'delete', label: 'Uninstall' }
+      ]
+      useSessionStore().runningInstances.set(RUNNING_INSTALL.id, {
+        installationId: RUNNING_INSTALL.id,
+        installationName: RUNNING_INSTALL.name,
+        mode: 'window'
+      } as never)
+      const target = document.createElement('div')
+      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(target)
+      const w = await mountContent({
+        installation: RUNNING_INSTALL,
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status',
+        ...props
+      })
+      await flushPromises()
+      return { w, target }
+    }
+
+    it('lists the same actions in the same order as the sidebar, without Manage and Launch', async () => {
+      const { w, target } = await mountRunningPage()
+      const actions = pageMenu(w).props('actions') as {
+        id: string
+        separator?: boolean
+        enabled?: boolean
+      }[]
+
+      expect(actions.map(({ id, separator }) => (separator ? `| ${id}` : id))).toEqual([
+        'view-logs',
+        'restart',
+        'stop',
+        '| auto-start',
+        '| rename',
+        'copy-install',
+        'reveal-in-folder',
+        'git-pull',
+        '| share',
+        'restore-snapshot',
+        '| remove',
+        'delete'
+      ])
+      const off = actions.filter((action) => action.enabled === false).map(({ id }) => id)
+      expect(off, 'actions that change the build files wait while it runs').toEqual([
+        'copy-install',
+        'restore-snapshot',
+        'delete'
+      ])
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('runs the build page action behind a shared item', async () => {
+      const { w, target } = await mountRunningPage()
+      useComfyUISettingsState.runActionStub.mockClear()
+
+      pageMenu(w).vm.$emit('pick', { id: 'reveal-in-folder', label: 'Show in Explorer' })
+
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'open-folder',
+        label: 'Show in folder'
+      })
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('puts the name in edit mode when Rename was picked from the sidebar', async () => {
+      const { w, target } = await mountRunningPage({ autoAction: 'rename', autoActionNonce: 1 })
+      await flushPromises()
+
+      expect(document.activeElement).toBe(target.querySelector('.build-details-title-name'))
+
+      w.unmount()
+      target.remove()
+    })
+    it('keeps the source Uninstall for a build whose install failed', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'remove', label: 'Forget' },
+        { id: 'delete', label: 'Uninstall' }
+      ]
+      const target = document.createElement('div')
+      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(target)
+      const w = await mountContent({
+        installation: { ...SAMPLE_INSTALL, status: 'failed', installPath: '/builds/failed' },
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
+      await flushPromises()
+
+      const actions = pageMenu(w).props('actions') as { id: string; style?: string }[]
+      expect(actions.at(-1)).toMatchObject({ id: 'delete', style: 'danger' })
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('forgets a build when Forget was picked from the sidebar', async () => {
+      useComfyUISettingsState.runActionStub.mockClear()
+      const sectionsBefore = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        ...sectionsBefore,
+        { pinBottom: true, actions: [{ id: 'remove', label: 'Forget' }] }
+      ]
+      onTestFinished(() => {
+        useComfyUISettingsState.sections.value = sectionsBefore
+      })
+      const { w, target } = await mountRunningPage({ autoAction: 'remove', autoActionNonce: 1 })
+      await flushPromises()
+
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'remove' })
+      )
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('does not forget a build from the sidebar while an operation runs on it', async () => {
+      useComfyUISettingsState.runActionStub.mockClear()
+      const sectionsBefore = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        ...sectionsBefore,
+        { pinBottom: true, actions: [{ id: 'remove', label: 'Forget' }] }
+      ]
+      onTestFinished(() => {
+        useComfyUISettingsState.sections.value = sectionsBefore
+      })
+      const { w, target } = await mountRunningPage({
+        autoAction: 'remove',
+        autoActionNonce: 1,
+        activeOperation: {
+          percent: 10,
+          status: 'Updating',
+          done: false,
+          ok: null,
+          error: null,
+          cancellable: true,
+          title: 'Updating',
+          actionId: 'update-comfyui'
+        }
+      })
+      await flushPromises()
+
+      expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
+
+      w.unmount()
+      target.remove()
     })
   })
 })

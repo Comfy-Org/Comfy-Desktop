@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { userEvent } from 'vitest/browser'
 
 import '../../assets/main.css'
 import SettingsSectionList from './SettingsSectionList.vue'
@@ -90,5 +91,43 @@ describe('SettingsSectionList layout', () => {
         expect(got[prop], `${title.className} ${prop}`).toBe(want[prop])
       }
     }
+  })
+
+  it('keeps a disabled primary action the same colour on hover', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    wrapper = mount(SettingsSectionList, {
+      props: {
+        sections: [
+          {
+            fields: [],
+            actions: [{ id: 'update', label: 'Update', style: 'primary', enabled: false }]
+          }
+        ]
+      },
+      attachTo: document.body
+    })
+
+    const button = document.querySelector<HTMLButtonElement>('.settings-v2-actions button')!
+    expect(button.disabled).toBe(true)
+    const before = getComputedStyle(button).backgroundColor
+    await userEvent.hover(button, { force: true })
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(button.matches(':hover')).toBe(true)
+    expect(getComputedStyle(button).backgroundColor).toBe(before)
+  })
+
+  it('lightens an enabled primary action on hover', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    wrapper = mount(SettingsSectionList, {
+      props: {
+        sections: [{ fields: [], actions: [{ id: 'update', label: 'Update', style: 'primary' }] }]
+      },
+      attachTo: document.body
+    })
+
+    const button = document.querySelector<HTMLButtonElement>('.settings-v2-actions button')!
+    const before = getComputedStyle(button).backgroundColor
+    await userEvent.hover(button)
+    await expect.poll(() => getComputedStyle(button).backgroundColor).not.toBe(before)
   })
 })

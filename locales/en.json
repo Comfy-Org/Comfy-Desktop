@@ -51,8 +51,14 @@
       "title": "Switch to {app}?",
       "body": "{current} is still making something. {count} other apps are already running, so switching stops it.",
       "bodyUnsure": "Desktop could not check whether an app is still making something. Switching may stop it.",
+      "bodyDraft": "{current} is a draft app. Switching closes it, and you won't see this run finish.",
       "switch": "Switch",
       "stay": "Stay"
+    },
+    "backWhileRunning": {
+      "title": "Go back to all apps?",
+      "bodyDraft": "{current} is a draft app. Going back closes it, and you won't see this run finish.",
+      "back": "Go back"
     },
     "request": {
       "bandTitle": "Missing an app?",
@@ -946,6 +952,12 @@
     "updatesTab": "Updates",
     "diagnostics": "Diagnostics",
     "openLogsFolder": "Open logs folder",
+    "developmentTab": "Development",
+    "draftAppsTitle": "Draft apps",
+    "draftAppAddress": "App address",
+    "draftAppPlaceholder": "https://pr-706.drafts.comfy.org/apps/depth-swap/",
+    "draftAppFailedTitle": "Couldn't open this draft app",
+    "draftAppFailedMessage": "Comfy Desktop could not check this address. Try again.",
     "sharedFolders": "Shared folders",
     "folderKindModels": "Models",
     "folderKindInput": "Input",
@@ -1537,7 +1549,7 @@
     "createSnapshot": "Create snapshot",
     "changesInSnapshot": "What changed in this snapshot",
     "ifYouRestore": "What restoring this would change",
-    "noSnapshotsToShare": "There are no snapshots to share yet.",
+    "noSnapshotsToExport": "There are no snapshots to export.",
     "shareFailed": "Could not export the snapshot.",
     "current": "Current",
     "triggerBoot": "Boot",

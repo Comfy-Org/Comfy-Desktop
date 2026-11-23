@@ -46,6 +46,7 @@ import {
   buildInstallLocationFields
 } from '../lib/ipc/registerSettingsHandlers'
 import { globalSettingsEvents } from '../lib/globalSettingsEvents'
+import { cloudAuthEvents } from '../lib/cloudAuthEvents'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
 import {
   comfyWindows,
@@ -344,6 +345,10 @@ const titlePopupsByWebContents = new Map<number, TitlePopupEntry>()
 
 export function isTitlePopupSender(sender: Electron.WebContents): boolean {
   return titlePopupsByWebContents.has(sender.id)
+}
+
+export function isGlobalSettingsSender(sender: Electron.WebContents): boolean {
+  return titlePopupsByWebContents.get(sender.id)?.kind === 'global-settings'
 }
 
 const downloadsHiddenAtByParent = new Map<number, number>()
@@ -1471,6 +1476,14 @@ function broadcastGlobalSettingsSnapshotToTitlePopups(_bindings: TitlePopupHostB
   }
 }
 
+export function notifyGlobalSettingsAuthChanged(): void {
+  for (const entry of titlePopupsByWebContents.values()) {
+    if (entry.kind !== 'global-settings') continue
+    if (entry.view.popup.webContents.isDestroyed()) continue
+    entry.view.popup.webContents.send('comfy-titlepopup:auth-changed')
+  }
+}
+
 export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   activeBindings = bindings
 
@@ -2199,6 +2212,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   updater.onUpdateStateChanged(() => {
     broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })
+  cloudAuthEvents.on('changed', notifyGlobalSettingsAuthChanged)
   ipcMain.on('comfy-popup-internal:noop', () => {})
 }
 

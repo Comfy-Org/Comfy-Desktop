@@ -384,7 +384,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
           title: action.label,
           message:
             result.reason === 'none'
-              ? t('snapshots.noSnapshotsToShare')
+              ? t('snapshots.noSnapshotsToExport')
               : (result.message ?? t('snapshots.shareFailed'))
         })
       }

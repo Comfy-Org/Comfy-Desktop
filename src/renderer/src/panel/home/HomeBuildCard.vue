@@ -115,7 +115,7 @@ const statusLabel = computed(() => {
   }
 })
 const detail = computed(() =>
-  isCloudBuild(build) ? t('home.cloudHardware') : homeBuildDetail(build)
+  isCloudBuild(build) ? t('home.cloudHardware') : homeBuildDetail(build, t)
 )
 const isRunning = computed(() => status === 'running')
 const resting = computed(() => status === 'ready' || status === 'update')

@@ -152,6 +152,10 @@ export interface ComfyDesktop2AuthBridge {
    *  as `getWorkspaceToken`. Desktop mints and renews it; null means use the
    *  workspace token. Absent on Desktop builds before it. */
   getPartnerNodeToken?(workspaceId: string): Promise<string | null>
+  /** The Comfy Cloud origin Desktop's account belongs to, such as
+   *  `https://cloud.comfy.org`; send the workspace token's calls there. Null
+   *  when the session is disabled. Absent on Desktop builds before it. */
+  getCloudOrigin?(): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
   /** Signs Desktop out of its account (every view follows) and resolves with
@@ -186,7 +190,8 @@ export type ComfyDesktopHostedAuthBridge = Required<
     ComfyDesktop2AuthBridge,
     'getState' | 'getWorkspaceToken' | 'getPartnerNodeToken' | 'requestSignIn' | 'onChanged'
   >
->
+> &
+  Pick<ComfyDesktop2AuthBridge, 'getCloudOrigin'>
 /** What a hosted page needs from the ComfyUI on this computer. */
 export interface ComfyDesktopLocalRequirements {
   /** The oldest ComfyUI the page can run on, such as `0.41.0`. */
@@ -642,6 +647,11 @@ export interface ComfyDesktop2Bridge {
   cancelDownload?: (url: string) => Promise<boolean>
   onDownloadProgress?: (callback: (data: ComfyDownloadProgress) => void) => () => void
   reportTheme?: (bg: string, text: string) => void
+  /** Tells Desktop whether the hosted frontend is waiting on the user, such as an agent
+   *  approval or question. While `true` and the window is not focused, Desktop flashes the
+   *  taskbar entry (Windows, Linux) or bounces the dock icon once (macOS); focusing the
+   *  window or sending `false` stops it. Absent on Desktop builds predating it. */
+  setAttentionNeeded?: (needed: boolean) => void
   Terminal?: ComfyDesktop2TerminalBridge
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge

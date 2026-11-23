@@ -1,6 +1,6 @@
 import { app, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { release as osRelease } from 'node:os'
+import { homedir, release as osRelease } from 'node:os'
 import semver from 'semver'
 import todesktop from '@todesktop/runtime'
 import { autoUpdater as electronAutoUpdater } from 'electron-updater'
@@ -14,6 +14,17 @@ import {
   type StartupAttemptMarkerRead
 } from './startup-attempt-marker'
 import {
+  clearInstallAttempt,
+  describeAppLocation,
+  markInstallAttemptExit,
+  readInstallAttempt,
+  readMacBundleId,
+  readShipItReport,
+  shipItLogPath,
+  writeInstallAttempt,
+  type InstallAttemptSource
+} from './update-install-attempt'
+import {
   clearQuitReason,
   getQuitReason,
   isSessionEnding,
@@ -23,6 +34,7 @@ import {
 import { _broadcastToRenderer, cancelAll, keepsComfyRunningWhenWindowCloses } from './ipc/shared'
 import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
+import { scrubAll } from '../../shared/piiScrub'
 
 export interface AppUpdateState {
   kind: 'available' | 'downloading' | 'ready' | null
@@ -101,6 +113,16 @@ function emitUpdateTelemetry(
     updater_mode: app.isPackaged ? 'packaged' : 'development',
     ...properties
   })
+}
+
+const URL_QUERY = /(https?:\/\/[^\s?#"'<>]+)\?[^\s#"'<>]*/gi
+
+function logUpdate(level: 'info' | 'warn' | 'error', message: string): void {
+  console[level](`[app-update] ${scrubAll(message).replace(URL_QUERY, '$1?[query removed]')}`)
+}
+
+function currentAppLocation(): ReturnType<typeof describeAppLocation> {
+  return describeAppLocation(app.getPath('exe'), process.platform, homedir())
 }
 
 function _setUpdateState(next: AppUpdateState): void {
@@ -259,6 +281,10 @@ function emitDesktopUpdateError(
   const now = Date.now()
   if (_lastUpdateError?.key === key && now - _lastUpdateError.at < 1_000) return
   _lastUpdateError = { key, at: now }
+  logUpdate(
+    'warn',
+    `${operation} failed (source=${options.source}, target=${targetVersion ?? 'unknown'}): ${message}`
+  )
   const errorObject = Array.isArray(error)
     ? error.find((value): value is Error => value instanceof Error)
     : error instanceof Error
@@ -298,6 +324,7 @@ function bindUpdaterEvents(): void {
     releaseInstallOnQuitForNewerBuild()
     const autoInstall = isAutoInstallEnabled()
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.available', version)) {
+      logUpdate('info', `update ${version} available (auto install ${autoInstall ? 'on' : 'off'})`)
       emitUpdateTelemetry(
         'comfy.desktop.app_update.available',
         version,
@@ -341,6 +368,7 @@ function bindUpdaterEvents(): void {
     releaseInstallOnQuitForNewerBuild()
     _autoDownloadTriggeredFor = null
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_complete', version)) {
+      logUpdate('info', `update ${version} downloaded`)
       emitUpdateTelemetry('comfy.desktop.app_update.download_complete', version, { version }, true)
     }
     try {
@@ -530,7 +558,7 @@ export async function downloadUpdate(): Promise<void> {
 }
 
 export function installUpdate(userInitiated = true): void {
-  const updateSource = userInitiated ? 'install_call' : 'startup_install'
+  const updateSource: InstallAttemptSource = userInitiated ? 'install_call' : 'startup_install'
   if (isSessionEnding()) {
     return
   }
@@ -543,10 +571,31 @@ export function installUpdate(userInitiated = true): void {
     _broadcastToRenderer('app-update:user-action-failed', { message: UPDATER_UNAVAILABLE_MESSAGE })
     return
   }
-  emitUpdateTelemetry('comfy.desktop.app_update.install_triggered', _appUpdateState.version, {
-    version: _appUpdateState.version,
-    auto_update_setting: isAutoInstallEnabled() ? 'on' : 'off'
+  const targetVersion = _appUpdateState.version
+  const location = currentAppLocation()
+  const isSilent = !isInstallerUIEnabled()
+  emitUpdateTelemetry('comfy.desktop.app_update.install_triggered', targetVersion, {
+    version: targetVersion,
+    auto_update_setting: isAutoInstallEnabled() ? 'on' : 'off',
+    app_location: location.kind,
+    app_location_writable: location.writable
   })
+  logUpdate(
+    'info',
+    `installing ${targetVersion ?? 'unknown version'} over ${app.getVersion()} (source=${updateSource}, silent=${isSilent}, location=${location.kind ?? 'n/a'}, writable=${location.writable})`
+  )
+  if (
+    targetVersion &&
+    !writeInstallAttempt({
+      attemptId: updateAttemptId(targetVersion),
+      targetVersion,
+      fromVersion: app.getVersion(),
+      source: updateSource,
+      triggeredAt: new Date().toISOString()
+    })
+  ) {
+    logUpdate('warn', `could not save the install attempt for ${targetVersion}`)
+  }
   try {
     _activeUpdateOperation = {
       operation: 'apply_restart',
@@ -559,7 +608,7 @@ export function installUpdate(userInitiated = true): void {
     if (process.platform === 'darwin') {
       app.releaseSingleInstanceLock()
     }
-    updater.restartAndInstall({ isSilent: !isInstallerUIEnabled() })
+    updater.restartAndInstall({ isSilent })
   } catch (err) {
     _activeUpdateOperation = null
     clearQuitReason()
@@ -587,6 +636,7 @@ export function recordStartupInstallBackstopRecovered(): void {
 let _processExitRecorded = false
 
 export function recordProcessExit(): void {
+  markInstallAttemptExit(getQuitReason())
   if (_processExitRecorded) return
   const targetVersion = _appUpdateState.version ?? _autoDownloadTriggeredFor
   if (!targetVersion && !_activeUpdateOperation) return
@@ -682,7 +732,67 @@ export interface StartupInstallHooks {
   onInstallCommitted?: () => void | Promise<void>
 }
 
+function secondsBetween(from: Date, to: Date): number | null {
+  const ms = to.getTime() - from.getTime()
+  return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 1000)) : null
+}
+
+function macShipItLogPath(bundlePath: string): string | null {
+  const bundleId = readMacBundleId(bundlePath)
+  return bundleId ? shipItLogPath(homedir(), bundleId) : null
+}
+
+function reportPreviousInstallAttempt(): void {
+  const record = readInstallAttempt()
+  if (!record) return
+  if (record.reportedOutcome) {
+    clearInstallAttempt()
+    return
+  }
+  const running = app.getVersion()
+  const installed = !isStrictlyNewerVersion(record.targetVersion, running)
+  const outcome = installed
+    ? 'installed'
+    : running === record.fromVersion
+      ? 'not_installed'
+      : 'other_version'
+  if (!clearInstallAttempt() && !writeInstallAttempt({ ...record, reportedOutcome: outcome })) {
+    logUpdate(
+      'warn',
+      `could not clear or mark the install attempt for ${record.targetVersion}, skipping its outcome`
+    )
+    return
+  }
+  const triggeredAt = new Date(record.triggeredAt)
+  const exitedAt = record.exitedAt ? new Date(record.exitedAt) : null
+  const location = currentAppLocation()
+  const shipIt =
+    process.platform === 'darwin' && !installed
+      ? readShipItReport(macShipItLogPath(location.bundlePath), triggeredAt)
+      : null
+  emitUpdateTelemetry('comfy.desktop.app_update.install_outcome', record.targetVersion, {
+    update_attempt_id: record.attemptId,
+    outcome,
+    install_source: record.source,
+    from_version: record.fromVersion,
+    seconds_since_trigger: secondsBetween(triggeredAt, new Date()),
+    exited_after_trigger: exitedAt !== null,
+    seconds_trigger_to_exit: exitedAt ? secondsBetween(triggeredAt, exitedAt) : null,
+    exit_quit_reason: record.exitQuitReason ?? null,
+    app_location: location.kind,
+    app_location_writable: location.writable,
+    shipit_log_found: shipIt?.logFound ?? null,
+    shipit_ran_after_trigger: shipIt?.ranAfterTrigger ?? null,
+    shipit_error_tail: shipIt?.errorTail ?? null
+  })
+  logUpdate(
+    installed ? 'info' : 'warn',
+    `previous install of ${record.targetVersion} over ${record.fromVersion}: ${outcome} (source=${record.source}, exited=${exitedAt !== null}, quit_reason=${record.exitQuitReason ?? 'none'}, location=${location.kind ?? 'n/a'}, writable=${location.writable}, shipit_ran=${shipIt?.ranAfterTrigger ?? 'n/a'}, shipit_error=${shipIt?.errorTail ?? 'none'})`
+  )
+}
+
 export async function applyPendingUpdateOnStartup(hooks?: StartupInstallHooks): Promise<boolean> {
+  reportPreviousInstallAttempt()
   const running = app.getVersion()
   const lastAttempt = settings.get('lastStartupUpdateAttemptVersion')
   const pendingVersion = settings.get('pendingDownloadedUpdateVersion')

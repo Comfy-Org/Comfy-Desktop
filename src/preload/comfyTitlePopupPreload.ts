@@ -4,6 +4,7 @@ import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
 import type {
   CloseComfyWindowOptions,
+  DraftAppPasteAnswer,
   PopupTheme,
   TerminalRestore,
   TitlePopupMenuItem
@@ -173,6 +174,7 @@ export interface ComfyTitlePopupBridge {
   openInstallAction(installationId: string, actionId: string): void
   onWillShow(cb: (info: { kind: TitlePopupConfig['kind'] }) => void): () => void
   onGlobalSettingsSnapshot(cb: (snapshot: PopupGlobalSettingsSnapshot) => void): () => void
+  onGlobalSettingsAuthChanged(cb: () => void): () => void
   globalSettingsUpdateField(
     fieldId: string,
     value: unknown
@@ -192,6 +194,8 @@ export interface ComfyTitlePopupBridge {
     deleteModels: boolean
     deleteInputOutput: boolean
   }): void
+  globalSettingsCanOpenDraftApps(): Promise<boolean>
+  globalSettingsOpenDraftApp(address: string): Promise<DraftAppPasteAnswer | null>
 
   pickerSettingsGetDetailSections(installationId: string): Promise<Record<string, unknown>[]>
   pickerSettingsGetDiskSpace(path: string): Promise<{ total: number; free: number }>
@@ -517,6 +521,11 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.on('comfy-titlepopup:global-settings-changed', handler)
     return () => ipcRenderer.removeListener('comfy-titlepopup:global-settings-changed', handler)
   },
+  onGlobalSettingsAuthChanged: (cb) => {
+    const handler = (): void => cb()
+    ipcRenderer.on('comfy-titlepopup:auth-changed', handler)
+    return () => ipcRenderer.removeListener('comfy-titlepopup:auth-changed', handler)
+  },
   globalSettingsUpdateField: (fieldId, value) =>
     ipcRenderer.invoke('comfy-titlepopup:global-settings-update-field', { fieldId, value }),
   globalSettingsSetModelsDirs: (dirs) =>
@@ -548,6 +557,8 @@ const bridge: ComfyTitlePopupBridge = {
   globalSettingsRemoveAppData: (options) => {
     ipcRenderer.send('comfy-titlepopup:global-settings-remove-app-data', options)
   },
+  globalSettingsCanOpenDraftApps: () => ipcRenderer.invoke('apps:can-paste-draft'),
+  globalSettingsOpenDraftApp: (address) => ipcRenderer.invoke('apps:open-pasted-draft', address),
   pickerSettingsGetDetailSections: (installationId) =>
     ipcRenderer.invoke(CH.getDetailSections, { installationId }),
   pickerSettingsGetDiskSpace: (path) => ipcRenderer.invoke(CH.getDiskSpace, { path }),

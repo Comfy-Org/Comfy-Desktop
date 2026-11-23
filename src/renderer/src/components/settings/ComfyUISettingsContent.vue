@@ -58,6 +58,7 @@ import {
 } from '../../lib/progressStatusLabel'
 import type { ActionDef, DetailField, Installation, ShowProgressOpts } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
+import { useBuildMenu, type BuildMenuEntry } from '../../panel/home/useBuildMenu'
 
 export type ComfyUISettingsTab = PickerTab
 
@@ -197,8 +198,16 @@ watch(
     const autoAction = props.autoAction
     if (!autoAction) return
 
+    if (autoAction === 'rename') {
+      consumedAutoActionKey.value = key
+      await nextTick()
+      if (props.installation?.id === installId && canRename.value) titleEdit.value?.focus()
+      return
+    }
+
     const action = findActionById(sections.value, autoAction, currentChannelValue(sections.value))
     if (!action) return
+    if (autoAction === 'remove' && props.activeOperation?.done === false) return
 
     consumedAutoActionKey.value = key
     await nextTick()
@@ -418,7 +427,12 @@ function handleMorePick(action: ActionDef): void {
     titleEdit.value.focus()
     return
   }
-  void runAction(action)
+  const pageAction = pageActionById.value.get(PAGE_ACTION_FOR_SHARED_ID[action.id] ?? action.id)
+  if (sharedMenu && !pageAction) {
+    void sharedMenu.run(action.id)
+    return
+  }
+  void runAction(pageAction ?? action)
 }
 
 type SubPage = 'args' | null
@@ -606,6 +620,124 @@ function actionIcon(id: string): Component {
 }
 
 const NOW_ACTION_IDS = new Set(['stop'])
+const PAGE_ACTION_FOR_SHARED_ID: Record<string, string> = {
+  'copy-install': 'copy',
+  'reveal-in-folder': 'open-folder',
+  share: 'share',
+  untrack: 'remove',
+  delete: 'delete',
+  stop: 'stop'
+}
+const PAGE_ACTIONS_IN_SHARED_MENU = new Set([
+  'launch',
+  'rename',
+  ...Object.values(PAGE_ACTION_FOR_SHARED_ID)
+])
+const SOURCE_ACTIONS_GO_BEFORE = [
+  'share',
+  'restore-snapshot',
+  'promote-to-workspace',
+  'untrack',
+  'delete'
+]
+
+const sharedMenu = isPage.value
+  ? useBuildMenu(() => installation.value as Installation, { onPage: true })
+  : null
+
+const freshPageActions = computed<ActionDef[]>(() =>
+  sectionsFresh.value ? pinBottomActions.value : []
+)
+const pageActionById = computed(
+  () => new Map(freshPageActions.value.map((action) => [action.id, action]))
+)
+const sourceOnlyActions = computed<ActionDef[]>(() =>
+  freshPageActions.value.filter((action) => !PAGE_ACTIONS_IN_SHARED_MENU.has(action.id))
+)
+
+function sharedMenuAction(entry: BuildMenuEntry): MenuAction {
+  return {
+    id: entry.id,
+    label: entry.label,
+    icon: entry.icon,
+    separator: entry.separator,
+    enabled: entry.disabled !== true,
+    disabledMessage: entry.title,
+    style: entry.danger ? 'danger' : undefined
+  }
+}
+
+function pageMenuAction(action: ActionDef): MenuAction {
+  return {
+    ...action,
+    icon: actionIcon(action.id),
+    style: action.id === 'delete' ? 'danger' : undefined,
+    separator: false
+  }
+}
+
+function withoutIds(list: MenuAction[], ids: Set<string>): MenuAction[] {
+  const kept: MenuAction[] = []
+  let carriedSeparator = false
+  for (const action of list) {
+    if (ids.has(action.id)) {
+      carriedSeparator ||= action.separator === true
+      continue
+    }
+    kept.push({ ...action, separator: action.separator === true || carriedSeparator })
+    carriedSeparator = false
+  }
+  return kept
+}
+
+function insertBefore(
+  list: MenuAction[],
+  items: MenuAction[],
+  anchorIds: string[],
+  placement: 'heads-the-group' | 'ends-the-group-before'
+): MenuAction[] {
+  if (items.length === 0) return list
+  const at = list.findIndex((action) => anchorIds.includes(action.id))
+  if (at < 0) return [...list, ...items.map((item, i) => ({ ...item, separator: i === 0 }))]
+  const anchor = list[at]!
+  const takesSeparator = placement === 'heads-the-group' && anchor.separator === true
+  const moved = items.map((item, i) => ({ ...item, separator: i === 0 && takesSeparator }))
+  const rest = takesSeparator ? { ...anchor, separator: false } : anchor
+  return [...list.slice(0, at), ...moved, rest, ...list.slice(at + 1)]
+}
+
+const pageMenuActions = computed<MenuAction[]>(() => {
+  if (!sharedMenu || !installation.value) return []
+  const pageActions = pageActionById.value
+  const sourceActions = sourceOnlyActions.value
+  const hidesMigrate = sourceActions.some((action) => action.id === 'migrate-to-standalone')
+  const hidden = new Set(['rename', 'untrack', ...(hidesMigrate ? ['migrate'] : [])])
+  let menu = withoutIds(sharedMenu.items.value.map(sharedMenuAction), hidden)
+  const rename = pageActions.get('rename')
+  const untrack = pageActions.get(PAGE_ACTION_FOR_SHARED_ID['untrack']!)
+  menu = insertBefore(
+    menu,
+    rename ? [pageMenuAction(rename)] : [],
+    ['copy-install', 'reveal-in-folder', ...SOURCE_ACTIONS_GO_BEFORE],
+    'heads-the-group'
+  )
+  menu = insertBefore(
+    menu,
+    sourceActions.map(pageMenuAction),
+    SOURCE_ACTIONS_GO_BEFORE,
+    'ends-the-group-before'
+  )
+  menu = insertBefore(menu, untrack ? [pageMenuAction(untrack)] : [], ['delete'], 'heads-the-group')
+  const sourceUninstall = pageActions.get('delete')
+  if (sourceUninstall && !menu.some((action) => action.id === 'delete')) {
+    menu = [...menu, { ...pageMenuAction(sourceUninstall), separator: menu.length > 0 && !untrack }]
+  }
+  return menu
+})
+
+const moreMenuActions = computed<MenuAction[]>(() =>
+  isPage.value ? pageMenuActions.value : pinBottomMenuActions.value
+)
 
 const pinBottomMenuActions = computed<MenuAction[]>(() => {
   const actions = sectionsFresh.value
@@ -634,7 +766,7 @@ function focusLostToMenu(): boolean {
 }
 
 watch(
-  () => pinBottomMenuActions.value.length,
+  () => moreMenuActions.value.length,
   async (count) => {
     if (count > 0 || !moreMenuOpen.value) return
     closeMoreMenu()
@@ -1039,7 +1171,7 @@ defineExpose({
                             class="op-bar-track h-[3px] overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)]"
                           >
                             <div
-                              class="op-bar-fill h-full rounded-[2px] bg-[var(--brand-accent,#f5c518)] transition-[width] duration-300 ease-[ease]"
+                              class="op-bar-fill h-full rounded-[2px] bg-foreground transition-[width] duration-300 ease-[ease]"
                               :class="{
                                 'is-indeterminate w-2/5 animate-[op-bar-slide_1.5s_ease-in-out_infinite]':
                                   opIsIndeterminate
@@ -1247,7 +1379,7 @@ defineExpose({
               aria-haspopup="menu"
               :aria-expanded="moreMenuOpen"
               :aria-label="t('comfyUISettings.more')"
-              :disabled="!installation || pinBottomMenuActions.length === 0 || opInflight"
+              :disabled="!installation || moreMenuActions.length === 0 || opInflight"
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >
@@ -1256,7 +1388,7 @@ defineExpose({
             <MoreMenu
               :open="moreMenuOpen"
               :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-more')"
-              :actions="pinBottomMenuActions"
+              :actions="moreMenuActions"
               :side="isPage ? 'bottom' : 'top'"
               @close="closeMoreMenu"
               @pick="handleMorePick"
