@@ -434,7 +434,6 @@
     "refreshCustomPaths": "刷新状态",
     "extraModelPathsModalTitle": "自定义模型路径",
     "extraModelPathsModalNote": "只读 —— ComfyUI 会搜索这些目录，但启动器不会管理它们。请编辑 extra_model_paths.yaml 以更改它们。",
-    "openBaseFolder": "打开基础文件夹",
     "revealYaml": "在文件夹中显示 extra_model_paths.yaml",
     "argsTitle": "启动参数",
     "restartRequired": "重启后生效",
@@ -2195,7 +2194,7 @@
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
     "progressCancelled": "已取消",
-    "restartToApply": "重启以应用更改"
+    "restartToApply": "重启以应用"
   },
   "installShowcase": {
     "cloud": {

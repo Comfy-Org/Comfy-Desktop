@@ -60,6 +60,48 @@ function withoutPageItems(items: BuildMenuEntry[]): BuildMenuEntry[] {
   return kept
 }
 
+const restartsInFlight = new Set<string>()
+
+export function useRestartBuild(): (inst: Installation) => Promise<void> {
+  const { t } = useI18n()
+  const host = inject(BUILD_MENU_HOST, NO_HOST)
+  const modal = useModal()
+  const sessionStore = useSessionStore()
+
+  return async function restart(inst: Installation): Promise<void> {
+    const confirmed = await modal.confirm({
+      title: t('actions.restartConfirmTitle'),
+      message: t('actions.restartConfirmMessage'),
+      confirmLabel: t('actions.restartConfirm')
+    })
+    if (!confirmed || restartsInFlight.has(inst.id)) return
+    restartsInFlight.add(inst.id)
+    let stopFailure: unknown
+    try {
+      stopFailure = await stopAndLaunch(inst)
+    } finally {
+      restartsInFlight.delete(inst.id)
+    }
+    if (stopFailure === undefined) return
+    await modal.alert({
+      title: t('actions.restart'),
+      message: (stopFailure as Error)?.message || String(stopFailure)
+    })
+  }
+
+  async function stopAndLaunch(inst: Installation): Promise<unknown> {
+    try {
+      await window.api.stopComfyUI(inst.id)
+    } catch (err) {
+      return err ?? new Error(String(err))
+    }
+    await until(() => sessionStore.isRunning(inst.id)).toBe(false, { timeout: STOP_WAIT_MS })
+    if (sessionStore.isRunning(inst.id)) return undefined
+    await host.launch(inst, { isRestart: true })
+    return undefined
+  }
+}
+
 function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   const [head] = entries
   if (!head) return
@@ -76,7 +118,7 @@ export function useBuildMenu(
 ) {
   const { t } = useI18n()
   const host = inject(BUILD_MENU_HOST, NO_HOST)
-  const modal = useModal()
+  const restart = useRestartBuild()
   const sessionStore = useSessionStore()
   const progressStore = useProgressStore()
   const install = useBuildProgress(build)
@@ -193,27 +235,6 @@ export function useBuildMenu(
     )
     return opts.onPage ? withoutPageItems(items) : items
   })
-
-  async function restart(inst: Installation): Promise<void> {
-    const confirmed = await modal.confirm({
-      title: t('actions.restartConfirmTitle'),
-      message: t('actions.restartConfirmMessage'),
-      confirmLabel: t('actions.restartConfirm')
-    })
-    if (!confirmed) return
-    try {
-      await window.api.stopComfyUI(inst.id)
-    } catch (err) {
-      await modal.alert({
-        title: t('actions.restart'),
-        message: (err as Error)?.message || String(err)
-      })
-      return
-    }
-    await until(() => sessionStore.isRunning(inst.id)).toBe(false, { timeout: STOP_WAIT_MS })
-    if (sessionStore.isRunning(inst.id)) return
-    await host.launch(inst, { isRestart: true })
-  }
 
   async function cancelLeftStart(inst: Installation): Promise<void> {
     await window.api.cancelOperation(inst.id)

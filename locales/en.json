@@ -434,7 +434,6 @@
     "refreshCustomPaths": "Refresh status",
     "extraModelPathsModalTitle": "Custom model paths",
     "extraModelPathsModalNote": "Read-only. ComfyUI searches these directories, but Desktop does not manage them. Edit extra_model_paths.yaml to change them.",
-    "openBaseFolder": "Open base folder",
     "revealYaml": "Show extra_model_paths.yaml",
     "argsTitle": "Startup arguments",
     "restartRequired": "Restart to apply",
@@ -2195,7 +2194,7 @@
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
     "progressCancelled": "Cancelled",
-    "restartToApply": "Restart to apply changes"
+    "restartToApply": "Restart to apply"
   },
   "installShowcase": {
     "cloud": {

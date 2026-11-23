@@ -6,7 +6,7 @@ import {
   Ban,
   CircleAlert,
   CircleCheck,
-  FolderOpen,
+  FolderSearch,
   LoaderCircle,
   Pause,
   PauseCircle,
@@ -309,7 +309,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
             :aria-label="revealLabel"
             @click.stop="showInFolder(d, d.savePath)"
           >
-            <FolderOpen :size="16" aria-hidden="true" />
+            <FolderSearch :size="16" aria-hidden="true" />
           </Button>
         </div>
         <Button

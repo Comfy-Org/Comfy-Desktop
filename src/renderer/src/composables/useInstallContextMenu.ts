@@ -7,7 +7,7 @@ import {
   Copy,
   Download,
   EyeOff,
-  FolderOpen,
+  FolderSearch,
   History,
   Pencil,
   Power,
@@ -189,7 +189,7 @@ export function useInstallContextMenu(
       items.push({
         id: 'reveal-in-folder',
         label: revealInFolderLabel(window.api?.platform),
-        icon: FolderOpen
+        icon: FolderSearch
       })
     }
 

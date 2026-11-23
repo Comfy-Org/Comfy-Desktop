@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
-import Button from '@comfyorg/design-system/button/Button'
+import BrowseFolderButton from './BrowseFolderButton.vue'
 import PathDiskInfo from './PathDiskInfo.vue'
 import PathOpenButton from './PathOpenButton.vue'
 import type { DiskSpaceInfo, PathIssue } from '../types/ipc'
@@ -47,16 +47,11 @@ defineEmits<{ browse: []; open: [] }>()
         class="config-path-free flex-none text-[12px] whitespace-nowrap text-text-muted"
         >{{ freeLabel }}</span
       >
-      <Button
-        size="sm"
-        variant="secondary"
-        type="button"
-        class="config-path-browse flex-none rounded-lg px-3"
+      <BrowseFolderButton
+        class="config-path-browse"
         :data-testid="browseTestId"
         @click="$emit('browse')"
-      >
-        {{ $t('common.browse') }}
-      </Button>
+      />
     </InputGroup>
     <PathDiskInfo
       issues-only

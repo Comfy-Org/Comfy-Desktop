@@ -190,6 +190,20 @@ function menuItems() {
   )
 }
 
+function menuItem(label: string) {
+  const item = menuItems().find((candidate) => candidate.text() === label)
+  if (!item) throw new Error(`menu item ${label} not found`)
+  return item
+}
+
+async function chooseFromRowMenu(row: DOMWrapper<Element>, label: string): Promise<void> {
+  await row.find('.shared-folder-more').trigger('click')
+  await nextTick()
+  await flushPromises()
+  await menuItem(label).trigger('click')
+  await flushPromises()
+}
+
 describe('GlobalSettingsView', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -454,9 +468,11 @@ describe('GlobalSettingsView', () => {
     ])
     const row = wrapper.find('.storage-dir-row')
     expect(row.find('.storage-dir-name').text()).toBe('/home/u/ComfyUI-Installs')
-    await row.find('.storage-dir-name').trigger('click')
+    expect(row.find('.storage-dir-name').element.tagName).not.toBe('BUTTON')
+    await row.find('.reveal-folder-button').trigger('click')
     expect(bridge.openPathCalls).toEqual(['/home/u/ComfyUI-Installs'])
-    await row.find('.storage-dir-action').trigger('click')
+    expect(row.find('.storage-dir-browse').text()).toBe('Browse')
+    await row.find('.storage-dir-browse').trigger('click')
     await flushPromises()
     expect(bridge.updateFieldCalls).toEqual([{ id: 'installDir', value: '/picked/installs' }])
   })
@@ -512,23 +528,29 @@ describe('GlobalSettingsView', () => {
     expect(bridge.setModelsDirsCalls).toEqual([['/mnt/extra/models', '/home/u/ComfyUI/models']])
   })
 
-  it('Folders tab keeps Remove as the only item in a models folder menu', async () => {
+  it('Folders tab offers only Change folder in the downloads models folder menu', async () => {
     installMockBridge()
     const wrapper = await openFolders()
-    const [primary, extra] = folderRows(wrapper, 'models')
-    expect(primary!.find('.shared-folder-more').exists()).toBe(false)
-    await extra!.find('.shared-folder-more').trigger('click')
+    await folderRows(wrapper, 'models')[0]!.find('.shared-folder-more').trigger('click')
     await nextTick()
     await flushPromises()
-    expect(menuItems().map((item) => item.text())).toEqual(['Remove'])
+    expect(menuItems().map((item) => item.text())).toEqual(['Change folder'])
+  })
+
+  it('Folders tab keeps Change folder and Remove as the only items in a models folder menu', async () => {
+    installMockBridge()
+    const wrapper = await openFolders()
+    await folderRows(wrapper, 'models')[1]!.find('.shared-folder-more').trigger('click')
+    await nextTick()
+    await flushPromises()
+    expect(menuItems().map((item) => item.text())).toEqual(['Change folder', 'Remove'])
   })
 
   it('Folders tab browses and re-points a models folder through the bridge', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/mnt/new/models'
     const wrapper = await openFolders()
-    await folderRows(wrapper, 'models')[0]!.find('.shared-folder-action').trigger('click')
-    await flushPromises()
+    await chooseFromRowMenu(folderRows(wrapper, 'models')[0]!, 'Change folder')
     expect(bridge.setModelsDirsCalls).toEqual([['/mnt/new/models', '/mnt/extra/models']])
   })
 
@@ -536,8 +558,7 @@ describe('GlobalSettingsView', () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/mnt/extra/models'
     const wrapper = await openFolders()
-    await folderRows(wrapper, 'models')[0]!.find('.shared-folder-action').trigger('click')
-    await flushPromises()
+    await chooseFromRowMenu(folderRows(wrapper, 'models')[0]!, 'Change folder')
     expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
@@ -589,10 +610,10 @@ describe('GlobalSettingsView', () => {
     const wrapper = await openFolders()
     await folderRows(wrapper, 'models')[1]!.find('.shared-folder-more').trigger('click')
     await nextTick()
-    expect(menuItems()[0]!.classes(), 'removing a folder keeps its files').not.toContain(
+    expect(menuItem('Remove').classes(), 'removing a folder keeps its files').not.toContain(
       'text-destructive'
     )
-    await menuItems()[0]!.trigger('click')
+    await menuItem('Remove').trigger('click')
     await flushPromises()
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
@@ -610,7 +631,7 @@ describe('GlobalSettingsView', () => {
     const wrapper = await openFolders()
     await folderRows(wrapper, 'models')[1]!.find('.shared-folder-more').trigger('click')
     await nextTick()
-    await menuItems()[0]!.trigger('click')
+    await menuItem('Remove').trigger('click')
     await flushPromises()
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
@@ -623,8 +644,7 @@ describe('GlobalSettingsView', () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/picked/in'
     const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
-    await folderRows(wrapper, 'input')[0]!.find('.shared-folder-action').trigger('click')
-    await flushPromises()
+    await chooseFromRowMenu(folderRows(wrapper, 'input')[0]!, 'Change folder')
     expect(bridge.updateFieldCalls).toEqual([{ id: 'inputDir', value: '/picked/in' }])
   })
 
@@ -632,15 +652,17 @@ describe('GlobalSettingsView', () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/picked/out'
     const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
-    await folderRows(wrapper, 'output')[0]!.find('.shared-folder-action').trigger('click')
-    await flushPromises()
+    await chooseFromRowMenu(folderRows(wrapper, 'output')[0]!, 'Change folder')
     expect(bridge.updateFieldCalls).toEqual([{ id: 'outputDir', value: '/picked/out' }])
   })
 
-  it('Folders tab opens a shared folder in the OS file manager when clicked', async () => {
+  it('Folders tab opens a shared folder in the OS file manager from its reveal button', async () => {
     const bridge = installMockBridge()
     const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
-    await folderRows(wrapper, 'output')[0]!.find('.shared-folder-path').trigger('click')
+    const row = folderRows(wrapper, 'output')[0]!
+    await row.find('.shared-folder-path').trigger('click')
+    expect(bridge.openPathCalls, 'the path text is not a link').toEqual([])
+    await row.find('.reveal-folder-button').trigger('click')
     expect(bridge.openPathCalls).toEqual(['/shared/out'])
   })
 
@@ -772,9 +794,9 @@ describe('GlobalSettingsView', () => {
     const row = wrapper.find('.storage-dir-row')
     expect(row.exists()).toBe(true)
     expect(row.find('.storage-dir-name').text()).toBe('/home/u/cache')
-    await row.find('.storage-dir-name').trigger('click')
+    await row.find('.reveal-folder-button').trigger('click')
     expect(bridge.openPathCalls).toEqual(['/home/u/cache'])
-    await row.find('.storage-dir-action').trigger('click')
+    await row.find('.storage-dir-browse').trigger('click')
     await flushPromises()
     expect(bridge.updateFieldCalls).toEqual([{ id: 'cacheDir', value: '/picked/cache' }])
   })

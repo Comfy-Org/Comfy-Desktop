@@ -35,7 +35,7 @@ const {
   loadOnPlay?: boolean
 }>()
 
-const emit = defineEmits<{ broken: [] }>()
+const emit = defineEmits<{ broken: []; showing: [index: number | null] }>()
 
 const root = useTemplateRef<HTMLElement>('root')
 const onScreen = useElementVisibility(root)
@@ -148,6 +148,12 @@ const layers = computed<Layer[]>(() => {
     })
     .sort((a, b) => a.index - b.index)
 })
+
+const showingIndex = computed(
+  () => layers.value.find((layer) => layer.role === 'shown')?.index ?? null
+)
+
+watch(showingIndex, (index) => emit('showing', index), { immediate: true })
 
 function opacityOf(layer: Layer): string {
   if (layer.role !== 'shown' && layer.role !== 'poster') return ''

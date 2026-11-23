@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuLabel, DropdownMenuRadioGroup } from 'reka-ui'
-import { ArrowUpCircle, ChevronDown, FolderOpen, Loader2 } from '@lucide/vue'
+import { ArrowUpCircle, ChevronDown, Loader2 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
@@ -19,7 +19,7 @@ import type { ActionDef, Installation } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { channelAction, splitVersion, type BuildOverviewModel } from './overviewModel'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
-import { revealInFolderKey } from '../../composables/usePlatform'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 
 const {
   installation,
@@ -38,7 +38,6 @@ const {
 const emit = defineEmits<{ action: [action: ActionDef] }>()
 
 const { t } = useI18n()
-const revealFolderKey = revealInFolderKey(window.api?.platform)
 const sessionStore = useSessionStore()
 
 const pickedChannel = ref(model.currentChannel)
@@ -477,18 +476,7 @@ function openLocation(): void {
                 :title="location"
                 >{{ location }}</span
               >
-              <Button
-                type="button"
-                variant="muted-textonly"
-                size="icon"
-                class="size-7 shrink-0"
-                :aria-label="t(revealFolderKey)"
-                :title="t(revealFolderKey)"
-                data-testid="build-overview-open-folder"
-                @click="openLocation"
-              >
-                <FolderOpen :size="14" aria-hidden="true" />
-              </Button>
+              <RevealFolderButton data-testid="build-overview-open-folder" @click="openLocation" />
               <BaseCopyButton :value="location" :aria-label="t('buildOverview.copyPath')" />
             </span>
           </div>
