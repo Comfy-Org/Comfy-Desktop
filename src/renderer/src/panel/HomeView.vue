@@ -296,10 +296,11 @@ onMounted(() => {
             </Button>
           </h2>
           <Button
+            v-if="!showNewBuildSlot && !installationStore.loading"
             type="button"
-            variant="muted-textonly"
+            variant="secondary"
             size="icon"
-            class="size-8 shrink-0"
+            class="size-8 shrink-0 rounded-lg"
             :aria-label="t('sidebar.newBuild')"
             :title="t('sidebar.newBuild')"
             data-testid="home-new-build-button"

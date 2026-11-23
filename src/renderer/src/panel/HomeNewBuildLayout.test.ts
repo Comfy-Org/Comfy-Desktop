@@ -168,11 +168,11 @@ describe('New build next to All builds', () => {
     }
   )
 
-  it('keeps the + next to the Builds title while the New build tile is in the row', async () => {
+  it('leaves the + out while the New build tile is in the row', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [CLOUD])
 
     expect(shown('[data-testid="home-new-build"]')).toBe(true)
-    expect(shown('[data-testid="home-new-build-button"]')).toBe(true)
+    expect(host.querySelector('[data-testid="home-new-build-button"]')).toBeNull()
     wrapper.unmount()
   })
 
