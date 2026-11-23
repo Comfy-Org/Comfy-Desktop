@@ -1,4 +1,4 @@
-import type { AppBadge, AppBadgeWords } from '../types/ipc'
+import type { AppBadge, AppBadgeWords, AppCover } from '../types/ipc'
 
 export function badgeWords(words: AppBadgeWords, locale: string): string {
   return locale.startsWith('zh') ? (words['zh-CN'] ?? words.en) : words.en
@@ -14,4 +14,11 @@ export function badgeDescriptionIds(
 ): string | undefined {
   if (!badges?.length) return undefined
   return badges.map((badge) => badgeDescriptionId(prefix, badge)).join(' ')
+}
+
+export function glassPictureOf(
+  covers: readonly AppCover[],
+  showing: number | null = 0
+): string | null {
+  return covers[showing ?? 0]?.stillUrl ?? null
 }
