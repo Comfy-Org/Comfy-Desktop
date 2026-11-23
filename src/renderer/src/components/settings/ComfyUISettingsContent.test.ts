@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { config, mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import type { I18n } from 'vue-i18n'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import zh from '@locales/zh.json'
+import { resetAppLocale, switchAppLocaleToChinese } from '../../lib/switchAppLocale'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { computed, ref, nextTick } from 'vue'
 
@@ -1302,24 +1302,14 @@ describe('ComfyUISettingsContent', () => {
   })
 
   describe('tab language', () => {
-    const appI18n = () =>
-      config.global.plugins.find(
-        (plugin): plugin is I18n<object, object, object, string, false> =>
-          typeof plugin === 'object' && plugin !== null && 'global' in plugin
-      )!
-
-    afterEach(() => {
-      appI18n().global.locale.value = 'en'
-    })
+    afterEach(resetAppLocale)
 
     it('renames the tabs when the app language changes while the page is open', async () => {
       const w = await mountContent()
       const overviewTab = () => w.get(`[data-testid="${TID.settingsTab('update')}"]`)
       expect(overviewTab().text()).toBe('Overview')
 
-      const i18n = appI18n()
-      i18n.global.setLocaleMessage('zh', zh)
-      i18n.global.locale.value = 'zh'
+      switchAppLocaleToChinese()
       await nextTick()
 
       expect(overviewTab().text()).toBe(zh.comfyUISettings.tabOverview)

@@ -42,7 +42,7 @@ describe('useInstallationStore', () => {
     expect(store.loading).toBe(true)
   })
 
-  it('re-reads the builds in the new language when the app language changes', async () => {
+  it('re-reads the builds in the new language when the app language changes', () => {
     setActivePinia(createTestingPinia({ stubActions: false }))
     useInstallationStore()
     const announceLocale = vi.mocked(window.api.onLocaleChanged).mock.lastCall?.[0]

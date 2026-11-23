@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import zh from '@locales/zh.json'
+import { resetAppLocale, switchAppLocaleToChinese } from '../lib/switchAppLocale'
 
 interface MockDownloadEntry {
   url: string
@@ -536,6 +538,19 @@ describe('comfyTitlePopup/DownloadsView', () => {
       expect(reveal.text()).toBe('')
       expect(reveal.attributes('aria-label')).toBe(label)
       expect(reveal.attributes('title')).toBe(label)
+    })
+
+    describe('in the app language', () => {
+      afterEach(resetAppLocale)
+
+      it('names the reveal action in Chinese when the app is in Chinese', async () => {
+        switchAppLocaleToChinese()
+        const wrapper = await mountRows()
+
+        const reveal = wrapper.get('.is-completed .downloads-item-reveal')
+        expect(reveal.attributes('aria-label')).toBe(zh.assets.showInFinder)
+        expect(reveal.attributes('title')).toBe(zh.assets.showInFinder)
+      })
     })
 
     it('runs the action without also opening the row', async () => {
