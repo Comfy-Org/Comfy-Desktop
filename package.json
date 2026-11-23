@@ -110,7 +110,7 @@
     "@vue/devtools-api": "^8.2.1",
     "@vue/test-utils": "^2.6.0",
     "@vueuse/core": "^14.4.0",
-    "electron": "45.3.2",
+    "electron": "45.4.1",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "eslint": "^10.15.0",
