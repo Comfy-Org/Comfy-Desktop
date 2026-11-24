@@ -4,7 +4,6 @@ import type { IpcMainEvent } from 'electron'
 import { trackAppPageEvent } from '../../apps/appPageEvents'
 import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
-import { areAppsEnabled } from '../../apps/appsConfig'
 import { appsPageAdmits, isAppsPageSender } from '../../apps/appsPages'
 import { refreshCreditBalanceAfterRun } from './registerCreditBalanceHandlers'
 
@@ -16,11 +15,7 @@ interface TrackPayload {
 }
 
 async function isFromAppsPage(event: IpcMainEvent): Promise<boolean> {
-  return (
-    isAppsPageSender(event.sender, event.senderFrame) &&
-    (await areAppsEnabled()) &&
-    (await appsPageAdmits(event.sender))
-  )
+  return isAppsPageSender(event.sender, event.senderFrame) && (await appsPageAdmits(event.sender))
 }
 
 function isSamePage(now: LoadedAppPage | null, sent: LoadedAppPage): boolean {

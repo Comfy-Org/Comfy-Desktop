@@ -1332,7 +1332,6 @@ export interface ElectronApi {
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
-  getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>

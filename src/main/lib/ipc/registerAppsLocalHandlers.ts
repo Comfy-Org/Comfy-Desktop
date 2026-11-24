@@ -3,7 +3,6 @@ import type { IpcMainInvokeEvent } from 'electron'
 
 import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
-import { areAppsEnabled } from '../../apps/appsConfig'
 import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
 import { onRunsChanged } from '../../apps/localAppEvents'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
@@ -30,7 +29,7 @@ let latestAnnouncement = 0
 
 async function announceBuilds(): Promise<void> {
   const announcement = ++latestAnnouncement
-  if (liveAppsPages().length === 0 || !(await areAppsEnabled())) return
+  if (liveAppsPages().length === 0) return
   const pages = liveAppsPages()
   const asked = pages.map((page) => loadedAppPage(page))
   const lists = await localBuildsForEach(asked.map((loaded) => loaded?.appId ?? null)).catch(
@@ -48,11 +47,7 @@ async function announceBuilds(): Promise<void> {
 }
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
-  return (
-    isAppsPageSender(event.sender, event.senderFrame) &&
-    (await areAppsEnabled()) &&
-    (await appsPageAdmits(event.sender))
-  )
+  return isAppsPageSender(event.sender, event.senderFrame) && (await appsPageAdmits(event.sender))
 }
 
 interface Caller {
