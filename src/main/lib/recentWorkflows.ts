@@ -1,4 +1,4 @@
-import { promises as fsp } from 'fs'
+import { constants as fsConstants, promises as fsp } from 'fs'
 import path from 'path'
 import { ipcMain } from 'electron'
 
@@ -116,8 +116,14 @@ function toRecent(
   }
 }
 
-async function localRecents(): Promise<RecentWorkflow[]> {
-  const builds = await usableLocalBuilds()
+type BuildScope = ReadonlySet<string> | null
+
+function inScope(buildIds: BuildScope, installationId: string): boolean {
+  return buildIds === null || buildIds.has(installationId)
+}
+
+async function localRecents(buildIds: BuildScope): Promise<RecentWorkflow[]> {
+  const builds = (await usableLocalBuilds()).filter((build) => inScope(buildIds, build.id))
   const lists = await Promise.all(
     builds.map(async (build) => {
       const inst = await installations.get(build.id)
@@ -177,8 +183,9 @@ async function cloudToken(): Promise<string | null> {
   return session.getAccessToken().catch(() => null)
 }
 
-async function cloudRecents(): Promise<RecentWorkflow[]> {
-  const inst = await cloudBuild()
+async function cloudRecents(buildIds: BuildScope): Promise<RecentWorkflow[]> {
+  const found = await cloudBuild()
+  const inst = found && inScope(buildIds, found.id) ? found : null
   const token = inst ? await cloudToken() : null
   if (!inst || !token) return []
   try {
@@ -205,14 +212,25 @@ export function readBuildIds(value: unknown): ReadonlySet<string> | null {
   return new Set(value.filter((id): id is string => typeof id === 'string'))
 }
 
-export async function listRecentWorkflows(
-  buildIds: ReadonlySet<string> | null = null
-): Promise<RecentWorkflow[]> {
-  const [local, cloud] = await Promise.all([localRecents(), cloudRecents()])
-  const inScope = [...local, ...cloud].filter(
-    (workflow) => buildIds === null || buildIds.has(workflow.installationId)
-  )
-  return newestFirst(inScope, RECENT_WORKFLOW_LIMIT)
+export async function listRecentWorkflows(buildIds: BuildScope = null): Promise<RecentWorkflow[]> {
+  const [local, cloud] = await Promise.all([localRecents(buildIds), cloudRecents(buildIds)])
+  return newestFirst([...local, ...cloud], RECENT_WORKFLOW_LIMIT)
+}
+
+const READ_WITHOUT_FOLLOWING = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0)
+
+async function readWithin(file: string): Promise<string | null> {
+  const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING).catch(() => null)
+  if (!handle) return null
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile() || stat.size > MAX_WORKFLOW_BYTES) return null
+    return await handle.readFile('utf8')
+  } catch {
+    return null
+  } finally {
+    await handle.close().catch(() => undefined)
+  }
 }
 
 function isInside(child: string, parent: string): boolean {
@@ -229,9 +247,7 @@ async function readLocalWorkflow(installationId: string, savedPath: string): Pro
   const realRoot = await fsp.realpath(root).catch(() => null)
   const realFile = await fsp.realpath(file).catch(() => null)
   if (!realRoot || !realFile || !isInside(realFile, realRoot)) return null
-  const stat = await fsp.stat(realFile).catch(() => null)
-  if (!stat?.isFile() || stat.size > MAX_WORKFLOW_BYTES) return null
-  const text = await fsp.readFile(realFile, 'utf8').catch(() => null)
+  const text = await readWithin(realFile)
   return text === null ? null : JSON.parse(text)
 }
 

@@ -138,7 +138,8 @@ describe('recent workflows on this computer', () => {
     const outside = path.join(root, 'private')
     await mkdir(outside)
     await writeFile(path.join(outside, 'secret.json'), JSON.stringify(GRAPH))
-    await symlink(outside, path.join(lab, 'escape'), 'dir')
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+    await symlink(outside, path.join(lab, 'escape'), linkType)
 
     expect(await open('inst-lab', 'escape/secret.json')).toEqual({
       opened: false,
@@ -211,6 +212,18 @@ describe('recent workflows on Comfy Cloud', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toContain('/api/userdata?dir=workflows&recurse=true&split=false&full_info=true')
     expect(init.headers).toMatchObject({ Authorization: 'Bearer token' })
+  })
+
+  it('does not ask Cloud when the workspace has no Comfy Cloud build', async () => {
+    mocks.signedIn = true
+    mocks.installs.push(CLOUD)
+    const lab = await localBuild('inst-lab', 'Lab')
+    await saved(lab, 'portrait.json', 30)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect((await list(['inst-lab'])).map((w) => w.title)).toEqual(['portrait'])
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('still lists the local ones when Cloud fails', async () => {
