@@ -166,7 +166,11 @@ export const portable: SourcePlugin = {
         tab: 'status',
         title: t('common.installInfo'),
         fields: [
-          { label: t('common.installMethod'), value: installation.sourceLabel as string },
+          {
+            key: 'install-method',
+            label: t('common.installMethod'),
+            value: installation.sourceLabel as string
+          },
           { label: t('portable.version'), value: installation.version },
           {
             label: t('portable.packageLabel'),

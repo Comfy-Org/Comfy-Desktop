@@ -234,6 +234,27 @@ describe('StatusFactPanel — location', () => {
   })
 })
 
+describe('StatusFactPanel — install method', () => {
+  it('hides the install method row when its label is not in English', async () => {
+    const wrapper = mountPanel({
+      installation: makeInstall('Maanil'),
+      sections: [
+        {
+          tab: 'status',
+          fields: [
+            { key: 'install-method', label: '安装方式', value: 'Portable' },
+            { key: 'build-version', label: '构建版本', value: 'v7' }
+          ]
+        } as unknown as DetailSection
+      ]
+    })
+    await nextTick()
+
+    expect(wrapper.text()).toContain('v7')
+    expect(wrapper.text()).not.toContain('安装方式')
+  })
+})
+
 describe('StatusFactPanel — remote URL', () => {
   function remoteInstall(): Installation {
     return {
