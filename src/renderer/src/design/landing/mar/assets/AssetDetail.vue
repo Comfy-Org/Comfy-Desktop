@@ -9,7 +9,7 @@ import {
   Copy,
   Download,
   FileOutput,
-  FolderOpen,
+  FolderSearch,
   ImagePlus,
   Info,
   MoreHorizontal,
@@ -29,6 +29,7 @@ import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import { assets as desktopAssets, type MarAsset } from '../pages/assetsStore'
 import { graphLibrary } from '../graph/comfyLook'
+import { can } from '../../milestones'
 import { createdAt, factsFor } from './assetFacts'
 import { saveFile } from './saveFile'
 import AssetCover from './AssetCover.vue'
@@ -81,6 +82,20 @@ const {
 const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
 const facts = computed(() => factsFor(asset))
+const full = computed(() => can.value.onboarding && !tab)
+const embedded = computed(() => facts.value.embedded)
+const copiedPrompt = ref(-1)
+let copiedTimer = 0
+function copyPrompt(text: string, index: number): void {
+  navigator.clipboard?.writeText(text).catch(() => {})
+  copiedPrompt.value = index
+  clearTimeout(copiedTimer)
+  copiedTimer = window.setTimeout(() => (copiedPrompt.value = -1), 1400)
+}
+watch(
+  () => asset.id,
+  () => (copiedPrompt.value = -1)
+)
 const tags = computed(() => tagsOf(asset))
 /** Adding a tag: "+ Add tag" turns into a chip-sized field in the same
  *  row, suggesting the tags already in use as you type. Enter adds the
@@ -267,6 +282,8 @@ function copyText(text: string, what: string): void {
 }
 /** Show in Finder: only a file on this computer, never a Comfy Cloud one. */
 const onDisk = computed(() => asset.source !== 'cloud')
+const savedIn = computed(() => `${build} / ${facts.value.imported ? 'input' : 'output'}`)
+const subtitle = computed(() => `${KIND[asset.type] ?? 'File'} · Created ${added.value}`)
 function reveal(): void {
   toast(`Revealed ${asset.name}`)
   moreMenu.value = false
@@ -452,6 +469,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', key, true)
   clearTimeout(timer)
+  clearTimeout(copiedTimer)
   cancelAnimationFrame(raf)
   if (!tab) opener?.focus?.()
 })
@@ -460,13 +478,19 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body" :disabled="tab">
     <div :class="tab ? 'mad-host' : 'proto-ui mad-scrim'" @pointerdown.self="emit('close')">
-      <button v-if="!tab" type="button" class="mad-x" aria-label="Close" @click="emit('close')">
+      <button
+        v-if="!tab && !full"
+        type="button"
+        class="mad-x"
+        aria-label="Close"
+        @click="emit('close')"
+      >
         <X :size="18" />
       </button>
       <div
         ref="root"
         class="proto-ui mad"
-        :class="[!side && 'no-side', tab && 'is-tab']"
+        :class="[!side && 'no-side', tab && 'is-tab', full && 'is-full']"
         :role="tab ? 'region' : 'dialog'"
         :aria-modal="tab ? undefined : true"
         :aria-label="asset.name"
@@ -592,7 +616,10 @@ onBeforeUnmount(() => {
           <div class="mad-body">
             <header class="mad-head">
               <div class="mad-head-text">
-                <h2 class="mad-name">{{ asset.name }}</h2>
+                <h2 class="mad-name" :class="full && 'is-clamped'" :title="asset.name">
+                  {{ asset.name }}
+                </h2>
+                <p v-if="full" class="mad-sub">{{ subtitle }}</p>
               </div>
               <!-- More, at the name's right: everything past the actions below. -->
               <div ref="moreBox" class="mad-pick">
@@ -609,7 +636,7 @@ onBeforeUnmount(() => {
                 </button>
                 <div v-if="moreMenu" class="mad-menu is-down is-end is-more" role="menu">
                   <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
-                    <FolderOpen :size="14" />Show in Finder
+                    <FolderSearch :size="14" />Show in Finder
                   </button>
                   <button
                     type="button"
@@ -657,7 +684,44 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </div>
+              <button
+                v-if="full"
+                type="button"
+                class="mad-icon mad-head-close"
+                aria-label="Close"
+                title="Close"
+                @click="emit('close')"
+              >
+                <X :size="16" />
+              </button>
             </header>
+
+            <section v-if="full && embedded.prompts.length" class="mad-sec" aria-label="Prompts">
+              <h3 class="mad-label">Prompts</h3>
+              <div class="mad-prompts">
+                <div v-for="(text, i) in embedded.prompts" :key="i" class="mad-prompt">
+                  <p>{{ text }}</p>
+                  <button
+                    type="button"
+                    class="mad-prompt-copy"
+                    :aria-label="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
+                    :title="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
+                    @click="copyPrompt(text, i)"
+                  >
+                    <Check v-if="copiedPrompt === i" :size="13" /><Copy v-else :size="13" />
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="full && embedded.models.length" class="mad-sec" aria-label="Models">
+              <h3 class="mad-label">Models</h3>
+              <div class="mad-tags">
+                <span v-for="m in embedded.models" :key="m" class="mad-tag mad-model" :title="m"
+                  ><span class="mad-tag-t">{{ m }}</span></span
+                >
+              </div>
+            </section>
 
             <section class="mad-sec">
               <h3 class="mad-label">Asset details</h3>
@@ -707,7 +771,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section class="mad-sec">
+            <section v-if="editable || !full" class="mad-sec">
               <h3 class="mad-label">
                 Tags
                 <span
@@ -793,7 +857,12 @@ onBeforeUnmount(() => {
                   ></span
                 >
               </h3>
-              <GenerationInfo :facts="facts" :loading="loading" />
+              <GenerationInfo :facts="facts" :loading="loading" :summarized="full" />
+            </section>
+
+            <section v-if="full && onDisk" class="mad-sec">
+              <h3 class="mad-label">Saved in</h3>
+              <p class="mad-saved" :title="savedIn">{{ savedIn }}</p>
             </section>
           </div>
           <!-- At the bottom, labeled: only the actions this file has. Download
@@ -809,6 +878,9 @@ onBeforeUnmount(() => {
               <Workflow :size="14" /><span>{{
                 editable ? 'Open as workflow' : 'Open workflow'
               }}</span>
+            </button>
+            <button v-if="full && onDisk" type="button" class="mad-btn" @click="reveal">
+              <FolderSearch :size="14" /><span>Show in Finder</span>
             </button>
             <button v-if="onTab && !tab" type="button" class="mad-btn" @click="onTab(asset)">
               <AppWindow :size="14" /><span>Open in new tab</span>
@@ -1624,9 +1696,95 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.mad.is-full {
+  inset: 8px;
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 27vw, 420px);
+  border-radius: 16px;
+}
+.mad.is-full.no-side {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mad.is-full .mad-view {
+  inset: 32px 40px 96px;
+}
+.mad.is-full .mad-foot {
+  right: 24px;
+  left: 24px;
+}
+.mad-name.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.mad-sub {
+  margin-top: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-close {
+  width: 28px;
+  height: 28px;
+  margin-left: -6px;
+  border-radius: 999px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-close:hover {
+  color: var(--color-base-foreground);
+}
+.mad-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mad-prompt {
+  position: relative;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 10px 34px 10px 12px;
+  border-radius: 10px;
+  background: var(--mad-fill);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-prompt-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.mad-prompt:hover .mad-prompt-copy,
+:root .proto-ui.proto-ui.proto-ui .mad-prompt-copy:focus-visible {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-prompt-copy:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+}
+.mad-model {
+  border-radius: 6px;
+}
+.mad-saved {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Smaller windows: the frame takes more of them. */
 @media (max-width: 1280px), (max-height: 760px) {
-  .mad:not(.is-tab) {
+  .mad:not(.is-tab):not(.is-full) {
     inset: 24px 64px;
   }
   :root .proto-ui.proto-ui.proto-ui .mad-x {
@@ -1643,6 +1801,14 @@ onBeforeUnmount(() => {
   }
   .mad.is-tab {
     inset: 0;
+  }
+  .mad.is-full {
+    inset: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 52vh);
+  }
+  .mad.is-full .mad-view {
+    inset: 16px 8px 12px;
   }
   :root .proto-ui.proto-ui.proto-ui .mad-x {
     top: 12px;
