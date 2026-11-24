@@ -224,12 +224,15 @@ async function reconcileOnce(contents: WebContents): Promise<void> {
       return
     case 'write_marker':
       await contents
-        .executeJavaScript(buildWriteMarkerScript(origin, decision.marker), true)
+        .executeJavaScript(buildWriteMarkerScript(origin, decision.marker, state.marker), true)
         .catch(() => false)
       return
     case 'sign_out': {
       const removed: unknown = await contents
-        .executeJavaScript(buildRemoveDesktopSessionScript(apiKey, origin, decision.uid), true)
+        .executeJavaScript(
+          buildRemoveDesktopSessionScript(apiKey, origin, decision.uid, state.marker),
+          true
+        )
         .catch(() => false)
       if (removed === true) report('signed_out')
       return

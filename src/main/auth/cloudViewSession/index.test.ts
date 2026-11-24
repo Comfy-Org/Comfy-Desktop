@@ -99,8 +99,8 @@ interface FakeView {
 
 function fakeView(state: { uid: string | null; marker: string | null }, url = CLOUD_URL): FakeView {
   const executeJavaScript = vi.fn((script: string) => {
-    if (script.includes('indexedDB.databases')) return Promise.resolve(state)
     if (script.includes('expectedUid')) return Promise.resolve(true)
+    if (script.includes('indexedDB.databases')) return Promise.resolve(state)
     return Promise.resolve(true)
   })
   const contents = {
@@ -337,6 +337,7 @@ describe('reconcileCloudViewSession', () => {
 
     const removal = view.scripts().find((script) => script.includes('expectedUid'))
     expect(removal).toContain('"desktop-uid"')
+    expect(removal).toContain(JSON.stringify(serializeMarker(marker())))
     expect(outcomes()).toEqual([{ outcome: 'signed_out' }])
   })
 

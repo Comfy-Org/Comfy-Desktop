@@ -1,4 +1,7 @@
-import { webSessionUidReaderSource } from '../firebaseBridge/injectScript'
+import {
+  storedFirebaseUidReaderSource,
+  webSessionUidReaderSource
+} from '../firebaseBridge/injectScript'
 
 export const DESKTOP_SESSION_MARKER_KEY = '__comfyDesktopCloudViewSession'
 export const WEB_SESSION_DELETE_TIMEOUT_MS = 8000
@@ -41,6 +44,14 @@ function storageKeyFor(apiKey: string): string {
   return `firebase:authUser:${apiKey}:[DEFAULT]`
 }
 
+function firebaseDbExistsSource(): string {
+  return `const firebaseDbExists = async () => {
+    const names = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : null;
+    if (!names) return undefined;
+    return names.some((d) => d && d.name === 'firebaseLocalStorageDb');
+  };`
+}
+
 export function buildReadStateScript(apiKey: string, expectedOrigin: string): string {
   return `(async () => {
   const expectedOrigin = ${JSON.stringify(expectedOrigin)};
@@ -48,13 +59,14 @@ export function buildReadStateScript(apiKey: string, expectedOrigin: string): st
   const storageKey = ${JSON.stringify(storageKeyFor(apiKey))};
   let marker = null;
   try { marker = localStorage.getItem(${JSON.stringify(DESKTOP_SESSION_MARKER_KEY)}); } catch (_) {}
+  ${storedFirebaseUidReaderSource()}
   ${webSessionUidReaderSource()}
+  ${firebaseDbExistsSource()}
   const sessionUid = await readSessionUid();
   if (sessionUid === undefined || location.origin !== expectedOrigin) return null;
-  const names = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : null;
-  if (!names) return null;
-  if (!names.some((d) => d && d.name === 'firebaseLocalStorageDb')) return { uid: sessionUid, marker };
-  const uid = await new Promise((resolve) => {
+  const dbExists = await firebaseDbExists();
+  if (dbExists === undefined) return null;
+  const dbUid = !dbExists ? null : await new Promise((resolve) => {
     const req = indexedDB.open('firebaseLocalStorageDb');
     req.onerror = () => resolve(undefined);
     req.onsuccess = () => {
@@ -70,32 +82,40 @@ export function buildReadStateScript(apiKey: string, expectedOrigin: string): st
       };
     };
   });
-  if (uid === undefined || location.origin !== expectedOrigin) return null;
-  return { uid: uid || sessionUid, marker };
+  const storedUid = readStoredUid();
+  if (dbUid === undefined || storedUid === undefined || location.origin !== expectedOrigin) return null;
+  return { uid: dbUid || storedUid || sessionUid, marker };
 })()`
 }
 
 export function buildRemoveDesktopSessionScript(
   apiKey: string,
   expectedOrigin: string,
-  expectedUid: string
+  expectedUid: string,
+  expectedMarker: DesktopSessionMarker | null
 ): string {
+  const markerKey = JSON.stringify(DESKTOP_SESSION_MARKER_KEY)
+  const expectedMarkerJson = JSON.stringify(expectedMarker ? serializeMarker(expectedMarker) : null)
   return `(async () => {
   const expectedOrigin = ${JSON.stringify(expectedOrigin)};
   if (location.origin !== expectedOrigin) return false;
   const storageKey = ${JSON.stringify(storageKeyFor(apiKey))};
   const expectedUid = ${JSON.stringify(expectedUid)};
-  const removed = await new Promise((resolve) => {
+  const expectedMarker = ${expectedMarkerJson};
+  ${webSessionUidReaderSource()}
+  ${firebaseDbExistsSource()}
+  const dbExists = await firebaseDbExists();
+  const dbResult = dbExists === false ? 'kept' : dbExists === undefined ? 'failed' : await new Promise((resolve) => {
     const req = indexedDB.open('firebaseLocalStorageDb');
-    req.onerror = () => resolve(false);
+    req.onerror = () => resolve('failed');
     req.onsuccess = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains('firebaseLocalStorage')) { db.close(); resolve(false); return; }
+      if (!db.objectStoreNames.contains('firebaseLocalStorage')) { db.close(); resolve('kept'); return; }
       const tx = db.transaction('firebaseLocalStorage', 'readwrite');
       let deleted = false;
-      tx.oncomplete = () => { db.close(); resolve(deleted); };
-      tx.onerror = () => { db.close(); resolve(false); };
-      tx.onabort = () => { db.close(); resolve(false); };
+      tx.oncomplete = () => { db.close(); resolve(deleted ? 'deleted' : 'kept'); };
+      tx.onerror = () => { db.close(); resolve('failed'); };
+      tx.onabort = () => { db.close(); resolve('failed'); };
       const store = tx.objectStore('firebaseLocalStorage');
       const get = store.get(storageKey);
       get.onsuccess = () => {
@@ -107,7 +127,23 @@ export function buildRemoveDesktopSessionScript(
       };
     };
   });
-  ${webSessionUidReaderSource()}
+  let storedRemoved = false;
+  let storedLeft = false;
+  for (const storageName of ['localStorage', 'sessionStorage']) {
+    try {
+      const storage = globalThis[storageName];
+      const raw = storage.getItem(storageKey);
+      if (!raw) continue;
+      let uid;
+      try { uid = JSON.parse(raw).uid; } catch (_) { storedLeft = true; continue; }
+      if (uid !== expectedUid || location.origin !== expectedOrigin) continue;
+      storage.removeItem(storageKey);
+      if (storage.getItem(storageKey) === null) storedRemoved = true;
+      else storedLeft = true;
+    } catch (_) {
+      storedLeft = true;
+    }
+  }
   const sessionUid = location.origin === expectedOrigin ? await readSessionUid() : undefined;
   let sessionEnded = false;
   if (sessionUid === expectedUid && location.origin === expectedOrigin) {
@@ -121,10 +157,13 @@ export function buildRemoveDesktopSessionScript(
     } catch (_) {}
   }
   const sessionLeft = sessionUid === undefined || (sessionUid === expectedUid && !sessionEnded);
-  if (!sessionLeft) {
-    try { localStorage.removeItem(${JSON.stringify(DESKTOP_SESSION_MARKER_KEY)}); } catch (_) {}
+  const desktopSessionLeft = dbResult === 'failed' || storedLeft || sessionLeft;
+  if (!desktopSessionLeft && location.origin === expectedOrigin) {
+    try {
+      if (localStorage.getItem(${markerKey}) === expectedMarker) localStorage.removeItem(${markerKey});
+    } catch (_) {}
   }
-  const signedOut = removed || sessionEnded;
+  const signedOut = dbResult === 'deleted' || storedRemoved || sessionEnded;
   if (signedOut) location.reload();
   return signedOut;
 })()`
@@ -132,13 +171,16 @@ export function buildRemoveDesktopSessionScript(
 
 export function buildWriteMarkerScript(
   expectedOrigin: string,
-  marker: DesktopSessionMarker | null
+  marker: DesktopSessionMarker | null,
+  expectedMarker: DesktopSessionMarker | null
 ): string {
   const key = JSON.stringify(DESKTOP_SESSION_MARKER_KEY)
-  const value = marker ? JSON.stringify(serializeMarker(marker)) : 'null'
+  const value = JSON.stringify(marker ? serializeMarker(marker) : null)
+  const expected = JSON.stringify(expectedMarker ? serializeMarker(expectedMarker) : null)
   return `(() => {
   if (location.origin !== ${JSON.stringify(expectedOrigin)}) return false;
   try {
+    if (localStorage.getItem(${key}) !== ${expected}) return false;
     const value = ${value};
     if (value === null) localStorage.removeItem(${key});
     else localStorage.setItem(${key}, value);
