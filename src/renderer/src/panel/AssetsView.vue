@@ -14,11 +14,11 @@ import {
   ExternalLink,
   File,
   Folder,
+  FolderSearch,
   LayoutGrid,
   LayoutDashboard,
   Music,
   RefreshCw,
-  ScanSearch,
   Search,
   Play,
   Trash2
@@ -1062,7 +1062,7 @@ function cardTool(asset: GalleryAsset) {
     return {
       id: 'reveal',
       label: t(revealInFolderKey(window.api.platform)),
-      icon: ScanSearch,
+      icon: FolderSearch,
       run: reveal
     }
   }
@@ -1079,7 +1079,7 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
       ? [{ id: 'download', label: t('assets.download'), icon: Download }]
       : []),
     ...(isLocal(asset)
-      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
+      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: FolderSearch }]
       : []),
     ...(asset.kind === 'image' && asset.previewUrl
       ? [{ id: 'copy', label: t('assets.copy'), icon: Copy }]
@@ -1297,7 +1297,7 @@ function extensionOf(name: string): string {
                     :data-testid="`assets-place-reveal-${option.build.id}`"
                     @click="openPlaceFolder(option)"
                   >
-                    <ScanSearch :size="15" aria-hidden="true" />
+                    <FolderSearch :size="15" aria-hidden="true" />
                   </Button>
                 </Tooltip>
               </div>
