@@ -66,6 +66,10 @@ const allLabel = computed(() => {
   return 'Explore all'
 })
 
+const listsApps = computed(
+  () => mix.value === 'row' || (mix.value === 'tabs' && shown.value.on === 'apps')
+)
+
 function seeAll(on: 'apps' | 'templates'): void {
   exploreStart.value = on
   go('explore')
@@ -151,7 +155,11 @@ function scrollRow(by: number): void {
       </button>
     </div>
 
-    <div class="mar-arcmix-stage" :class="leaving && 'is-leaving'">
+    <div
+      class="mar-arcmix-stage"
+      :class="leaving && 'is-leaving'"
+      :data-home-tour="listsApps ? 'apps-carousel' : undefined"
+    >
       <ExampleArc :items="shown.items" :all-label="shown.label" @all="seeAll(shown.on)" />
     </div>
 

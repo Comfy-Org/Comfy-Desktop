@@ -47,6 +47,9 @@ import { shownName } from '../account'
 import { TEMPLATES, thumb } from '../mock'
 import { mock } from './assets/mock'
 import { recentsCover } from './cover'
+import MarHomeTour from './homeTour/MarHomeTour.vue'
+import { onHome } from './tunerContext'
+import { search } from './search/search'
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -88,6 +91,16 @@ const builds = computed(() => recentInstances.value.slice(0, 3))
 // The top keeps the same room whether or not a build is installing: the
 // Home never changes height between states.
 const tight = computed(() => parts.value.top === 'tight')
+const tourActive = computed(
+  () =>
+    can.value.onboarding &&
+    onHome.value &&
+    proto.mode === 'create' &&
+    !(flow.open && flow.takeover) &&
+    !proto.detail &&
+    !proto.deploying &&
+    !search.open
+)
 const recentsCoverKind = computed(() => (can.value.onboarding ? recentsCover.id : undefined))
 
 // Example workflows as compact rows (Exploration 17): photo, title, what it does.
@@ -309,4 +322,5 @@ const recent = computed<Recent[]>(() =>
     aria-hidden="true"
     class="pointer-events-none sticky bottom-0 -mt-32 h-32 bg-[linear-gradient(to_top,var(--color-content-background)_15%,transparent)]"
   />
+  <MarHomeTour v-if="can.onboarding" :active="tourActive" />
 </template>

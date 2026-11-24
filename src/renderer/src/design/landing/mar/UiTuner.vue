@@ -56,6 +56,7 @@ import { titleTabs, type TitleBarStyle } from './shell/titleTabs'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
 import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
+import { HOME_TOUR_MODES, homeTour, replayHomeTour } from './homeTour/homeTour'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
 import GroupHead from './tuner/TunerGroupHead.vue'
@@ -175,6 +176,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'recentsCover', show: () => when.recentsCover.value },
+  { id: 'homeTour', show: () => when.homeTour.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -478,6 +480,14 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('recentsCover')" label="Recents cover">
             <Seg v-model="recentsCover.id" label="Recents cover" :options="RECENTS_COVERS" />
+          </Row>
+          <Row :show="shows('homeTour')" label="Home tour">
+            <div class="flex items-center gap-2">
+              <Seg v-model="homeTour.id" label="Home tour" :options="HOME_TOUR_MODES" />
+              <Button size="sm" data-testid="home-tour-replay" @click="replayHomeTour">
+                Replay
+              </Button>
+            </div>
           </Row>
           <Row :show="shows('comfyLook')" label="ComfyUI">
             <Seg v-model="comfyLook.id" label="ComfyUI" :options="COMFY_LOOKS" />

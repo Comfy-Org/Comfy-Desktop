@@ -136,6 +136,14 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
   ]
 }))
 
+const TOUR_ANCHORS: Partial<Record<Page, string>> = {
+  environments: 'all-builds',
+  apps: 'apps',
+  assets: 'assets'
+}
+const tourAnchor = (i: Item): string | undefined =>
+  mode === 'create' && i.page ? TOUR_ANCHORS[i.page] : undefined
+
 // In a workflow (Sidebar navigation) no launcher page is current.
 const active = (i: Item): boolean =>
   proto.activeTab === 'home' &&
@@ -179,6 +187,7 @@ function open(i: Item): void {
       <Button
         variant="ghost"
         :aria-current="active(i) ? 'page' : undefined"
+        :data-home-tour="tourAnchor(i)"
         :class="
           cn(
             'h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal',

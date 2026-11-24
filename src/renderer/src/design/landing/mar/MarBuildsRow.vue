@@ -87,13 +87,17 @@ const offerNew = computed(
     !installPending.value &&
     !instances.value.some((i) => i.kind === 'local' && !uninstalled.has(i.id))
 )
+const tourAnchor = (i: ProtoInstance): string | undefined => {
+  if (i.kind === 'cloud') return 'cloud-build'
+  return i.kind === 'local' ? 'local-build' : undefined
+}
 const count = computed(() =>
   Math.min(3, shown.value.length + (cardInBuilds.value || offerNew.value ? 1 : 0))
 )
 </script>
 
 <template>
-  <section class="mt-10">
+  <section class="mt-10" data-home-tour="home-builds">
     <!-- All builds only once the row can't show them all. -->
     <SectionHeader
       class="mar-sec"
@@ -119,6 +123,7 @@ const count = computed(() =>
             :percent="runs.get(i.id)?.percent ?? null"
             :openable="runs.get(i.id)?.kind !== 'uninstall'"
             :lines="instanceMenu(i)"
+            :data-home-tour="tourAnchor(i)"
             @open="open(i)"
           >
             <template #device>
@@ -134,6 +139,7 @@ const count = computed(() =>
             v-if="offerNew"
             type="button"
             class="mbr-card mbr-tile mbr-new"
+            data-home-tour="new-build"
             style="--h: 220"
             @click="hostActions.newInstance()"
           >
