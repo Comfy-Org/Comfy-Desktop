@@ -1936,6 +1936,27 @@ describe('AssetsView Open workflow', () => {
     )
   })
 
+  it('asks again when a file with a workflow comes back without a summary', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    readAssetWorkflowSummary.mockResolvedValueOnce(null)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+    await vi.waitFor(() => expect(readAssetWorkflowSummary).toHaveBeenCalledTimes(1))
+    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
+
+    await press('Escape')
+    readAssetWorkflowSummary.mockResolvedValue({ models: [], prompts: ['a harbor at dusk'] })
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    await vi.waitFor(() =>
+      expect(shownText(viewer()!.querySelector('[data-testid="output-detail-prompts"]'))).toBe(
+        'PROMPTS a harbor at dusk'
+      )
+    )
+  })
+
   it('opens the workflow of a file in a build folder in that build, and closes the viewer', async () => {
     hasAssetWorkflow.mockResolvedValue(true)
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])

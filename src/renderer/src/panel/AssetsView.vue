@@ -901,6 +901,7 @@ async function readWorkflowSummary(asset: GalleryAsset, checks: number): Promise
     .readAssetWorkflowSummary(asset.source, asset.id)
     .catch(() => undefined)
   if (summary === undefined || checks !== workflowChecks.value) return
+  if (summary === null && workflowFound.value.get(key) === true) return
   workflowSummaries.value = new Map(workflowSummaries.value).set(key, summary)
 }
 
