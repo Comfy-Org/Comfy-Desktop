@@ -303,25 +303,25 @@ export const APP_CARDS: AppCard[] = [
 
 export const HIDDEN_APP_CARDS: HiddenAppCard[] = [
   {
-    id: 'explore-worlds',
-    title: 'Explore worlds',
-    description: 'Walk through a world made from one picture.',
+    id: 'sample-app-alpha',
+    title: 'Sample app alpha',
+    description: 'A made-up app for the preview, with a page to open.',
     covers: [],
     reasons: ['hub_only'],
     page: 'live'
   },
   {
-    id: 'style-transfer',
-    title: 'Style transfer',
-    description: 'Paint a picture in the style of another.',
+    id: 'sample-app-beta',
+    title: 'Sample app beta',
+    description: 'A made-up app for the preview that is off and still a draft.',
     covers: [],
     reasons: ['off', 'draft'],
     page: 'missing'
   },
   {
-    id: 'relight',
-    title: 'Relight',
-    description: 'Change the light in a photo after it was taken.',
+    id: 'sample-app-gamma',
+    title: 'Sample app gamma',
+    description: 'A made-up app for the preview that is not published.',
     covers: [],
     reasons: ['unpublished'],
     page: 'missing'
