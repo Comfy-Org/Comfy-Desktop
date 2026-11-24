@@ -15,7 +15,14 @@ import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES, runExample, type Example } from './userStates/examples'
 import HomeInstall from './setup/HomeInstall.vue'
-import { cardInBuilds, flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
+import {
+  cardInBuilds,
+  flow,
+  homeOpen,
+  installingBehind,
+  installPending,
+  setupOn
+} from './setup/setupFlow'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
@@ -97,6 +104,7 @@ const tourActive = computed(
     onHome.value &&
     proto.mode === 'create' &&
     !(flow.open && flow.takeover) &&
+    !installingBehind.value &&
     !proto.detail &&
     !proto.deploying &&
     !search.open
@@ -251,7 +259,7 @@ const recent = computed<Recent[]>(() =>
 
       <!-- Milestone 2 is apps only: Recently used comes back with Workflows
            (Recents & Assets), apps and workflows together. -->
-      <section v-if="recent.length && (can.workflows || !can.exploreApps)" :class="'mt-10'">
+      <section v-if="recent.length && (can.workflows || !can.exploreApps)" class="mt-10">
         <SectionHeader
           class="mar-sec"
           title="Recently used"
