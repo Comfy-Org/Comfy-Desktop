@@ -256,10 +256,13 @@ export interface ComfyDesktopLocalDownload {
  * started (`execution_start`, `executing`, `progress`, `progress_state`,
  * `execution_success`, `execution_error`, `execution_interrupted`), or
  * `run_failed` from Desktop itself, with `prompt_id` and `reason` in `data`.
- * Desktop sends `run_failed` when a run the page started ends with no answer
- * from ComfyUI, to every open app page, so a page acts only on a `prompt_id`
- * it started. Desktop builds that predate it never send it. `reason` is one of
- * these; read any other as `unknown`:
+ * Desktop sends `run_failed` when it loses a run the page started: the ComfyUI
+ * closed or restarted, or no longer has the run after Desktop connects to it
+ * again. A run taken out of ComfyUI's queue while Desktop is connected gets
+ * none, so a page also looks for its run in the queue and the history.
+ * `run_failed` goes to every open app page, so a page acts only on a
+ * `prompt_id` it started. Desktop builds that predate it never send it.
+ * `reason` is one of these; read any other as `unknown`:
  *
  * - `comfyui_crashed`: the ComfyUI process ended with an error, and Desktop did
  *   not stop it.
