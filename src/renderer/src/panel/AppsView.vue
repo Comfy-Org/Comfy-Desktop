@@ -26,6 +26,7 @@ import {
 } from './exploreWorkflows'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { shortcutBelongsToOverlay } from '../lib/pageShortcuts'
 import { badgeDescriptionIds, glassPictureOf } from './appCardBadges'
 import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
 import type { AppCard, CatalogWorkflow, DraftClosingStop } from '../types/ipc'
@@ -104,8 +105,7 @@ const searchShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ /' : 'C
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key !== '/' || !(event.metaKey || event.ctrlKey) || openApp.value) return
-  if ((event.target as Element | null)?.closest?.('[role="dialog"]')) return
-  if (document.querySelector('[data-testid="catalog-workflow-dialog"]')) return
+  if (shortcutBelongsToOverlay(event)) return
   event.preventDefault()
   searchField.value?.querySelector('input')?.focus()
 })

@@ -12,6 +12,7 @@ import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import MenuSub from '@comfyorg/design-system/menu/MenuSub'
 import MenuSubContent from '@comfyorg/design-system/menu/MenuSubContent'
 import MenuSubTrigger from '@comfyorg/design-system/menu/MenuSubTrigger'
+import { shortcutBelongsToOverlay } from '../lib/pageShortcuts'
 import {
   activeFilterCount,
   NO_FILTERS,
@@ -69,7 +70,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key !== 'Backspace' || !(event.metaKey || event.ctrlKey) || count.value === 0) return
   const target = event.target as HTMLElement | null
   if (target && (target.tagName === 'INPUT' || target.isContentEditable)) return
-  if (target?.closest('[role="dialog"]')) return
+  if (shortcutBelongsToOverlay(event)) return
   event.preventDefault()
   clear()
 })

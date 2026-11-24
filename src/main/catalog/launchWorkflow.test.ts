@@ -291,12 +291,12 @@ describe('launching workflows from the published catalog', () => {
     mocks.installation.mockResolvedValueOnce({ id: 'inst-local', workspaceId: 'team-b' })
     expect(
       await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
-    ).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    ).toEqual({ opened: false, error: 'apps.local.openUnknownBuild' })
 
     mocks.localBuilds.mockResolvedValueOnce([{ id: 'inst-local', version: '0.3.65' }])
     expect(
       await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
-    ).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    ).toEqual({ opened: false, error: 'workflowLaunch.updateBuild' })
 
     expect(mocks.startDownload).not.toHaveBeenCalled()
     expect(mocks.open).not.toHaveBeenCalled()

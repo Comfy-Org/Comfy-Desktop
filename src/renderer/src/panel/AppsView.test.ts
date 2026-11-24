@@ -1,11 +1,15 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
+import { h } from 'vue'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import { useDialogs } from '../composables/useDialogs'
 
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
 import AppPageHost from './AppPageHost.vue'
+import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import type {
   AppBadge,
   AppCard,
@@ -985,23 +989,60 @@ describe('Explore Workflows', () => {
     wrapper.unmount()
   })
 
-  it('leaves ⌘/ to the workflow page while it is open', async () => {
+  it('leaves ⌘/ and ⌘⌫ to the workflow page while it is open, even from its menus', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
     const wrapper = await mountApps()
     await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
     await flushPromises()
-    const workflowPage = document.createElement('div')
-    workflowPage.dataset.testid = 'catalog-workflow-dialog'
-    const menuItem = document.createElement('button')
-    workflowPage.append(menuItem)
-    document.body.append(workflowPage)
-    menuItem.focus()
+    await userEvent.click(wrapper.get('[data-testid="explore-filters"]').element)
+    await userEvent.click(onMenu('explore-filter-useCase'))
+    await userEvent.click(onMenu('explore-filter-useCase-generate-video'))
+    await userEvent.keyboard('{Escape}')
+    await flushPromises()
+    expect(cardIds(wrapper)).toEqual(['ltx-video'])
+    const search = wrapper.get('input').element
+    let searchFocused = 0
+    search.addEventListener('focus', () => (searchFocused += 1))
+    const workflowPage = mount(
+      () =>
+        h(DesktopDialogSurface, { open: true, ariaLabel: 'LTX Video' }, () =>
+          h(
+            Menu,
+            { modal: false, label: 'Open in' },
+            {
+              trigger: () =>
+                h('button', { type: 'button', 'data-testid': 'workflow-page-menu' }, 'Open in'),
+              default: () => h(MenuItem, () => 'This computer')
+            }
+          )
+        ),
+      { attachTo: document.body }
+    )
+    await flushPromises()
+    await userEvent.click(onMenu('workflow-page-menu'))
+    await flushPromises()
 
-    menuItem.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true }))
+    await userEvent.keyboard('{Control>}/{/Control}')
+    await userEvent.keyboard('{Control>}{Backspace}{/Control}')
+    await flushPromises()
 
-    expect(document.activeElement).toBe(menuItem)
-    workflowPage.remove()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }))
-    expect(document.activeElement).toBe(wrapper.get('input').element)
+    expect(searchFocused).toBe(0)
+    expect(cardIds(wrapper)).toEqual(['ltx-video'])
+
+    workflowPage.unmount()
+    await flushPromises()
+    const press = (key: string): void => {
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true })
+      )
+    }
+    press('/')
+    press('Backspace')
+    await flushPromises()
+
+    expect(document.activeElement).toBe(search)
+    expect(cardIds(wrapper)).toEqual(['upscale-workflow', 'ltx-video'])
     wrapper.unmount()
   })
 

@@ -358,7 +358,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
 onMounted(async () => {
   stopProgress = window.api.onCatalogWorkflowDownload((update) => {
-    if (update.id === props.workflow.id && selected.value?.build.id === update.build) {
+    if (update.id === props.workflow.id && downloadingInto.value === update.build) {
       progress.value = update
     }
   })

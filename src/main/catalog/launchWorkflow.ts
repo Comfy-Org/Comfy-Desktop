@@ -1,8 +1,8 @@
 import type { WebContents } from 'electron'
 import type { ComfyDesktopOpenInComfy } from '../../types/comfyDesktopBridge'
 import type { CatalogWorkflowDownload, CatalogWorkflowTarget } from '../../types/ipc'
-import { meetsCatalogWorkflowMinimum } from '../../shared/catalogWorkflowCompatibility'
-import { isInstallationInWorkspace, PERSONAL_WORKSPACE_ID } from '../../shared/workspaces'
+import { PERSONAL_WORKSPACE_ID } from '../../shared/workspaces'
+import { catalogBuildRefusal, type CatalogBuildRules } from '../apps/catalogBuild'
 import { usableLocalBuilds } from '../apps/localBuild'
 import { openCatalogInComfy } from '../apps/openInComfy'
 import { isBuildId, workflowName } from '../apps/openRequest'
@@ -64,15 +64,9 @@ export function cancelCatalogWorkflowDownload(id: unknown, build: unknown): bool
   return true
 }
 
-async function canReceiveModels(
-  build: string,
-  workspaceId: string,
-  minComfyUIVersion: string | null
-): Promise<boolean> {
-  const installation = await installations.get(build)
-  if (!installation || !isInstallationInWorkspace(installation, workspaceId)) return false
+async function refuseModelsInto(build: string, rules: CatalogBuildRules): Promise<string | null> {
   const local = (await usableLocalBuilds()).find((candidate) => candidate.id === build)
-  return local !== undefined && meetsCatalogWorkflowMinimum(local.version, minComfyUIVersion)
+  return local ? catalogBuildRefusal(local, rules) : t('apps.local.openUnknownBuild')
 }
 
 async function downloadMissingModels(
@@ -170,9 +164,8 @@ export async function launchCatalogWorkflow(
       : null
     if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }
     if (graph && target.where === 'local' && downloadMissing) {
-      if (!(await canReceiveModels(target.build, workspaceId, workflow.card.minComfyUIVersion))) {
-        return { opened: false, error: t('workflowLaunch.openFailed') }
-      }
+      const refusal = await refuseModelsInto(target.build, scope)
+      if (refusal) return { opened: false, error: refusal }
       const outcome = await downloadMissingModels(page, workflow.card.id, target.build, graph)
       if (outcome === 'cancelled') {
         return { opened: false, error: t('workflowLaunch.downloadCancelled') }

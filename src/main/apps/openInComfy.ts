@@ -4,7 +4,6 @@ import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopOpenInComfy
 } from '../../types/comfyDesktopBridge'
-import { meetsCatalogWorkflowMinimum } from '../../shared/catalogWorkflowCompatibility'
 import { isInstallationInWorkspace } from '../../shared/workspaces'
 import { syncCloudWindowWorkspace } from '../lib/cloudWorkspace'
 import { setActivePanel } from '../host/panelView'
@@ -18,6 +17,7 @@ import { _hasActiveLaunch, _onLaunch, _runningSessions } from '../lib/ipc/shared
 import type { SessionInfo } from '../lib/ipc/shared'
 import { titleForListedApp } from './appsCatalog'
 import { busyAppOn } from './localAppEvents'
+import { catalogBuildRefusal, type CatalogBuildRules } from './catalogBuild'
 import { _resetWorkspaceClaimsForTest, claimWindowForWorkspace } from './workspaceClaims'
 import { chooseLocalBuild, runningPortOf, usableLocalBuilds } from './localBuild'
 import type { LocalBuild } from './localBuild'
@@ -45,9 +45,7 @@ const WINDOWLESS_MODES: ReadonlySet<string> = new Set(['console', 'external'])
 
 type Target = { id: string } | { error: string }
 
-export interface CatalogWorkflowScope {
-  workspaceId: string
-  minComfyUIVersion: string | null
+export interface CatalogWorkflowScope extends CatalogBuildRules {
   isCurrent: () => boolean
 }
 
@@ -139,15 +137,8 @@ async function localTarget(
   }
   if (!picked) return { error: i18n.t('apps.local.noBuilds') }
   if (scope) {
-    const installation = await installations.get(picked.id)
-    if (!installation || !isInstallationInWorkspace(installation, scope.workspaceId)) {
-      return { error: i18n.t('apps.local.openUnknownBuild') }
-    }
-    if (!meetsCatalogWorkflowMinimum(picked.version, scope.minComfyUIVersion)) {
-      return {
-        error: i18n.t('workflowLaunch.updateBuild', { version: scope.minComfyUIVersion ?? '' })
-      }
-    }
+    const refusal = await catalogBuildRefusal(picked, scope)
+    if (refusal) return { error: refusal }
     if (!scope.isCurrent()) return { error: i18n.t('workflowLaunch.openFailed') }
   }
   if (runningPortOf(picked.id) !== null) return { id: picked.id }
@@ -303,25 +294,16 @@ interface CatalogPlacement {
   where: 'local' | 'cloud'
 }
 
-function claimWindowWorkspace(
+async function placeCatalogWindow(
+  entry: ComfyWindowEntry,
   installationId: string,
   { scope, where }: CatalogPlacement
-): CatalogPlacement {
-  if (where !== 'cloud') return { scope, where }
+): Promise<CatalogWorkflowScope | null> {
+  if (where !== 'cloud') return scope
   const stillOwned = claimWindowForWorkspace(installationId)
-  return { where, scope: { ...scope, isCurrent: () => scope.isCurrent() && stillOwned() } }
-}
-
-async function inCatalogWorkspace(
-  entry: ComfyWindowEntry,
-  { scope, where }: CatalogPlacement
-): Promise<boolean> {
-  if (!scope.isCurrent()) return false
-  if (where === 'cloud') {
-    const synced = await syncCloudWindowWorkspace(entry, { pickerWorkspaceId: scope.workspaceId })
-    if (!synced) return false
-  }
-  return scope.isCurrent()
+  const owned = { ...scope, isCurrent: () => scope.isCurrent() && stillOwned() }
+  const synced = await syncCloudWindowWorkspace(entry, { pickerWorkspaceId: scope.workspaceId })
+  return synced && owned.isCurrent() ? owned : null
 }
 
 async function openScriptIn(
@@ -335,13 +317,11 @@ async function openScriptIn(
   if (catalog && !catalog.scope.isCurrent()) {
     return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
   }
-  const placement = catalog ? claimWindowWorkspace(target.id, catalog) : undefined
-  if (placement && !(await inCatalogWorkspace(entry, placement))) {
-    return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
-  }
+  const scope = catalog ? await placeCatalogWindow(entry, target.id, catalog) : undefined
+  if (scope === null) return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
   bringForward(entry)
-  if (await loadInto(target.id, script, placement?.scope)) return { opened: true }
-  if (placement && !placement.scope.isCurrent()) {
+  if (await loadInto(target.id, script, scope)) return { opened: true }
+  if (scope && !scope.isCurrent()) {
     return { opened: false, error: i18n.t('workflowLaunch.openFailed') }
   }
   return { opened: false, error: i18n.t('apps.local.openNotTaken') }
