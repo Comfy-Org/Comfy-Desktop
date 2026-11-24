@@ -30,6 +30,7 @@ const API_MAP = {
   openGlobalSettings: 'pickerSettingsOpenGlobalSettings',
   previewLocalMigration: 'pickerSettingsPreviewLocalMigration',
   onReleaseCacheEnriched: 'pickerSettingsOnReleaseCacheEnriched',
+  onSettingsChanged: 'pickerSettingsOnSettingsChanged',
   terminalSubscribe: 'terminalSubscribe',
   terminalUnsubscribe: 'terminalUnsubscribe',
   terminalWrite: 'terminalWrite',
@@ -47,6 +48,7 @@ type ShimApi = {
     defaultPath?: string
   ) => ReturnType<ComfyTitlePopupBridge['pickerSettingsBrowseFolder']>
   relaunchApp: () => void
+  openExternal: (url: string) => Promise<void>
   onInstallationsChanged: (cb: () => void) => () => void
 }
 
@@ -68,6 +70,7 @@ export function installPickerSettingsApiShim(): void {
   api.browseFolder = (defaultPath?: string) =>
     bridge.pickerSettingsBrowseFolder(defaultPath ? { defaultPath } : undefined)
   api.relaunchApp = () => bridge.pickerSettingsRelaunchApp()
+  api.openExternal = async (url: string) => bridge.globalSettingsOpenExternal(url)
   api.onInstallationsChanged = (cb: () => void) => bridge.onInstancePickerSnapshot(() => cb())
   ;(window as unknown as { api: ShimApi }).api = api
 }

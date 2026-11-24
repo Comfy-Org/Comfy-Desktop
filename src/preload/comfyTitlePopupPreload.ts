@@ -211,7 +211,8 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsGetFieldOptions(
     sourceId: string,
     fieldId: string,
-    selections: Record<string, unknown>
+    selections: Record<string, unknown>,
+    context?: Record<string, unknown>
   ): Promise<Record<string, unknown>[]>
   pickerSettingsGetStableTags(): Promise<string[]>
   pickerSettingsGetUniqueName(baseName: string): Promise<string>
@@ -286,6 +287,7 @@ export interface ComfyTitlePopupBridge {
     cb: (payload: { locale: string; messages: Record<string, unknown> }) => void
   ): () => void
   pickerSettingsOnReleaseCacheEnriched(callback: (data: { repo: string }) => void): () => void
+  pickerSettingsOnSettingsChanged(callback: (data: { key: string }) => void): () => void
   pickerForwardShowProgress(payload: {
     installationId: string
     actionId: string
@@ -566,8 +568,8 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.updateInstallation, { installationId, data }),
   pickerSettingsRunAction: (installationId, actionId, actionData) =>
     ipcRenderer.invoke(CH.runAction, { installationId, actionId, actionData }),
-  pickerSettingsGetFieldOptions: (sourceId, fieldId, selections) =>
-    ipcRenderer.invoke(CH.getFieldOptions, { sourceId, fieldId, selections }),
+  pickerSettingsGetFieldOptions: (sourceId, fieldId, selections, context) =>
+    ipcRenderer.invoke(CH.getFieldOptions, { sourceId, fieldId, selections, context }),
   pickerSettingsGetInstallations: () => ipcRenderer.invoke(CH.getInstallations),
   pickerSettingsGetStableTags: () => ipcRenderer.invoke(CH.getStableTags),
   pickerSettingsGetUniqueName: (baseName) => ipcRenderer.invoke(CH.getUniqueName, { baseName }),
@@ -641,6 +643,11 @@ const bridge: ComfyTitlePopupBridge = {
     const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as { repo: string })
     ipcRenderer.on('release-cache-enriched', handler)
     return () => ipcRenderer.removeListener('release-cache-enriched', handler)
+  },
+  pickerSettingsOnSettingsChanged: (callback) => {
+    const handler = (_event: IpcRendererEvent, data: { key: string }): void => callback(data)
+    ipcRenderer.on('settings-changed', handler)
+    return () => ipcRenderer.removeListener('settings-changed', handler)
   },
   pickerForwardShowProgress: (payload) => {
     ipcRenderer.send('comfy-titlepopup:forward-show-progress', payload)

@@ -2134,8 +2134,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   ipcMain.on(
     'comfy-titlepopup:global-settings-open-external',
     (event, payload: { url?: unknown }) => {
-      const popupEntry = titlePopupsByWebContents.get(event.sender.id)
-      if (!popupEntry || popupEntry.kind !== 'global-settings') return
+      if (!settingsEntryFor(event.sender.id)) return
       void tryOpenExternalUrl(payload?.url)
     }
   )
