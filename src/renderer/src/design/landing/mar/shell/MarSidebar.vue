@@ -178,7 +178,7 @@ function newChat(): void {
     <!-- Lens switch and collapse, on one line (stacked on the rail). -->
     <div class="mar-side-head" :class="!open && 'is-rail'">
       <MarModeSeg
-        v-if="can.builder"
+        v-if="can.lensSwitch"
         :model-value="proto.mode"
         :options="lenses"
         :show="open ? 'picked' : 'icon'"

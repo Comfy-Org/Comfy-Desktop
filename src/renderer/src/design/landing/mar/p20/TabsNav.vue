@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
 <template>
   <header ref="root" class="p08-bar" aria-label="Navigation">
     <MarModeSeg
-      v-if="can.builder"
+      v-if="can.lensSwitch"
       :model-value="proto.mode"
       :options="modes"
       show="label"

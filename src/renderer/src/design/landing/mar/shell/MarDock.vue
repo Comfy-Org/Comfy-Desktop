@@ -220,7 +220,7 @@ function lens(m: Mode): void {
 
       <!-- Lens switch, like Figma's mode switch. -->
       <MarModeSeg
-        v-if="can.builder"
+        v-if="can.lensSwitch"
         :model-value="proto.mode"
         :options="LENSES.filter((x) => x.value !== 'agent' || (can.agent && !marTabsOn))"
         :show="marTabsOn ? 'both' : 'icon'"

@@ -68,7 +68,7 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   >
     <!-- A page about one thing (a project, a space) brings its own header. -->
     <slot v-if="!embedded" name="header" :state="shown">
-      <header class="mar-page-head" :class="can.builder && 'is-on-tabs'">
+      <header class="mar-page-head" :class="can.lensSwitch && 'is-on-tabs'">
         <div class="min-w-0">
           <div class="flex items-center gap-3">
             <slot name="lead" />

@@ -35,6 +35,10 @@ import { appsProto } from './appFlow'
  *  10  Agent      - future: a third lens beside Create and Build, where an
  *                   agent makes workflows and apps from a prompt; Home
  *                   gains the prompt box.
+ * 8.5  Latest & Onboarding - where the onboarding from Home to ComfyUI is
+ *                   reworked: Projects, with no Create / Build switch, one
+ *                   unified sidebar and Builds last in Libraries. Listed
+ *                   last; the value keeps every `m >= n` check of Projects.
  *
  * Every milestone from 1 on is drawn in the New UI (mar/). A milestone only
  * decides what is there, never how it looks.
@@ -52,7 +56,8 @@ export const MILESTONES = [
   { value: '7', label: '9 · One window' },
   { value: '8', label: '10 · Projects (future)' },
   { value: '9', label: '11 · Spaces (future)' },
-  { value: '10', label: '12 · Agent (future)' }
+  { value: '10', label: '12 · Agent (future)' },
+  { value: '8.5', label: '13 · Latest & Onboarding' }
 ]
 
 // Each run of the app opens on the latest milestone; within a run (a
@@ -69,6 +74,8 @@ watch(
   () => proto.milestone,
   (m) => sessionStorage.setItem(MILESTONE_KEY, String(m))
 )
+
+const ONBOARDING = (m: number): boolean => m === 8.5
 
 /** What the current milestone has. */
 export const can = computed(() => {
@@ -92,6 +99,9 @@ export const can = computed(() => {
     /** Search (⌘K) comes with Learn, not with Explore. */
     search: m >= 6,
     builder: m >= 6,
+    /** The Create / Build switch: Latest & Onboarding drops it for one sidebar. */
+    lensSwitch: m >= 6 && !ONBOARDING(m),
+    onboarding: ONBOARDING(m),
     oneWindow: m >= 7,
     projects: m >= 8,
     spaces: m >= 9,
