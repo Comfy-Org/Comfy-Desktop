@@ -2759,16 +2759,12 @@ describe('AssetsView folders', () => {
       document.querySelector('[data-testid="assets-pagination"]'),
       'paging the whole listing says nothing about a folder'
     ).toBeNull()
-    expect(shownText(document.querySelector('[data-testid="assets-breadcrumb"]'))).toBe(
-      'All files 2026-11'
-    )
 
     await pickFolder('2026-11/final')
 
     expect(assetNames(wrapper)).toEqual(['hero.png'])
 
-    document.querySelector<HTMLElement>('[data-testid="assets-breadcrumb-root"]')!.click()
-    await flushPromises()
+    await pickFolder('all')
 
     expect(assetNames(wrapper)).toEqual(['hero.png', 'forest.png', 'harbor.png', 'crane.png'])
   })

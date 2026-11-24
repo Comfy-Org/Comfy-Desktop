@@ -7,7 +7,6 @@ import {
   Box,
   Check,
   ChevronDown,
-  ChevronRight,
   Cloud,
   Copy,
   Download,
@@ -366,14 +365,6 @@ const folderOptions = computed<FolderEntry[]>(() => {
 })
 
 const folderLabel = computed(() => (folder.value ? folder.value : t('assets.allFiles')))
-
-const folderTrail = computed(() =>
-  folder.value
-    ? folder.value
-        .split('/')
-        .map((name, at, parts) => ({ name, path: parts.slice(0, at + 1).join('/') }))
-    : []
-)
 
 watch([() => selectedBuild.value?.build.id, listedSearch], () => {
   folder.value = ''
@@ -1617,34 +1608,6 @@ function extensionOf(name: string): string {
           })
         }}
       </p>
-      <nav
-        v-if="folderTrail.length > 0"
-        class="mx-auto flex w-full max-w-300 flex-wrap items-center gap-0.5 px-10 pb-3 text-ui"
-        data-testid="assets-breadcrumb"
-      >
-        <button
-          type="button"
-          class="rounded-md px-1.5 py-1 text-subtle-foreground hover:text-foreground"
-          data-testid="assets-breadcrumb-root"
-          @click="folder = ''"
-        >
-          {{ t('assets.allFiles') }}
-        </button>
-        <template v-for="(crumb, at) in folderTrail" :key="crumb.path">
-          <ChevronRight :size="14" class="text-subtle-foreground" aria-hidden="true" />
-          <button
-            type="button"
-            class="rounded-md px-1.5 py-1 hover:text-foreground"
-            :class="at === folderTrail.length - 1 ? 'text-foreground' : 'text-subtle-foreground'"
-            :aria-current="at === folderTrail.length - 1 ? 'page' : undefined"
-            :data-testid="`assets-breadcrumb-${crumb.path}`"
-            @click="folder = crumb.path"
-          >
-            {{ crumb.name }}
-          </button>
-        </template>
-      </nav>
-
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
