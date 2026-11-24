@@ -32,7 +32,16 @@ import CreateMenu from './CreateMenu.vue'
 import WorkflowCard from './WorkflowCard.vue'
 import { active as parts } from './marParts'
 import { allWorkflows } from '../gallery'
-import { go, instanceById, instances, openDetail, proto, recentInstances } from '../useProto'
+import {
+  go,
+  hostActions,
+  instanceById,
+  instances,
+  openDetail,
+  proto,
+  recentInstances
+} from '../useProto'
+import type { ProtoInstance } from '../mock'
 import { can } from '../milestones'
 import { shownName } from '../account'
 import { TEMPLATES, thumb } from '../mock'
@@ -43,6 +52,15 @@ import { recentsCover } from './cover'
  * Home: which version of each section shows is picked in marParts.ts. What
  * it holds follows the milestone.
  */
+function openInNewTab(env: ProtoInstance, workflow: string): void {
+  if (env.kind === 'cloud' && !proto.signedIn) return hostActions.launch(env, workflow)
+  proto.detail = null
+  proto.activeInstanceId = env.id
+  const id = `tab-${Date.now()}`
+  proto.tabs.push({ id, title: env.name, instanceId: env.id, workflow })
+  proto.activeTab = id
+}
+
 const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // First run: a first-time user before any local install (UI Playground ›
 // User and Local install). A returning user with no local install (on
@@ -112,7 +130,10 @@ const recent = computed<Recent[]>(() =>
         meta: env?.name ?? '',
         when: w.modified,
         age: w.age,
-        open: () => openDetail('workflow', w.id)
+        open: () =>
+          can.value.onboarding && env
+            ? openInNewTab(env, w.name.replace(/\.json$/, ''))
+            : openDetail('workflow', w.id)
       }
     }),
     // With the own workflows (Recents & Assets), the apps used lately mix in.
