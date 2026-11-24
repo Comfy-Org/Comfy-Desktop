@@ -12,6 +12,7 @@ const INJECTED_PAGE_SCRIPT_TESTS = [
   'src/main/lib/comfyContentScript.test.ts',
   'src/main/lib/comfyTerminalContentScript.test.ts',
   'src/main/auth/cloudViewSession/pageScripts.test.ts',
+  'src/preload/appRunWatcher.test.ts',
   'e2e/support/clickAim.test.ts'
 ]
 const VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS = 'vue/dist/vue.esm-bundler.js'
@@ -45,7 +46,9 @@ export default defineConfig({
             'src/shared/**/*.test.ts',
             'scripts/eslint/**/*.test.ts',
             'e2e/support/videoRecording.test.ts',
+            'e2e/support/appShutdown.test.ts',
             'scripts/preview/**/*.test.mjs',
+            'scripts/dev-app/**/*.test.mjs',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
           exclude: ['node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]

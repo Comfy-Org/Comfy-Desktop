@@ -1,5 +1,7 @@
-import { useSessionStore } from '../stores/sessionStore'
+import { useSessionStore, type ErrorInstance } from '../stores/sessionStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 export interface InjectProgressErrorOpts {
   installationId: string
@@ -49,6 +51,34 @@ export interface SettleInFlightOpOpts {
   result: ActionResult
 }
 
+export interface InstanceEventRecord {
+  channel: 'instance-launching' | 'instance-started' | 'instance-crashed'
+  installationId: string
+  atMs: number
+}
+
+export interface ProgressOperationSnapshot {
+  title: string
+  opKind: Operation['opKind']
+  actionId: string | undefined
+  done: boolean
+  finished: boolean
+  error: string | null
+  superseded: boolean
+  result: ActionResult | null
+  startedAtMs: number
+}
+
+export interface LaunchDiagnostics {
+  nowMs: number
+  errorEntry: ErrorInstance | null
+  launching: boolean
+  running: boolean
+  operationInstance: { actionId: string; sessionId?: string } | null
+  progressOperation: ProgressOperationSnapshot | null
+  instanceEvents: InstanceEventRecord[]
+}
+
 interface PanelBindings {
   showProgress: (opts: ShowProgressOpts) => Promise<void> | void
   actionGuard: { checkBeforeAction: (id: string, label: string) => Promise<boolean> }
@@ -59,6 +89,15 @@ let bindings: PanelBindings | null = null
 const injectedApiCallCounts = new Map<string, number>()
 
 const inFlightSettlers = new Map<string, (result: ActionResult) => void>()
+
+const instanceEvents: InstanceEventRecord[] = []
+
+function recordInstanceEvent(
+  channel: InstanceEventRecord['channel'],
+  installationId: string
+): void {
+  instanceEvents.push({ channel, installationId, atMs: Date.now() })
+}
 
 export interface E2ERendererHelpers {
   injectProgressError(opts: InjectProgressErrorOpts): Promise<void>
@@ -72,6 +111,7 @@ export interface E2ERendererHelpers {
   startInFlightOp(opts: StartInFlightOpOpts): Promise<void>
   settleInFlightOp(opts: SettleInFlightOpOpts): boolean
   runActionGuard(opts: { installationId: string; actionLabel: string }): Promise<boolean>
+  getLaunchDiagnostics(installationId: string): LaunchDiagnostics
 }
 
 function ensureBound(): PanelBindings {
@@ -86,12 +126,21 @@ export function bindE2EPanelHooks(next: PanelBindings | null): void {
 }
 
 export function registerE2ERendererHooks(): void {
+  window.api.onInstanceLaunching(({ installationId }) =>
+    recordInstanceEvent('instance-launching', installationId)
+  )
+  window.api.onInstanceStarted(({ installationId }) =>
+    recordInstanceEvent('instance-started', installationId)
+  )
+  window.api.onInstanceCrashed(({ installationId }) =>
+    recordInstanceEvent('instance-crashed', installationId)
+  )
   const helpers: E2ERendererHelpers = {
     async injectProgressError({ installationId, title, errorMessage }) {
       const b = ensureBound()
       await b.showProgress({
         installationId,
-        title: title ?? `Failed op — ${installationId}`,
+        title: title ?? progressTitle('Failed op', installationId),
         opKind: 'generic',
         apiCall: () => Promise.resolve({ ok: false, message: errorMessage })
       })
@@ -100,7 +149,7 @@ export function registerE2ERendererHooks(): void {
       const b = ensureBound()
       await b.showProgress({
         installationId,
-        title: title ?? `Copy — ${installationId}`,
+        title: title ?? progressTitle('Copy', installationId),
         opKind: 'generic',
         apiCall: () =>
           Promise.resolve({
@@ -124,7 +173,7 @@ export function registerE2ERendererHooks(): void {
       injectedApiCallCounts.set(installationId, 0)
       await b.showProgress({
         installationId,
-        title: title ?? `Retryable failed op — ${installationId}`,
+        title: title ?? progressTitle('Retryable failed op', installationId),
         opKind: 'generic',
         apiCall: () => {
           const next = (injectedApiCallCounts.get(installationId) ?? 0) + 1
@@ -185,7 +234,7 @@ export function registerE2ERendererHooks(): void {
       })
       await b.showProgress({
         installationId,
-        title: title ?? `In-flight — ${installationId}`,
+        title: title ?? progressTitle('In-flight', installationId),
         opKind: opKind ?? 'generic',
         destroysInstance: destroysInstance ?? false,
         triggersInstanceStart: triggersInstanceStart ?? false,
@@ -202,6 +251,31 @@ export function registerE2ERendererHooks(): void {
     },
     runActionGuard({ installationId, actionLabel }) {
       return ensureBound().actionGuard.checkBeforeAction(installationId, actionLabel)
+    },
+    getLaunchDiagnostics(installationId) {
+      const sessionStore = useSessionStore()
+      const op = useProgressStore().operations.get(installationId)
+      return {
+        nowMs: Date.now(),
+        errorEntry: sessionStore.errorInstances.get(installationId) ?? null,
+        launching: sessionStore.isLaunching(installationId),
+        running: sessionStore.isRunning(installationId),
+        operationInstance: sessionStore.operationInstances.get(installationId) ?? null,
+        progressOperation: op
+          ? {
+              title: op.title,
+              opKind: op.opKind,
+              actionId: op.actionId,
+              done: op.done,
+              finished: op.finished,
+              error: op.error,
+              superseded: op.superseded,
+              result: op.result,
+              startedAtMs: op._startedAtMs
+            }
+          : null,
+        instanceEvents: instanceEvents.filter((e) => e.installationId === installationId)
+      }
     }
   }
   ;(globalThis as unknown as { __e2eRenderer: E2ERendererHelpers }).__e2eRenderer = helpers

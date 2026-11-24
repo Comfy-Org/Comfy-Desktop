@@ -66,9 +66,9 @@ async function handleRemove(): Promise<void> {
     <div>
       <Button
         type="button"
-        variant="destructive"
+        variant="destructive-textonly"
         size="md"
-        class="gs-remove-app-data-btn"
+        class="gs-remove-app-data-btn -ml-2"
         @click="handleRemove"
       >
         <Trash2 :size="14" aria-hidden="true" />

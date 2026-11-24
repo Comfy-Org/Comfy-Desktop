@@ -23,7 +23,8 @@ import type {
   VersionStatRow,
   VersionStatsValue
 } from '../../types/ipc'
-import { revealInFolderKey } from '../../composables/usePlatform'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 
 interface Props {
   sections: DetailSection[]
@@ -67,7 +68,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const revealFolderKey = revealInFolderKey(window.api?.platform)
 
 function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -183,7 +183,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
 
 const sectionTitleClass = computed(() =>
   props.readonly
-    ? 'pt-2 pb-1 m-0 leading-[1.5] text-[11px] font-semibold tracking-[0.04em] uppercase text-text-muted opacity-55'
+    ? `pt-2 pb-1 m-0 ${SECTION_TITLE_CLASS}`
     : 'leading-[1.5] text-[length:var(--takeover-fs-body)] font-medium text-text-muted'
 )
 
@@ -196,13 +196,13 @@ function actionButtonClass(running = false, itemRow = false, looksDisabled = fal
 function actionVariantClass(action: ActionDef, directStyle = true): string {
   switch (action.style) {
     case 'primary':
-      return 'bg-[var(--accent-primary)] text-background font-medium hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]'
+      return 'bg-foreground text-background font-medium hover:bg-foreground enabled:hover:bg-foreground/80 hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]'
     case 'accent':
       return directStyle
         ? 'bg-[var(--surface)] text-[var(--action)] font-semibold hover:bg-[var(--action)] hover:text-[var(--bg)]'
         : 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
     case 'danger':
-      return 'bg-[var(--surface)] text-danger hover:bg-[var(--danger)] hover:text-[var(--bg)]'
+      return 'bg-[var(--surface)] text-danger hover:bg-destructive/12'
     default:
       return 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
   }
@@ -210,7 +210,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 </script>
 
 <template>
-  <div class="settings-v2-sections flex flex-col gap-8">
+  <div class="settings-v2-sections flex flex-col gap-12">
     <article
       v-for="(section, si) in visibleSections"
       :key="`s-${si}`"
@@ -219,8 +219,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         readonly
           ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
           : isStackedTitled(section)
-            ? 'max-w-3xl gap-2'
-            : 'gap-4',
+            ? 'max-w-3xl gap-3'
+            : 'gap-6',
         {
           'is-collapsible': isCollapsible(section),
           'is-collapsed [&>*:not(.settings-v2-section-title)]:hidden':
@@ -233,7 +233,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         class="settings-v2-section-head flex min-w-0 flex-col gap-1.5"
       >
         <h3
-          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1 text-[11px] leading-4 font-semibold tracking-[0.04em] text-text-muted uppercase [&>span]:opacity-55"
+          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1"
+          :class="SECTION_TITLE_CLASS"
         >
           <span>{{ section.title }}</span>
         </h3>
@@ -250,7 +251,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         variant="textonly"
         size="unset"
         type="button"
-        class="settings-v2-section-title is-toggle static inline-flex items-center gap-1 self-start rounded-lg border-none bg-transparent p-0 text-left text-text-muted whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]"
+        class="settings-v2-section-title is-toggle static inline-flex items-center gap-1 self-start rounded-lg border-none bg-transparent p-0 text-left whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]"
         :class="sectionTitleClass"
         :aria-expanded="!isCollapsed(section)"
         @click="toggleCollapsed(section)"
@@ -280,7 +281,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
       <div
         class="settings-v2-section-body"
-        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-4' : 'contents'"
+        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-6' : 'contents'"
       >
         <div
           v-for="(item, i) in section.items"
@@ -329,8 +330,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
           :class="[
             row.length > 1
               ? props.stacked
-                ? 'is-paired flex flex-wrap gap-4'
-                : 'is-paired flex flex-wrap gap-4'
+                ? 'is-paired flex flex-wrap gap-x-4 gap-y-6'
+                : 'is-paired flex flex-wrap gap-x-4 gap-y-6'
               : 'contents',
             { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
           ]"
@@ -458,23 +459,17 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
                 class="settings-v2-readonly-path flex min-w-0 items-center gap-2 justify-self-stretch w-full text-right"
               >
-                <Button
-                  v-if="canOpenFilesystemPath(field)"
-                  variant="textonly"
-                  size="unset"
-                  type="button"
-                  class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-                  :title="t(revealFolderKey)"
-                  :aria-label="`${t(revealFolderKey)}: ${readonlyDisplayValue(field)}`"
-                  @click="emit('open-path', readonlyDisplayValue(field))"
-                >
-                  {{ readonlyDisplayValue(field) }}
-                </Button>
                 <span
-                  v-else
                   class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100 w-full text-right justify-self-end settings-v2-field-readonly-path min-w-0 flex-1 truncate"
+                  :title="readonlyDisplayValue(field)"
                   >{{ readonlyDisplayValue(field) }}</span
                 >
+                <RevealFolderButton
+                  v-if="canOpenFilesystemPath(field)"
+                  class="settings-v2-field-readonly-open -my-1"
+                  :path="readonlyDisplayValue(field)"
+                  @click="emit('open-path', readonlyDisplayValue(field))"
+                />
                 <BaseCopyButton :value="readonlyDisplayValue(field)" />
               </div>
 
@@ -544,15 +539,10 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
             <p
               v-if="field.description"
-              class="settings-v2-field-description -mt-0.5 mb-0 flex items-start gap-1.5 text-[11.5px] leading-[1.45] text-text-muted"
+              class="settings-v2-field-description -mt-0.5 mb-0 text-[11.5px] leading-[1.45] text-text-muted"
               role="note"
             >
-              <ShieldAlert
-                :size="14"
-                class="settings-v2-field-description-icon mt-0.5 shrink-0 text-[var(--info,var(--neutral-100))]"
-                aria-hidden="true"
-              />
-              <span>{{ field.description }}</span>
+              {{ field.description }}
             </p>
           </div>
         </div>

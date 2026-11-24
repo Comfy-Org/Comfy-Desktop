@@ -7,7 +7,7 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import { FileText, Folder, FolderLock, MoreHorizontal, Plus } from '@lucide/vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
-import { revealInFolderKey } from '../../composables/usePlatform'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 
 interface ModelsDir {
   path: string
@@ -37,10 +37,10 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const revealFolderKey = revealInFolderKey(window.api?.platform)
 const actionClass = 'models-dir-action size-7 shrink-0 rounded-md'
-const nameClass =
-  'models-dir-name static block min-w-0 max-w-full whitespace-normal [overflow-wrap:anywhere] gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
+const nameTextClass =
+  'models-dir-name block min-w-0 max-w-full whitespace-normal [overflow-wrap:anywhere] text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100'
+const nameButtonClass = `${nameTextClass} static gap-0 rounded-none border-none bg-transparent p-0 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0`
 const openMenuIndex = ref<number | null>(null)
 
 function canPromote(dir: ModelsDir): boolean {
@@ -153,15 +153,17 @@ const rows = computed(() =>
           </span>
           <div class="models-dir-main flex min-w-0 flex-auto items-start py-[7px]">
             <Button
+              v-if="row.isExtra"
               type="button"
               variant="textonly"
               size="unset"
-              :class="nameClass"
-              :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t(revealFolderKey)"
-              @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
+              :class="nameButtonClass"
+              :title="t('comfyUISettings.viewCustomPathDetails')"
+              @click.stop="emit('details', row.index)"
             >
               {{ row.path }}
             </Button>
+            <span v-else :class="nameTextClass" :title="row.path">{{ row.path }}</span>
           </div>
           <span
             v-if="
@@ -195,7 +197,14 @@ const rows = computed(() =>
               {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
             </StorageTag>
           </span>
-          <div class="models-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end">
+          <div
+            class="models-dir-actions inline-flex h-8 w-[58px] shrink-0 items-center justify-end gap-0.5"
+          >
+            <RevealFolderButton
+              v-if="!row.isExtra"
+              :path="row.path"
+              @click.stop="emit('open', row.index)"
+            />
             <div v-if="row.showMenu" class="models-dir-menu-wrap">
               <Menu
                 :open="openMenuIndex === row.index"
@@ -229,11 +238,7 @@ const rows = computed(() =>
                 <MenuItem v-if="row.shared" @select="handleManage()">
                   {{ t('comfyUISettings.manageSharedDirs') }}
                 </MenuItem>
-                <MenuItem
-                  v-if="row.canRemove"
-                  class="text-destructive"
-                  @select="handleRemove(row.index)"
-                >
+                <MenuItem v-if="row.canRemove" @select="handleRemove(row.index)">
                   {{ t('models.removeDir') }}
                 </MenuItem>
               </Menu>

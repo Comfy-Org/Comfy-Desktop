@@ -7,17 +7,21 @@ import type {
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
   ComfyDesktopHostedOutputsBridge,
+  ComfyDesktopHostedRunsBridge,
   ComfyDesktopHostedTelemetryBridge,
+  ComfyDesktopLocalBuild,
   ComfyDesktopLocalEvent,
   ComfyDesktopOutputAction
 } from '../types/comfyDesktopBridge'
+import { createRunReporter } from './appRunWatcher'
 
-const auth: ComfyDesktopHostedAuthBridge = {
+const auth: Required<ComfyDesktopHostedAuthBridge> = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
   getWorkspaceToken: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:get-workspace-token', workspaceId),
   getPartnerNodeToken: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:get-partner-node-token', workspaceId),
+  getCloudOrigin: () => ipcRenderer.invoke('desktop2-auth:get-cloud-origin'),
   requestSignIn: () => ipcRenderer.invoke('desktop2-auth:request-sign-in'),
   onChanged: (callback) => {
     const handler = (_event: IpcRendererEvent, state: ComfyDesktop2AuthState): void =>
@@ -34,6 +38,12 @@ const local: ComfyDesktopHostedLocalBridge = {
   localDownload: (model) => ipcRenderer.invoke('apps-local:download', model),
   openInComfy: (request) => ipcRenderer.invoke('apps-local:open-in-comfy', request),
   localBuilds: () => ipcRenderer.invoke('apps-local:builds'),
+  onLocalBuildsChanged: (callback) => {
+    const handler = (_event: IpcRendererEvent, builds: ComfyDesktopLocalBuild[]): void =>
+      callback(builds)
+    ipcRenderer.on('apps-local:builds-changed', handler)
+    return () => ipcRenderer.removeListener('apps-local:builds-changed', handler)
+  },
   onLocalEvent: (callback) => {
     const handler = (_event: IpcRendererEvent, update: ComfyDesktopLocalEvent): void =>
       callback(update)
@@ -81,3 +91,15 @@ contextBridge.exposeInMainWorld('comfyDesktopLocal', local)
 contextBridge.exposeInMainWorld('comfyDesktopTelemetry', telemetry)
 contextBridge.exposeInMainWorld('comfyDesktopOutputs', outputs)
 contextBridge.exposeInMainWorld('comfyDesktopAssets', assets)
+
+const runReporter = createRunReporter(document, (running) =>
+  ipcRenderer.send('apps-page:running', running)
+)
+
+const runs: ComfyDesktopHostedRunsBridge = {
+  reportRun: (state) => runReporter.reportRun(state)
+}
+
+contextBridge.exposeInMainWorld('comfyDesktopRuns', runs)
+
+window.addEventListener('DOMContentLoaded', () => runReporter.watchToast())

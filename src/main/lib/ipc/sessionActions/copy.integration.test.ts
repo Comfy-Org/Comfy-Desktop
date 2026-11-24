@@ -260,6 +260,28 @@ describe('handleCopy (ComfyBuilder install)', () => {
     expect(comfybuilder.getLaunchCommand(copy!)).toMatchObject({ cwd: copy!.installPath })
     expect(installationsStore.get(src.id)).toBe(src)
   })
+
+  it('starts the copy with no usage times, so it says Never used until it is opened', async () => {
+    installationsStore.set(src.id, {
+      ...src,
+      lastLaunchedAt: 1_800_000_000_000,
+      lastLaunchedAtByCategory: { local: 1_800_000_000_000 },
+      lastStoppedAt: 1_800_000_100_000
+    })
+
+    const result = await handleCopy({
+      event: { sender: makeSender() } as unknown as Electron.IpcMainInvokeEvent,
+      installationId: src.id,
+      inst: installationsStore.get(src.id)!,
+      actionData: { name: 'Unopened Copy' }
+    })
+
+    expect(result.ok, `copy failed: ${result.message ?? ''}`).toBe(true)
+    const copy = installationsStore.get(result.newInstallationId!)!
+    expect(copy.lastLaunchedAt).toBeUndefined()
+    expect(copy.lastLaunchedAtByCategory).toBeUndefined()
+    expect(copy.lastStoppedAt).toBeUndefined()
+  })
 })
 
 describe('handleReleaseUpdate (release-update success path)', () => {
@@ -450,6 +472,18 @@ describe('handleCopyChangePytorch (copy-pytorch)', () => {
     expect(actionId).toBe('change-pytorch')
     expect(target.id).toBe(result.newInstallationId)
     expect(data).toEqual({ stackId: STACK_ID })
+  })
+
+  it('starts the PyTorch copy with no usage times', async () => {
+    src = { ...src, lastLaunchedAt: 1_800_000_000_000, lastStoppedAt: 1_800_000_100_000 }
+    installationsStore.set(src.id, src)
+
+    const result = await invoke({ name: 'src-torch', stackId: STACK_ID })
+
+    expect(result.ok, `copy-pytorch failed: ${result.message ?? ''}`).toBe(true)
+    const newInst = installationsStore.get(result.newInstallationId!)!
+    expect(newInst.lastLaunchedAt).toBeUndefined()
+    expect(newInst.lastStoppedAt).toBeUndefined()
   })
 
   it('keeps the finished copy when the PyTorch change fails and leaves the source untouched', async () => {

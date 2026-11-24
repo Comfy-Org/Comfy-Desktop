@@ -55,7 +55,7 @@ test('Desktop Settings opens from the sidebar footer when expanded and collapsed
   const sidebar = '[data-testid="app-sidebar"]'
 
   for (const collapsed of [false, true]) {
-    const label = collapsed ? '' : 'Desktop Settings'
+    const label = collapsed ? '' : 'Desktop settings'
     await ctx.panel.waitFor(async () => (await ctx.panel.textOf(settings)) === label, {
       message: `the Desktop Settings row did not settle on "${label}"`
     })

@@ -247,6 +247,16 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
+const vcRuntime = vi.hoisted(() => ({ missing: [] as string[], auditThrows: false }))
+
+vi.mock('../../vcRuntimeAudit', async (importOriginal) => ({
+  ...(await importOriginal<typeof VcRuntimeAuditModule>()),
+  auditVcRuntime: async () => {
+    if (vcRuntime.auditThrows) throw new Error('System32 unreadable')
+    return vcRuntime.missing
+  }
+}))
+
 vi.mock('../../comfy-args', async (importOriginal) => {
   const actual = await importOriginal<typeof ComfyArgsModule>()
   return {
@@ -376,6 +386,7 @@ import { instanceModelPathsYaml } from '../../models'
 import { lookupEnMessage } from '../../localeTestHelper'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
 import type { ActionContext } from './types'
+import type { BlockingSession } from '../../../../types/ipc'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
@@ -418,6 +429,7 @@ import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as CoreBetaAncestryModule from '../../coreBetaAncestry'
 import type * as HardwareTapModule from '../../hardwareTap'
 import type * as PipModule from '../../pip'
+import type * as VcRuntimeAuditModule from '../../vcRuntimeAudit'
 import { getUvPath, getVenvPythonPath } from '../../pythonEnv'
 import {
   _resetAgentPrefetchesForTest,
@@ -440,25 +452,43 @@ type FakeChild = EventEmitter & {
 }
 
 describe('desktopFeatureFlags', () => {
+  const withConsent = (consent: boolean | undefined): void => {
+    vi.spyOn(settingsModule, 'telemetryConsent').mockReturnValue(consent)
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('always injects the unconditional desktop flags', () => {
-    const flags = desktopFeatureFlags(installOf('standalone'), false)
+    withConsent(false)
+    const flags = desktopFeatureFlags(installOf('standalone'))
     expect(flags.show_signin_button).toBe('true')
     expect(flags.supports_terminal).toBe('false')
   })
 
   it('injects enable_telemetry only for standalone installs that opted in', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), true).enable_telemetry).toBe('true')
+    withConsent(true)
+    expect(desktopFeatureFlags(installOf('standalone')).enable_telemetry).toBe('true')
   })
 
-  it('omits enable_telemetry when telemetry is disabled (default off)', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), false)).not.toHaveProperty(
-      'enable_telemetry'
-    )
+  it.each([false, undefined])('omits enable_telemetry with telemetry consent %s', (consent) => {
+    withConsent(consent)
+    expect(desktopFeatureFlags(installOf('standalone'))).not.toHaveProperty('enable_telemetry')
+  })
+
+  it('omits enable_telemetry when settings serve a consent the accessor withholds', () => {
+    settingsModule.set('telemetryEnabled', true)
+    onTestFinished(() => settingsModule.set('telemetryEnabled', undefined))
+    expect(settingsModule.get('telemetryEnabled'), 'settings serve the opt-in').toBe(true)
+    withConsent(undefined)
+    expect(desktopFeatureFlags(installOf('standalone'))).not.toHaveProperty('enable_telemetry')
   })
 
   it('omits enable_telemetry for non-standalone installs even when opted in', () => {
-    expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty('enable_telemetry')
-    expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
+    withConsent(true)
+    expect(desktopFeatureFlags(installOf('portable'))).not.toHaveProperty('enable_telemetry')
+    expect(desktopFeatureFlags(installOf('git'))).not.toHaveProperty('enable_telemetry')
   })
 })
 
@@ -1546,6 +1576,7 @@ describe('core beta report placement', () => {
       launchHarness.busyPorts = []
     })
     afterEach(() => {
+      vi.restoreAllMocks()
       settingsModule.set('telemetryEnabled', undefined)
       setHardwareProbe(null)
       launchHarness.busyPorts = null
@@ -1562,13 +1593,21 @@ describe('core beta report placement', () => {
     })
 
     it('still launches, without the context, when reading consent throws', async () => {
-      const readSetting = settingsModule.get
-      vi.spyOn(settingsModule, 'get').mockImplementation((key) => {
-        if (key === 'telemetryEnabled') throw new Error('EPERM: settings.json write failed')
-        return readSetting(key)
+      vi.spyOn(settingsModule, 'telemetryConsent').mockImplementation(() => {
+        throw new Error('EPERM: settings.json write failed')
       })
       const res = await handleLaunch(ctxFor(`harness-client-context-throws-${pathName}`))
       expect(res.ok, 'a failed consent read must not fail the launch').toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
+    })
+
+    it('sends none when settings serve a consent the accessor withholds', async () => {
+      settingsModule.set('telemetryEnabled', true)
+      vi.spyOn(settingsModule, 'telemetryConsent').mockReturnValue(undefined)
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      const res = await handleLaunch(ctxFor(`harness-client-context-withheld-${pathName}`))
+      expect(res.ok).toBe(true)
       expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
       expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
     })
@@ -3316,28 +3355,30 @@ describe('Performance Test guardrail', () => {
     fs.rmSync(installDir, { recursive: true, force: true })
   })
 
-  const refusalOne = (name: string): string =>
-    `errors.performanceTestOtherInstanceRunningOne ${JSON.stringify({ name })}`
-  const perfLabel = (name: string): string =>
-    `errors.performanceTestOfInstallation ${JSON.stringify({ name })}`
-
-  async function expectRefused(message: string, otherCount = 1): Promise<void> {
+  async function expectRefused(blockingSessions: BlockingSession[]): Promise<void> {
     const res = await handleLaunch(ctxFor('guard-bench', PERF))
-    expect(res).toEqual({ ok: false, message })
+    expect(res).toEqual({
+      ok: false,
+      message: 'errors.performanceTestOtherInstanceRunning',
+      blockingSessions
+    })
     expect(spawned, 'no ComfyUI was started').toBe(0)
     expect(events).toEqual([
       {
         event: 'comfy.desktop.performance_test.refused',
-        properties: { installation_id: 'guard-bench', other_count: otherCount }
+        properties: { installation_id: 'guard-bench', other_count: blockingSessions.length }
       }
     ])
     expect(_operationAborts.has(PERF), 'no operation slot claimed').toBe(false)
     expect(_getLaunchingInstallationIds()).not.toContain(PERF)
   }
 
+  const other = { sessionId: 'guard-other', name: 'Other Install' }
+  const otherPerf = { sessionId: 'performance-test:guard-other', name: 'Other Install' }
+
   it('refuses while another installation is running, and names it', async () => {
     runSession('guard-other', 'Other Install')
-    await expectRefused(refusalOne('“Other Install”'))
+    await expectRefused([other])
   })
 
   function preparing(id: string): void {
@@ -3348,7 +3389,7 @@ describe('Performance Test guardrail', () => {
 
   it('refuses while another installation is still preparing or starting', async () => {
     preparing('guard-other')
-    await expectRefused(refusalOne('“Other Install”'))
+    await expectRefused([other])
   })
 
   it('does not count a launch handler still running after its session was stopped', async () => {
@@ -3361,38 +3402,33 @@ describe('Performance Test guardrail', () => {
 
   it('refuses while another installation is stopping', async () => {
     _stoppingInstallationIds.add('guard-other')
-    await expectRefused(refusalOne('“Other Install”'))
+    await expectRefused([other])
   })
 
-  it('names a running Performance Test of another installation as one', async () => {
+  it('names a running Performance Test of another installation by its session', async () => {
     runSession('performance-test:guard-other', 'Other Install')
-    await expectRefused(refusalOne(perfLabel('Other Install')))
+    await expectRefused([otherPerf])
   })
 
   it("names another installation's Performance Test that is still starting by that installation", async () => {
     preparing('performance-test:guard-other')
-    await expectRefused(refusalOne(perfLabel('Other Install')))
+    await expectRefused([otherPerf])
   })
 
-  it('lists Performance Tests after the installations, so the list cannot read as one test of all', async () => {
+  it('lists Performance Tests after the installations', async () => {
     runSession('performance-test:guard-other', 'Other Install')
     runSession('guard-gone', 'Gone Install')
-    await expectRefused(
-      `errors.performanceTestOtherInstanceRunning ${JSON.stringify({
-        names: `“Gone Install” and ${perfLabel('Other Install')}`
-      })}`,
-      2
-    )
+    await expectRefused([{ sessionId: 'guard-gone', name: 'Gone Install' }, otherPerf])
   })
 
   it('counts an installation of an unknown source as local', async () => {
     runSession('guard-unknown', 'Unknown Source')
-    await expectRefused(refusalOne('“Unknown Source”'))
+    await expectRefused([{ sessionId: 'guard-unknown', name: 'Unknown Source' }])
   })
 
   it('counts a session whose installation record is gone, by its session name', async () => {
     runSession('guard-gone', 'Gone Install')
-    await expectRefused(refusalOne('“Gone Install”'))
+    await expectRefused([{ sessionId: 'guard-gone', name: 'Gone Install' }])
   })
 
   it('lets only one of two Performance Tests started together through', async () => {
@@ -3411,13 +3447,13 @@ describe('Performance Test guardrail', () => {
         properties: { installation_id: 'guard-other', other_count: 1 }
       }
     ])
-    expect(results[1]!.message).toBe(refusalOne(perfLabel('Bench')))
+    expect(results[1]!.blockingSessions).toEqual([{ sessionId: PERF, name: 'Bench' }])
     expect(spawned).toBe(1)
   })
 
   it('refuses while the same installation runs its own session', async () => {
     runSession('guard-bench', 'Bench')
-    await expectRefused(refusalOne('“Bench”'))
+    await expectRefused([{ sessionId: 'guard-bench', name: 'Bench' }])
   })
 
   it.each([
@@ -3452,7 +3488,7 @@ describe('Performance Test guardrail', () => {
 
   it('refuses while its own earlier run is still stopping', async () => {
     _stoppingInstallationIds.add(PERF)
-    await expectRefused(refusalOne(perfLabel('Bench')))
+    await expectRefused([{ sessionId: PERF, name: 'Bench' }])
   })
 
   it('does not count its own earlier run', async () => {
@@ -3524,12 +3560,7 @@ describe('Performance Test guardrail', () => {
   it('names every other ComfyUI running', async () => {
     runSession('guard-other', 'Other Install')
     _stoppingInstallationIds.add('guard-bench')
-    await expectRefused(
-      `errors.performanceTestOtherInstanceRunning ${JSON.stringify({
-        names: '“Other Install” and “Bench”'
-      })}`,
-      2
-    )
+    await expectRefused([other, { sessionId: 'guard-bench', name: 'Bench' }])
   })
 
   it.each([
@@ -4301,12 +4332,36 @@ describe('agent requirements at launch', () => {
       )
     })
 
-    it('retires a version uv proves unsatisfiable on two launches, as before', async () => {
+    it('never retires a version uv finds no solution for: an index may not have synced it yet', async () => {
       serveCampaign({ 'comfy-agent': '0.2.3' })
       pipHarness.respond = (args) => ({
         code: missesOverride(args) ? 1 : 0,
         output: missesOverride(args) ? 'error: No solution found when resolving dependencies\n' : ''
       })
+
+      await launchAndPrint()
+      await launchAndPrint()
+      await launchAndPrint()
+
+      expect(overrideEvents().map((e) => [e.decision, e.reason, e.failures])).toEqual([
+        ['reverted', 'resolve_failed', null],
+        ['reverted', 'resolve_failed', null],
+        ['reverted', 'resolve_failed', null]
+      ])
+      expect(overrideEvents()[0]).toMatchObject({
+        exit_code: 1,
+        error_tail: 'error: No solution found when resolving dependencies'
+      })
+      expect(prefetchHarness.requests, 'no download can fix it').toEqual([])
+      expect(overrideState(), 'nothing counted toward retiring it').toBeUndefined()
+    })
+
+    it('retires a version that fails to install on two launches, as before', async () => {
+      serveCampaign({ 'comfy-agent': '0.2.3' })
+      pipHarness.respond = (args) =>
+        missesOverride(args)
+          ? { code: 1, output: 'error: failed to remove file `x.pyd`: Access is denied.\n' }
+          : { code: 0, output: '' }
 
       await launchAndPrint()
       await launchAndPrint()
@@ -4319,10 +4374,6 @@ describe('agent requirements at launch', () => {
         ['reverted', 'install_failed', 2],
         ['reverted', 'previously_failed', null]
       ])
-      expect(overrideEvents()[0]).toMatchObject({
-        exit_code: 1,
-        error_tail: 'error: No solution found when resolving dependencies'
-      })
       expect(prefetchHarness.requests, 'no download can fix it').toEqual([])
       expect(overrideState(), 'install failures, not agent start failures').toEqual({
         signature: 'comfy-agent==0.2.3',
@@ -5575,11 +5626,11 @@ describe('prior ComfyUI process handling at launch', () => {
     )
   })
 
-  const failBootWith = (stderr: string): void => {
+  const failBootWith = (stderr: string, exitCode = 1): void => {
     launchHarness.waitForPort = async () => {
       const first = children[0]!
       first.stderr.emit('data', Buffer.from(stderr))
-      first.emit('close', 1, null)
+      first.emit('close', exitCode, null)
       return new Promise<void>(() => {})
     }
   }
@@ -5641,6 +5692,128 @@ describe('prior ComfyUI process handling at launch', () => {
     )
     const [failed] = eventsNamed('comfy.desktop.comfyui.boot_failed')
     expect(failed).toMatchObject({ assets_startup_failure: null })
+  })
+
+  describe('a DLL that fails to load at start', () => {
+    const C10_NOT_FOUND =
+      'OSError: [WinError 126] The specified module could not be found. Error loading ' +
+      '"C:\\ComfyUI\\.venv\\Lib\\site-packages\\torch\\lib\\c10.dll" or one of its dependencies.\n'
+    const HINT =
+      '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+      'installing the latest redistributable may fix this'
+
+    afterEach(() => {
+      vcRuntime.missing = []
+      vcRuntime.auditThrows = false
+    })
+
+    it.each([
+      [
+        'torch c10.dll after a traceback',
+        'Traceback (most recent call last):\n' +
+          '  File "C:\\ComfyUI\\main.py", line 266, in <module>\n' +
+          '    import torch\n' +
+          C10_NOT_FOUND
+      ],
+      [
+        'a localized DLL init failure',
+        'OSError: [WinError 1114] 动态链接库(DLL)初始化例程失败。 Error loading "c10.dll".\n'
+      ],
+      ['an extension module', 'ImportError: DLL load failed while importing _C: not found\n'],
+      [
+        'a library loaded through ctypes',
+        "FileNotFoundError: Could not find module 'aimdo.dll' (or one of its dependencies).\n"
+      ]
+    ])('adds the VC++ runtime hint for %s when the runtime is missing', async (_name, stderr) => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140_1.dll']
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-runtime-missing'))
+
+      expect(res.message).toBe(`Process exited with code 1${HINT}\n\n${stderr.trim()}`)
+    })
+
+    it('leaves the message alone when the runtime is present', async () => {
+      setArgs()
+      failBootWith(C10_NOT_FOUND)
+
+      const res = await handleLaunch(ctxFor('dll-runtime-present'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${C10_NOT_FOUND.trim()}`)
+    })
+
+    it('leaves a failure that names no DLL alone even when the runtime is missing', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      failBootWith('Traceback (most recent call last):\nRuntimeError: CUDA error\n')
+
+      const res = await handleLaunch(ctxFor('dll-other-failure'))
+
+      expect(res.message).toBe(
+        'Process exited with code 1\n\nTraceback (most recent call last):\nRuntimeError: CUDA error'
+      )
+    })
+
+    it('adds no hint when the DLL message is not on an exception line', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      const stderr = "Could not find module 'aimdo.dll' (or one of its dependencies).\n"
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-unprefixed'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${stderr.trim()}`)
+    })
+
+    it('ignores a DLL failure the start survived when another error ends it', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      const stderr =
+        'ImportError: DLL load failed while importing _ext: module not found.\n' +
+        'Cannot import custom_nodes/some_node module for custom nodes\n' +
+        'Traceback (most recent call last):\nRuntimeError: CUDA error\n'
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-survived'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${stderr.trim()}`)
+    })
+
+    it('leaves the message alone when the runtime check fails', async () => {
+      setArgs()
+      vcRuntime.auditThrows = true
+      failBootWith(C10_NOT_FOUND)
+
+      const res = await handleLaunch(ctxFor('dll-audit-throws'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${C10_NOT_FOUND.trim()}`)
+    })
+
+    it('keeps the hint on an access-violation exit', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140.dll']
+      failBootWith('Fatal Python error: Segmentation fault\n', 0xc0000005)
+
+      const res = await handleLaunch(ctxFor('dll-access-violation'))
+
+      expect(res.message).toBe(
+        'Process exited with code 3221225477 / 0xC0000005 (memory access violation — usually a ' +
+          `faulty or missing native library)${HINT}\n\nFatal Python error: Segmentation fault`
+      )
+    })
+
+    it('adds no DLL hint to a native crash code that is not an access violation', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140.dll']
+      failBootWith(C10_NOT_FOUND, 0xc0000409)
+
+      const res = await handleLaunch(ctxFor('dll-stack-overrun'))
+
+      expect(res.message).toBe(
+        `Process exited with code 3221226505 / 0xC0000409\n\n${C10_NOT_FOUND.trim()}`
+      )
+    })
   })
 
   describe('an asset database from a newer ComfyUI', () => {

@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ArrowDownToLine, Bell, House, Menu as MenuIcon, RotateCw, ZoomIn } from '@lucide/vue'
+import { I18nT, useI18n } from 'vue-i18n'
+import {
+  ArrowDownToLine,
+  Bell,
+  House,
+  LoaderCircle,
+  Menu as MenuIcon,
+  RotateCw,
+  ZoomIn
+} from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
+import { useRunningApps } from './useRunningApps'
+import type { TitleBarApps } from '../types/ipc'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
@@ -14,13 +24,7 @@ const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
 type ComfyPanelKey =
-  | 'comfy'
-  | 'performance-test'
-  | 'benchmarks'
-  | 'new-install'
-  | 'track'
-  | 'load-snapshot'
-  | 'quick-install'
+  'comfy' | 'performance-test' | 'benchmarks' | 'new-install' | 'track' | 'load-snapshot'
 
 type CoachmarkKind = 'beta-notice'
 
@@ -96,8 +100,10 @@ interface Bridge {
   clickInstallUpdatePill: () => void
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
+  onAppsRunningChanged?: (cb: (apps: TitleBarApps) => void) => () => void
+  clickRunningApps?: (anchor: MenuAnchor) => void
   clickFeedback: () => void
-  clickAnnouncement: () => void
+  openWhatsNewMenu: (anchor: { x: number; y: number }) => void
   clickRefreshInstance: () => void
   clickHome: () => void
   resetZoom: () => void
@@ -173,35 +179,44 @@ function handleResetZoom(): void {
   bridge?.resetZoom()
 }
 
-const announcementUnread = ref(false)
-let unsubAnnouncementSettings: (() => void) | null = null
+let unsubTourSettings: (() => void) | null = null
 
-function handleAnnouncement(): void {
-  bridge?.clickAnnouncement()
+const BELL_NUDGE_MS = 700
+const bellNudging = ref(false)
+let bellNudgeTimer: ReturnType<typeof setTimeout> | null = null
+
+function nudgeBell(): void {
+  if (bellNudgeTimer) clearTimeout(bellNudgeTimer)
+  bellNudging.value = true
+  bellNudgeTimer = setTimeout(() => {
+    bellNudging.value = false
+    bellNudgeTimer = null
+  }, BELL_NUDGE_MS)
 }
 
-async function refreshAnnouncementUnread(): Promise<void> {
+async function nudgeBellWhenTourEnds(): Promise<void> {
   try {
-    announcementUnread.value = (await window.api?.getSetting?.('comfyApiAnnouncementSeen')) !== true
-  } catch {
-    announcementUnread.value = false
-  }
+    if ((await window.api?.getSetting?.('homeTourDone')) === true) nudgeBell()
+  } catch {}
 }
 
 onMounted(() => {
-  void refreshAnnouncementUnread()
-  unsubAnnouncementSettings =
+  unsubTourSettings =
     window.api?.onSettingsChanged?.(({ key }) => {
-      if (key === 'comfyApiAnnouncementSeen') void refreshAnnouncementUnread()
+      if (key === 'homeTourDone') void nudgeBellWhenTourEnds()
     }) ?? null
 })
 
 onUnmounted(() => {
-  unsubAnnouncementSettings?.()
+  unsubTourSettings?.()
+  if (bellNudgeTimer) clearTimeout(bellNudgeTimer)
 })
 
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
+const runningBtnRef = useTemplateRef<HTMLButtonElement>('runningBtn')
+const { hasApps, isRunning, hasReady, readyTitle, runningLabel, runningTooltip, openRunning } =
+  useRunningApps(bridge, runningBtnRef)
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 
 let unmounted = false
@@ -221,12 +236,14 @@ const {
   downloadsTrayLabel,
   downloadsStartedAt,
   handleFileMenu,
+  handleWhatsNewMenu,
   handleDownloadsTray
 } = useTitleBarMenus({
   bridge,
   hideTip,
   fileBtnRef,
-  downloadsBtnRef
+  downloadsBtnRef,
+  whatsNewBtnRef: announcementBtnRef
 })
 
 const betaNotice = useBetaActivationNotice({
@@ -442,20 +459,51 @@ onUnmounted(() => {
         <RotateCw :size="16" />
       </button>
       <button
+        v-if="hasApps"
+        ref="runningBtn"
+        type="button"
+        class="title-running-apps inline-flex max-w-[260px] items-center gap-1.5 text-[12px] leading-4"
+        :class="titleMenuButtonClass"
+        data-testid="title-running-apps"
+        v-bind="tooltipAttrs(runningTooltip)"
+        @click="openRunning"
+      >
+        <LoaderCircle
+          v-if="isRunning"
+          :size="14"
+          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <span
+          v-if="hasReady"
+          class="mx-1 size-1.5 shrink-0 rounded-full bg-current"
+          data-testid="title-ready-dot"
+          aria-hidden="true"
+        />
+        <I18nT
+          v-if="readyTitle"
+          keypath="titleBar.appReady"
+          tag="span"
+          scope="global"
+          class="min-w-0 whitespace-nowrap"
+          data-testid="title-ready-label"
+        >
+          <template #app>
+            <span class="inline-block max-w-[160px] truncate align-bottom">{{ readyTitle }}</span>
+          </template>
+        </I18nT>
+        <span v-else class="min-w-0 truncate">{{ runningLabel }}</span>
+      </button>
+      <button
         v-if="!isFirstUseLockdown"
         ref="announcementBtn"
         type="button"
-        class="title-menu-button title-menu-button--icon title-announcement-button relative"
-        :class="titleMenuButtonClass"
+        class="title-menu-button title-menu-button--icon title-announcement-button relative [&.is-nudging_svg]:origin-[50%_10%] [&.is-nudging_svg]:animate-bell-nudge motion-reduce:[&.is-nudging_svg]:animate-bell-fade"
+        :class="[titleMenuButtonClass, { 'is-nudging': bellNudging }]"
         v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"
-        @click="handleAnnouncement"
+        @click="handleWhatsNewMenu"
       >
         <Bell :size="16" />
-        <span
-          v-if="announcementUnread"
-          class="title-announcement-dot pointer-events-none absolute top-[3px] right-1 size-1.5 rounded-[50%] bg-[var(--comfy-yellow,#ffd23f)] [box-shadow:0_0_0_1.5px_var(--titlebar-bg,rgba(0,0,0,0.5))] [.title-bar.is-light_&]:bg-[var(--titlebar-icon)] [.title-bar.is-light_&]:[box-shadow:0_0_0_1.5px_var(--titlebar-bg-active)]"
-          aria-hidden="true"
-        />
       </button>
       <button
         v-if="!isFirstUseLockdown"

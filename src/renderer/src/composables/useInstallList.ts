@@ -1,4 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { formatRelativeFromMs } from '../lib/datetime'
+import { lastUsedAt } from '../../../shared/lastUsed'
 import { scoreName } from '../utils/fuzzyMatch'
 import type { Installation } from '../types/ipc'
 
@@ -33,6 +36,7 @@ export interface UseInstallListApi {
 export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   const { installations } = opts
 
+  const { t } = useI18n()
   const searchQuery = ref('')
   const activeFilter = ref<FilterKey>('all')
   const hideCloudFromPicker = ref<boolean>(false)
@@ -44,9 +48,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   }
 
   function sortByRecency(a: Installation, b: Installation): number {
-    const ta = typeof a.lastLaunchedAt === 'number' ? a.lastLaunchedAt : -Infinity
-    const tb = typeof b.lastLaunchedAt === 'number' ? b.lastLaunchedAt : -Infinity
-    return tb - ta
+    return (lastUsedAt(b) ?? -Infinity) - (lastUsedAt(a) ?? -Infinity)
   }
 
   const effectiveInstalls = computed<Installation[]>(() =>
@@ -107,19 +109,9 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
     if (unsubSettingsChanged) unsubSettingsChanged()
   })
 
-  function timeAgo(timestamp: number): string {
-    const diff = now.value - timestamp
-    const minutes = Math.floor(diff / 60_000)
-    if (minutes < 1) return 'Just now'
-    if (minutes < 60) return `${minutes}m ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}h ago`
-    const days = Math.floor(hours / 24)
-    return `${days}d ago`
-  }
-
   function lastLaunchedShortLabel(inst: Installation): string {
-    return typeof inst.lastLaunchedAt === 'number' ? timeAgo(inst.lastLaunchedAt) : ''
+    const usedAt = lastUsedAt(inst)
+    return usedAt === undefined ? '' : formatRelativeFromMs(usedAt, t, now.value)
   }
 
   return {

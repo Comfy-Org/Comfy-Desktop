@@ -75,7 +75,7 @@ function makeStorageSections(
         },
         {
           id: 'modelDirs',
-          label: 'Model Directories',
+          label: 'Model directories',
           value: modelDirs,
           editable: true,
           editType: 'model-dirs'
@@ -112,14 +112,14 @@ function makeIoSections(
       fields: [
         {
           id: 'useSharedInput',
-          label: 'Use Shared Input Folder',
+          label: 'Use shared input folder',
           value: opts.sharedInput ?? false,
           editable: true,
           editType: 'boolean'
         },
         {
           id: 'useSharedOutput',
-          label: 'Use Shared Output Folder',
+          label: 'Use shared output folder',
           value: opts.sharedOutput ?? false,
           editable: true,
           editType: 'boolean'
@@ -216,7 +216,7 @@ describe('StoragePane', () => {
     expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
     for (const row of rows) expect(row.findAll('.models-dir-action')).toHaveLength(1)
     expect(await menuLabels(rows[0]!.find('.models-dir-menu-wrap > button'))).toEqual([
-      'Manage shared directories in Desktop Settings'
+      'Manage shared directories in Desktop settings'
     ])
   })
 
@@ -291,7 +291,7 @@ describe('StoragePane', () => {
     await nextTick()
     await chooseFromMenu(
       wrapper.findAll('.models-dir-menu-wrap > button')[0]!,
-      'Manage shared directories in Desktop Settings'
+      'Manage shared directories in Desktop settings'
     )
     expect(api.openGlobalSettingsCalls).toEqual(['storage'])
   })
@@ -310,12 +310,12 @@ describe('StoragePane', () => {
   describe('badges explain themselves without a ? icon', () => {
     const BADGES = [
       ['.tag-primary', 'Newly downloaded models are saved here.'],
-      ['.tag-shared', 'Shared with every build. Change it in Desktop Settings.'],
+      ['.tag-shared', 'Shared with every build. Change it in Desktop settings.'],
       [
         '.tag-local',
         "This build's own models folder. It's always used and is never shared with other builds."
       ],
-      ['.storage-dir-shared-tag', 'Shared with every build. Change it in Desktop Settings.']
+      ['.storage-dir-shared-tag', 'Shared with every build. Change it in Desktop settings.']
     ] as const
 
     async function mountWithEveryBadge() {
@@ -328,7 +328,7 @@ describe('StoragePane', () => {
         {
           ...makeSnapshot(),
           sharedDirectoriesFields: [
-            { id: 'inputDir', label: 'Shared Input', value: '/shared/in', type: 'path' }
+            { id: 'inputDir', label: 'Shared input', value: '/shared/in', type: 'path' }
           ] as never
         }
       )
@@ -387,7 +387,7 @@ describe('StoragePane', () => {
     await nextTick()
     for (const trigger of wrapper.findAll('.models-dir-menu-wrap > button')) {
       expect(await menuLabels(trigger)).not.toContain(
-        'Manage shared directories in Desktop Settings'
+        'Manage shared directories in Desktop settings'
       )
     }
   })
@@ -579,7 +579,7 @@ describe('StoragePane', () => {
       const rows = wrapper.findAll('.models-dir-row')
       await chooseFromMenu(
         rows[rows.length - 1]!.find('.models-dir-menu-wrap > button'),
-        'Use for Model Downloads'
+        'Use for model downloads'
       )
       const emitted = wrapper.emitted('update-field')!
       const [field, value] = emitted[0] as [{ id: string }, unknown]
@@ -601,7 +601,7 @@ describe('StoragePane', () => {
       await flushPromises()
       const items = menuItems()
       expect(items).toHaveLength(1)
-      expect(items[0]!.text()).toContain('Use for Model Downloads')
+      expect(items[0]!.text()).toContain('Use for model downloads')
     })
 
     it('labels the add button like Desktop Settings, not with the shared-directory wording', async () => {
@@ -625,12 +625,15 @@ describe('StoragePane', () => {
       expect(value).toEqual(['/a/models', '/b/models', '/c/models'])
     })
 
-    it('opens the folder when a model path is clicked', async () => {
+    it('opens the folder from the reveal button, not the model path text', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
       await nextTick()
       const rows = wrapper.findAll('.models-dir-row')
+      expect(rows[1]!.find('.models-dir-name').element.tagName).not.toBe('BUTTON')
       await rows[1]!.find('.models-dir-name').trigger('click')
+      expect(api.openPathCalls).toEqual([])
+      await rows[1]!.find('.models-dir-actions .reveal-folder-button').trigger('click')
       expect(api.openPathCalls).toEqual(['/a/models'])
     })
 
@@ -644,13 +647,13 @@ describe('StoragePane', () => {
       const extraRow = rows[2]!
       expect(extraRow.find('.models-dir-name').text()).toBe('/a/models')
       expect(await menuLabels(extraRow.find('.models-dir-menu-wrap > button'))).toContain(
-        'Change Folder'
+        'Change folder'
       )
       const ownRow = rows[3]!
       expect(ownRow.find('.models-dir-name').text()).toBe('/own/models')
       expect(ownRow.find('.tag-primary').exists()).toBe(false)
       expect(await menuLabels(ownRow.find('.models-dir-menu-wrap > button'))).not.toContain(
-        'Change Folder'
+        'Change folder'
       )
       expect(wrapper.text()).toContain('Include shared directories')
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
@@ -690,10 +693,17 @@ describe('StoragePane', () => {
       await flushPromises()
       const items = menuItems()
       const removeItem = items.find((i) => i.text().includes('Remove'))!
+      expect(removeItem.classes(), 'removing a folder keeps its files').not.toContain(
+        'text-destructive'
+      )
       await removeItem.trigger('click')
       await flushPromises()
       const modal = useModal()
       expect(modal.state.visible).toBe(true)
+      expect(modal.state.message).toBe(
+        "This won't delete any files. You can re-add the directory later from this list."
+      )
+      expect(modal.state.confirmStyle, 'removing a folder keeps its files').toBe('primary')
       modal.close(true)
       await flushPromises()
       const emitted = wrapper.emitted('update-field')!
@@ -761,7 +771,7 @@ describe('StoragePane', () => {
       await nextTick()
       await flushPromises()
       const items = menuItems()
-      await items.find((i) => i.text().includes('Use for Model Downloads'))!.trigger('click')
+      await items.find((i) => i.text().includes('Use for model downloads'))!.trigger('click')
       await flushPromises()
       const emitted = wrapper.emitted('update-field')!
       const [field, value] = emitted[0] as [{ id: string }, unknown]
@@ -779,7 +789,7 @@ describe('StoragePane', () => {
       await nextTick()
       await flushPromises()
       const items = menuItems()
-      await items.find((i) => i.text().includes('Use for Model Downloads'))!.trigger('click')
+      await items.find((i) => i.text().includes('Use for model downloads'))!.trigger('click')
       await flushPromises()
       const emitted = wrapper.emitted('update-field')!
       const [field, value] = emitted[0] as [{ id: string }, unknown]
@@ -829,7 +839,7 @@ describe('StoragePane', () => {
       await nextTick()
       await chooseFromMenu(
         wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-action'),
-        'Change Folder',
+        'Change folder',
         '.storage-dir-menu'
       )
       const [field, value] = wrapper.emitted('update-field')![0] as [{ id: string }, unknown]
@@ -844,7 +854,7 @@ describe('StoragePane', () => {
       await nextTick()
       await chooseFromMenu(
         wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-action'),
-        'Change Folder',
+        'Change folder',
         '.storage-dir-menu'
       )
       const [field, value] = wrapper.emitted('update-field')![0] as [{ id: string }, unknown]
@@ -852,11 +862,11 @@ describe('StoragePane', () => {
       expect(value).toBe('/ext/in')
     })
 
-    it('opens the effective input folder when its path is clicked', async () => {
+    it('opens the effective input folder from its reveal button', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(makeIoSections({ inputDir: '/ext/in' }))
       await nextTick()
-      await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-name').trigger('click')
+      await wrapper.findAll('.storage-dir-row')[0]!.find('.reveal-folder-button').trigger('click')
       expect(api.openPathCalls).toEqual(['/ext/in'])
     })
   })
@@ -866,8 +876,8 @@ describe('StoragePane', () => {
       return {
         ...makeSnapshot(),
         sharedDirectoriesFields: [
-          { id: 'inputDir', label: 'Shared Input', value: '/shared/in', type: 'path' },
-          { id: 'outputDir', label: 'Shared Output', value: '/shared/out', type: 'path' }
+          { id: 'inputDir', label: 'Shared input', value: '/shared/in', type: 'path' },
+          { id: 'outputDir', label: 'Shared output', value: '/shared/out', type: 'path' }
         ] as never
       }
     }
@@ -938,14 +948,14 @@ describe('StoragePane', () => {
       expect(emitted[1]![1]).toBe(false)
     })
 
-    it('opens a shared dir when its path is clicked', async () => {
+    it('opens a shared dir from its reveal button', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(
         makeIoSections({ sharedInput: true, sharedOutput: true }),
         makeSharedIoSnapshot()
       )
       await nextTick()
-      await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-name').trigger('click')
+      await wrapper.findAll('.storage-dir-row')[0]!.find('.reveal-folder-button').trigger('click')
       expect(api.openPathCalls).toEqual(['/shared/in'])
     })
 
@@ -959,7 +969,7 @@ describe('StoragePane', () => {
       await nextTick()
       const row = wrapper.findAll('.storage-dir-row')[0]!
       expect(await menuLabels(row.find('.storage-dir-action'), '.storage-dir-menu')).toEqual([
-        'Manage shared directories in Desktop Settings'
+        'Manage shared directories in Desktop settings'
       ])
       await menuItems('.storage-dir-menu')[0]!.trigger('click')
       await flushPromises()
@@ -993,7 +1003,7 @@ describe('StoragePane', () => {
       const rows = wrapper.findAll('.storage-dir-row')
       await chooseFromMenu(
         rows[1]!.find('.storage-dir-action'),
-        'Change Folder',
+        'Change folder',
         '.storage-dir-menu'
       )
       const [field, value] = wrapper.emitted('update-field')![0] as [{ id: string }, unknown]
@@ -1049,7 +1059,7 @@ describe('StoragePane', () => {
             },
             {
               id: 'modelDirs',
-              label: 'Model Directories',
+              label: 'Model directories',
               value: [],
               editable: true,
               editType: 'model-dirs'
@@ -1108,6 +1118,13 @@ describe('StoragePane', () => {
       expect(extraRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
     })
 
+    it('gives the yaml row no reveal button because it opens details, not a folder', async () => {
+      installMockApi()
+      const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
+      await nextTick()
+      expect(findExtraRow(wrapper).find('.reveal-folder-button').exists()).toBe(false)
+    })
+
     it('opens the detail modal listing per-type dirs when the row is clicked', async () => {
       installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
@@ -1161,15 +1178,34 @@ describe('StoragePane', () => {
       expect(api.openPathCalls).not.toContain('/own/extra_model_paths.yaml')
     })
 
-    it('opens a per-type dir from the modal when its path is clicked', async () => {
+    it('opens a per-type dir from the reveal button beside its path in the modal', async () => {
       const api = installMockApi()
       const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
       await nextTick()
       await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
       await nextTick()
-      const dirBtns = Array.from(document.querySelectorAll('.empm-dir-path')) as HTMLButtonElement[]
-      dirBtns.find((b) => b.textContent === '/ext/base/checkpoints')!.click()
+      const dirRows = Array.from(document.querySelectorAll<HTMLElement>('.empm-dir'))
+      const present = dirRows.find(
+        (row) => row.querySelector('.empm-dir-path')?.textContent === '/ext/base/checkpoints'
+      )!
+      expect(present.querySelector('.empm-dir-path')!.tagName).not.toBe('BUTTON')
+      present.querySelector<HTMLButtonElement>('.reveal-folder-button')!.click()
       expect(api.openPathCalls).toContain('/ext/base/checkpoints')
+    })
+
+    it('offers no reveal button for a per-type dir that does not exist', async () => {
+      installMockApi()
+      const wrapper = mountPaneWithSections(sectionsWithExtra(extraView()))
+      await nextTick()
+      await findExtraRow(wrapper).find('.models-dir-name').trigger('click')
+      await nextTick()
+      const missing = Array.from(document.querySelectorAll<HTMLElement>('.empm-dir')).find(
+        (row) => row.querySelector('.empm-dir-path')?.textContent === '/ext/base/t2i_adapter'
+      )!
+      expect(missing.querySelector('.reveal-folder-button')).toBeNull()
+      expect(missing.querySelector('.empm-dir-path')!.getAttribute('title')).toContain(
+        '/ext/base/t2i_adapter'
+      )
     })
 
     it('marks a missing per-type dir red (is-missing) instead of a badge', async () => {

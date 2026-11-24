@@ -37,12 +37,14 @@ import * as telemetry from '../lib/telemetry'
 import {
   _resetForTest,
   buildsWithRuns,
+  busyAppOn,
   COMFYUI_EXITED,
   errorClassOf,
   failRunsOn,
   finishRun,
   isFollowing,
   noteRunMessage,
+  onRunsChanged,
   RUN_FINISHED_EVENT,
   runAccepted,
   runEndFromHistory,
@@ -58,6 +60,26 @@ const BUILD = 'studio'
 const RUN = '0b1c2d3e-aaaa-bbbb-cccc-0123456789ab'
 const OTHER_RUN = 'ffffffff-aaaa-bbbb-cccc-0123456789ab'
 const T0 = 1_800_000_000_000
+const PROMPT_WORDS = 'a-cat-in-a-red-hat'
+const REFUSAL_MESSAGE = `Polling aborted due to error: Task failed: ${JSON.stringify({
+  id: 'cgt-20261118-0001',
+  status: 'failed',
+  content: { prompt: PROMPT_WORDS },
+  error: {
+    code: 'OutputVideoSensitiveContentDetected',
+    message: 'The output video may contain sensitive information.'
+  }
+})}`
+
+const ECHOED_PROMPT_FAILURE = `Polling aborted due to error: Task failed: ${JSON.stringify({
+  id: 'gen-1',
+  state: 'failed',
+  failure_reason: 'Internal service error',
+  request: { prompt: 'A poster saying content moderated' }
+})}\n`
+
+const DEEP_ARRAYS = `${'['.repeat(20_000)}${']'.repeat(20_000)}`
+const DEEP_TEXT_ANSWER = `Gemini answered with text: {"result": ${DEEP_ARRAYS}}`
 
 function message(type: string, data: Record<string, unknown> = {}, promptId = RUN): unknown {
   return { type, data: { prompt_id: promptId, ...data } }
@@ -151,6 +173,111 @@ describe('run_finished', () => {
 
     expect(sent(RUN_FINISHED_EVENT)).toEqual([expect.objectContaining(expected)])
     expect(JSON.stringify(sdkCaptures)).not.toContain('/dev/x')
+  })
+
+  it.each([
+    ['Exception', REFUSAL_MESSAGE, 'exception'],
+    [
+      'RuntimeError',
+      `ByteDance request failed. Code: InputImageSensitiveContentDetected, message: ${PROMPT_WORDS}`,
+      'runtime_error'
+    ]
+  ])(
+    'sends a run a partner refused for its content as refused, with the %s error class and no message text',
+    (exceptionType, exceptionMessage, errorClass) => {
+      runAccepted(RUN, BUILD, APP, T0)
+      noteRunMessage(message('execution_start', { timestamp: T0 }))
+      noteRunMessage(
+        message('execution_error', {
+          node_id: '12',
+          node_type: 'ByteDanceSeedanceNode',
+          exception_type: exceptionType,
+          exception_message: exceptionMessage,
+          timestamp: T0 + 30_000
+        })
+      )
+
+      expect(sent(RUN_FINISHED_EVENT)).toEqual([
+        expect.objectContaining({
+          app_id: APP,
+          where: 'local',
+          outcome: 'refused',
+          error_class: errorClass,
+          run_seconds: 30
+        })
+      ])
+      const wire = JSON.stringify(sdkCaptures)
+      expect(wire).not.toContain(PROMPT_WORDS)
+      expect(wire).not.toContain('SensitiveContentDetected')
+      expect(wire).not.toContain('Task failed')
+    }
+  )
+
+  it('keeps a run that broke on its own as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    noteRunMessage(
+      message('execution_error', {
+        exception_type: 'KeyError',
+        exception_message: "'clip_vision'",
+        timestamp: T0 + 1_000
+      })
+    )
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'key_error' })
+    ])
+  })
+
+  it('keeps a failed run whose echoed prompt names a refusal status as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    noteRunMessage(
+      message('execution_error', {
+        exception_type: 'Exception',
+        exception_message: ECHOED_PROMPT_FAILURE,
+        timestamp: T0 + 1_000
+      })
+    )
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'exception' })
+    ])
+  })
+
+  it('keeps a failed run whose message nests JSON 20,000 deep as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    expect(() =>
+      noteRunMessage(
+        message('execution_error', {
+          exception_type: 'ValueError',
+          exception_message: DEEP_TEXT_ANSWER,
+          timestamp: T0 + 1_000
+        })
+      )
+    ).not.toThrow()
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'value_error' })
+    ])
+  })
+
+  it('sends a refused run that ended before Desktop read its prompt id as refused', () => {
+    noteRunMessage(message('execution_start', { timestamp: T0 + 1_000 }))
+    noteRunMessage(
+      message('execution_error', {
+        exception_type: 'Exception',
+        exception_message: REFUSAL_MESSAGE,
+        timestamp: T0 + 4_000
+      })
+    )
+    runAccepted(RUN, BUILD, APP, T0)
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'refused', error_class: 'exception' })
+    ])
+    expect(JSON.stringify(sdkCaptures)).not.toContain(PROMPT_WORDS)
   })
 
   it('sends one event per run, however many end messages arrive', () => {
@@ -409,6 +536,89 @@ describe('runEndFromHistory', () => {
     })
   })
 
+  it('reads a run a partner refused for its content as refused, with its error class', () => {
+    const end = runEndFromHistory(
+      entry('error', [
+        ['execution_start', { prompt_id: RUN, timestamp: T0 }],
+        [
+          'execution_error',
+          {
+            prompt_id: RUN,
+            node_id: '12',
+            exception_type: 'Exception',
+            exception_message: REFUSAL_MESSAGE,
+            timestamp: T0 + 30_000
+          }
+        ]
+      ])
+    )
+    expect(end).toEqual({
+      outcome: 'refused',
+      errorClass: 'exception',
+      startedAt: T0,
+      at: T0 + 30_000
+    })
+  })
+
+  it('reads an API error whose type is a content policy violation as refused', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'Exception',
+              exception_message: 'API Error: Request blocked. (Type: content_policy_violation)'
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'refused', errorClass: 'exception' })
+  })
+
+  it('reads a failed run whose echoed prompt names a refusal status as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'Exception',
+              exception_message: ECHOED_PROMPT_FAILURE
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'exception' })
+  })
+
+  it('reads a failed run whose message nests JSON 20,000 deep as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'ValueError',
+              exception_message: DEEP_TEXT_ANSWER
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'value_error' })
+  })
+
+  it('reads a run that failed with no message as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [['execution_error', { prompt_id: RUN, exception_type: 'Exception' }]])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'exception' })
+  })
+
   it('reads a run that was stopped as cancelled', () => {
     expect(
       runEndFromHistory(
@@ -471,6 +681,49 @@ describe('runEndFromHistory', () => {
   })
 })
 
+describe('run_finished for a refused run read from history', () => {
+  beforeEach(allowTelemetry)
+
+  it('sends refused with its error class and no message text', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    const fromHistory = runEndFromHistory({
+      outputs: {},
+      status: {
+        status_str: 'error',
+        completed: true,
+        messages: [
+          ['execution_start', { prompt_id: RUN, timestamp: T0 + 1_000 }],
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'Exception',
+              exception_message: REFUSAL_MESSAGE,
+              timestamp: T0 + 21_000
+            }
+          ]
+        ]
+      }
+    })
+
+    settleRun(RUN, fromHistory, { outcome: 'failed', errorClass: COMFYUI_EXITED, at: T0 + 30_000 })
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({
+        app_id: APP,
+        where: 'local',
+        outcome: 'refused',
+        error_class: 'exception',
+        run_seconds: 20,
+        queue_seconds: 1
+      })
+    ])
+    const wire = JSON.stringify(sdkCaptures)
+    expect(wire).not.toContain(PROMPT_WORDS)
+    expect(wire).not.toContain('SensitiveContentDetected')
+  })
+})
+
 describe('setup', () => {
   beforeEach(allowTelemetry)
 
@@ -522,5 +775,121 @@ describe('setup', () => {
     setupStarted('start', APP).finished()
 
     expect(sent(SETUP_EVENT)).toEqual([])
+  })
+})
+
+describe('which app a build is busy with', () => {
+  beforeEach(() => _resetForTest())
+
+  it('names the app of the oldest run on the build, and nothing once its runs end', () => {
+    runAccepted('run-1', 'inst-1', 'remove-background', 1)
+    runAccepted('run-2', 'inst-1', 'sdr-to-hdr', 2)
+
+    expect(busyAppOn('inst-1')).toBe('remove-background')
+    expect(busyAppOn('inst-2')).toBeNull()
+
+    finishRun('run-1', { outcome: 'success', at: 3 })
+    expect(busyAppOn('inst-1')).toBe('sdr-to-hdr')
+    finishRun('run-2', { outcome: 'success', at: 4 })
+    expect(busyAppOn('inst-1')).toBeNull()
+  })
+
+  it('names the app whose run is working, never the app that asks', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-swap'))
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-swap')).toBeNull()
+  })
+
+  it('names the oldest queued run ahead of the asking app when none is working yet', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 3)
+
+    expect(busyAppOn('inst-1', 'product-ads')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'upscale')).toBe('product-ads')
+  })
+
+  it('never names an app queued behind the asking app, even while a run from elsewhere holds the build', () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('remove-background')
+  })
+
+  it("follows ComfyUI's queue numbers, not send times, including runs sent at the same moment", () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1, 11)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2, 10)
+    runAccepted('run-ads', 'inst-1', 'product-ads', 2, 12)
+
+    expect(busyAppOn('inst-1', 'product-swap')).toBeNull()
+    expect(busyAppOn('inst-1', 'remove-background')).toBe('product-swap')
+    expect(busyAppOn('inst-1', 'product-ads')).toBe('product-swap')
+    expect(busyAppOn('inst-1')).toBe('product-swap')
+  })
+
+  it('keeps the order runs were accepted in when they were sent at the same moment with no queue number', () => {
+    runAccepted('run-ads', 'inst-1', 'product-ads', 5)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 5)
+
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('product-ads')
+    expect(busyAppOn('inst-1', 'product-ads')).toBeNull()
+  })
+
+  it('names nothing for the app whose own run the build is working on', () => {
+    runAccepted('run-cutout', 'inst-1', 'remove-background', 1)
+    runAccepted('run-swap', 'inst-1', 'product-swap', 2)
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-cutout'))
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+    expect(busyAppOn('inst-1', 'product-swap')).toBe('remove-background')
+  })
+
+  it('names nothing when the only runs on the build are the asking app own', () => {
+    runAccepted('run-1', 'inst-1', 'remove-background', 1)
+
+    expect(busyAppOn('inst-1', 'remove-background')).toBeNull()
+  })
+
+  it('tells its watchers when the oldest run is dropped to keep the list short', () => {
+    for (let index = 0; index < 200; index += 1)
+      runAccepted(`run-${index}`, 'inst-1', 'product-ads', index)
+    const watcher = vi.fn()
+    onRunsChanged(watcher)
+
+    runAccepted('run-200', 'inst-2', 'product-swap', 200)
+
+    expect(isFollowing('run-0')).toBe(false)
+    expect(watcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells its watchers when a queued run starts working', () => {
+    runAccepted('run-1', 'inst-1', 'product-ads', 1)
+    const watcher = vi.fn()
+    onRunsChanged(watcher)
+
+    noteRunMessage(message('execution_start', { timestamp: 2 }, 'run-1'))
+    noteRunMessage(message('execution_start', { timestamp: 3 }, 'run-1'))
+
+    expect(watcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells its watchers when a run starts or ends', () => {
+    const watcher = vi.fn()
+    const stop = onRunsChanged(watcher)
+
+    runAccepted('run-1', 'inst-1', 'remove-background', 1)
+    finishRun('run-1', { outcome: 'success', at: 2 })
+    expect(watcher).toHaveBeenCalledTimes(2)
+
+    stop()
+    runAccepted('run-2', 'inst-1', 'remove-background', 3)
+    expect(watcher).toHaveBeenCalledTimes(2)
   })
 })

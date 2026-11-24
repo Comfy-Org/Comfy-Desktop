@@ -21,6 +21,7 @@ export interface SetupPlan {
   name?: string
   workspaceId?: string
   workspaceBuild?: WorkspaceBuildChoice
+  hardwareDetected?: boolean
 }
 
 export interface NewInstallSetup {
@@ -35,6 +36,7 @@ export interface NewInstallSetup {
   instPath: string
   selectedBuildId: string
   selectedBuildTargetId: string
+  hardwarePickedByHand?: boolean
 }
 
 export interface ChangeSetupDraft extends NewInstallSetup {
@@ -48,8 +50,12 @@ export interface SavedSetup {
 
 export class SetupPlanUnavailable extends Error {}
 
-function pickOption(options: FieldOption[]): FieldOption | undefined {
+export function defaultFieldOption(options: FieldOption[]): FieldOption | undefined {
   return options.find((o) => o.recommended) ?? options[0]
+}
+
+export function isDefaultPick(picked: FieldOption | undefined, options: FieldOption[]): boolean {
+  return !!picked && picked.value === defaultFieldOption(options)?.value
 }
 
 export function downloadBytesOf(variant: FieldOption | undefined): number {
@@ -80,7 +86,7 @@ export async function resolveSetupPlan(): Promise<SetupPlan> {
       field.id === 'release' ? { includeLatestStable: true } : undefined
     )
     if (field.id === 'comfyVersion' && options.length === 0) continue
-    const pick = pickOption(options ?? [])
+    const pick = defaultFieldOption(options ?? [])
     if (!pick) throw new SetupPlanUnavailable(`no options for ${field.id}`)
     selections[field.id] = pick
   }
@@ -100,11 +106,34 @@ export function isCpuVariant(variant: FieldOption | undefined): boolean {
   return /(^|-)cpu($|-)/.test(id)
 }
 
-export function planVersion(plan: SetupPlan): string {
-  const picked = plan.selections.comfyVersion?.value
+function selectedVersion(selections: Record<string, FieldOption | undefined>): string {
+  const picked = selections.comfyVersion?.value
   if (picked) return picked
-  const tag = plan.selections.release?.data?.latestStableTag
+  const tag = selections.release?.data?.latestStableTag
   return typeof tag === 'string' ? tag : ''
+}
+
+export type VersionText =
+  | { key: 'setup.versionValue' | 'setup.versionValueNightly'; params: { version: string } }
+  | { key: 'standalone.comfyui'; params: Record<string, never> }
+
+export function versionText(selections: Record<string, FieldOption | undefined>): VersionText {
+  const version = selectedVersion(selections)
+  if (!version) return { key: 'standalone.comfyui', params: {} }
+  const nightly = selections.release?.value === 'latest'
+  return { key: nightly ? 'setup.versionValueNightly' : 'setup.versionValue', params: { version } }
+}
+
+export type HardwareNoteKey = 'setup.unsupported' | 'setup.noGpu' | 'setup.detected'
+
+export function hardwareNoteKey(state: {
+  unsupported: boolean
+  cpuOnly: boolean
+  detected: boolean
+}): HardwareNoteKey | null {
+  if (state.unsupported) return 'setup.unsupported'
+  if (state.cpuOnly) return 'setup.noGpu'
+  return state.detected ? 'setup.detected' : null
 }
 
 export type SetupPlatform = 'mac' | 'pc' | 'computer'

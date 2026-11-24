@@ -20,6 +20,7 @@ import { useProgressStore, type Operation } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 import { performanceTestSessionKey } from '../../../../shared/performanceTestSession'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 const BUILD: Installation = {
   id: 'flux',
@@ -34,13 +35,23 @@ const BUILD: Installation = {
 
 type State = 'ready' | 'starting' | 'installing' | 'running' | 'uninstalling'
 
-const REST = ['|', 'manage', 'copy-install', 'reveal-in-folder', '|', 'share', 'restore-snapshot']
+const REST = [
+  '|',
+  'manage',
+  'rename',
+  'copy-install',
+  'reveal-in-folder',
+  '|',
+  'share',
+  'restore-snapshot'
+]
+const LAST = ['|', 'untrack', 'delete']
 const EXPECTED: Record<State, string[]> = {
-  ready: ['launch', '|', 'auto-start', ...REST, '|', 'delete'],
-  starting: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
-  installing: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
-  running: ['view-logs', 'restart', 'stop', '|', 'auto-start', ...REST, '|', 'delete'],
-  uninstalling: ['cancel', '|', 'auto-start', ...REST, '|', 'delete']
+  ready: ['launch', '|', 'auto-start', ...REST, ...LAST],
+  starting: ['view-logs', 'cancel', '|', 'auto-start', ...REST, ...LAST],
+  installing: ['view-logs', 'cancel', '|', 'auto-start', ...REST, ...LAST],
+  running: ['view-logs', 'restart', 'stop', '|', 'auto-start', ...REST, ...LAST],
+  uninstalling: ['cancel', '|', 'auto-start', ...REST, ...LAST]
 }
 const OPERATIONS: Partial<Record<State, Partial<Operation>>> = {
   starting: { opKind: 'launch', flatPercent: 5 },
@@ -75,6 +86,8 @@ beforeEach(() => {
     refreshCreditBalance: vi.fn().mockResolvedValue({ status: 'signed_out' }),
     onCreditBalanceChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppBackToListAsked: vi.fn(() => () => {}),
+    onAppsListChanged: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {}),
@@ -118,8 +131,7 @@ async function mountTile(state: State): Promise<VueWrapper> {
     withHost(() =>
       h(HomeBuildCard, {
         build: BUILD,
-        status: homeBuildStatus(BUILD, useSessionStore()),
-        tone: 'ember'
+        status: homeBuildStatus(BUILD, useSessionStore())
       })
     ),
     { attachTo: document.body }
@@ -300,7 +312,7 @@ describe('Build menu', () => {
     ]
   ] satisfies [string, Installation][])('offers no Auto start for %s', async (_name, build) => {
     const wrapper = mount(
-      withHost(() => h(HomeBuildCard, { build, status: 'ready', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(wrapper)
@@ -311,23 +323,25 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('shows the update beside the version and keeps the whole tile as the primary button', async () => {
+  it('shows the update beside the version as its own link and keeps the whole tile as the primary button', async () => {
     const build: Installation = {
       ...BUILD,
       statusTag: { label: 'Update available', style: 'update' }
     }
     const wrapper = mount(
-      withHost(() => h(HomeBuildCard, { build, status: 'update', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build, status: 'update' })),
       { attachTo: document.body }
     )
     mounted.push(wrapper)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.4 · Update')
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
+      'v0.42.4 · Update available'
+    )
     const buttons = [...wrapper.element.querySelectorAll('button')].map((b) =>
       b.getAttribute('data-testid')
     )
-    expect(buttons).toEqual(['home-build-open', 'home-build-more'])
+    expect(buttons).toEqual(['home-build-open', 'build-update-open', 'home-build-more'])
   })
 
   it('shows upload progress on Home and holds the tile and menu launch actions until it finishes', async () => {
@@ -344,7 +358,7 @@ describe('Build menu', () => {
 
     try {
       await flushPromises()
-      expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Creating...')
+      expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Creating…')
       expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(false)
       await more.trigger('click')
       expect(await shownMenu()).not.toContain('launch')
@@ -353,7 +367,7 @@ describe('Build menu', () => {
       await flushPromises()
     }
 
-    expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Ready')
+    expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Never used')
     expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(true)
   })
 
@@ -375,8 +389,7 @@ describe('Build menu', () => {
       'auto-start',
       ...REST,
       'promote-to-workspace',
-      '|',
-      'delete'
+      ...LAST
     ])
     expect(fromRightClick).toEqual(fromTile)
   })
@@ -421,6 +434,55 @@ describe('Build menu', () => {
 
     expect(host.showProgress).not.toHaveBeenCalled()
   })
+
+  it('shows Uninstall as the one red item with its icon, and only its confirm button is filled red', async () => {
+    const tile = await mountTile('ready')
+    mountDialogs()
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+
+    const items = [...document.querySelectorAll<HTMLElement>('[data-testid^="build-menu-"]')]
+    const red = items.filter((item) => item.classList.contains('text-destructive'))
+    expect(red.map((item) => item.dataset.testid)).toEqual(['build-menu-delete'])
+    expect(red[0]!.querySelector('svg[class*="lucide-trash"]')).not.toBeNull()
+    expect([...red[0]!.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
+
+    red[0]!.click()
+    const box = await confirmBox()
+    const action = box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!
+    const cancel = box.querySelector<HTMLElement>('[data-testid="base-alert-cancel"]')!
+    expect(action.textContent?.trim()).toBe('Uninstall')
+    expect(action.classList).toContain('bg-destructive')
+    expect(cancel.classList).not.toContain('bg-destructive')
+    expect(cancel.className).not.toMatch(/text-destructive/)
+
+    cancel.click()
+    await flushPromises()
+  })
+
+  it.each(['restart', 'stop'])(
+    'shows %s of a running build as a plain item whose confirm button is white',
+    async (id) => {
+      const tile = await mountTile('running')
+      mounted.push(mount(ModalDialog, { attachTo: document.body }))
+      await tile.get('[data-testid="home-build-more"]').trigger('click')
+      await shownMenu()
+
+      const item = document.querySelector<HTMLElement>(`[data-testid="build-menu-${id}"]`)!
+      expect(item.className).not.toMatch(/destructive|danger/)
+
+      item.click()
+      const box = await confirmBox()
+      const action = box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!
+      expect(action.getAttribute('data-variant')).toBe('inverted')
+      expect(action.classList).not.toContain('bg-destructive')
+
+      useModal().dismiss()
+      await flushPromises()
+    }
+  )
 
   it.each(['Cancel', 'Escape'] as const)(
     'puts keyboard focus back on the ⋯ button after Uninstall is answered with %s',
@@ -588,7 +650,7 @@ describe('Build menu', () => {
   it('hints Click to open on an idle remote build, on Home and on the Builds page', async () => {
     const remote: Installation = { ...BUILD, sourceCategory: 'remote' }
     const home = mount(
-      withHost(() => h(HomeBuildCard, { build: remote, status: 'ready', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: remote, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(home)
@@ -643,7 +705,7 @@ describe('Build menu', () => {
     Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
     useSessionStore().launchingInstances.set(BUILD.id, { installationName: BUILD.name })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -662,7 +724,7 @@ describe('Build menu', () => {
     Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
     useSessionStore().operationInstances.set(BUILD.id, { actionId: 'launch' })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -686,7 +748,7 @@ describe('Build menu', () => {
     })
     useSessionStore().launchingInstances.set(performanceTest, { installationName: BUILD.name })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -708,7 +770,7 @@ describe('Build menu', () => {
     Object.assign(window.api, { cancelOperation, stopComfyUI })
     useSessionStore().launchingInstances.set(BUILD.id, { installationName: BUILD.name })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -724,33 +786,33 @@ describe('Build menu', () => {
     expect(calls).toEqual(['cancel', 'stop'])
   })
 
-  it('shows that a start left running did not start when it failed, not Ready', async () => {
+  it('shows that a start left running did not start when it failed, not when it was last used', async () => {
     useSessionStore().errorInstances.set(BUILD.id, {
       installationName: BUILD.name,
       message: 'Process exited with code 1',
       startFailed: true
     })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
     await flushPromises()
 
     expect(tile.get('[data-testid="home-build"]').text()).toContain("Didn't start")
-    expect(tile.get('[data-testid="home-build"]').text()).not.toContain('Ready')
+    expect(tile.get('[data-testid="home-build"]').text()).not.toContain('Never used')
   })
 
-  it('still shows Ready after a running build crashed', async () => {
+  it('still shows when it was last used after a running build crashed', async () => {
     useSessionStore().errorInstances.set(BUILD.id, { installationName: BUILD.name, exitCode: 1 })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
     await flushPromises()
 
-    expect(tile.get('[data-testid="home-build"]').text()).toContain('Ready')
+    expect(tile.get('[data-testid="home-build"]').text()).toContain('Never used')
   })
 
   function failStart(): void {
@@ -768,7 +830,7 @@ describe('Build menu', () => {
 
   it("treats a build that didn't start the same on the Builds tile as on Home: Didn't start, Click to view logs, a click opens its start logs", async () => {
     const home = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(home)
@@ -800,7 +862,7 @@ describe('Build menu', () => {
       const wrapper =
         where === 'home'
           ? mount(
-              withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+              withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
               { attachTo: document.body }
             )
           : await mountBuildsTile('ready')

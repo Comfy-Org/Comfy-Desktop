@@ -7,11 +7,12 @@ import { vSlidingPill } from '../components/ui/vSlidingPill'
 import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FileText, Folder, RefreshCcw, Settings2, SlidersHorizontal, X } from '@lucide/vue'
+import { Code, FileText, Folder, RefreshCcw, Settings2, SlidersHorizontal, X } from '@lucide/vue'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
 import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSection.vue'
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
 import RemoveAppDataSection from './globalSettings/RemoveAppDataSection.vue'
+import DevelopmentSection from './globalSettings/DevelopmentSection.vue'
 import GitHubLinkCard from './globalSettings/GitHubLinkCard.vue'
 import SettingsSectionList from '../views/comfyUISettings/SettingsSectionList.vue'
 import StorageDirRow from '../views/comfyUISettings/StorageDirRow.vue'
@@ -80,6 +81,8 @@ interface GlobalSettingsBridge {
   globalSettingsDownloadUpdate(): Promise<void>
   globalSettingsInstallUpdate(): void
   globalSettingsSetLastCheckedAt(value: number): void
+  globalSettingsCanOpenDraftApps(): Promise<boolean>
+  onGlobalSettingsAuthChanged?(cb: () => void): () => void
 }
 
 const props = defineProps<{ snapshot: Snapshot }>()
@@ -88,9 +91,32 @@ const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge 
 
 const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
-type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
+type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | 'development'
 const activeTab = ref<TabId>('general')
 const requestedTabCount = ref(0)
+const canOpenDraftApps = ref(false)
+let draftAppsRequest = 0
+
+async function askCanOpenDraftApps(): Promise<boolean> {
+  try {
+    return (await bridge?.globalSettingsCanOpenDraftApps()) === true
+  } catch {
+    return false
+  }
+}
+
+async function refreshCanOpenDraftApps(): Promise<void> {
+  const request = ++draftAppsRequest
+  const allowed = await askCanOpenDraftApps()
+  if (request !== draftAppsRequest) return
+  canOpenDraftApps.value = allowed
+  if (!allowed && activeTab.value === 'development') activeTab.value = 'general'
+}
+
+const stopAuthChanged = bridge?.onGlobalSettingsAuthChanged?.(() => {
+  void refreshCanOpenDraftApps()
+})
+onUnmounted(() => stopAuthChanged?.())
 
 watch(
   () => props.snapshot,
@@ -100,6 +126,7 @@ watch(
       requestedTabCount.value++
     }
     if (snap.highlightFieldId) void flashField(snap.highlightFieldId)
+    void refreshCanOpenDraftApps()
   },
   { immediate: true }
 )
@@ -142,7 +169,10 @@ const tabs = computed(() => [
   { id: 'updates' as const, label: props.snapshot.i18n.updates, icon: RefreshCcw },
   { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: Folder },
   { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal },
-  { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText }
+  { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText },
+  ...(canOpenDraftApps.value
+    ? [{ id: 'development' as const, label: t('settings.developmentTab'), icon: Code }]
+    : [])
 ])
 
 const storageSnapshot = computed(() => ({
@@ -276,7 +306,7 @@ onMounted(() => {
       type="button"
       variant="muted-textonly"
       size="icon"
-      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white"
+      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--modal-surface-bg)] text-white hover:text-white"
       :aria-label="t('common.close')"
       @click="bridge?.close()"
     >
@@ -286,9 +316,11 @@ onMounted(() => {
     <Tabs
       v-model="activeTab"
       orientation="vertical"
-      class="gs-card min-w-0 flex-auto flex-row gap-0 overflow-hidden rounded-[16px] bg-neutral-900 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
+      class="gs-card min-w-0 flex-auto flex-row gap-0 overflow-hidden rounded-[16px] bg-[var(--modal-surface-bg)] [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
     >
-      <div class="gs-nav flex w-52 flex-[0_0_208px] flex-col gap-4 pt-7 pr-3 pb-6 pl-6">
+      <div
+        class="gs-nav m-2 mr-0 flex w-50 flex-[0_0_200px] flex-col gap-4 rounded-[14px] bg-[color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))] pt-5 pr-2 pb-4 pl-4"
+      >
         <h2
           class="gs-title m-0 px-2 font-sans text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"
         >
@@ -316,14 +348,17 @@ onMounted(() => {
       <TabsContent
         :key="activeTab"
         :value="activeTab"
-        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 m-2 ml-0 overflow-y-auto rounded-[14px] bg-[color-mix(in_oklch,white_5%,var(--color-neutral-900))] p-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-8 overflow-y-auto pt-8 pr-8 pb-8 pl-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
-          <SettingsSectionList
-            :sections="languageSections"
-            @update-field="handleUpdateField"
-            @open-path="handleOpenPath"
-          />
+          <GlobalSettingsMicroSection :title="t('settings.generalSection')">
+            <SettingsSectionList
+              class="gs-language [&_.settings-v2-field]:flex-row [&_.settings-v2-field]:items-center [&_.settings-v2-field]:justify-between [&_.settings-v2-field]:gap-3 [&_.settings-v2-field>:last-child]:w-40 [&_.settings-v2-field>:last-child]:flex-none [&_.ui-select-trigger]:h-8"
+              :sections="languageSections"
+              @update-field="handleUpdateField"
+              @open-path="handleOpenPath"
+            />
+          </GlobalSettingsMicroSection>
 
           <GlobalSettingsMicroSection :title="t('settings.appBehavior')">
             <SettingsSectionList
@@ -406,6 +441,10 @@ onMounted(() => {
               <span>{{ t('settings.openLogsFolder') }}</span>
             </Button>
           </GlobalSettingsMicroSection>
+        </template>
+
+        <template v-else-if="activeTab === 'development' && canOpenDraftApps">
+          <DevelopmentSection />
         </template>
       </TabsContent>
     </Tabs>

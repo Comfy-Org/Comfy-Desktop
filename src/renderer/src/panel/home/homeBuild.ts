@@ -1,9 +1,13 @@
+import { isBuildInstall } from '../../devplatform/buildState'
+import { formatLastUsed } from '../../lib/datetime'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
+import { lastUsedAt } from '../../../../shared/lastUsed'
+import type { LocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import type { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
-export type HomeBuildTone = 'ember' | 'iris' | 'tide'
-export type BuildDeviceKind = 'laptop' | 'pc-laptop' | 'monitor' | 'cloud'
+export type HomeBuildTone = 'iris' | 'tide'
+export type BuildDeviceKind = LocalDeviceKind | 'cloud'
 export type HomeBuildStatus = 'running' | 'starting' | 'stopping' | 'updating' | 'update' | 'ready'
 
 export interface HomeBuildToneStyle {
@@ -12,51 +16,21 @@ export interface HomeBuildToneStyle {
 }
 
 export const HOME_BUILD_TONES: Record<HomeBuildTone, HomeBuildToneStyle> = {
-  ember: { glow: '#FA8746', tint: '232 126 66' },
   iris: { glow: '#989CFF', tint: '142 146 248' },
   tide: { glow: '#00C6E2', tint: '0 182 209' }
 }
-
-const LOCAL_TONES: readonly HomeBuildTone[] = ['ember', 'iris']
 
 export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
 }
 
-export function deviceKindForPlatform(platform: string | undefined): BuildDeviceKind {
-  if (platform === 'win32') return 'pc-laptop'
-  if (platform === 'linux') return 'monitor'
-  return 'laptop'
+export function buildDeviceKind(build: Installation, localKind: LocalDeviceKind): BuildDeviceKind {
+  if (isCloudBuild(build)) return 'cloud'
+  return build.sourceCategory === 'remote' ? 'monitor' : localKind
 }
 
-export function buildDeviceKind(
-  build: Installation,
-  platform: string | undefined = window.api?.platform
-): BuildDeviceKind {
-  return isCloudBuild(build) ? 'cloud' : deviceKindForPlatform(platform)
-}
-
-export function isComfyCloud(build: Installation): boolean {
-  return build.sourceId === 'cloud'
-}
-
-function installedAt(build: Installation): number {
-  const time = Date.parse(String(build.createdAt ?? ''))
-  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time
-}
-
-export function homeBuildTones(
-  builds: readonly Installation[],
-  everyBuild: readonly Installation[] = builds
-): HomeBuildTone[] {
-  const known = new Set(everyBuild.map((build) => build.id))
-  const locals = [...everyBuild, ...builds.filter((build) => !known.has(build.id))]
-    .filter((build) => !isCloudBuild(build))
-    .sort((a, b) => installedAt(a) - installedAt(b) || a.id.localeCompare(b.id))
-  const rank = new Map(locals.map((build, index) => [build.id, index]))
-  return builds.map((build) =>
-    isCloudBuild(build) ? 'tide' : LOCAL_TONES[rank.get(build.id)! % LOCAL_TONES.length]!
-  )
+export function homeBuildTone(build: Installation): HomeBuildTone {
+  return isCloudBuild(build) ? 'tide' : 'iris'
 }
 
 export function isBuildUpdating(build: Installation, actionId: string | undefined): boolean {
@@ -66,12 +40,15 @@ export function isBuildUpdating(build: Installation, actionId: string | undefine
   )
 }
 
-export function connectsElsewhere(build: Installation): boolean {
-  return build.sourceCategory === 'cloud' || build.sourceCategory === 'remote'
-}
-
-export function runsOnThisComputer(build: Installation, status: HomeBuildStatus): boolean {
-  return status === 'running' && !connectsElsewhere(build)
+export function buildUsageLabel(
+  build: Installation,
+  nowMs: number,
+  t: (key: string, params?: Record<string, unknown>) => string,
+  locale?: string
+): string {
+  const usedAt = lastUsedAt(build)
+  if (usedAt === undefined && isCloudBuild(build)) return t('home.cloudNoSetupNeeded')
+  return formatLastUsed(usedAt, nowMs, t, locale)
 }
 
 export function isBuildOpenBlocked(status: HomeBuildStatus): boolean {
@@ -101,9 +78,16 @@ function hostOf(address: string): string {
   }
 }
 
-export function homeBuildDetail(build: Installation): string {
+export function homeBuildDetail(
+  build: Installation,
+  t: (key: string, params?: Record<string, unknown>) => string
+): string {
   if (build.sourceCategory === 'cloud' || build.sourceCategory === 'remote') {
     return build.listPreview ? hostOf(build.listPreview) : build.sourceLabel
   }
-  return build.version || build.sourceLabel
+  if (build.version) return build.version
+  if (!isBuildInstall(build)) return build.sourceLabel
+  return typeof build.distributionVersion === 'string' && build.distributionVersion
+    ? t('devPlatform.build.version', { version: build.distributionVersion })
+    : ''
 }

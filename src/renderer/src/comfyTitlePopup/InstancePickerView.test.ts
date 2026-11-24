@@ -10,6 +10,7 @@ const START_DECISION: NavDecision = { verb: 'start', primaryLabel: NAV_LABEL.sta
 const RESTART_DECISION: NavDecision = { verb: 'restart', primaryLabel: NAV_LABEL.restart }
 const FOCUS_DECISION: NavDecision = { verb: 'focus', primaryLabel: NAV_LABEL.openRunning }
 import type { SnapshotListData } from '../types/ipc'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 vi.mock('../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
   default: {
@@ -49,6 +50,7 @@ interface MockInstall {
   sourceCategory: string
   version?: string
   lastLaunchedAt?: number
+  lastStoppedAt?: number
   installPath?: string
   status?: string
   statusTag?: { style: string; label: string }
@@ -189,6 +191,9 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: []
       })
       expect(wrapper.get('.picker-list-section-title').text()).toBe('Builds')
+      expect(wrapper.get('.picker-list-section-title').classes()).toEqual(
+        expect.arrayContaining(SECTION_TITLE_CLASS.split(' '))
+      )
       expect(wrapper.find('.picker-new-install').exists()).toBe(false)
       expect(wrapper.find('.picker-left-footer').exists()).toBe(false)
     })
@@ -477,6 +482,36 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bridge.selectedInstallSets).toContain('a')
     })
 
+    it('selects and lists first the build that ran 09:00 to 18:00 over one that ran 12:00 to 12:30', async () => {
+      const day = (hour: number, minute = 0) => new Date(2026, 10, 18, hour, minute).getTime()
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({
+            id: 'short-run',
+            name: 'Short run',
+            lastLaunchedAt: day(12),
+            lastStoppedAt: day(12, 30)
+          }),
+          makeInstall({
+            id: 'long-run',
+            name: 'Long run',
+            lastLaunchedAt: day(9),
+            lastStoppedAt: day(18)
+          })
+        ],
+        activeInstallationId: null,
+        runningInstallationIds: [],
+        selectedInstallationId: null
+      })
+      await flushPromises()
+      expect(wrapper.findAll('.picker-row-name').map((n) => n.text())).toEqual([
+        'Long run',
+        'Short run'
+      ])
+      expect(bridge.selectedInstallSets).toContain('long-run')
+      expect(bridge.selectedInstallSets).not.toContain('short-run')
+    })
+
     it('mounts ComfyUISettingsContent when an install is selected', async () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
@@ -484,6 +519,18 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: []
       })
       expect(wrapper.find('.settings-v2-content').exists()).toBe(true)
+    })
+
+    it('passes each explicit open to the settings pane so it can reapply the requested tab', async () => {
+      const { default: ComfyUISettingsContent } =
+        await import('../components/settings/ComfyUISettingsContent.vue')
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
+        activeInstallationId: 'a',
+        runningInstallationIds: [],
+        pickerSelectionEpoch: 3
+      })
+      expect(wrapper.findComponent(ComfyUISettingsContent).props('openEpoch')).toBe(3)
     })
 
     it('dispatches an in-flight background operation only once', async () => {

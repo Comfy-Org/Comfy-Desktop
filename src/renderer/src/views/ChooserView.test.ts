@@ -344,7 +344,7 @@ describe('ChooserView', () => {
       makeInstall({
         id: 'a',
         name: 'Alpha',
-        statusTag: { style: 'danger', label: 'Folder Not Found', detail: 'Gone.' }
+        statusTag: { style: 'danger', label: 'Folder not found', detail: 'Gone.' }
       })
     ])
     const wrapper = mountChooser()
@@ -404,7 +404,7 @@ describe('ChooserView', () => {
     expect(startsWithDesktop('a')).toBe(true)
     expect(tile('a').text()).toContain('Auto start')
     expect(startsWithDesktop('b')).toBe(false)
-    expect(tile('b').text()).toContain('Ready')
+    expect(tile('b').text()).toContain('Never used')
 
     const itemsA = await menuFor('a', 'right-click')
     expect(itemsA.slice(0, 3)).toEqual(['launch', 'auto-start', 'manage'])
@@ -431,7 +431,7 @@ describe('ChooserView', () => {
     expect(startsWithDesktop('b')).toBe(false)
   })
 
-  it('names the update briefly in the meta line, keeps Ready on top and Launch first in its menu', async () => {
+  it('names the update briefly in the meta line, keeps the last-used line on top and Launch first in its menu', async () => {
     installMockApi([
       makeInstall({
         id: 'a',
@@ -443,8 +443,8 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update')
-    expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Ready/)
+    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update available')
+    expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Never used/)
     expect(wrapper.find('.chooser-tile-pill-update').exists()).toBe(false)
 
     const items = await openBuildMenu(wrapper, 'a')
@@ -708,8 +708,79 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
-    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update$/)
-    expect(tile.get('.chooser-tile-body').text()).toMatch(/^Ready/)
+    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update available$/)
+    expect(tile.get('.chooser-tile-body').text()).toMatch(/^Never used/)
+  })
+
+  it.each([
+    ['a click', (link: HTMLElement) => userEvent.click(link)],
+    [
+      'Enter',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard('{Enter}')
+      }
+    ],
+    [
+      'Space',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard(' ')
+      }
+    ]
+  ])(
+    "opens the build's Update tab from Update available with %s, without starting or opening the build",
+    async (_how, activate) => {
+      const api = installMockApi([
+        makeInstall({
+          id: 'u',
+          name: 'Updatable',
+          version: 'v0.22.3',
+          statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' }
+        })
+      ])
+      const { wrapper, host } = mountChooserInPanel()
+      await flushPromises()
+
+      const tile = wrapper.get(`[data-testid="${TID.dashboardTile('u')}"]`)
+      const link = tile.get<HTMLButtonElement>('[data-testid="build-update-open"]')
+      expect(link.attributes('type')).toBe('button')
+      expect(link.attributes('aria-label')).toBe('Update available: open Update for Updatable')
+      expect(link.text()).toBe('Update available')
+      expect(link.find('svg').exists()).toBe(false)
+      await activate(link.element)
+      await flushPromises()
+
+      expect(api.openInstancePicker).toHaveBeenCalledExactlyOnceWith({
+        installationId: 'u',
+        initialTab: 'update',
+        autoAction: null
+      })
+      expect(wrapper.emitted('pick')).toBeUndefined()
+      expect(wrapper.emitted('open-details')).toBeUndefined()
+      expect(host.launch).not.toHaveBeenCalled()
+      expect(host.openDetails).not.toHaveBeenCalled()
+    }
+  )
+
+  it('hides Update available while the build is being updated', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'u',
+        name: 'Updatable',
+        version: 'v0.22.3',
+        statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' }
+      })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(true)
+
+    useSessionStore().operationInstances.set('u', { actionId: 'update-comfyui' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(false)
+    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · v0.22.3')
   })
 
   it('confirms an update over the Builds page from the ⋯ menu, without opening the build manager', async () => {
@@ -754,7 +825,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('open-details')).toBeUndefined()
     expect(host.showProgress.mock.calls[0]?.[0]).toMatchObject({
       installationId: 'u',
-      title: 'Updating to v0.44.2 — Updatable',
+      title: 'Updating to v0.44.2 · Updatable',
       returnTo: 'list',
       actionId: 'update-comfyui'
     })
@@ -781,7 +852,7 @@ describe('ChooserView', () => {
         name: 'Gone',
         statusTag: {
           style: 'danger',
-          label: 'Folder Not Found',
+          label: 'Folder not found',
           detail: 'Instance folder not found.\n\nC:/comfy/gone'
         }
       })
@@ -792,14 +863,14 @@ describe('ChooserView', () => {
     expect(tile.classes()).toContain('chooser-tile-errored')
     const tag = tile.find('.chooser-tile-danger-tag')
     expect(tag.exists()).toBe(true)
-    expect(tag.text()).toContain('Folder Not Found')
+    expect(tag.text()).toContain('Folder not found')
     expect(tile.find('.chooser-tile-error-badge').exists()).toBe(false)
     expect(tile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
 
     expect(await openBuildMenu(wrapper, 'nf')).toContain('view-error')
     await chooseFromBuildMenu('nf', 'view-error')
     expect(mockModal.alert).toHaveBeenCalledWith({
-      title: 'Folder Not Found',
+      title: 'Folder not found',
       message: 'Instance folder not found.\n\nC:/comfy/gone'
     })
     expect(wrapper.emitted('pick')).toBeUndefined()
@@ -1027,7 +1098,7 @@ describe('ChooserView', () => {
     buildMenuItem('local', 'promote-to-workspace')!.click()
     try {
       await wrapper.vm.$nextTick()
-      expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating...')
+      expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating…')
       expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
       expect(api.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith('local')
       expect(tile.find('[data-testid="chooser-tile-open"]').exists()).toBe(false)

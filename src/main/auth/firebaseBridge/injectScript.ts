@@ -1,5 +1,6 @@
 export const INJECTION_OWNER_KEY = '__comfyDesktopFirebaseSessionInjectionOwner'
 export const FIREBASE_SESSION_INJECTION_OWNER_FIELD = '__comfyDesktopInjectionOwner'
+export const WEB_SESSION_CREATE_TIMEOUT_MS = 8000
 
 export interface InjectWriteOptions {
   onlyIfSignedOut?: boolean
@@ -84,6 +85,18 @@ export function buildIndexedDbInjectScript(
   if (!committed || !isCurrent()) return false;
   if (marker) {
     try { localStorage.setItem(marker.key, marker.value); } catch (_) {}
+  }
+  const idToken = userValue && userValue.stsTokenManager && userValue.stsTokenManager.accessToken;
+  if (idToken) {
+    try {
+      await fetch('/api/auth/session', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Authorization: 'Bearer ' + idToken },
+        signal: AbortSignal.timeout(${WEB_SESSION_CREATE_TIMEOUT_MS})
+      });
+    } catch (_) {}
+    if (!isCurrent()) return false;
   }
   // Tell the next page-load (handled by attach.ts's dom-ready patch) to
   // hide documentElement briefly so the cloud login page doesn't flash

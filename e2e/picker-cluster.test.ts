@@ -197,6 +197,6 @@ test('open-install-action with reveal-in-folder keeps the popup open and fires t
 
   expect(
     await isPopupVisible(ctx.app, 'comfyTitlePopup.html'),
-    'picker popup should remain open for non-modal Open Folder action'
+    'picker popup should remain open for non-modal Open folder action'
   ).toBe(true)
 })

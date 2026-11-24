@@ -90,7 +90,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   const { t } = useI18n()
   const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
-    confirm: (o) => dialogs.confirm({ ...o, tone: 'danger' }),
+    confirm: (o) => dialogs.confirm(o),
     alert: (o) => dialogs.alert(o)
   })
   const actionGuard = useActionGuard()
@@ -384,7 +384,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
           title: action.label,
           message:
             result.reason === 'none'
-              ? t('snapshots.noSnapshotsToShare')
+              ? t('snapshots.noSnapshotsToExport')
               : (result.message ?? t('snapshots.shareFailed'))
         })
       }
@@ -483,7 +483,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     if (!diskSpace.value) return null
     return {
       label: t('comfyUISettings.diskUsage'),
-      value: '—'
+      value: t('common.unknown')
     }
   })
 

@@ -6,8 +6,10 @@ import {
   CloudUpload,
   Copy,
   Download,
-  FolderOpen,
+  EyeOff,
+  FolderSearch,
   History,
+  Pencil,
   Power,
   PowerOff,
   Settings2,
@@ -26,6 +28,7 @@ import { shareLatestSnapshot } from '../lib/snapshots'
 import { isBuildInstall } from '../devplatform/buildState'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 export type InstallMenuActionId =
   | 'manage'
@@ -37,7 +40,9 @@ export type InstallMenuActionId =
   | 'share'
   | 'promote-to-workspace'
   | 'copy-install'
+  | 'rename'
   | 'auto-start'
+  | 'untrack'
   | 'delete'
 
 export interface ManageOpenOptions {
@@ -65,7 +70,7 @@ export function useInstallContextMenu(
   const modal = useModal()
   const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
-    confirm: (o) => modal.confirm({ ...o, confirmStyle: 'danger' }),
+    confirm: (o) => modal.confirm(o),
     alert: (o) => modal.alert(o)
   })
   const sessionStore = useSessionStore()
@@ -86,6 +91,14 @@ export function useInstallContextMenu(
 
   function isLocalLikeInstall(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
+  }
+
+  function hasTaskRunning(inst: Installation): boolean {
+    return progressStore.getProgressInfo(inst.id) !== null
+  }
+
+  function isAdopted(inst: Installation): boolean {
+    return inst.adopted === true
   }
 
   function isInstalled(inst: Installation): boolean {
@@ -112,12 +125,24 @@ export function useInstallContextMenu(
     )
   }
 
+  function stoppedActionGatedReason(inst: Installation): string | undefined {
+    if (sessionStore.isStopping(inst.id)) return t('chooser.gatedReasonStopping')
+    if (sessionStore.isRunning(inst.id)) return t('chooser.stoppedActionGatedReason')
+    const op = progressStore.operations.get(inst.id)
+    if (!op || op.finished) return undefined
+    if (op.opKind === 'install' || op.chainSpan === 'install')
+      return t('chooser.gatedReasonInstalling')
+    if (op.opKind === 'launch') return t('chooser.gatedReasonStarting')
+    if (op.opKind === 'update') return t('chooser.gatedReasonUpdating')
+    return t('chooser.gatedReasonBusy')
+  }
+
   function getMenuItems(inst: Installation): ContextMenuItem[] {
     const items: ContextMenuItem[] = []
     const stoppedActionGated = isStoppedActionGated(inst)
     const supportsSnapshotActions =
       isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst) && !isBuildInstall(inst)
-    const gatedTitle = stoppedActionGated ? t('chooser.stoppedActionGatedReason') : undefined
+    const gatedTitle = stoppedActionGated ? stoppedActionGatedReason(inst) : undefined
 
     if (opts.onManage) {
       items.push({
@@ -146,6 +171,10 @@ export function useInstallContextMenu(
       }
     }
 
+    if (opts.onManage && isInstalled(inst) && isLocalLikeInstall(inst)) {
+      items.push({ id: 'rename', label: t('actions.rename'), icon: Pencil })
+    }
+
     if (isInstalled(inst) && (inst.sourceId === 'standalone' || isBuildInstall(inst))) {
       items.push({
         id: 'copy-install',
@@ -160,7 +189,7 @@ export function useInstallContextMenu(
       items.push({
         id: 'reveal-in-folder',
         label: revealInFolderLabel(window.api?.platform),
-        icon: FolderOpen
+        icon: FolderSearch
       })
     }
 
@@ -209,7 +238,17 @@ export function useInstallContextMenu(
 
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
-      cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop, style: 'danger' })
+      cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop })
+    }
+    if (opts.onManage && isLocalLikeInstall(inst) && !isAdopted(inst)) {
+      const taskRunning = hasTaskRunning(inst)
+      cluster.push({
+        id: 'untrack',
+        label: t('actions.untrack'),
+        icon: EyeOff,
+        disabled: taskRunning,
+        title: taskRunning ? t('chooser.busyActionGatedReason') : undefined
+      })
     }
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
@@ -312,7 +351,7 @@ export function useInstallContextMenu(
             title: label,
             message:
               result.reason === 'none'
-                ? t('snapshots.noSnapshotsToShare')
+                ? t('snapshots.noSnapshotsToExport')
                 : (result.message ?? t('snapshots.shareFailed'))
           })
         }
@@ -339,6 +378,11 @@ export function useInstallContextMenu(
       await opts.autoStart?.setStartsOnOpen(inst.id, !opts.autoStart.startsOnOpen(inst.id))
     } else if (id === 'copy-install') {
       opts.onManage?.(inst, { autoAction: 'copy' })
+    } else if (id === 'rename') {
+      opts.onManage?.(inst, { autoAction: 'rename' })
+    } else if (id === 'untrack') {
+      if (hasTaskRunning(inst)) return
+      opts.onManage?.(inst, { autoAction: 'remove' })
     } else if (id === 'delete') {
       if (opts.onShowProgress) {
         const deleteLabel = t('actions.delete')
@@ -354,7 +398,7 @@ export function useInstallContextMenu(
         if (!confirmed || isStoppedActionGated(inst)) return
         opts.onShowProgress({
           installationId: inst.id,
-          title: `${deleteLabel} - ${inst.name}`,
+          title: progressTitle(deleteLabel, inst.name),
           apiCall: () => window.api.runAction(inst.id, 'delete'),
           cancellable: true,
           returnTo: 'list',
@@ -441,6 +485,7 @@ export function useInstallContextMenu(
     viewError,
     viewDanger,
     isStoppedActionGated,
+    stoppedActionGatedReason,
     isPromotingToWorkspace
   }
 }

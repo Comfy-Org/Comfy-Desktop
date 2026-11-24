@@ -4,10 +4,11 @@ import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import { Folder, FolderOpen, MoreHorizontal, RotateCcw } from '@lucide/vue'
+import { Folder, MoreHorizontal, RotateCcw } from '@lucide/vue'
+import BrowseFolderButton from '../../components/BrowseFolderButton.vue'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
-import { revealInFolderKey } from '../../composables/usePlatform'
 
 type StorageDirRowVariant = 'panel' | 'grouped' | 'field'
 
@@ -42,7 +43,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const revealFolderKey = revealInFolderKey(window.api?.platform)
 const variantClass: Record<StorageDirRowVariant, string> = {
   panel: 'min-h-14 rounded-[14px] bg-white/5 py-1.5 pr-3 pl-[18px]',
   grouped:
@@ -90,21 +90,16 @@ function onMenuKeydown(event: KeyboardEvent): void {
       class="storage-dir-main flex min-w-0 flex-auto"
       :class="listAligned ? 'items-start py-[7px]' : 'items-center'"
     >
-      <Button
-        type="button"
-        variant="textonly"
-        size="unset"
-        class="storage-dir-name static inline-block min-w-0 max-w-full gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono font-normal text-[12.5px] leading-[18px] text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+      <span
+        class="storage-dir-name inline-block min-w-0 max-w-full text-left font-mono font-normal text-[12.5px] leading-[18px] text-neutral-100"
         :class="
           listAligned
             ? 'whitespace-normal [overflow-wrap:anywhere]'
             : 'overflow-hidden text-ellipsis whitespace-nowrap'
         "
-        :title="t(revealFolderKey)"
-        @click="emit('open')"
+        :title="path"
+        >{{ path }}</span
       >
-        {{ path }}
-      </Button>
     </div>
     <span
       v-if="(shared && !hideSharedTag) || tag"
@@ -122,8 +117,9 @@ function onMenuKeydown(event: KeyboardEvent): void {
     </span>
     <div
       v-if="listAligned"
-      class="storage-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end"
+      class="storage-dir-actions inline-flex h-8 w-[58px] shrink-0 items-center justify-end gap-0.5"
     >
+      <RevealFolderButton v-if="path" :path="path" @click="emit('open')" />
       <Menu
         v-if="hasMenuActions"
         :open="menuOpen"
@@ -156,18 +152,8 @@ function onMenuKeydown(event: KeyboardEvent): void {
       </Menu>
     </div>
     <div v-else class="storage-dir-actions inline-flex shrink-0 items-center gap-0.5">
-      <Button
-        v-if="browsable"
-        type="button"
-        variant="textonly"
-        size="unset"
-        :class="actionClass"
-        :aria-label="t('common.browse')"
-        :title="t('common.browse')"
-        @click="emit('browse')"
-      >
-        <FolderOpen :size="14" aria-hidden="true" />
-      </Button>
+      <RevealFolderButton v-if="path" :path="path" @click="emit('open')" />
+      <BrowseFolderButton v-if="browsable" class="storage-dir-browse" @click="emit('browse')" />
       <Button
         v-if="resettable"
         type="button"

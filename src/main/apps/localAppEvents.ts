@@ -1,5 +1,6 @@
 import * as mainTelemetry from '../lib/telemetry'
 import type { TelemetryContext } from '../lib/telemetry'
+import { isPartnerRefusal } from './partnerRefusal'
 
 export const RUN_FINISHED_EVENT = 'comfy.desktop.apps.run_finished'
 export const SETUP_EVENT = 'comfy.desktop.apps.setup'
@@ -16,7 +17,7 @@ const RUN_ENDS: Readonly<Record<string, RunOutcome>> = {
   execution_interrupted: 'cancelled'
 }
 
-export type RunOutcome = 'success' | 'failed' | 'cancelled'
+export type RunOutcome = 'success' | 'failed' | 'cancelled' | 'refused'
 export type SetupStage = 'install' | 'start'
 
 export interface RunEnd {
@@ -26,10 +27,13 @@ export interface RunEnd {
   startedAt?: number
 }
 
+type RunEnding = Pick<RunEnd, 'outcome' | 'errorClass'>
+
 interface Run {
   buildId: string
   appId: string | null
   submittedAt: number
+  queueNumber?: number
   startedAt?: number
   heardEnd?: RunEnd
 }
@@ -41,6 +45,16 @@ interface EarlyRun {
 
 const runs = new Map<string, Run>()
 const earlyRuns = new Map<string, EarlyRun>()
+const runWatchers = new Set<() => void>()
+
+function runsChanged(): void {
+  for (const watcher of runWatchers) watcher()
+}
+
+export function onRunsChanged(watcher: () => void): () => void {
+  runWatchers.add(watcher)
+  return () => runWatchers.delete(watcher)
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -75,6 +89,14 @@ export function errorClassOf(exceptionType: unknown): string | undefined {
     .toLowerCase()
 }
 
+function errorEndingOf(data: Record<string, unknown>): RunEnding {
+  const errorClass = errorClassOf(data['exception_type'])
+  return {
+    outcome: isPartnerRefusal(data['exception_message']) ? 'refused' : 'failed',
+    ...(errorClass ? { errorClass } : {})
+  }
+}
+
 function timeOf(data: Record<string, unknown>, now: number): number {
   const at = data['timestamp']
   return typeof at === 'number' && Number.isFinite(at) && at > 0 ? at : now
@@ -106,6 +128,7 @@ export function finishRun(promptId: string, end: RunEnd): void {
   if (!run) return
   runs.delete(promptId)
   sendRunFinished(run, end)
+  runsChanged()
 }
 
 export function finishHeardRun(promptId: string): void {
@@ -121,14 +144,16 @@ export function runAccepted(
   promptId: string,
   buildId: string,
   appId: string | null,
-  submittedAt: number
+  submittedAt: number,
+  queueNumber?: number
 ): void {
   if (runs.has(promptId)) return
   const early = earlyRuns.get(promptId)
   earlyRuns.delete(promptId)
-  const run: Run = { buildId, appId, submittedAt, startedAt: early?.startedAt }
+  const run: Run = { buildId, appId, submittedAt, queueNumber, startedAt: early?.startedAt }
   keepNewest(runs, promptId, run, MAX_RUNS)
   if (early?.end) finishRun(promptId, early.end)
+  else runsChanged()
 }
 
 function noteEarly(promptId: string, change: EarlyRun): void {
@@ -152,14 +177,16 @@ export function noteRunMessage(message: unknown, now = Date.now()): void {
   const at = timeOf(data, now)
   const run = runs.get(promptId)
   if (type === 'execution_start') {
-    if (run) run.startedAt ??= at
-    else noteEarly(promptId, { startedAt: at })
+    if (!run) noteEarly(promptId, { startedAt: at })
+    else if (run.startedAt === undefined) {
+      run.startedAt = at
+      runsChanged()
+    }
     return
   }
   const outcome = RUN_ENDS[type]
   if (!outcome || isBlockedBranch(type, data)) return
-  const errorClass = outcome === 'failed' ? errorClassOf(data['exception_type']) : undefined
-  const end: RunEnd = { outcome, at, ...(errorClass ? { errorClass } : {}) }
+  const end: RunEnd = { ...(type === 'execution_error' ? errorEndingOf(data) : { outcome }), at }
   if (!run) noteEarly(promptId, { end })
   else if (run.startedAt === undefined) run.heardEnd ??= end
   else finishRun(promptId, end)
@@ -185,19 +212,18 @@ export function runEndFromHistory(entry: unknown, now = Date.now()): RunEnd | nu
   const notices: unknown[] = Array.isArray(status['messages']) ? status['messages'] : []
   const messages = notices.filter((message) => !isBlockedNotice(message))
   const startedAt = messageTime(messages, 'execution_start')
-  const timed = (outcome: RunOutcome, type: string, errorClass?: string): RunEnd => ({
-    outcome,
+  const timed = (ending: RunEnding, type: string): RunEnd => ({
+    ...ending,
     at: messageTime(messages, type) ?? now,
-    ...(startedAt === undefined ? {} : { startedAt }),
-    ...(errorClass ? { errorClass } : {})
+    ...(startedAt === undefined ? {} : { startedAt })
   })
   if (messageOf(messages, 'execution_interrupted')) {
-    return timed('cancelled', 'execution_interrupted')
+    return timed({ outcome: 'cancelled' }, 'execution_interrupted')
   }
   const error = messageOf(messages, 'execution_error')
-  if (error) return timed('failed', 'execution_error', errorClassOf(error['exception_type']))
-  if (status['status_str'] === 'success') return timed('success', 'execution_success')
-  return status['status_str'] === 'error' ? timed('failed', 'execution_error') : null
+  if (error) return timed(errorEndingOf(error), 'execution_error')
+  if (status['status_str'] === 'success') return timed({ outcome: 'success' }, 'execution_success')
+  return status['status_str'] === 'error' ? timed({ outcome: 'failed' }, 'execution_error') : null
 }
 
 export function runsOn(buildId: string): string[] {
@@ -206,6 +232,24 @@ export function runsOn(buildId: string): string[] {
 
 export function unstartedRunsOn(buildId: string): string[] {
   return runsOn(buildId).filter((promptId) => runs.get(promptId)?.startedAt === undefined)
+}
+
+export function busyAppOn(buildId: string, askingAppId: string | null = null): string | null {
+  const onBuild = [...runs.values()].filter(
+    (run): run is Run & { appId: string } => run.buildId === buildId && run.appId !== null
+  )
+  const working = onBuild.find((run) => run.startedAt !== undefined)
+  if (working) return working.appId === askingAppId ? null : working.appId
+  const queue = inQueueOrder(onBuild)
+  const asking = queue.findIndex((run) => run.appId === askingAppId)
+  const [firstInQueue] = asking === -1 ? queue : queue.slice(0, asking)
+  return firstInQueue?.appId ?? null
+}
+
+function inQueueOrder<T extends Run>(queued: T[]): T[] {
+  const numbered = queued.every((run) => run.queueNumber !== undefined)
+  const place = (run: T): number => (numbered ? (run.queueNumber ?? 0) : run.submittedAt)
+  return [...queued].sort((a, b) => place(a) - place(b))
 }
 
 export function isFollowing(promptId: string): boolean {
@@ -252,6 +296,7 @@ export function setupStarted(stage: SetupStage, appId: string | null): SetupStep
 }
 
 export function _resetForTest(): void {
+  runWatchers.clear()
   runs.clear()
   earlyRuns.clear()
 }

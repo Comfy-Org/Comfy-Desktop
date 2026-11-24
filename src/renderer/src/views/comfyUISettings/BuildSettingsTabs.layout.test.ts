@@ -36,7 +36,7 @@ const STORAGE_SECTIONS = [
       field('useSharedModels', 'Use Shared Models', { value: true, editType: 'boolean' }),
       field('useSharedInput', 'Use Shared Input', { value: true, editType: 'boolean' }),
       field('useSharedOutput', 'Use Shared Output', { value: false, editType: 'boolean' }),
-      field('modelDirs', 'Model Directories', { value: [SHORT_PATH], editType: 'model-dirs' }),
+      field('modelDirs', 'Model directories', { value: [SHORT_PATH], editType: 'model-dirs' }),
       field('installModelsDir', 'installModelsDir', { value: LONG_PATH, editType: 'hidden' }),
       field('outputDir', 'Output Folder', { value: LONG_PATH, editType: 'path' })
     ]
@@ -89,15 +89,15 @@ function selectField(id: string, label: string, rowGroup?: string): DetailField 
 const CONTROL = '.ui-input, [role="combobox"]'
 
 const LAUNCH_SECTION: DetailSection = {
-  title: 'Launch Settings',
+  title: 'Launch settings',
   fields: [
     field('launchArgs', 'Startup arguments', { editType: 'args-builder' }),
-    selectField('managerSecurityLevel', 'Manager Security Level', 'manager'),
-    selectField('managerNetworkMode', 'Manager Network Mode', 'manager'),
-    selectField('launchMode', 'Launch Mode', 'launch-window'),
-    selectField('browserPartition', 'Browser Cache', 'launch-window'),
-    selectField('portConflict', 'If Port is Busy'),
-    field('envVars', 'Environment Variables', {
+    selectField('managerSecurityLevel', 'Manager security level', 'manager'),
+    selectField('managerNetworkMode', 'Manager network mode', 'manager'),
+    selectField('launchMode', 'Launch mode', 'launch-window'),
+    selectField('browserPartition', 'Browser cache', 'launch-window'),
+    selectField('portConflict', 'If port is busy'),
+    field('envVars', 'Environment variables', {
       editType: 'env-vars',
       value: { HF_HOME: 'D:\\hf' }
     })
@@ -171,17 +171,26 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     )
   })
 
-  it('gives every row the same trailing shape: badges, then one 28px more slot', async () => {
+  it('gives every row the same trailing shape: badges, then one 58px reveal and more slot', async () => {
     const root = await mountStorage(width)
     const rows = [...root.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
     expect(rows.length).toBeGreaterThanOrEqual(4)
     for (const row of rows) {
       const slot = row.querySelector('.models-dir-actions, .storage-dir-actions')!
-      expect(Math.round(slot.getBoundingClientRect().width), 'one fixed action slot').toBe(28)
-      const buttons = slot.querySelectorAll('button')
-      expect(buttons.length, 'at most the more button').toBeLessThanOrEqual(1)
-      for (const button of buttons) {
-        expect(button.getAttribute('aria-label'), 'the slot holds only more').toBe('More actions')
+      expect(Math.round(slot.getBoundingClientRect().width), 'one fixed action slot').toBe(58)
+      const buttons = [...slot.querySelectorAll('button')]
+      expect(buttons.length, 'at most reveal and more').toBeLessThanOrEqual(2)
+      const reveal = slot.querySelector('.reveal-folder-button')
+      if (reveal) {
+        expect(buttons[0], 'reveal comes first').toBe(reveal)
+        expect(reveal.getAttribute('title'), 'reveal names the file manager').toBe(
+          'Show in Explorer'
+        )
+      }
+      for (const button of buttons.filter((b) => b !== reveal)) {
+        expect(button.getAttribute('aria-label'), 'the rest of the slot is more').toBe(
+          'More actions'
+        )
       }
       const tags = row.querySelector('.models-dir-tags, .storage-dir-tags')
       if (!tags) continue
@@ -366,7 +375,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     expectSame(labelGaps, 'label to field gap is even')
     expectSame(rowGaps, 'field to next label gap is even')
     expect(Math.round(labelGaps[0]!), 'label sits 4px above its field').toBe(4)
-    expect(Math.round(rowGaps[0]!), 'fields sit 16px apart').toBe(16)
+    expect(Math.round(rowGaps[0]!), 'fields sit 24px apart').toBe(24)
     for (const control of root.querySelectorAll<HTMLElement>(CONTROL)) {
       expect(Math.round(control.getBoundingClientRect().height), 'field height').toBe(40)
       expect(getComputedStyle(control).borderRadius, 'field radius').toBe('8px')
@@ -392,7 +401,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     const port = root.querySelector('[data-field-id="portConflict"]')!.getBoundingClientRect()
     const note = env.querySelector('.settings-v2-env-notice')!.getBoundingClientRect()
     const label = env.querySelector('.settings-v2-field-label')!.getBoundingClientRect()
-    expect(Math.round(env.getBoundingClientRect().top - port.bottom), 'env block gap').toBe(16)
+    expect(Math.round(env.getBoundingClientRect().top - port.bottom), 'env block gap').toBe(24)
     expect(note.top, 'note stays below the field above').toBeGreaterThanOrEqual(
       env.getBoundingClientRect().top
     )

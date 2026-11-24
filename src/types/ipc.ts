@@ -1,4 +1,5 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 import type { GpuTier } from '../shared/gpuTier'
 import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
@@ -69,9 +70,12 @@ export interface DevPlatformBuild {
   installedVersion?: number
 }
 
+export type AddFailureReason = 'location'
+
 export interface InstallBuildResult {
   ok: boolean
   message?: string
+  reason?: AddFailureReason
   entry?: { id: string; name: string }
 }
 
@@ -135,6 +139,7 @@ export interface Installation {
   status?: string
   lastLaunchedAt?: number
   lastLaunchedAtByCategory?: Record<string, number>
+  lastStoppedAt?: number
   [key: string]: unknown
 }
 
@@ -171,6 +176,37 @@ export interface AppCard {
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
 
+export type DraftAppRequest =
+  | { kind: 'ask'; appId: string; token: string; title: string; message: string }
+  | { kind: 'refused'; title: string; message: string }
+  | { kind: 'open'; card: AppCard }
+
+export type DraftAppPasteAnswer =
+  { kind: 'asked' } | { kind: 'refused'; title: string; message: string }
+
+export interface AppRun {
+  appId: string
+  running: boolean
+  finished: boolean
+}
+
+export interface RunningApp {
+  id: string
+  title: string
+}
+
+export interface TitleBarApps {
+  running: RunningApp[]
+  ready: RunningApp[]
+}
+
+export interface DraftClosingStop {
+  appTitle: string
+  closesDraft: true
+}
+
+export type AppSwitchStop = { appTitle: string; otherRuns: number } | DraftClosingStop
+
 export interface AppPagePlacement {
   x: number
   y: number
@@ -180,6 +216,7 @@ export interface AppPagePlacement {
   justOpened?: boolean
   retry?: boolean
   focus?: boolean
+  hidden?: boolean
 }
 
 export interface AppOutput {
@@ -510,6 +547,12 @@ export interface ActionResult {
   cancelled?: boolean
   running?: boolean
   newInstallationId?: string
+  blockingSessions?: BlockingSession[]
+}
+
+export interface BlockingSession {
+  sessionId: string
+  name: string
 }
 
 export interface PortConflictInfo {
@@ -525,6 +568,7 @@ export interface PortConflictInfo {
 export interface AddResult {
   ok: boolean
   message?: string
+  reason?: AddFailureReason
   entry?: Installation
 }
 
@@ -723,6 +767,7 @@ export interface ModelDownloadProgress {
 export interface TrackResult {
   ok: boolean
   message?: string
+  reason?: AddFailureReason
 }
 
 export interface SystemGpuInfo {
@@ -1142,6 +1187,12 @@ export interface CloseComfyWindowOptions {
   keepDesktopOpen?: boolean
 }
 
+export interface HomeTourReplayState {
+  id: number
+  pending: boolean
+  finished: boolean
+}
+
 export interface ElectronApi {
   platform: NodeJS.Platform
 
@@ -1258,7 +1309,6 @@ export interface ElectronApi {
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
-  closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   openPageInNewWindow(page: NewWindowDashboardPage): void
@@ -1272,6 +1322,13 @@ export interface ElectronApi {
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
+  hasAssetWorkflow(source: string, assetId: string): Promise<boolean | null>
+  openAssetWorkflow(
+    source: string,
+    assetId: string,
+    name: string,
+    build?: string
+  ): Promise<ComfyDesktopOpenInComfy>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
@@ -1279,11 +1336,20 @@ export interface ElectronApi {
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
+  getAppRuns(): Promise<AppRun[]>
+  appSwitchStopsRun(appId: string): Promise<AppSwitchStop | null>
+  onAppRunsChanged(callback: (runs: AppRun[]) => void): () => void
+  onOpenRunningApp(callback: (appId: string) => void): () => void
   hideAppPage(): void
   onAppPageStatusChanged(
     callback: (appId: string | null, status: AppPageStatus) => void
   ): () => void
   onAppPageClosed(callback: () => void): () => void
+  onAppBackToListAsked(callback: (appId: string, stop: DraftClosingStop) => void): () => void
+  closeAppPage(appId: string): void
+  onAppsListChanged(callback: () => void): () => void
+  onOpenDraftApp(callback: (request: DraftAppRequest) => void): () => void
+  acceptDraftApp(token: string): Promise<DraftAppRequest | null>
   onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
   sendAppOutputAction(action: AppOutputAction): void
   sendAppRequest(text: string): Promise<boolean>
@@ -1302,7 +1368,6 @@ export interface ElectronApi {
   setFirstUseMode(mode: FirstUseMode): void
   onFirstUseSkip(callback: () => void): Unsubscribe
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
-  onOpenAnnouncement(callback: () => void): Unsubscribe
   onCloseRequest(callback: (data: { requestId: string }) => void): Unsubscribe
   respondCloseRequest(payload: { requestId: string; cleared?: boolean; defer?: boolean }): void
   ackCloseRequest(payload: { requestId: string }): void
@@ -1383,6 +1448,8 @@ export interface ElectronApi {
   getUniqueName(baseName: string): Promise<string>
   setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
   getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
+  getHomeTourReplay(): Promise<{ id: number; pending: boolean }>
+  finishHomeTour(shownReplayId: number | null): Promise<void>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
@@ -1399,6 +1466,7 @@ export interface ElectronApi {
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>
   getSystemInfo(): Promise<SystemInfo>
+  getChassisType(): Promise<string | null>
   getInstallationDdContext(installationId: string): Promise<InstallationDdContext | null>
   getInstallsInventory(): Promise<InstallsInventory>
   getDeviceId(): Promise<string>
@@ -1513,6 +1581,8 @@ export interface ElectronApi {
   onErrorDetail(callback: (data: ErrorDetailData) => void): Unsubscribe
   onSuggestChineseMirrors(callback: () => void): Unsubscribe
   onSettingsChanged(callback: (data: { key: string }) => void): Unsubscribe
+  onHomeTourReplayChanged(callback: (state: HomeTourReplayState) => void): Unsubscribe
+  onShowHomePage(callback: () => void): Unsubscribe
   onPanelSwitch(callback: (data: { panel: string; installationId?: string }) => void): Unsubscribe
   onPanelTriggerOverlay(
     callback: (data: {
@@ -1568,14 +1638,22 @@ export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
 export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
 
+export interface TitlePopupMenuApp {
+  picture: string | null
+  state: 'running' | 'ready'
+}
+
 export interface TitlePopupMenuItem {
   id?: string
   label?: string
   labelKey?: string
   labelParams?: Record<string, string | number>
   icon?: TitlePopupMenuIcon
+  app?: TitlePopupMenuApp
   kind?: 'separator'
 }
+
+export const OPEN_RUNNING_APP_CHANNEL = 'apps:open-running-app'
 
 export interface PopupTheme {
   bg: string

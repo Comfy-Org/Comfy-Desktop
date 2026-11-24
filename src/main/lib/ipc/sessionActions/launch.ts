@@ -69,7 +69,7 @@ import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
 import { decodeExitCode } from '../../exitCodeInfo'
-import { auditVcRuntime } from '../../vcRuntimeAudit'
+import { auditVcRuntime, isDllLoadFailure } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createAssetsTap } from '../../assetsTap'
 import { createAgentTap } from '../../agentTap'
@@ -88,9 +88,9 @@ import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
 import { settleAutoStartOnFirstStart } from '../../firstBuildAutoStart'
-import type { ComfyExitedData } from '../../../../types/ipc'
+import type { BlockingSession, ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
-import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
+import { buildErrorFields, errorTail, findExceptionLine } from '../../../../shared/errorEvent'
 import {
   startBootPhases,
   recordBootPhase,
@@ -172,15 +172,12 @@ import { getIdClass } from '../../deviceId'
 import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
-export function desktopFeatureFlags(
-  inst: InstallationRecord,
-  telemetryEnabled: boolean
-): Record<string, string> {
+export function desktopFeatureFlags(inst: InstallationRecord): Record<string, string> {
   const flags: Record<string, string> = {
     show_signin_button: 'true',
     supports_terminal: 'false'
   }
-  if (inst.sourceId === 'standalone' && telemetryEnabled) {
+  if (inst.sourceId === 'standalone' && settings.telemetryConsent() === true) {
     flags.enable_telemetry = 'true'
   }
   return flags
@@ -188,7 +185,7 @@ export function desktopFeatureFlags(
 
 async function launchClientContext(): ReturnType<typeof agentClientContext> {
   try {
-    return await agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+    return await agentClientContext(settings.telemetryConsent() === true, getAppVersion())
   } catch {
     return undefined
   }
@@ -602,13 +599,16 @@ async function diagnoseCrash(
   return out
 }
 
-async function describeExitCode(code: number | null): Promise<string> {
+async function describeExitCode(code: number | null, stderr: string): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
-  if (!decoded) return String(code)
-  let out = `${decoded.code} / ${decoded.hex}`
-  if (decoded.kind === 'access-violation') {
+  const accessViolation = decoded?.kind === 'access-violation'
+  const dllFailure = !decoded && isDllLoadFailure(findExceptionLine(stderr) ?? '')
+  let out = decoded ? `${decoded.code} / ${decoded.hex}` : String(code)
+  if (accessViolation) {
     out += ' (memory access violation — usually a faulty or missing native library)'
+  }
+  if (accessViolation || dllFailure) {
     try {
       if ((await auditVcRuntime()).length > 0) {
         out +=
@@ -869,24 +869,26 @@ export function _cleanupFailedLaunchSetup(
 const isLocalSource = (sourceId: string): boolean =>
   (sourceMap[sourceId]?.category ?? 'local') === 'local'
 
-export function otherLocalComfyUIs(sessionId: string, records: InstallationRecord[]): string[] {
+export function otherLocalComfyUIs(
+  sessionId: string,
+  records: InstallationRecord[]
+): BlockingSession[] {
   const ids = new Set([
     ..._runningSessions.keys(),
     ..._getActiveLaunchIds().filter((id) => _operationAborts.has(id))
   ])
   ids.delete(sessionId)
   for (const id of _getStoppingInstallationIds()) ids.add(id)
-  const names: string[] = []
-  const perfTests: string[] = []
+  const builds: BlockingSession[] = []
+  const perfTests: BlockingSession[] = []
   for (const id of ids) {
-    const perf = sessionKindOf(id) === 'performance_test'
     const inst = records.find((r) => r.id === installationIdOf(id))
     if (inst && !isLocalSource(inst.sourceId)) continue
     const name = inst?.name ?? _runningSessions.get(id)?.installationName ?? id
-    if (perf) perfTests.push(i18n.t('errors.performanceTestOfInstallation', { name }))
-    else names.push(`“${name}”`)
+    const target = sessionKindOf(id) === 'performance_test' ? perfTests : builds
+    target.push({ sessionId: id, name })
   }
-  return [...names, ...perfTests]
+  return [...builds, ...perfTests]
 }
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
@@ -896,18 +898,18 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
     const records = await installations.list()
     const others = otherLocalComfyUIs(sessionId, records)
     if (others.length > 0) {
-      appendLog(sessionId, `[launch] Performance Test refused: also running ${others.join(', ')}\n`)
+      appendLog(
+        sessionId,
+        `[launch] Performance Test refused: also running ${others.map((other) => other.sessionId).join(', ')}\n`
+      )
       telemetry.emit('comfy.desktop.performance_test.refused', {
         installation_id: installationId,
         other_count: others.length
       })
-      const names = new Intl.ListFormat(i18n.getLocale(), { type: 'conjunction' }).format(others)
       return {
         ok: false,
-        message:
-          others.length === 1
-            ? i18n.t('errors.performanceTestOtherInstanceRunningOne', { name: names })
-            : i18n.t('errors.performanceTestOtherInstanceRunning', { names })
+        message: i18n.t('errors.performanceTestOtherInstanceRunning'),
+        blockingSessions: others
       }
     }
   }
@@ -1290,9 +1292,7 @@ async function runLaunch(
             installationId,
             revision
           )
-          const flagEntries = Object.entries(
-            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
-          )
+          const flagEntries = Object.entries(desktopFeatureFlags(inst))
           for (const [key, value] of flagEntries) {
             if (key in registry) {
               desktopFlagArgs.push('--feature-flag', `${key}=${value}`)
@@ -1974,7 +1974,9 @@ async function runLaunch(
         exitSignal = signal
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
-          const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
+          const rendered = signal
+            ? `signal ${signal}`
+            : `code ${await describeExitCode(code, spawned.getStderr())}`
           earlyExit = `Process exited with ${rendered}${detail}`
           reject(new Error(earlyExit))
         }

@@ -5,10 +5,15 @@ import {
   buildIndexedDbInjectScript,
   FIREBASE_SESSION_INJECTION_OWNER_FIELD,
   INJECTION_OWNER_KEY,
+  WEB_SESSION_CREATE_TIMEOUT_MS,
   type InjectWriteOptions
 } from './injectScript'
 
-export { buildIndexedDbInjectScript, FIREBASE_SESSION_INJECTION_OWNER_FIELD }
+export {
+  buildIndexedDbInjectScript,
+  FIREBASE_SESSION_INJECTION_OWNER_FIELD,
+  WEB_SESSION_CREATE_TIMEOUT_MS
+}
 export type { InjectWriteOptions }
 
 export interface FirebaseSessionInjection {

@@ -13,7 +13,9 @@ import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import type { SavedSetup, SetupPlan } from '../lib/setupPlan'
 import type { InstallBuildResult, Installation, ShowProgressOpts } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
+import { alertAddFailure } from '../lib/addFailureAlert'
 import type { FirstUseChainHooks, PanelKey, SetupHandoff } from './usePanelOverlays'
+import { progressTitle } from '../lib/progressTitle'
 
 export interface FirstUseChainOpts {
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
@@ -25,6 +27,7 @@ export interface FirstUseChainOpts {
   ) => Promise<ChooserLaunchOutcome>
   openFirstUseTakeover: () => Promise<void>
   resetFirstUseSpinner: () => void
+  changeInstallLocation?: () => Promise<void> | void
 }
 
 export interface FirstUseChainApi {
@@ -34,7 +37,8 @@ export interface FirstUseChainApi {
   savedSetup: Readonly<ShallowRef<SavedSetup | null>>
   completeFirstUseAndDismiss: () => Promise<void>
   handleSetupInstall: (plan: SetupPlan) => Promise<void>
-  handleSetupChange: (consent: SetupConsent) => Promise<void>
+  handleSetupChange: (consent: SetupConsent, pickedInstallRoot?: string) => Promise<void>
+  handleSetupLocationChange: (installRoot: string) => void
   handleNewInstallConsentChange: (accepted: boolean) => void
   handleFirstUseChainMigrate: (payload?: { express?: boolean }) => Promise<void>
   handleNewInstallTakeoverClose: () => Promise<void>
@@ -162,7 +166,13 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       }
       const result = await addPlannedInstallation(plan)
       if (!result.ok || !result.entry) {
-        await modal.alert({ title: t('errors.cannotAdd'), message: result.message || '' })
+        await alertAddFailure({
+          modal,
+          t,
+          title: t('errors.cannotAdd'),
+          failure: result,
+          onChangeLocation: opts.changeInstallLocation
+        })
         opts.resetFirstUseSpinner()
         return
       }
@@ -179,7 +189,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       chainingFirstUseToNewInstall.value = true
       await opts.handleShowProgress({
         installationId: entry.id,
-        title: `${t('newInstall.installing')} — ${entry.name}`,
+        title: progressTitle(t('newInstall.installing'), entry.name),
         apiCall: () => window.api.installInstance(entry.id, true),
         autoLaunchOnFinish: true,
         opKind: 'install'
@@ -190,12 +200,20 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         entrypoint: 'first_use',
         reason: 'error'
       })
-      await modal.alert({ title: t('errors.cannotAdd'), message: (err as Error).message || '' })
+      await alertAddFailure({
+        modal,
+        t,
+        title: t('errors.cannotAdd'),
+        failure: { message: (err as Error).message }
+      })
       opts.resetFirstUseSpinner()
     }
   }
 
-  async function handleSetupChange(consent: SetupConsent): Promise<void> {
+  async function handleSetupChange(
+    consent: SetupConsent,
+    pickedInstallRoot?: string
+  ): Promise<void> {
     const needsConsent = !consent.acceptedTos
     setupConsent.value = consent
     setupConsentSaved = consent.acceptedTos
@@ -203,7 +221,8 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     pendingFirstUseAutoLaunchId.value = null
     pendingSetupHandoff.value = {
       needsConsent,
-      ...(savedSetup.value ? { restore: savedSetup.value.draft } : {})
+      ...(savedSetup.value ? { restore: savedSetup.value.draft } : {}),
+      ...(pickedInstallRoot ? { installRoot: pickedInstallRoot } : {})
     }
     window.api.setFirstUseMode(needsConsent ? 'consent-lockdown' : 'post-consent')
     await opts.switchPanel('new-install', 'first_use')
@@ -225,6 +244,15 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     pendingFirstUseAutoLaunchId.value = null
     pendingSetupHandoff.value = null
     await opts.openFirstUseTakeover()
+  }
+
+  function handleSetupLocationChange(installRoot: string): void {
+    const saved = savedSetup.value
+    if (!saved) return
+    savedSetup.value = {
+      plan: { ...saved.plan, installRoot },
+      draft: { ...saved.draft, instPath: installRoot }
+    }
   }
 
   async function handleNewInstallSaveSetup(saved: SavedSetup): Promise<void> {
@@ -256,7 +284,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     window.api.setFirstUseMode('post-consent')
     await opts.handleShowProgress({
       installationId: legacy.id,
-      title: `Migrating — ${legacy.name}`,
+      title: progressTitle(t('desktop.migrating'), legacy.name),
       apiCall: () => window.api.runAction(legacy!.id, 'migrate-to-standalone', result),
       cancellable: true
     })
@@ -342,6 +370,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     completeFirstUseAndDismiss,
     handleSetupInstall,
     handleSetupChange,
+    handleSetupLocationChange,
     handleNewInstallConsentChange,
     handleFirstUseChainMigrate,
     handleNewInstallTakeoverClose,

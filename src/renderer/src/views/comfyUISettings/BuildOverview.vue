@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuLabel, DropdownMenuRadioGroup } from 'reka-ui'
-import { ArrowUpCircle, ChevronDown, FolderOpen, Loader2 } from '@lucide/vue'
+import { ArrowUpCircle, ChevronDown, Loader2 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
@@ -18,7 +18,8 @@ import { useSessionStore } from '../../stores/sessionStore'
 import type { ActionDef, Installation } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { channelAction, splitVersion, type BuildOverviewModel } from './overviewModel'
-import { revealInFolderKey } from '../../composables/usePlatform'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 
 const {
   installation,
@@ -37,7 +38,6 @@ const {
 const emit = defineEmits<{ action: [action: ActionDef] }>()
 
 const { t } = useI18n()
-const revealFolderKey = revealInFolderKey(window.api?.platform)
 const sessionStore = useSessionStore()
 
 const pickedChannel = ref(model.currentChannel)
@@ -83,9 +83,6 @@ const checkedText = computed(() =>
       })
     : ''
 )
-const updateNote = computed(() =>
-  [t('buildOverview.savesSnapshot'), checkedText.value].filter(Boolean).join(' · ')
-)
 
 const switchHeadline = computed(() =>
   t('channelCards.switchTo', { channel: channel.value?.label ?? '' })
@@ -128,10 +125,10 @@ function openLocation(): void {
 <template>
   <div class="build-overview @container/overview w-full" data-testid="build-overview">
     <div
-      class="build-overview-grid grid gap-2.5 @[760px]/overview:grid-cols-[minmax(0,1.35fr)_minmax(0,3fr)]"
+      class="build-overview-grid grid gap-2.5 @[960px]/overview:grid-cols-[minmax(0,1.35fr)_minmax(0,3fr)]"
     >
       <section
-        class="build-overview-card flex min-w-0 flex-col gap-1 overflow-hidden rounded-[14px] bg-card px-[18px] py-4 @[760px]/overview:[contain:size]"
+        class="build-overview-card flex min-w-0 flex-col gap-1 overflow-hidden rounded-[14px] bg-card px-[18px] py-4 @[960px]/overview:[contain:size]"
         aria-labelledby="build-overview-comfyui"
         data-testid="build-overview-comfyui"
       >
@@ -173,9 +170,7 @@ function openLocation(): void {
               <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
             </Button>
           </template>
-          <DropdownMenuLabel
-            class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-          >
+          <DropdownMenuLabel class="px-3 pt-1.5 pb-1" :class="SECTION_TITLE_CLASS">
             {{ model.channelLabel }}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
@@ -209,7 +204,9 @@ function openLocation(): void {
               <span class="truncate text-foreground" :title="updateHeadline">{{
                 updateHeadline
               }}</span>
-              <span class="truncate" :title="updateNote">{{ updateNote }}</span>
+              <span class="truncate" data-testid="build-overview-update-note">{{
+                t('buildOverview.savesSnapshot')
+              }}</span>
             </span>
             <SplitButton
               v-model:open="updateMenuOpen"
@@ -364,7 +361,8 @@ function openLocation(): void {
               <template v-for="group in torchGroups" :key="group.id">
                 <DropdownMenuLabel
                   v-if="showTorchGroupLabels || group === torchGroups[0]"
-                  class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+                  class="px-3 pt-1.5 pb-1"
+                  :class="SECTION_TITLE_CLASS"
                 >
                   {{ showTorchGroupLabels ? group.label : model.torch?.label }}
                 </DropdownMenuLabel>
@@ -427,23 +425,6 @@ function openLocation(): void {
 
         <section
           class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
-          aria-labelledby="build-overview-disk"
-          data-testid="build-overview-disk"
-        >
-          <span id="build-overview-disk" class="text-[12px]/4 text-muted-foreground">{{
-            t('buildOverview.onDisk')
-          }}</span>
-          <span
-            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-            >{{ diskUsage ?? '—' }}</span
-          >
-          <span v-if="diskFree" class="truncate text-[12px]/4 text-muted-foreground">{{
-            t('buildOverview.free', { size: diskFree })
-          }}</span>
-        </section>
-
-        <section
-          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
           aria-labelledby="build-overview-python"
           data-testid="build-overview-python"
         >
@@ -456,6 +437,23 @@ function openLocation(): void {
           >
           <span class="truncate text-[12px]/4 text-muted-foreground">{{
             installation.sourceLabel
+          }}</span>
+        </section>
+
+        <section
+          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
+          aria-labelledby="build-overview-disk"
+          data-testid="build-overview-disk"
+        >
+          <span id="build-overview-disk" class="text-[12px]/4 text-muted-foreground">{{
+            t('buildOverview.onDisk')
+          }}</span>
+          <span
+            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+            >{{ diskUsage ?? '—' }}</span
+          >
+          <span v-if="diskFree" class="truncate text-[12px]/4 text-muted-foreground">{{
+            t('buildOverview.free', { size: diskFree })
           }}</span>
         </section>
 
@@ -478,18 +476,7 @@ function openLocation(): void {
                 :title="location"
                 >{{ location }}</span
               >
-              <Button
-                type="button"
-                variant="muted-textonly"
-                size="icon"
-                class="size-7 shrink-0"
-                :aria-label="t(revealFolderKey)"
-                :title="t(revealFolderKey)"
-                data-testid="build-overview-open-folder"
-                @click="openLocation"
-              >
-                <FolderOpen :size="14" aria-hidden="true" />
-              </Button>
+              <RevealFolderButton data-testid="build-overview-open-folder" @click="openLocation" />
               <BaseCopyButton :value="location" :aria-label="t('buildOverview.copyPath')" />
             </span>
           </div>

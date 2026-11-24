@@ -144,7 +144,7 @@ test('Home Stop closes only the confirmed build window after stopping ComfyUI @m
     expect(await ctx.panel.isVisible(HOME)).toBe(true)
     await expect
       .poll(() => ctx.panel.textOf(`${card(STOPPED_ID)} [data-testid="home-build-status"]`))
-      .toContain('Ready')
+      .toMatch(/^Used /)
     expect(
       await ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`)
     ).toContain('Running')
@@ -173,7 +173,7 @@ test('Home Stop closes only the confirmed build window after stopping ComfyUI @m
     expect(await ctx.panel.isVisible(HOME)).toBe(true)
     await expect
       .poll(() => ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`))
-      .toContain('Ready')
+      .toMatch(/^Used /)
   })
 })
 

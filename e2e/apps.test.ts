@@ -11,6 +11,7 @@ import { claimsOf, FakeCloud, reply, type BearerClaims } from './support/fakeClo
 
 const SIDEBAR_APPS = '[data-testid="app-sidebar-apps"]'
 const SIDEBAR_HOME = '[data-testid="app-sidebar-home"]'
+const RAIL_CUTOUT = '[data-testid="app-sidebar-app-remove-background"]'
 const HOME_VIEW = '[data-testid="home-view"]'
 const HOME_APP_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
 const HOME_APP_IN_FRONT = '[data-testid="home-carousel-card"][aria-current="true"]'
@@ -277,6 +278,7 @@ test("The app page sees Desktop's sign-in, signed out, and none of Desktop's oth
     `Object.keys(window.comfyDesktopAuth).sort()`
   )
   expect(exposed).toEqual([
+    'getCloudOrigin',
     'getPartnerNodeToken',
     'getState',
     'getWorkspaceToken',
@@ -343,6 +345,8 @@ test('An app whose page is down says so, and Try again opens it once the site an
 })
 
 test("Home shows the website's apps, and the one in front opens inside Desktop, not in the browser @macos @windows @linux", async () => {
+  expect(await new WebContentsPage(ctx.app, DOWN_PAGE).click('#back')).toBe(true)
+  await ctx.panel.waitForVisible(SIDEBAR_HOME)
   expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
   await ctx.panel.waitForVisible(HOME_VIEW)
   await expect
@@ -358,11 +362,15 @@ test("Home shows the website's apps, and the one in front opens inside Desktop, 
     .toBe(true)
   expect(await cutoutPage().textOf('#title')).toBe('Remove Background page')
   expect(await ctx.panel.exists(HOME_VIEW)).toBe(false)
-  expect(
-    await ctx.panel.evaluate<string | null>(
-      `document.querySelector('${SIDEBAR_APPS}').getAttribute('aria-current')`
+  await expect
+    .poll(
+      () =>
+        ctx.panel.evaluate<string | null>(
+          `document.querySelector('${RAIL_CUTOUT}')?.getAttribute('aria-current') ?? null`
+        ),
+      LONG_WAIT
     )
-  ).toBe('page')
+    .toBe('page')
   expect(await getShellOpenExternalCalls(ctx.app)).toEqual(openedInBrowserBefore)
 
   await expect.poll(sidebarHasFoldedToItsRail, LONG_WAIT).toBe(true)

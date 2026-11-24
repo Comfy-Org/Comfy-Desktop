@@ -160,7 +160,7 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
       'Relaxed',
       'Permissive'
     ])
-    expect(field.label).toBe('Manager Security Level')
+    expect(field.label).toBe('Manager security level')
     expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerSecurityLevel'))
     expect(String(field.tooltip)).not.toContain('tooltips.')
   })
@@ -225,7 +225,7 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
       'Offline',
       'Personal cloud'
     ])
-    expect(field.label).toBe('Manager Network Mode')
+    expect(field.label).toBe('Manager network mode')
     expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerNetworkMode'))
     expect(String(field.tooltip)).not.toContain('tooltips.')
   })

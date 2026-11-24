@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   current: 'ws-1' as string | null,
   entries: [] as unknown[],
   appsEnabled: false,
-  appsPages: [] as unknown[]
+  appsPages: [] as unknown[],
+  refusedAppsPages: [] as unknown[]
 }))
 
 vi.mock('./telemetry', () => ({ emit: vi.fn() }))
@@ -21,6 +22,8 @@ vi.mock('./embeddedSessionFlag', () => ({
 }))
 vi.mock('../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
 vi.mock('../apps/appsPages', () => ({
+  appsPageAdmits: async (page: unknown) =>
+    mocks.appsPages.includes(page) && !mocks.refusedAppsPages.includes(page),
   isAppsPageSender: (sender: unknown) => mocks.appsPages.includes(sender),
   liveAppsPages: () => mocks.appsPages
 }))
@@ -55,6 +58,7 @@ vi.mock('../host/registry', () => ({
 
 import {
   billingHandoffForSender,
+  cloudOriginForSender,
   EMBEDDED_SESSION_CHANNELS,
   EMBEDDED_SESSION_DISABLED_EVENT,
   _resetForTest as resetEmbeddedSession,
@@ -89,6 +93,7 @@ function partnerNodeFor(workspaceId: string): string {
 interface ViewOptions {
   frameUrl?: string
   installationId?: string | null
+  sourceCategory?: string | null
   subframe?: boolean
 }
 
@@ -103,6 +108,7 @@ function view(comfyUrl: string, options: ViewOptions = {}) {
   }
   mocks.entries.push({
     installationId: options.installationId === undefined ? 'inst-1' : options.installationId,
+    sourceCategory: options.sourceCategory === undefined ? 'local' : options.sourceCategory,
     comfyUrl,
     comfyView: { webContents }
   })
@@ -131,6 +137,7 @@ beforeEach(() => {
   mocks.entries = []
   mocks.appsEnabled = false
   mocks.appsPages = []
+  mocks.refusedAppsPages = []
   mocks.getGrantAccessToken.mockReset().mockResolvedValue(ACCESS)
   mocks.mint.mockReset().mockImplementation(async (_grant: string, workspaceId: string) => ({
     kind: 'minted',
@@ -178,7 +185,10 @@ describe('embeddedSession', () => {
     ['an https host', 'https://cloud.comfy.org', {}],
     ['a view that navigated away', 'http://127.0.0.1:8000', { frameUrl: 'https://evil.example' }],
     ['a subframe', 'http://127.0.0.1:8000', { subframe: true }],
-    ['a view with no installation', 'http://127.0.0.1:8000', { installationId: null }]
+    ['a view with no installation', 'http://127.0.0.1:8000', { installationId: null }],
+    ['a Remote Connection on 127.0.0.1', 'http://127.0.0.1:8000', { sourceCategory: 'remote' }],
+    ['a Remote Connection on localhost', 'http://localhost:8188', { sourceCategory: 'remote' }],
+    ['an install of unknown source', 'http://127.0.0.1:8000', { sourceCategory: null }]
   ])('refuses %s', async (_name, comfyUrl, options: ViewOptions) => {
     const { event } = view(comfyUrl, options)
 
@@ -313,6 +323,16 @@ describe('embeddedSession', () => {
     else expect(state).toMatchObject({ status: 'signed_in', workspaceId: 'ws-1' })
   })
 
+  it('does not switch for a Remote Connection on a loopback URL', async () => {
+    const { event } = view('http://localhost:8188', { sourceCategory: 'remote' })
+    const switchWorkspace = vi.fn(async () => ({ status: { signedIn: true }, reached: true }))
+
+    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
+      status: 'disabled'
+    })
+    expect(switchWorkspace).not.toHaveBeenCalled()
+  })
+
   it('does not switch while the ops flag is off', async () => {
     mocks.enabled = false
     const { event } = view('http://127.0.0.1:8000')
@@ -419,6 +439,7 @@ describe('embeddedSession', () => {
   it('broadcasts only to views it would serve', async () => {
     const local = view('http://127.0.0.1:8000')
     const remote = view('http://192.168.1.20:8188')
+    const loopbackRemote = view('http://localhost:8188', { sourceCategory: 'remote' })
 
     await broadcastEmbeddedSessionChanged()
 
@@ -429,6 +450,7 @@ describe('embeddedSession', () => {
       workspaceId: 'ws-1'
     })
     expect(remote.webContents.send).not.toHaveBeenCalled()
+    expect(loopbackRemote.webContents.send).not.toHaveBeenCalled()
   })
 
   it('broadcasts nothing while the ops flag is off', async () => {
@@ -658,7 +680,11 @@ describe('billingHandoffForSender', () => {
   it.each([
     ['a remote ComfyUI', 'http://192.168.1.20:8188', {}],
     ['a view that navigated away', 'http://127.0.0.1:8000', { frameUrl: 'https://evil.example' }],
-    ['a subframe', 'http://127.0.0.1:8000', { subframe: true }]
+    ['a subframe', 'http://127.0.0.1:8000', { subframe: true }],
+    ['a view with no installation', 'http://127.0.0.1:8000', { installationId: null }],
+    ['a Remote Connection on 127.0.0.1', 'http://127.0.0.1:8000', { sourceCategory: 'remote' }],
+    ['a Remote Connection on localhost', 'http://localhost:8188', { sourceCategory: 'remote' }],
+    ['an install of unknown source', 'http://127.0.0.1:8000', { sourceCategory: null }]
   ])('is disabled for %s', async (_name, comfyUrl, options: ViewOptions) => {
     respond(201, { entry_url: ENTRY_URL })
     const { event } = view(comfyUrl, options)
@@ -811,6 +837,34 @@ describe('the hosted Apps page', () => {
 
     expect(page.webContents.send).toHaveBeenCalledWith(EMBEDDED_SESSION_CHANNELS.changed, SIGNED_IN)
     expect(local.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('gets nothing once its draft app is no longer allowed, while Apps stays on', async () => {
+    mocks.appsEnabled = true
+    const { event, webContents } = appsPage()
+    mocks.refusedAppsPages.push(webContents)
+
+    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(cloudOriginForSender(event)).resolves.toBeNull()
+    expect(mocks.mint).not.toHaveBeenCalled()
+    expect(mocks.partnerMint).not.toHaveBeenCalled()
+  })
+
+  it('hears nothing about the account once its draft app is no longer allowed', async () => {
+    mocks.appsEnabled = true
+    const allowed = appsPage()
+    const refused = appsPage()
+    mocks.refusedAppsPages.push(refused.webContents)
+
+    await broadcastEmbeddedSessionChanged()
+
+    expect(allowed.webContents.send).toHaveBeenCalledWith(
+      EMBEDDED_SESSION_CHANNELS.changed,
+      SIGNED_IN
+    )
+    expect(refused.webContents.send).not.toHaveBeenCalled()
   })
 
   it('hears nothing while Apps is switched off', async () => {

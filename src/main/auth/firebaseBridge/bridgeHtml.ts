@@ -181,7 +181,7 @@ function shell(title: string, body: string): string {
 
 export function renderDoneHtml(): string {
   return shell(
-    "You're signed in — Comfy Desktop",
+    "You're signed in · Comfy Desktop",
     `<div class="status-icon success">${CHECK_ICON}</div>
     <h1>You're signed in</h1>
     <p id="countdown">Returning to Comfy Desktop in 3…</p>
@@ -213,7 +213,7 @@ export function renderDoneHtml(): string {
 
 export function renderErrorHtml(message: string): string {
   return shell(
-    'Sign-in failed — Comfy Desktop',
+    'Sign-in failed · Comfy Desktop',
     `<div class="status-icon error">${ERROR_ICON}</div>
     <h1>Sign-in failed</h1>
     <p>We weren't able to complete sign-in. Return to Comfy Desktop and click Sign in again to retry.</p>

@@ -8,7 +8,6 @@ import BaseModal from './ui/BaseModal.vue'
 import BaseAlert from './ui/BaseAlert.vue'
 import BasePrompt from './ui/BasePrompt.vue'
 import ModalDialog from './ModalDialog.vue'
-import ModalShell from './ModalShell.vue'
 import SetupModal from './SetupModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
@@ -476,16 +475,6 @@ describe('modal chrome', () => {
     expect(lineWidths(el('.base-alert-header')).bottom).toBe('0px')
     await closeAll()
 
-    await open(() =>
-      mount(ModalShell, {
-        attachTo: document.body,
-        props: { title: 'View' },
-        slots: { default: 'Body' }
-      })
-    )
-    expect(lineWidths(el('.view-modal-header')).bottom).toBe('0px')
-    await closeAll()
-
     await eachModalDialogVariant(() => {
       expect(lineWidths(el('.dialog-title')).bottom).toBe('0px')
       expect(lineWidths(el('.dialog-actions')).top).toBe('1px')
@@ -516,16 +505,6 @@ describe('modal chrome', () => {
       })
     )
     expectTitleGap('.base-alert-header', el('.base-alert-message'))
-    await closeAll()
-
-    await open(() =>
-      mount(ModalShell, {
-        attachTo: document.body,
-        props: { title: 'View' },
-        slots: { default: () => h('p', { class: 'm-0' }, 'Body') }
-      })
-    )
-    expectTitleGap('.view-modal-header', el('.view-modal-body > p'))
     await closeAll()
 
     const track = await open(() => mount(TrackModal, { attachTo: document.body }))
@@ -669,16 +648,6 @@ describe('modal chrome', () => {
       })
     )
     darker.push(...darkerThanCard('.base-modal-panel'))
-    await closeAll()
-
-    await open(() =>
-      mount(ModalShell, {
-        attachTo: document.body,
-        props: { title: 'View' },
-        slots: { default: 'Body' }
-      })
-    )
-    darker.push(...darkerThanCard('[data-modal-content]'))
     await closeAll()
 
     await eachModalDialogVariant(() => darker.push(...darkerThanCard('.dialog-box')))

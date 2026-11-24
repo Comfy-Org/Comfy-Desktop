@@ -8,8 +8,14 @@ export const STAGING_META_SUFFIX = '.part.dl-meta'
 export const STAGING_META_TMP_SUFFIX = '.tmp'
 export const LEGACY_META_SUFFIX = '.dl-meta'
 
+export interface StagedSegment {
+  start: number
+  end: number
+  done: number
+}
+
 export interface StagedDownloadMeta {
-  version: 2
+  version: 2 | 3
   jobId?: string
   url: string
   expectedSize: number
@@ -19,6 +25,8 @@ export interface StagedDownloadMeta {
   filename: string
   installationId?: string | null
   sha256?: string
+  segments?: StagedSegment[]
+  segmentsFromMirror?: boolean
 }
 
 export function stagingPathFor(finalPath: string): string {
@@ -29,15 +37,41 @@ export function stagingMetaPathFor(finalPath: string): string {
   return finalPath + STAGING_META_SUFFIX
 }
 
+export function segmentsCoverExactly(segments: unknown, totalBytes: number): boolean {
+  if (!Array.isArray(segments) || segments.length === 0) return false
+  if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) return false
+  let next = 0
+  for (const segment of segments as unknown[]) {
+    if (typeof segment !== 'object' || segment === null) return false
+    const { start, end, done } = segment as Record<string, unknown>
+    if (typeof start !== 'number' || typeof end !== 'number' || typeof done !== 'number') {
+      return false
+    }
+    if (![start, end, done].every((n) => Number.isSafeInteger(n))) return false
+    if (start !== next || end < start || done < 0 || done > end - start + 1) return false
+    next = end + 1
+  }
+  return next === totalBytes
+}
+
+export function stagedProgressBytes(meta: StagedDownloadMeta, fileBytes: number): number {
+  if (!meta.segments) return fileBytes
+  if (fileBytes !== meta.expectedSize) return 0
+  return meta.segments.reduce((sum, segment) => sum + segment.done, 0)
+}
+
 function parseStagedMeta(raw: Partial<StagedDownloadMeta> | null): StagedDownloadMeta | null {
   if (
-    raw &&
-    raw.version === 2 &&
-    typeof raw.url === 'string' &&
-    typeof raw.filename === 'string' &&
-    typeof raw.directory === 'string' &&
-    typeof raw.expectedSize === 'number'
+    !raw ||
+    typeof raw.url !== 'string' ||
+    typeof raw.filename !== 'string' ||
+    typeof raw.directory !== 'string' ||
+    typeof raw.expectedSize !== 'number'
   ) {
+    return null
+  }
+  if (raw.version === 2 && raw.segments === undefined) return raw as StagedDownloadMeta
+  if (raw.version === 3 && segmentsCoverExactly(raw.segments, raw.expectedSize)) {
     return raw as StagedDownloadMeta
   }
   return null
@@ -299,7 +333,7 @@ export function revalidateStagedPair(
   try {
     const stat = fs.statSync(stagingPathFor(finalPath))
     if (!stat.isFile()) return null
-    return { meta, stagedBytes: stat.size }
+    return { meta, stagedBytes: stagedProgressBytes(meta, stat.size) }
   } catch {
     return null
   }
@@ -476,7 +510,7 @@ export async function scanForStagedDownloads(
         continue
       }
     }
-    found.push({ finalPath, stagedBytes, meta })
+    found.push({ finalPath, stagedBytes: stagedProgressBytes(meta, stagedBytes), meta })
   }
   return { downloads: found, unsafeFinalPaths }
 }

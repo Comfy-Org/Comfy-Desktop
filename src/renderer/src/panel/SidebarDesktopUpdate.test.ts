@@ -53,15 +53,15 @@ describe('SidebarDesktopUpdate', () => {
     const wrapper = await mountIndicator({ kind: 'available', version: '2.3.4', autoUpdate: false })
 
     const button = wrapper.get(indicator)
-    expect(button.text()).toBe('Desktop Update')
-    expect(button.attributes('title')).toBe('Desktop Update (v2.3.4)')
+    expect(button.text()).toBe('Desktop update')
+    expect(button.attributes('title')).toBe('Desktop update (v2.3.4)')
     expect(button.classes()).toContain('text-azure-600')
   })
 
   it.each([
-    ['available', 'Desktop Update'],
+    ['available', 'Desktop update'],
     ['downloading', 'Downloading update…'],
-    ['ready', 'Desktop Update Ready']
+    ['ready', 'Desktop update ready']
   ] as const)('labels the %s state "%s"', async (kind, label) => {
     const wrapper = await mountIndicator()
 
@@ -94,7 +94,7 @@ describe('SidebarDesktopUpdate', () => {
     resolveFirstRead(NO_UPDATE)
     await flushPromises()
 
-    expect(wrapper.get(indicator).text()).toBe('Desktop Update Ready')
+    expect(wrapper.get(indicator).text()).toBe('Desktop update ready')
   })
 
   it('asks to download when an update is available', async () => {
@@ -150,8 +150,8 @@ describe('SidebarDesktopUpdate', () => {
 
     const button = wrapper.get(indicator)
     expect(button.text()).toBe('')
-    expect(button.attributes('aria-label')).toBe('Desktop Update Ready (v2.3.4)')
-    expect(button.attributes('title')).toBe('Desktop Update Ready (v2.3.4)')
+    expect(button.attributes('aria-label')).toBe('Desktop update ready (v2.3.4)')
+    expect(button.attributes('title')).toBe('Desktop update ready (v2.3.4)')
   })
 
   it('stops listening when it unmounts', async () => {

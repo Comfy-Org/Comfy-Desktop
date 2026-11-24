@@ -9,9 +9,10 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import TermsModal from '../components/TermsModal.vue'
 import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
-import { deviceKindForPlatform } from '../panel/home/homeBuild'
+import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { formatSize } from '../lib/formatting'
 import { SUMMARY_BOX_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
@@ -19,15 +20,18 @@ import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import {
   displayPath,
   installLocation,
+  hardwareNoteKey,
   isCpuVariant,
   machineName,
-  planVersion,
+  versionText,
   resolveSetupPlan,
   setupPlatform,
   splitPathTail,
   type SetupPlan
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
+import { useModal } from '../composables/useModal'
+import { checkInstallLocation } from '../lib/installHelpers'
 
 type Step = 'setup' | 'mirrors'
 type SetupAction = 'install' | 'change' | 'skip'
@@ -37,12 +41,14 @@ const props = defineProps<{ consent?: SetupConsent | null; savedPlan?: SetupPlan
 
 const emit = defineEmits<{
   install: [plan: SetupPlan]
-  change: [consent: SetupConsent]
+  change: [consent: SetupConsent, pickedInstallRoot?: string]
+  'location-change': [installRoot: string]
   'complete-skip': []
   'chain-migrate': [{ express: boolean }]
 }>()
 
 const { t } = useI18n()
+const modal = useModal()
 
 const CONSENT_ROW_CLASS = 'flex w-fit cursor-pointer items-center gap-2.5 text-xs/[15px]'
 const CHECKBOX_CLASS =
@@ -51,11 +57,13 @@ const LINK_CLASS =
   'inline h-auto p-0 align-baseline text-xs/[15px] font-normal text-foreground underline underline-offset-2 hover:bg-transparent'
 
 const platform = window.api.platform
+const localDeviceKind = useLocalDeviceKind()
 const step = ref<Step>('setup')
 const plan = ref<SetupPlan | null>(null)
 const planState = ref<'loading' | 'ready' | 'unavailable'>('loading')
 const systemInfo = ref<SystemInfo | null>(null)
 const diskFree = ref<number | null>(null)
+const pickedInstallRoot = ref<string | null>(null)
 const unsupportedReason = ref('')
 const hardwareWarning = ref('')
 
@@ -120,7 +128,14 @@ const hardwareDetected = computed(
   () =>
     !!variant.value &&
     !workspaceBuild.value &&
-    (!props.savedPlan || variant.value.recommended === true)
+    (!props.savedPlan || (props.savedPlan.hardwareDetected ?? variant.value.recommended === true))
+)
+const hardwareNote = computed(() =>
+  hardwareNoteKey({
+    unsupported: !!unsupportedReason.value,
+    cpuOnly: cpuOnly.value,
+    detected: hardwareDetected.value
+  })
 )
 const machine = computed(() => machineName(systemInfo.value, cpuOnly.value))
 const memoryGb = computed(() =>
@@ -134,40 +149,33 @@ const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
 const locationParts = computed(() => splitPathTail(location.value))
+const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
 const lowDisk = computed(
   () =>
+    !migrating.value &&
     diskFree.value !== null &&
     !!plan.value?.requiredBytes &&
     diskFree.value < plan.value.requiredBytes
 )
 const locationMeta = computed(() => {
   if (diskFree.value === null || !plan.value) return ''
-  const values = {
-    free: formatSize(diskFree.value),
-    required: formatSize(plan.value.requiredBytes)
-  }
-  if (!plan.value.requiredBytes) return t('setup.free', values)
-  return t(lowDisk.value ? 'setup.notEnoughSpace' : 'setup.freeRequired', values)
+  const free = formatSize(diskFree.value)
+  return lowDisk.value
+    ? t('diskSpace.insufficientForInstall', {
+        free,
+        required: formatSize(plan.value.requiredBytes)
+      })
+    : t('diskSpace.free', { size: free })
 })
 const version = computed(() => {
   if (!plan.value) return ''
   if (workspaceBuild.value) return workspaceBuild.value.buildName
-  const tag = planVersion(plan.value)
-  const channel = plan.value.selections.release?.label ?? ''
-  return tag
-    ? t('setup.versionValue', { version: tag, channel })
-    : t('setup.versionChannel', { channel })
+  const text = versionText(plan.value.selections)
+  return t(text.key, text.params)
 })
-const downloadSize = computed(() => formatSize(plan.value?.downloadBytes ?? 0))
-const footerSummary = computed(() =>
-  plan.value?.downloadBytes
-    ? t('setup.downloadRequired', {
-        download: downloadSize.value,
-        required: formatSize(plan.value.requiredBytes)
-      })
-    : ''
+const channel = computed(() =>
+  workspaceBuild.value ? '' : (plan.value?.selections.release?.label ?? '')
 )
-const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
 const installBlocked = computed(
   () => !migrating.value && (planState.value !== 'ready' || unsupportedReason.value !== '')
 )
@@ -263,7 +271,8 @@ function route(action: SetupAction): void {
   }
   if (action === 'change') {
     emitCompleted('local-configure')
-    emit('change', currentConsent())
+    if (pickedInstallRoot.value) emit('change', currentConsent(), pickedInstallRoot.value)
+    else emit('change', currentConsent())
     return
   }
   if (migrating.value) {
@@ -303,7 +312,9 @@ async function loadPlan(gen: number): Promise<void> {
       void window.api
         .getDiskSpace(next.installRoot)
         .then((space) => {
-          if (gen === openGeneration) diskFree.value = space.free
+          if (gen === openGeneration && plan.value?.installRoot === next.installRoot) {
+            diskFree.value = space.free
+          }
         })
         .catch(() => {})
     }
@@ -319,6 +330,37 @@ function retryPlan(): void {
   void loadPlan(openGeneration)
 }
 
+async function browseInstallLocation(): Promise<void> {
+  const gen = openGeneration
+  const current = plan.value
+  if (!current) return
+  let chosen = await window.api.browseFolder(current.installRoot || undefined)
+  while (chosen) {
+    if (gen !== openGeneration) return
+    const check = await checkInstallLocation(chosen, 'first_use', 'browse', t)
+    if (gen !== openGeneration) return
+    if (check.ok && !check.issue) break
+    const pickAgain = await modal.notice({
+      title: t('errors.cannotUseFolder'),
+      message: check.ok && check.issue ? check.issue : t('errors.locationCheckFailed'),
+      actionLabel: t('errors.changeLocation')
+    })
+    if (!pickAgain || gen !== openGeneration) return
+    chosen = await window.api.browseFolder(chosen)
+  }
+  if (!chosen || gen !== openGeneration || plan.value !== current) return
+  plan.value = { ...current, installRoot: chosen }
+  pickedInstallRoot.value = chosen
+  emit('location-change', chosen)
+  diskFree.value = null
+  void window.api
+    .getDiskSpace(chosen)
+    .then((space) => {
+      if (gen === openGeneration && plan.value?.installRoot === chosen) diskFree.value = space.free
+    })
+    .catch(() => {})
+}
+
 interface OpenOpts {
   skipPick?: boolean
   hasLegacyDesktop?: boolean
@@ -327,6 +369,7 @@ interface OpenOpts {
 async function open(opts: OpenOpts = {}): Promise<void> {
   const gen = ++openGeneration
   step.value = 'setup'
+  pickedInstallRoot.value = null
   skipPick.value = opts.skipPick === true
   hasLegacyDesktop.value = opts.hasLegacyDesktop === true
   migrateExisting.value = true
@@ -410,6 +453,7 @@ watch(
 )
 
 onUnmounted(() => {
+  openGeneration += 1
   if (!completedFired) {
     emitTelemetryAction('comfy.desktop.first_use.abandoned', {
       step: step.value,
@@ -421,7 +465,7 @@ onUnmounted(() => {
   if (!chainHandoff) window.api.setFirstUseMode('none')
 })
 
-defineExpose({ open, resetContinue })
+defineExpose({ open, resetContinue, browseInstallLocation })
 </script>
 
 <template>
@@ -479,16 +523,16 @@ defineExpose({ open, resetContinue })
           />
           <BuildDeviceArt
             class="relative h-[80px] w-[124px] shrink-0"
-            :kind="deviceKindForPlatform(platform)"
+            :kind="localDeviceKind"
             glow="#46464A"
           />
-          <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
+          <div class="relative mr-4 ml-6 flex min-w-0 flex-1 flex-col">
             <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
               <Check :size="11" :stroke-width="2" aria-hidden="true" />
               {{ t('setup.detected') }}
             </span>
             <span
-              class="mt-[5px] truncate text-[22px]/[27px] font-semibold text-foreground"
+              class="mt-[5px] line-clamp-2 text-[22px]/[27px] font-semibold break-words text-foreground"
               data-testid="setup-machine-name"
             >
               {{ machine || t('setup.thisComputer') }}
@@ -510,7 +554,7 @@ defineExpose({ open, resetContinue })
         </section>
 
         <section
-          class="mt-3"
+          class="mt-3 [--summary-label-width:164px]"
           :class="SUMMARY_BOX_CLASS"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
@@ -531,15 +575,22 @@ defineExpose({ open, resetContinue })
                 ]"
                 :title="unsupportedReason || hardwareWarning || undefined"
               >
-                {{
-                  unsupportedReason
-                    ? t('setup.unsupported')
-                    : cpuOnly
-                      ? t('setup.noGpu')
-                      : hardwareDetected
-                        ? t('setup.detected')
-                        : ''
-                }}
+                {{ hardwareNote ? t(hardwareNote) : '' }}
+              </span>
+            </SetupSummaryRow>
+            <SetupSummaryRow
+              :icon="Package"
+              :label="t('setup.version')"
+              data-testid="setup-row-version"
+            >
+              <span class="truncate text-foreground" data-testid="setup-version">{{
+                version || t('setup.checking')
+              }}</span>
+              <span
+                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
+                :title="channel || undefined"
+              >
+                {{ channel }}
               </span>
             </SetupSummaryRow>
             <SetupSummaryRow
@@ -562,18 +613,6 @@ defineExpose({ open, resetContinue })
                 data-testid="setup-location-meta"
               >
                 {{ locationMeta }}
-              </span>
-            </SetupSummaryRow>
-            <SetupSummaryRow
-              :icon="Package"
-              :label="t('setup.version')"
-              data-testid="setup-row-version"
-            >
-              <span class="truncate text-foreground" data-testid="setup-version">{{
-                version || t('setup.checking')
-              }}</span>
-              <span :class="[SUMMARY_META_CLASS, 'text-subtle-foreground']">
-                {{ downloadSize ? t('setup.download', { size: downloadSize }) : '' }}
               </span>
             </SetupSummaryRow>
           </template>
@@ -665,13 +704,30 @@ defineExpose({ open, resetContinue })
           >
             {{ unsupportedReason }}
           </span>
-          <span v-else class="text-xs/[15px] text-subtle-foreground">{{ footerSummary }}</span>
+          <span
+            v-else-if="!migrating && plan && plan.downloadBytes > 0"
+            class="inline-flex items-center text-xs/[15px] text-muted-foreground"
+          >
+            <span data-testid="setup-download-size">{{
+              t('setup.download', { size: formatSize(plan.downloadBytes) })
+            }}</span>
+            <InfoTooltip
+              v-if="plan.requiredBytes > 0"
+              icon="info"
+              data-testid="setup-download-info"
+              :text="
+                t('setup.installSpaceTip', {
+                  download: formatSize(plan.downloadBytes),
+                  required: formatSize(plan.requiredBytes)
+                })
+              "
+            />
+          </span>
           <Button
             v-if="skipPick"
             type="button"
             variant="secondary"
-            size="unset"
-            class="h-9 rounded-[10px] px-4 text-[13px]/4 font-normal"
+            size="lg"
             data-testid="setup-skip"
             @click="request('skip')"
           >
@@ -680,8 +736,7 @@ defineExpose({ open, resetContinue })
           <Button
             type="button"
             variant="inverted"
-            size="unset"
-            class="h-9 gap-2 rounded-[10px] bg-[#f1f1f3] px-4 text-[13px]/4 font-normal text-[#070709] hover:bg-white"
+            size="lg"
             :class="planChecking && 'cursor-progress'"
             :aria-disabled="installBlocked || undefined"
             :aria-busy="busy || planChecking || undefined"
@@ -716,8 +771,7 @@ defineExpose({ open, resetContinue })
           <Button
             type="button"
             variant="secondary"
-            size="unset"
-            class="h-9 rounded-[10px] px-4 text-[13px]/4 font-normal"
+            size="lg"
             data-testid="setup-mirrors-skip"
             @click="chooseMirrors(false)"
           >
@@ -726,8 +780,7 @@ defineExpose({ open, resetContinue })
           <Button
             type="button"
             variant="inverted"
-            size="unset"
-            class="h-9 rounded-[10px] bg-[#f1f1f3] px-4 text-[13px]/4 font-normal text-[#070709] hover:bg-white"
+            size="lg"
             data-testid="setup-mirrors-accept"
             @click="chooseMirrors(true)"
           >

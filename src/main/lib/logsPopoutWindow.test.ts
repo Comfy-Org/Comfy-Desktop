@@ -59,6 +59,6 @@ describe('logsPopoutWindow', () => {
     await openLogsPopout('install-a')
     mocks.loadHandlers.get('did-finish-load')?.()
 
-    expect(mocks.window.setTitle).toHaveBeenCalledWith('Comfy Logs — My build')
+    expect(mocks.window.setTitle).toHaveBeenCalledWith('Comfy Logs · My build')
   })
 })

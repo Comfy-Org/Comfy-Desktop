@@ -143,6 +143,18 @@ function heldRecord(
   return record !== undefined && candidate.epochs.includes(record.epoch) ? record : undefined
 }
 
+function candidateEligible(
+  answer: CampaignAnswer,
+  key: string,
+  candidate: CampaignGrant,
+  records: CampaignRecords,
+  now: number,
+  idClass: IdClass
+): boolean {
+  const member = heldRecord(records, key, candidate) !== undefined
+  return (member || answer.enrol) && answerRefusal(answer, member, now, idClass) === null
+}
+
 export function campaignCandidateGrants(
   registry: readonly CampaignRegistryEntry[],
   answers: ReadonlyMap<string, CampaignAnswer>,
@@ -154,11 +166,11 @@ export function campaignCandidateGrants(
     const answer = answers.get(key)
     if (!answer) return []
     return answer.grants
-      .filter((candidate) => {
-        if (!args.includes(candidate.grant.arg)) return false
-        const member = heldRecord(records, key, candidate) !== undefined
-        return (member || answer.enrol) && answerRefusal(answer, member, now, idClass) === null
-      })
+      .filter(
+        (candidate) =>
+          args.includes(candidate.grant.arg) &&
+          candidateEligible(answer, key, candidate, records, now, idClass)
+      )
       .map((candidate) => candidate.grant)
   })
 }
@@ -332,14 +344,15 @@ export function enrolledAgentOverride(
     registry: readonly CampaignRegistryEntry[]
     answers: ReadonlyMap<string, CampaignAnswer>
   },
+  records: CampaignRecords,
   now: number,
   idClass: IdClass
 ): { override: unknown } | null {
   for (const { key, args } of campaigns.registry) {
     const answer = campaigns.answers.get(key)
-    if (!answer?.enrol || !args.includes('--enable-agent')) continue
-    if (!answer.grants.some(({ grant }) => grant.arg === '--enable-agent')) continue
-    if (answerRefusal(answer, false, now, idClass)) continue
+    if (!answer || !args.includes('--enable-agent')) continue
+    const candidate = answer.grants.find(({ grant }) => grant.arg === '--enable-agent')
+    if (!candidate || !candidateEligible(answer, key, candidate, records, now, idClass)) continue
     const payload = answer.payload
     return {
       override:

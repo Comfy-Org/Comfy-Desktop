@@ -6,12 +6,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
+import { appRuns } from './appRuns'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { __resetHomeTourForTest } from './home/useHomeTour'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
-import type { CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
   return { sourceLabel: 'Standalone', sourceCategory: 'local', ...over }
@@ -28,6 +30,38 @@ const CLOUD = build({
 })
 const NEW = build({ id: 'new', name: 'Video Lab', lastLaunchedAt: 300 })
 const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, workspaceId: 'ws-team' })
+
+const CHARACTER_SWAP: AppCard = {
+  id: 'character-swap',
+  title: 'Character Swap',
+  description: 'Put another character in a video.',
+  covers: []
+}
+
+const PRODUCT_SWAP_STILL =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+const PRODUCT_SWAP_MOVING =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
+
+const PRODUCT_SWAP: AppCard = {
+  id: 'product-swap',
+  title: 'Product Swap',
+  description: 'Swap the product in a photo.',
+  covers: [
+    {
+      url: PRODUCT_SWAP_MOVING,
+      stillUrl: PRODUCT_SWAP_STILL
+    }
+  ]
+}
+
+const SDR_TO_HDR: AppCard = {
+  id: 'sdr-to-hdr',
+  title: 'SDR to HDR',
+  description: 'Turn a video into HDR.',
+  covers: []
+}
 
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
@@ -56,18 +90,24 @@ beforeEach(() => {
     refreshCreditBalance,
     onCreditBalanceChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppBackToListAsked: vi.fn(() => () => {}),
+    onAppsListChanged: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {})
     }
   }
   setActivePinia(createPinia())
+  __resetHomeTourForTest()
   appPageShown.value = false
   sidebarHovered.value = false
+  sidebarFocused.value = false
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 async function mountSidebar(
@@ -124,23 +164,358 @@ describe('AppSidebar', () => {
     expect(wrapper.emitted('navigate')).toEqual([['apps']])
   })
 
-  it('folds to the rail while an app is open, lets the toggle reopen it, and keeps the saved choice', async () => {
+  it('names the app left open under Apps, and opens Apps on it', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Apps',
+      'Character Swap',
+      'Assets',
+      'Builds',
+      ''
+    ])
+    const row = wrapper.get('[data-testid="app-sidebar-app-in-progress"]')
+    expect(row.attributes('aria-label')).toBe('Back to Character Swap')
+    expect(row.attributes('aria-current')).toBeUndefined()
+
+    await row.trigger('click')
+
+    expect(wrapper.emitted('open-app')).toEqual([[CHARACTER_SWAP]])
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
+  })
+
+  it('leaves out the row for the app left open while Apps itself is shown', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
+  it('names the app left open in the tooltip of its row on the folded rail', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'assets', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+    expect(tooltipOf(wrapper, 'app-sidebar-app-in-progress')).toBeUndefined()
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('')
+    expect(tooltipOf(wrapper, 'app-sidebar-app-in-progress')).toBe('Back to Character Swap')
+  })
+
+  it('shows no app row with no app left open, or with Apps switched off', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const none = await mountSidebar('home')
+    expect(none.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+
+    getAppsEnabled.mockResolvedValue(false)
+    const off = mount(AppSidebar, {
+      props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+    expect(off.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
+  it('folds to the app rail while an app is open, with no toggle, and keeps the saved choice', async () => {
     const wrapper = await mountSidebar('apps')
     const sidebar = wrapper.get('[data-testid="app-sidebar"]')
     expect(sidebar.attributes('data-collapsed')).toBe('false')
 
-    await wrapper.setProps({ makeRoom: true })
+    await wrapper.setProps({ makeRoom: true, appInProgress: CHARACTER_SWAP })
+    await flushPromises()
     expect(sidebar.attributes('data-collapsed')).toBe('true')
+    expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-sidebar-header"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await wrapper.setProps({ makeRoom: false, appInProgress: null })
     expect(sidebar.attributes('data-collapsed')).toBe('false')
-
-    await wrapper.setProps({ makeRoom: false })
-    expect(sidebar.attributes('data-collapsed')).toBe('false')
+    expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(true)
     expect(window.localStorage.getItem('comfy.desktop.sidebar.collapsed')).not.toBe('true')
+  })
 
-    await wrapper.setProps({ makeRoom: true })
-    expect(sidebar.attributes('data-collapsed')).toBe('true')
+  describe('while an app is open', () => {
+    async function mountWithAppOpen(appInProgress: AppCard | null = SDR_TO_HDR) {
+      const wrapper = mount(AppSidebar, {
+        props: {
+          activePage: 'apps',
+          makeRoom: true,
+          appInProgress,
+          apps: [CHARACTER_SWAP, PRODUCT_SWAP, SDR_TO_HDR]
+        },
+        attachTo: document.body
+      })
+      await flushPromises()
+      return wrapper
+    }
+
+    function thumbnails(wrapper: Awaited<ReturnType<typeof mountWithAppOpen>>) {
+      return wrapper.findAll('[data-testid="app-sidebar-app-rail"] button')
+    }
+
+    it('shows only one picture per app in the list order, with nothing above them', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      expect(wrapper.find('[data-testid="app-sidebar-all-apps"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="app-sidebar"]').element.firstElementChild).toBe(
+        wrapper.get('[data-testid="app-sidebar-app-rail"]').element
+      )
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'Character Swap',
+        'Product Swap',
+        'SDR to HDR'
+      ])
+      expect(
+        wrapper.get('[data-testid="app-sidebar-app-product-swap"] img').attributes('src')
+      ).toBe(PRODUCT_SWAP_STILL)
+      expect(wrapper.find('[data-testid="app-sidebar-home"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="app-sidebar-assets"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('shows a spinner on each running app, the open one too, and says so to screen readers', async () => {
+      appRuns.value = [
+        { appId: 'sdr-to-hdr', running: true, finished: false },
+        { appId: 'product-swap', running: true, finished: false }
+      ]
+      const wrapper = await mountWithAppOpen()
+
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-sdr-to-hdr"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-product-swap"]').exists()).toBe(
+        true
+      )
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-character-swap"]').exists()).toBe(
+        false
+      )
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'Character Swap',
+        'Product Swap, making something',
+        'SDR to HDR, making something'
+      ])
+      appRuns.value = []
+      wrapper.unmount()
+    })
+
+    it('puts a dot and a short bounce on an app whose run finished in the background', async () => {
+      appRuns.value = [{ appId: 'product-swap', running: false, finished: true }]
+      const wrapper = await mountWithAppOpen()
+      const finished = wrapper.get('[data-testid="app-sidebar-app-finished-product-swap"]')
+
+      expect(getComputedStyle(finished.element).animationName).toBe('rail-thumb-bounce')
+      expect(finished.find('span.rounded-full').exists()).toBe(true)
+      expect(
+        wrapper.get('[data-testid="app-sidebar-app-product-swap"]').attributes('aria-label')
+      ).toBe('Product Swap, ready')
+      expect(wrapper.find('[data-testid="app-sidebar-app-running-product-swap"]').exists()).toBe(
+        false
+      )
+
+      appRuns.value = []
+      await flushPromises()
+      expect(wrapper.find('[data-testid="app-sidebar-app-finished-product-swap"]').exists()).toBe(
+        false
+      )
+      wrapper.unmount()
+    })
+
+    it('leaves room above the first picture, so its dot and bounce are not cut off', async () => {
+      appRuns.value = [{ appId: 'character-swap', running: false, finished: true }]
+      const wrapper = await mountWithAppOpen()
+      const rail = wrapper.get('[data-testid="app-sidebar-app-rail"]').element
+      const first = wrapper.get('[data-testid="app-sidebar-app-finished-character-swap"]').element
+
+      const room = first.getBoundingClientRect().top - rail.getBoundingClientRect().top
+      expect(room).toBeGreaterThanOrEqual(6)
+      appRuns.value = []
+      wrapper.unmount()
+    })
+
+    it('marks only the open app as the current one and keeps it in its place', async () => {
+      const wrapper = await mountWithAppOpen(PRODUCT_SWAP)
+
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-current') ?? null)).toEqual([
+        null,
+        'page',
+        null
+      ])
+      wrapper.unmount()
+    })
+
+    it('waits for the list, so the open app never jumps to its place', async () => {
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'apps', makeRoom: true, appInProgress: SDR_TO_HDR, apps: null }
+      })
+      await flushPromises()
+      expect(thumbnails(wrapper)).toEqual([])
+
+      await wrapper.setProps({ apps: [CHARACTER_SWAP, SDR_TO_HDR] })
+
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'Character Swap',
+        'SDR to HDR'
+      ])
+    })
+
+    it('still shows the open app when the list could not be read', async () => {
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'apps', makeRoom: true, appInProgress: SDR_TO_HDR, apps: [] }
+      })
+      await flushPromises()
+
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'SDR to HDR'
+      ])
+    })
+
+    it('switches to another app in one click, and does nothing for the open one', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      await wrapper.get('[data-testid="app-sidebar-app-sdr-to-hdr"]').trigger('click')
+      expect(wrapper.emitted('switch-app')).toBeUndefined()
+
+      await wrapper.get('[data-testid="app-sidebar-app-character-swap"]').trigger('click')
+      expect(wrapper.emitted('switch-app')).toEqual([[CHARACTER_SWAP]])
+      wrapper.unmount()
+    })
+
+    it('keeps Credits and the account at the bottom, and leaves Desktop Settings out', async () => {
+      refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
+      const wrapper = await mountWithAppOpen()
+
+      expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(false)
+      const rail = wrapper.get('[data-testid="app-sidebar-app-rail"]').element
+      const credits = wrapper.get('[data-testid="app-sidebar-credits"]').element
+      const account = wrapper.get('[data-testid="devplatform-account-signin"]').element
+      expect(rail.compareDocumentPosition(credits) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(
+        credits.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+
+      await wrapper.setProps({ makeRoom: false })
+      expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('opens the tooltip of every app at once, with no delay', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      const delays = wrapper
+        .findAll('[data-testid="app-sidebar-app-rail"] li')
+        .map((row) => row.findComponent(Tooltip).props('delayMs'))
+      expect(delays).toEqual([0, 0, 0])
+      wrapper.unmount()
+    })
+
+    function preview(): HTMLElement | null {
+      return document.querySelector<HTMLElement>('[data-testid="app-sidebar-app-preview"]')
+    }
+
+    function previewSources(kind: 'still' | 'cover'): string[] {
+      return [...(preview()?.querySelectorAll(`img[data-kind="${kind}"]`) ?? [])].map(
+        (img) => img.getAttribute('src') ?? ''
+      )
+    }
+
+    it("previews the app's name and its covers with the cover player the gallery uses", async () => {
+      const wrapper = await mountWithAppOpen()
+
+      await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
+      await vi.waitFor(() => expect(previewSources('cover')).toEqual([PRODUCT_SWAP_MOVING]))
+
+      expect(preview()?.querySelector('[data-testid="cover-rotation"]')).not.toBeNull()
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Product Swap')
+      wrapper.unmount()
+    })
+
+    it('previews only the still when reduced motion is preferred', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {}
+      }))
+      const wrapper = await mountWithAppOpen()
+
+      await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
+      await vi.waitFor(() => expect(previewSources('still')).toEqual([PRODUCT_SWAP_STILL]))
+      await flushPromises()
+
+      expect(previewSources('cover')).toEqual([])
+      wrapper.unmount()
+    })
+
+    function tooltipTexts(): string[] {
+      return [...document.querySelectorAll('.tooltip-bubble')].map(
+        (bubble) => bubble.textContent ?? ''
+      )
+    }
+
+    it('opens the tooltip of a picture reached with the keyboard, and marks the sidebar as in use', async () => {
+      appPageShown.value = true
+      const wrapper = await mountWithAppOpen()
+      await userEvent.unhover(wrapper.get('[data-testid="app-sidebar"]').element)
+
+      await userEvent.keyboard('{Tab}')
+      const first = wrapper.get('[data-testid="app-sidebar-app-character-swap"]').element
+      expect(document.activeElement).toBe(first)
+      expect(sidebarFocused.value).toBe(true)
+      expect(tooltipTexts()).toEqual([])
+
+      appPageShown.value = false
+      await vi.waitFor(() => expect(tooltipTexts().join()).toContain('Character Swap'))
+
+      ;(document.activeElement as HTMLElement).blur()
+      await flushPromises()
+      expect(sidebarFocused.value).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('does not mark the sidebar as in use for a mouse click, and lets go once an app is picked', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      await userEvent.click(wrapper.get('[data-testid="app-sidebar-app-sdr-to-hdr"]').element)
+      expect(sidebarFocused.value).toBe(false)
+
+      await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+      expect(document.activeElement).toBe(
+        wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element
+      )
+      expect(sidebarFocused.value).toBe(true)
+      await userEvent.keyboard('{Enter}')
+
+      expect(wrapper.emitted('switch-app')).toEqual([[PRODUCT_SWAP]])
+      expect(sidebarFocused.value).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('scrolls the open app into view, and the next one it switches to', async () => {
+      const scrolled: Array<string | null> = []
+      vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
+        scrolled.push(this.querySelector('button')?.getAttribute('aria-label') ?? null)
+      })
+      const wrapper = await mountWithAppOpen(SDR_TO_HDR)
+      expect(scrolled.at(-1)).toBe('SDR to HDR')
+
+      await wrapper.setProps({ appInProgress: CHARACTER_SWAP })
+      await flushPromises()
+
+      expect(scrolled.at(-1)).toBe('Character Swap')
+      expect(Element.prototype.scrollIntoView).toHaveBeenLastCalledWith(
+        expect.objectContaining({ block: 'nearest' })
+      )
+      wrapper.unmount()
+    })
   })
 
   it('leaves Apps out when the switch cannot be read', async () => {
@@ -189,7 +564,7 @@ describe('AppSidebar', () => {
     const wrapper = await mountSidebar('assets')
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
 
-    expect(settings.text()).toBe('Desktop Settings')
+    expect(settings.text()).toBe('Desktop settings')
     expect(settings.attributes('aria-haspopup')).toBe('dialog')
     expect(settings.element.closest('nav')).toBeNull()
     expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
@@ -219,8 +594,8 @@ describe('AppSidebar', () => {
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
     expect(settings.text()).toBe('')
-    expect(settings.attributes('aria-label')).toBe('Desktop Settings')
-    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBe('Desktop Settings')
+    expect(settings.attributes('aria-label')).toBe('Desktop settings')
+    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBe('Desktop settings')
 
     await settings.trigger('click')
 
@@ -526,6 +901,76 @@ describe('AppSidebar', () => {
       return wrapper.findAll('[data-testid^="app-sidebar-build-"]').map((row) => row.text())
     }
 
+    function newBuildShown(wrapper: Awaited<ReturnType<typeof mountSidebar>>): boolean {
+      return wrapper.get('[data-testid="app-sidebar-new-build"]').classes('opacity-100')
+    }
+
+    it('makes Builds a row like Home, marked when the Builds page is open', async () => {
+      const wrapper = await mountSidebar('chooser', [OLD])
+
+      const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
+      expect(builds.text()).toBe('Builds')
+      expect(builds.find('svg').exists(), 'Builds has an icon like the other rows').toBe(true)
+      expect(builds.attributes('aria-current')).toBe('page')
+      expect([...builds.element.parentElement!.classList]).toEqual(
+        expect.arrayContaining(['bg-accent', 'text-foreground'])
+      )
+      expect(builds.element.parentElement!.classList).not.toContain('text-muted-foreground')
+    })
+
+    it('keeps New build out of sight until the Builds row is pointed at', async () => {
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(newBuildShown(wrapper)).toBe(false)
+      expect(wrapper.get('[data-testid="app-sidebar-new-build"]').classes()).toContain(
+        'group-hover/builds:opacity-100'
+      )
+    })
+
+    it('shows New build on the Builds page', async () => {
+      const wrapper = await mountSidebar('chooser', [OLD])
+
+      expect(newBuildShown(wrapper)).toBe(true)
+    })
+
+    it('shows New build while the Home tour runs, so its step can point at it', async () => {
+      ;(window.api as unknown as { getSetting: ReturnType<typeof vi.fn> }).getSetting = vi.fn(
+        async (key: string) => (key === 'homeTourAudience' ? 'new' : false)
+      )
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(newBuildShown(wrapper)).toBe(true)
+    })
+
+    it('shows a build name on hover only when it is cut off', async () => {
+      const long = build({ id: 'long', name: 'A build with a name far too long to fit the row' })
+      const wrapper = await mountSidebar('home', [OLD, long])
+      document.body.appendChild(wrapper.element)
+
+      const opens = (id: string) =>
+        (
+          wrapper
+            .get(`[data-testid="app-sidebar-build-${id}"]`)
+            .findComponent(Tooltip)
+            .props('shouldOpen') as () => boolean
+        )()
+      expect(opens('old')).toBe(false)
+      expect(opens('long')).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('still says on hover why a build failed, even when its name fits', async () => {
+      useSessionStore().errorInstances.set(OLD.id, {
+        installationName: OLD.name,
+        message: 'Port 8188 is in use',
+        startFailed: true
+      })
+      const wrapper = await mountSidebar('home', [OLD])
+
+      const tooltip = wrapper.get('[data-testid="app-sidebar-build-old"]').findComponent(Tooltip)
+      expect((tooltip.props('shouldOpen') as () => boolean)()).toBe(true)
+    })
+
     it('lists the builds of the selected workspace, most recently used first', async () => {
       const wrapper = await mountSidebar('home', [OLD, TEAM, CLOUD, NEW])
 
@@ -562,7 +1007,7 @@ describe('AppSidebar', () => {
       expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Builds'])
     })
 
-    it('puts the green dot only on a running build, even with no ComfyUI window open', async () => {
+    it('puts the green dot on every open build, Comfy Cloud too, even with no ComfyUI window open', async () => {
       expect(useSessionStore().activeSessions.size).toBe(0)
       useSessionStore().runningInstances.set(NEW.id, {
         installationId: NEW.id,
@@ -581,7 +1026,7 @@ describe('AppSidebar', () => {
           .get(`[data-testid="app-sidebar-build-${id}"]`)
           .find('[data-testid="app-sidebar-dot-live"]')
           .exists()
-      expect([live('new'), live('cloud'), live('old')]).toEqual([true, false, false])
+      expect([live('new'), live('cloud'), live('old')]).toEqual([true, true, false])
     })
 
     it('marks a build that failed to start and says why on hover', async () => {

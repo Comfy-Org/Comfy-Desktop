@@ -25,6 +25,7 @@ vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
 import {
   _test_buildGlobalSettingsSnapshot,
   _test_centeredCardBounds,
+  _test_modalBounds,
   _test_deleteTitlePopupEntry,
   _test_setTitlePopupEntry,
   activateTitlePopupMenuItem,
@@ -32,7 +33,9 @@ import {
   resolvePickerSelectedInstallId,
   scopeInstancePicker,
   buildTitlePopupMenuItems,
+  buildWhatsNewMenuItems,
   computePopupHeight,
+  isGlobalSettingsSender,
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
@@ -43,6 +46,7 @@ import {
 } from './titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
+import { cloudAuthEvents } from '../lib/cloudAuthEvents'
 import * as settings from '../settings'
 
 beforeEach(() => {
@@ -130,6 +134,22 @@ describe('computePopupHeight', () => {
     ])
     expect(h).toBe(68)
   })
+
+  it('adds the same 2px gap between rows of apps', () => {
+    const h = computePopupHeight([
+      { id: 'running-app:a', label: 'A', app: { picture: null, state: 'running' } },
+      { id: 'running-app:b', label: 'B', app: { picture: null, state: 'ready' } }
+    ])
+    expect(h).toBe(68)
+  })
+})
+
+describe('buildWhatsNewMenuItems', () => {
+  it("lists Take the tour as the What's new menu item", () => {
+    expect(buildWhatsNewMenuItems()).toEqual([
+      { id: 'take-tour', label: 'Take the tour', labelKey: 'homeTour.replay' }
+    ])
+  })
 })
 
 describe('buildTitlePopupMenuItems', () => {
@@ -145,7 +165,7 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.flatMap((item) => (item.label ? [item.label] : []))).toEqual([
       'Performance tests',
       'Benchmarks',
-      'Desktop Settings',
+      'Desktop settings',
       'Reset zoom (144%)',
       'Close window',
       'Quit Desktop'
@@ -317,6 +337,16 @@ describe('activateTitlePopupMenuItem', () => {
     })
   })
 
+  it("starts the home tour from the What's new menu of the window it was chosen from", () => {
+    const host = makeEntry({ installationId: 'inst-1' })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { startHomeTour: vi.fn() } as unknown as TitlePopupHostBindings
+
+    activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'take-tour', bindings)
+
+    expect(bindings.startHomeTour).toHaveBeenCalledExactlyOnceWith(host.windowKey)
+  })
+
   it('routes Reset Zoom through resetComfyZoom with the host installation id', () => {
     const host = makeEntry({ installationId: 'inst-1', zoomLevel: 3 })
     comfyWindows.set(host.windowKey, host)
@@ -325,6 +355,21 @@ describe('activateTitlePopupMenuItem', () => {
     activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'reset-zoom', bindings)
 
     expect(bindings.resetComfyZoom).toHaveBeenCalledExactlyOnceWith('inst-1')
+  })
+
+  it('opens a running app picked from the title bar menu in the panel of its window', () => {
+    const send = vi.fn()
+    const host = {
+      ...makeEntry({ installationId: null }),
+      panelView: { webContents: { send, isDestroyed: () => false } }
+    } as unknown as ComfyWindowEntry
+    comfyWindows.set(host.windowKey, host)
+    const popup = makePopupEntry(host.windowKey)
+
+    activateTitlePopupMenuItem(popup, 'running-app:sdr-to-hdr', {} as TitlePopupHostBindings)
+
+    expect(send).toHaveBeenCalledExactlyOnceWith('apps:open-running-app', 'sdr-to-hdr')
+    expect(popup.view.hide).toHaveBeenCalledOnce()
   })
 
   it('defensively ignores Reset Zoom on an install-less host', () => {
@@ -388,6 +433,15 @@ describe('resolvePickerSelectedInstallId', () => {
       makeInstall({ id: 'c', lastLaunchedAt: 2000 })
     ]
     expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('b')
+  })
+
+  it('defaults to the build that ran 09:00 to 18:00 over one that ran 12:00 to 12:30', () => {
+    const day = (hour: number, minute = 0) => new Date(2026, 10, 18, hour, minute).getTime()
+    const installs = [
+      makeInstall({ id: 'short-run', lastLaunchedAt: day(12), lastStoppedAt: day(12, 30) }),
+      makeInstall({ id: 'long-run', lastLaunchedAt: day(9), lastStoppedAt: day(18) })
+    ]
+    expect(resolvePickerSelectedInstallId(null, null, installs)).toBe('long-run')
   })
 
   it('falls back to the first install on an install-less host when none have been launched', () => {
@@ -730,7 +784,7 @@ describe('title popup renderer readiness', () => {
   it('replays the last config when the cached popup renderer reloads', () => {
     const config = {
       kind: 'menu' as const,
-      items: [{ id: 'settings', label: 'Desktop Settings' }],
+      items: [{ id: 'settings', label: 'Desktop settings' }],
       theme: { bg: '#111111', text: '#eeeeee' }
     }
     const send = vi.fn()
@@ -761,7 +815,7 @@ describe('title popup config sync', () => {
   const theme = { bg: '#111111', text: '#eeeeee' }
   const menuConfig: PopupConfig = {
     kind: 'menu',
-    items: [{ id: 'settings', label: 'Desktop Settings' }],
+    items: [{ id: 'settings', label: 'Desktop settings' }],
     theme
   }
   const downloadsConfig: PopupConfig = { kind: 'downloads', theme }
@@ -961,10 +1015,8 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
     vi.restoreAllMocks()
   })
 
-  function snapshotWithConsent(consent: unknown): { telemetryGranted: boolean } {
-    const actualGet = settings.get
-    vi.spyOn(settings, 'get').mockImplementation(((key: string) =>
-      key === 'telemetryEnabled' ? consent : actualGet(key)) as typeof settings.get)
+  function snapshotWithConsent(consent: boolean | undefined): { telemetryGranted: boolean } {
+    vi.spyOn(settings, 'telemetryConsent').mockReturnValue(consent)
     vi.spyOn(settings, 'resolveBetaFeaturesEnabled').mockReturnValue(false)
     return _test_buildGlobalSettingsSnapshot()
   }
@@ -979,6 +1031,52 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
 
   it('does not grant on an explicit opt-out', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
+  })
+})
+
+describe('desktop2-open-terminal', () => {
+  it('opens no instance picker for a Remote Connection', async () => {
+    const { ipcMain } = await import('electron')
+    const getInstancePickerInstalls = vi.fn(async () => [])
+    registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.findLast(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-remote',
+      sourceCategory: 'remote',
+      comfyView: { webContents: sender },
+      titleBarView: { webContents: {} },
+      window: { isDestroyed: () => true }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(false)
+    expect(getInstancePickerInstalls).not.toHaveBeenCalled()
+  })
+
+  it('hands a local install to the instance picker', async () => {
+    const { ipcMain } = await import('electron')
+    const getInstancePickerInstalls = vi.fn(async () => [])
+    registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.findLast(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-local-terminal',
+      sourceCategory: 'local',
+      comfyView: { webContents: sender },
+      titleBarView: { webContents: {} },
+      window: { isDestroyed: () => true }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(true)
+    expect(getInstancePickerInstalls).toHaveBeenCalledOnce()
   })
 })
 
@@ -1042,6 +1140,99 @@ describe('global settings remove app data', () => {
   })
 })
 
+describe('isGlobalSettingsSender', () => {
+  const POPUP_WEB_CONTENTS_ID = 407
+
+  afterEach(() => {
+    _test_deleteTitlePopupEntry(POPUP_WEB_CONTENTS_ID)
+  })
+
+  function sender(): Electron.WebContents {
+    return { id: POPUP_WEB_CONTENTS_ID } as Electron.WebContents
+  }
+
+  it('knows the Desktop settings popup', () => {
+    _test_setTitlePopupEntry(POPUP_WEB_CONTENTS_ID, {
+      kind: 'global-settings'
+    } as unknown as TitlePopupEntry)
+    expect(isGlobalSettingsSender(sender())).toBe(true)
+  })
+
+  it.each(['menu', 'instance-picker', 'downloads'])('turns away the %s popup', (kind) => {
+    _test_setTitlePopupEntry(POPUP_WEB_CONTENTS_ID, { kind } as unknown as TitlePopupEntry)
+    expect(isGlobalSettingsSender(sender())).toBe(false)
+  })
+
+  it('turns away a page that is not a popup', () => {
+    expect(isGlobalSettingsSender(sender())).toBe(false)
+  })
+})
+
+describe('telling Desktop settings the sign-in changed', () => {
+  const SETTINGS_ID = 408
+  const MENU_ID = 409
+
+  afterEach(() => {
+    _test_deleteTitlePopupEntry(SETTINGS_ID)
+    _test_deleteTitlePopupEntry(MENU_ID)
+    cloudAuthEvents.removeAllListeners()
+  })
+
+  function popupEntry(kind: string, isDestroyed = false) {
+    const send = vi.fn()
+    const entry = {
+      kind,
+      view: { popup: { webContents: { isDestroyed: () => isDestroyed, send } } }
+    } as unknown as TitlePopupEntry
+    return { entry, send }
+  }
+
+  it('sends auth-changed to the Desktop settings popup only', () => {
+    const settingsPopup = popupEntry('global-settings')
+    const menuPopup = popupEntry('menu')
+    _test_setTitlePopupEntry(SETTINGS_ID, settingsPopup.entry)
+    _test_setTitlePopupEntry(MENU_ID, menuPopup.entry)
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+
+    cloudAuthEvents.emit('changed')
+
+    expect(settingsPopup.send).toHaveBeenCalledWith('comfy-titlepopup:auth-changed')
+    expect(menuPopup.send).not.toHaveBeenCalled()
+  })
+
+  it('skips a settings popup that is already gone', () => {
+    const gone = popupEntry('global-settings', true)
+    _test_setTitlePopupEntry(SETTINGS_ID, gone.entry)
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+
+    cloudAuthEvents.emit('changed')
+
+    expect(gone.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('settings popups', () => {
+  function parentOf(width: number, height: number): Electron.BrowserWindow {
+    return {
+      getContentBounds: () => ({ x: 0, y: 0, width, height })
+    } as unknown as Electron.BrowserWindow
+  }
+
+  it.each([
+    [1280, 800],
+    [1024, 720],
+    [1600, 1000]
+  ] as const)(
+    'opens Desktop settings with the same size and place as build settings in a %ix%i window',
+    (width, height) => {
+      const parent = parentOf(width, height)
+      expect(_test_modalBounds('global-settings', parent)).toEqual(
+        _test_modalBounds('instance-picker', parent)
+      )
+    }
+  )
+})
+
 describe('centered card popups', () => {
   function parentOf(width: number, height: number): Electron.BrowserWindow {
     return {
@@ -1049,19 +1240,13 @@ describe('centered card popups', () => {
     } as unknown as Electron.BrowserWindow
   }
 
-  it.each(['global-settings', 'downloads-full'] as const)(
-    'leaves room beside the %s card for the round close button outside it',
-    (kind) => {
-      const bounds = _test_centeredCardBounds(kind, parentOf(1400, 900))
-      const cardWidth = kind === 'global-settings' ? 880 : 900
-      expect(bounds.width).toBe(cardWidth + 48)
-    }
-  )
+  it('leaves room beside the downloads-full card for the round close button outside it', () => {
+    const bounds = _test_centeredCardBounds('downloads-full', parentOf(1400, 900))
+    expect(bounds.width).toBe(900 + 48)
+  })
 
   it.each([
-    ['global-settings', 640],
     ['downloads-full', 640],
-    ['global-settings', 800],
     ['downloads-full', 1000]
   ] as const)(
     'shrinks the %s card in a %ipx window so the close button stays inside it',

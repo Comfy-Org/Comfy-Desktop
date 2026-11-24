@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import * as ipc from '../lib/ipc'
 import { getAppVersion } from '../lib/ipc'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
@@ -35,6 +36,7 @@ import {
 } from './registry'
 import type { ComfyWindowEntry } from './registry'
 import { navigatorFor } from './buildNavigator'
+import { createUserAttention } from './userAttention'
 import { reconcileCloudViewSession } from '../auth/cloudViewSession'
 
 const APP_VERSION = getAppVersion()
@@ -114,8 +116,8 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   let currentPageTitle = ''
   const refreshOsWindowTitle = (): void => {
     if (comfyWindow.isDestroyed()) return
-    const suffix = currentPageTitle ? ` — ${currentPageTitle}` : ''
-    comfyWindow.setTitle(`${currentInstallName}${suffix} — Comfy Desktop v${APP_VERSION}`)
+    const suffix = currentPageTitle ? ` · ${currentPageTitle}` : ''
+    comfyWindow.setTitle(`${currentInstallName}${suffix} · Comfy Desktop v${APP_VERSION}`)
   }
   refreshOsWindowTitle()
 
@@ -170,6 +172,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       } catch {}
     }
   }
+  const userAttention = createUserAttention(comfyWindow, {
+    platform: process.platform,
+    dock: app.dock,
+    app
+  })
+  const onDidNavigate = (): void => userAttention.setNeeded(false)
+  comfyContents.on('did-navigate', onDidNavigate)
   const onIpcMessage = (
     _event: Electron.IpcMainEvent,
     channel: string,
@@ -178,6 +187,8 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (channel === 'desktop2-theme-report') {
       const { bg } = (args[0] || {}) as { bg?: string; text?: string }
       if (bg) applyComfyTheme(bg)
+    } else if (channel === 'desktop2-attention-needed') {
+      userAttention.setNeeded(args[0] === true)
     }
   }
   comfyContents.on('ipc-message', onIpcMessage)
@@ -397,6 +408,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         exitCode: details.exitCode
       }
     })
+    userAttention.setNeeded(false)
     navigator.refresh()
   }
   comfyContents.on('render-process-gone', onRenderProcessGone)
@@ -409,10 +421,12 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     if (entry._installCleanup === null) return
     entry._installCleanup = null
     deactivateFirebaseAuthReporter(comfyContents)
+    userAttention.dispose()
     installationEvents.off('updated', onInstallationUpdated)
     navigator.detach()
     if (!comfyContents.isDestroyed()) {
       comfyContents.off('ipc-message', onIpcMessage)
+      comfyContents.off('did-navigate', onDidNavigate)
       comfyContents.off('page-title-updated', onPageTitleUpdated)
       comfyContents.off('dom-ready', onDomReady)
       comfyContents.off('did-fail-load', onDidFailLoad)

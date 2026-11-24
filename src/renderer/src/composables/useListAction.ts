@@ -14,6 +14,8 @@ import {
 } from '../lib/stopWarning'
 import { REQUIRES_STOPPED } from '../types/ipc'
 import type { Installation, ListAction, ActionResult, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
+import { confirmToneForActionStyle } from '../lib/destructiveStyles'
 
 export interface ListActionCallbacks {
   showProgress: (opts: ShowProgressOpts) => void
@@ -68,7 +70,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         title: action.confirm?.title || action.label,
         message,
         confirmLabel: action.label,
-        confirmStyle: action.style || 'danger'
+        confirmStyle: confirmToneForActionStyle(action.style)
       })
       if (!confirmed) {
         emitTelemetryAction('comfy.desktop.action.result', {
@@ -116,7 +118,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       })
       callbacks.showProgress({
         installationId: inst.id,
-        title: `${t('desktop.migrating')} — ${inst.name}`,
+        title: progressTitle(t('desktop.migrating'), inst.name),
         apiCall: async () => {
           const migrateResult = await window.api.runAction(inst.id, 'migrate-to-standalone')
           if (!migrateResult.ok || !migrateResult.newInstallationId) return migrateResult
@@ -162,7 +164,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         : runAction
       callbacks.showProgress({
         installationId: inst.id,
-        title: `${action.progressTitle || action.label} — ${inst.name}`,
+        title: progressTitle(action.progressTitle || action.label, inst.name),
         apiCall,
         cancellable: !!action.cancellable,
         triggersInstanceStart,
