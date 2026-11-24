@@ -832,7 +832,6 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     kind: asset.kind,
     sizeBytes: asset.sizeBytes,
     createdAt: asset.createdAt,
-    tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,

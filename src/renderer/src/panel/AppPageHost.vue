@@ -140,7 +140,6 @@ function showOutputs(shown: AppOutputs): void {
     kind: outputKind(output.mimeType),
     sizeBytes: output.bytes.byteLength,
     createdAt: null,
-    tags: output.tags,
     previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
     thumbnailUrl: null,
     workflow: output.workflow,

@@ -22,7 +22,6 @@ import AudioPreview from '@comfyorg/design-system/media/AudioPreview'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
-import InfoTooltip from '../components/InfoTooltip.vue'
 import OutputDetailThumb from './OutputDetailThumb.vue'
 import { formatBytes } from '../lib/downloadFormatters'
 import { revealInFolderKey } from '../composables/usePlatform'
@@ -37,7 +36,6 @@ export interface OutputDetailItem {
   kind: AssetKind | null
   sizeBytes: number | null
   createdAt: string | null
-  tags: string[]
   previewUrl: string | null
   thumbnailUrl: string | null
   savedIn?: string | null
@@ -193,24 +191,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   <DesktopDialogSurface
     open
     :aria-label="item.name"
-    overlay-class="fixed inset-0 z-60 grid place-items-center bg-media-overlay px-20 py-12 backdrop-blur-md"
-    content-class="flex flex-row h-[min(820px,calc(100vh-96px))] w-[min(1280px,calc(100vw-160px))] gap-3 rounded-panel border border-solid border-border bg-window-background p-3"
+    overlay-class="fixed inset-0 z-60 flex bg-media-overlay p-2 backdrop-blur-md"
+    content-class="flex size-full max-h-none max-w-none flex-row gap-3 rounded-shell border border-solid border-border bg-window-background p-3"
     data-testid="output-detail"
     @close="emit('close')"
   >
-    <Button
-      type="button"
-      variant="secondary"
-      size="icon"
-      class="absolute top-0 -right-14 rounded-full"
-      :aria-label="t('common.close')"
-      data-testid="output-detail-close"
-      data-initial-focus
-      @click="emit('close')"
-    >
-      <X :size="16" aria-hidden="true" />
-    </Button>
-
     <section class="flex min-w-0 flex-1 flex-col gap-3 p-3">
       <div
         class="flex min-h-0 flex-1 overflow-auto"
@@ -319,24 +304,26 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       data-testid="output-detail-panel"
     >
       <div class="flex flex-col gap-3">
-        <div class="flex flex-col gap-1">
-          <h2 class="m-0 truncate text-heading font-semibold text-foreground">{{ item.name }}</h2>
-          <p class="m-0 text-ui text-subtle-foreground">{{ subtitle }}</p>
+        <div class="flex items-start gap-2">
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <h2 class="m-0 truncate text-heading font-semibold text-foreground">{{ item.name }}</h2>
+            <p class="m-0 text-ui text-subtle-foreground">{{ subtitle }}</p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            class="-mt-1 -mr-1 shrink-0 rounded-full"
+            :aria-label="t('common.close')"
+            data-testid="output-detail-close"
+            data-initial-focus
+            @click="emit('close')"
+          >
+            <X :size="16" aria-hidden="true" />
+          </Button>
         </div>
         <div v-if="facts.length > 0" class="flex flex-wrap gap-1.5">
           <Tag v-for="fact in facts" :key="fact" :label="fact" />
-        </div>
-      </div>
-
-      <div v-if="item.tags.length > 0" class="flex flex-col gap-2.5">
-        <div
-          class="flex items-center text-xs font-medium tracking-wide text-subtle-foreground uppercase"
-        >
-          {{ t('assets.detail.tags') }}
-          <InfoTooltip :text="t('assets.detail.tagsHint')" icon="info" />
-        </div>
-        <div class="flex flex-wrap gap-1.5">
-          <Tag v-for="tag in item.tags" :key="tag" :label="tag" />
         </div>
       </div>
 

@@ -1704,6 +1704,23 @@ describe('AssetsView', () => {
     expect(document.activeElement).toBe(card.element)
   })
 
+  it('fills the window with the viewer and keeps its close button inside it', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    const box = viewer()!.getBoundingClientRect()
+    expect(box.width).toBeGreaterThan(window.innerWidth - 24)
+    expect(box.height).toBeGreaterThan(window.innerHeight - 24)
+
+    const close = viewer()!
+      .querySelector('[data-testid="output-detail-close"]')!
+      .getBoundingClientRect()
+    expect(close.right, 'the close button sits inside the viewer').toBeLessThanOrEqual(box.right)
+    expect(close.top).toBeGreaterThanOrEqual(box.top)
+  })
+
   it('steps through the files in page order with the arrow keys and the filmstrip', async () => {
     const wrapper = await mountAssets([
       asset('new', 'new.png', 'image', { createdAt: '2026-11-03T00:00:00Z' }),

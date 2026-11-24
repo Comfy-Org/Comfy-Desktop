@@ -181,8 +181,6 @@
     },
     "inspect": "Inspect {name}",
     "detail": {
-      "tags": "Tags",
-      "tagsHint": "Tags are edited in ComfyUI.",
       "createdAt": "Created {date}",
       "fit": "Fit",
       "zoom": "Zoom",
