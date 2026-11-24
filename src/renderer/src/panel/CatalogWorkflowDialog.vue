@@ -318,6 +318,14 @@ function zoomLabel(value: Zoom): string {
   return value === 'fit' ? t('workflowLaunch.zoomFit') : `${value}%`
 }
 
+watch(
+  () => props.workspaceId,
+  () => {
+    pickedKey.value = null
+    error.value = ''
+  }
+)
+
 watch(tab, () => {
   zoom.value = 'fit'
 })

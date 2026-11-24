@@ -302,13 +302,6 @@ const listedApps = ref<AppCard[] | null>(null)
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
-watch(
-  () => dashboardScope.selectedWorkspaceId,
-  () => {
-    selectedWorkflow.value = null
-  }
-)
-
 function showExplore(tab: 'apps' | 'workflows'): void {
   exploreTab.value = tab
   handleSidebarNavigate('apps')
