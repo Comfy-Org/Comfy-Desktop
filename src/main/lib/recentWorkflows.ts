@@ -217,7 +217,8 @@ export async function listRecentWorkflows(buildIds: BuildScope = null): Promise<
   return newestFirst([...local, ...cloud], RECENT_WORKFLOW_LIMIT)
 }
 
-const READ_WITHOUT_FOLLOWING = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0)
+const READ_WITHOUT_FOLLOWING =
+  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0)
 
 async function readWithin(file: string): Promise<string | null> {
   const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING).catch(() => null)

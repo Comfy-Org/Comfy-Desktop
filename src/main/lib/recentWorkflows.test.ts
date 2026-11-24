@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'fs/promises'
+import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -171,6 +172,20 @@ describe('recent workflows on this computer', () => {
     })
     expect(mocks.openSavedWorkflow).not.toHaveBeenCalled()
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'answers at once when a saved workflow was replaced by a pipe',
+    async () => {
+      const lab = await localBuild('inst-lab', 'Lab')
+      execFileSync('mkfifo', [path.join(lab, 'pipe.json')])
+
+      expect(await open('inst-lab', 'pipe.json')).toEqual({
+        opened: false,
+        error: 'apps.local.openUnreadable'
+      })
+    },
+    2_000
+  )
 
   it('says a file that is not a workflow cannot open', async () => {
     const lab = await localBuild('inst-lab', 'Lab')
