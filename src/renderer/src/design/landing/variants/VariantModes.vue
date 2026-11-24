@@ -108,6 +108,7 @@ const MODES = computed(() => [
       </div>
     </aside>
     <MarSidebarToggle v-if="!building" />
+    <div id="mar-assets-side" class="contents" />
 
     <main
       class="proto-main relative min-w-0 flex-1 overflow-y-auto [scrollbar-color:rgb(255_255_255/0.12)_transparent] [scrollbar-width:thin]"
