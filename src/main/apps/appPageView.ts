@@ -29,7 +29,7 @@ import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
 import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
 import type { DraftApp } from './draftApps'
-import { isDraftStillAllowed } from './draftLinks'
+import { cloudIdentity, isDraftStillAllowed } from './draftLinks'
 
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
@@ -78,6 +78,9 @@ interface HostedPage {
   outputs: ShownOutputs | null
   running: boolean
   finished: boolean
+  staffTitle: string | null
+  fromStaffList: boolean
+  openedBy: string | null
   forget: () => void
 }
 
@@ -176,9 +179,13 @@ function runsOf(windowKey: number): AppRun[] {
 }
 
 function appsWhere(windowKey: number, matches: (run: AppRun) => boolean): RunningApp[] {
-  return runsOf(windowKey)
-    .filter(matches)
-    .map((run) => ({ id: run.appId, title: listedTitleOf(run.appId) ?? run.appId }))
+  return pagesOf(windowKey).flatMap((hosted) => {
+    const { appId, running, finished } = hosted
+    if (appId === null || !(running || finished) || !matches({ appId, running, finished })) {
+      return []
+    }
+    return [{ id: appId, title: listedTitleOf(appId) ?? hosted.staffTitle ?? appId }]
+  })
 }
 
 export function runningApps(windowKey: number): RunningApp[] {
@@ -369,6 +376,10 @@ function titleForApp(appId: string): string {
   return draftOf(appId)?.card.title ?? listedTitleOf(appId) ?? appId
 }
 
+function isOnStaffListOnly(appId: string): boolean {
+  return draftPageUrl(appId) === null && pageUrlForListedApp(appId) === null
+}
+
 function draftClosingStop(appId: string): DraftClosingStop {
   return { appTitle: titleForApp(appId), closesDraft: true }
 }
@@ -464,6 +475,9 @@ function createHostedPage(
     outputs: null,
     running: false,
     finished: false,
+    staffTitle: null,
+    fromStaffList: false,
+    openedBy: null,
     forget: registerAppsPage(contents, () => admitsBridge(hosted))
   }
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
@@ -685,6 +699,9 @@ export async function showAppPage(
   const draftMoved = isDraft(appId) && hosted.startUrl !== pageUrl
   if (hosted.appId !== appId || retriesFailedPage || draftMoved) {
     hosted.appId = appId
+    hosted.fromStaffList = isOnStaffListOnly(appId)
+    hosted.staffTitle = hosted.fromStaffList ? titleForHiddenApp(appId) : null
+    hosted.openedBy = cloudIdentity()
     load(host.windowKey, hosted, pageUrl)
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
@@ -706,6 +723,15 @@ export function closeDraftPages(only?: readonly DraftApp[]): void {
   }
   forgetDrafts(only)
   tellPanelsTheListChanged()
+}
+
+export function closeStaffPagesOfOtherAccounts(): void {
+  const identity = cloudIdentity()
+  for (const hosted of everyPage()) {
+    if (!hosted.fromStaffList || hosted.appId === null || hosted.openedBy === identity) continue
+    closeForList(hosted.windowKey, hosted, false)
+    if (isHeld(hosted)) disposePage(hosted)
+  }
 }
 
 export function closeAppPage(panel: WebContents, appId: unknown): void {

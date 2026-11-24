@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   isGlobalSettings: true,
   canPasteDrafts: vi.fn(async () => true),
   closeDraftPages: vi.fn(),
+  closeStaffPagesOfOtherAccounts: vi.fn(),
   acceptDraft: vi.fn(async (_sender: unknown, _token: unknown) => null),
   draftsStillAllowed: vi.fn(async () => true),
   currentDrafts: vi.fn((): readonly unknown[] => []),
@@ -44,6 +45,7 @@ vi.mock('../../apps/appPageView', () => ({
   captureAppPage: vi.fn(),
   closeAppPage: mocks.closeAppPage,
   closeDraftPages: mocks.closeDraftPages,
+  closeStaffPagesOfOtherAccounts: mocks.closeStaffPagesOfOtherAccounts,
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
   showAppPage: vi.fn(),
@@ -248,6 +250,15 @@ describe('listing hidden apps for the panel', () => {
     expect(mocks.tellPanelsTheListChanged).toHaveBeenCalledOnce()
     expect(mocks.forgetHiddenApps.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.tellPanelsTheListChanged.mock.invocationCallOrder[0]!
+    )
+  })
+
+  it('closes the hidden apps the last account opened on any Cloud account change', () => {
+    cloudAuthEvents.emit('changed')
+
+    expect(mocks.closeStaffPagesOfOtherAccounts).toHaveBeenCalledOnce()
+    expect(mocks.closeStaffPagesOfOtherAccounts.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.forgetHiddenApps.mock.invocationCallOrder[0]!
     )
   })
 })

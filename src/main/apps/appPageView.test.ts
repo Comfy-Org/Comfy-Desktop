@@ -27,7 +27,8 @@ const mocks = vi.hoisted(() => ({
   draftSession: null as unknown,
   draftAccountAllowed: true,
   hiddenPages: new Map<string, string>(),
-  hiddenTitles: new Map<string, string>()
+  hiddenTitles: new Map<string, string>(),
+  identity: null as string | null
 }))
 
 vi.mock('electron', () => ({
@@ -82,6 +83,7 @@ vi.mock('./hiddenApps', () => ({
   titleForHiddenApp: (id: string) => mocks.hiddenTitles.get(id) ?? null
 }))
 vi.mock('./draftLinks', () => ({
+  cloudIdentity: () => mocks.identity,
   isDraftStillAllowed: async (id: string) =>
     mocks.draftAccountAllowed && mocks.drafts.get(id)?.accepted === true
 }))
@@ -116,6 +118,7 @@ import {
   captureAppPage,
   closeAppPage,
   closeDraftPages,
+  closeStaffPagesOfOtherAccounts,
   hideAppPage,
   loadedAppPage,
   noteAppPageRunning,
@@ -136,6 +139,7 @@ const UPSCALE = 'upscale'
 const UPSCALE_URL = `${APPS_URL}#/upscale`
 const DRAFT = 'draft-pr683-depth-swap'
 const DRAFT_URL = `${APPS_URL}depth-swap/desktop.html`
+const STAFF_IDENTITY = '["staff-subject","ws-1"]'
 const WINDOW_KEY = 7
 const PANEL_FRAME = { x: 0, y: 41, width: 1200, height: 760 }
 const PLACEMENT = { x: 256, y: 8, width: 936, height: 744, cornerRadius: 14 }
@@ -297,6 +301,7 @@ beforeEach(() => {
   mocks.draftAccountAllowed = true
   mocks.hiddenPages = new Map()
   mocks.hiddenTitles = new Map()
+  mocks.identity = STAFF_IDENTITY
   mocks.createView = () => {
     const view = new FakeView()
     created.push(view)
@@ -467,6 +472,69 @@ describe('a hidden app from the staff list', () => {
     noteAppPageRunning(hostedPage().webContents as unknown as WebContents, true)
 
     expect(runningApps(WINDOW_KEY)).toEqual([{ id: WORLDS, title: 'Explore Worlds' }])
+  })
+
+  it('keeps naming an open hidden app by its title once the staff list forgets it', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+    noteAppPageRunning(hostedPage().webContents as unknown as WebContents, true)
+
+    mocks.hiddenTitles.clear()
+
+    expect(runningApps(WINDOW_KEY)).toEqual([{ id: WORLDS, title: 'Explore Worlds' }])
+  })
+
+  it.each([
+    ['signs out', null],
+    ['switches to another account', '["other-subject","ws-2"]']
+  ])('closes an open hidden app when the person %s', async (_change, identity) => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+
+    mocks.identity = identity
+    closeStaffPagesOfOtherAccounts()
+
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(false)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
+    expect(liveAppsPages()).toEqual([])
+  })
+
+  it('closes a hidden app kept running in the background when the person signs out', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+    const worlds = hostedPage()
+    noteAppPageRunning(worlds.webContents as unknown as WebContents, true)
+    await openCutout()
+
+    mocks.identity = null
+    closeStaffPagesOfOtherAccounts()
+
+    expect(worlds.webContents.close).toHaveBeenCalled()
+    expect(runningApps(WINDOW_KEY)).toEqual([])
+    expect(created.at(-1)!.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('keeps an open hidden app when the same account signs in again', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+
+    closeStaffPagesOfOtherAccounts()
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+
+  it('leaves an open app from the Apps page open when the person signs out', async () => {
+    await openCutout()
+    finishLoading()
+
+    mocks.identity = null
+    closeStaffPagesOfOtherAccounts()
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(true)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
   })
 })
 

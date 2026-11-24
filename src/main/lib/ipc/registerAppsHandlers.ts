@@ -7,6 +7,7 @@ import {
   captureAppPage,
   closeAppPage,
   closeDraftPages,
+  closeStaffPagesOfOtherAccounts,
   hideAppPage,
   noteAppPageRunning,
   showAppPage,
@@ -50,6 +51,7 @@ async function closeDraftsNoLongerAllowed(): Promise<void> {
 }
 
 function dropHiddenApps(): void {
+  closeStaffPagesOfOtherAccounts()
   forgetHiddenApps()
   tellPanelsTheListChanged()
 }
