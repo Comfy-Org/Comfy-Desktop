@@ -57,7 +57,8 @@ import { PORTAL_TO } from '../../ui/portal'
 import Select from '../../ui/Select.vue'
 import { ComfyAssets } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
-import { go, hostActions, instances, toast } from '../../useProto'
+import { go, hostActions, instances, proto, toast } from '../../useProto'
+import { marTabsOn } from '../shell/titleTabs'
 import { graphOpen } from '../graph/graphOpen'
 import { graphLibrary } from '../graph/comfyLook'
 import {
@@ -152,8 +153,22 @@ const emit = defineEmits<{ collapse: [] }>()
 type Kind = 'all' | MarAsset['type']
 const kind = ref<Kind>('all')
 const where = ref('all')
-// A shared link names the build first (mar/assets/assetLink.ts).
-const build = ref((assetLink.at === 'desktop' && assetLink.build) || defaultBuild())
+const followsTitleBar = computed(
+  () => marTabsOn.value && !fixedProject && !inGraph && assetsEverywhere.id === 'off'
+)
+const titleBarBuild = (): string =>
+  assetBuilds.value.some((b) => b.id === proto.activeInstanceId) ? proto.activeInstanceId : ''
+const linkedBuild = assetLink.at === 'desktop' ? assetLink.build : ''
+if (followsTitleBar.value && linkedBuild) proto.activeInstanceId = linkedBuild
+const build = ref(
+  linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild()
+)
+watch(
+  () => [followsTitleBar.value, proto.activeInstanceId] as const,
+  ([follows]) => {
+    if (follows) build.value = titleBarBuild()
+  }
+)
 const filter = ref(noFilter())
 const project = ref('all')
 const sort = ref('newest')
@@ -1286,7 +1301,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 
     <template #toolbar>
       <div class="mar-asset-tools">
-        <AssetBuildPicker v-if="!fixedProject && !inGraph" v-model="build" />
+        <AssetBuildPicker v-if="!fixedProject && !inGraph && !followsTitleBar" v-model="build" />
         <MarSeg
           v-if="!fixedProject && browsable"
           v-model="kind"
