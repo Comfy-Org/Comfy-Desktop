@@ -9,6 +9,7 @@ import DropdownMenuItem from '../ui/DropdownMenuItem.vue'
 import { activeInstance, deployEnv, hostActions, instances, proto } from '../useProto'
 import { can } from '../milestones'
 import { onCloud } from './shell/surface'
+import { openCreate } from './create/createScreen'
 
 /** One Create button, top right; what used to be separate buttons (open
  *  ComfyUI, deploy) are its menu. Deploy shows once the Builder exists and
@@ -57,6 +58,9 @@ function deploy(): void {
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" class="min-w-64">
+      <DropdownMenuItem v-if="can.onboarding" @select="openCreate">
+        <Plus :size="14" /><span class="flex-1 whitespace-nowrap">New workflow</span>
+      </DropdownMenuItem>
       <DropdownMenuItem @select="hostActions.launch(target)">
         <Play :size="14" />
         <span class="flex-1 whitespace-nowrap">{{
