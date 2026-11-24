@@ -123,7 +123,8 @@ function measure(event: Event): void {
         v-else-if="poster"
         :src="poster"
         alt=""
-        class="m-auto block max-h-full max-w-full rounded-[10px] object-contain"
+        class="m-auto block max-w-full rounded-[10px] object-contain"
+        :style="{ maxHeight: `${frameHeight}px` }"
         data-testid="workflow-result-placeholder"
       />
       <div v-else class="m-auto"><slot /></div>

@@ -129,6 +129,19 @@ describe('where a catalog workflow can open', () => {
     ).toEqual(['cloud'])
   })
 
+  it('treats a build the model check never looked at as unchecked, not ready', () => {
+    const lateBuild = local('late', 9)
+    const choices = targetChoices(
+      context({
+        installations: [lateBuild, CLOUD],
+        versions: { late: '0.3.70' },
+        needs: { ...NEEDS, graph: { nodes: [] } }
+      })
+    )
+
+    expect(choices[0]).toMatchObject({ key: 'local:late', state: 'unchecked' })
+  })
+
   it('waits for the model check before saying a build is ready', () => {
     expect(targetChoices(context({ needs: undefined }))[1]?.state).toBe('checking')
   })

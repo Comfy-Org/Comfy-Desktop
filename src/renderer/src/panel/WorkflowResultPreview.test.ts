@@ -48,4 +48,29 @@ describe('the result of a catalog workflow', () => {
     expect(preview.get('[data-testid="workflow-result-placeholder"]').attributes('src')).toBe(CARD)
     preview.unmount()
   })
+
+  it('fits a tall card picture inside the frame when the result cannot load', async () => {
+    const host = document.createElement('div')
+    host.style.cssText = 'width: 400px; height: 300px; display: flex'
+    document.body.append(host)
+    const preview = mount(WorkflowResultPreview, {
+      attachTo: host,
+      props: {
+        media: { ...EXAMPLE, url: 'data:image/png;base64,broken' },
+        zoom: 'fit' as const,
+        poster: picture('green', 400, 800)
+      }
+    })
+
+    await vi.waitFor(() =>
+      expect(preview.find('[data-testid="workflow-result-media"]').exists()).toBe(false)
+    )
+    await vi.waitFor(() =>
+      expect(
+        preview.get('[data-testid="workflow-result-placeholder"]').element.getBoundingClientRect()
+          .height
+      ).toBeLessThanOrEqual(300)
+    )
+    preview.unmount()
+  })
 })

@@ -57,8 +57,11 @@ function localChoice(build: Installation, context: TargetContext): TargetChoice 
     return { ...base, state: 'outdated', missing: [], disabled: true }
   }
   if (needs === undefined) return { ...base, state: 'checking', missing: [], disabled: false }
-  if (needs === null) return { ...base, state: 'unchecked', missing: [], disabled: false }
-  const missingKeys = new Set(needs.missingByBuild[build.id] ?? [])
+  const checked = needs?.missingByBuild[build.id]
+  if (!needs || (needs.graph !== null && checked === undefined)) {
+    return { ...base, state: 'unchecked', missing: [], disabled: false }
+  }
+  const missingKeys = new Set(checked ?? [])
   const missing = needs.models.filter((model) => missingKeys.has(modelKey(model)))
   return { ...base, state: missing.length > 0 ? 'missing' : 'ready', missing, disabled: false }
 }

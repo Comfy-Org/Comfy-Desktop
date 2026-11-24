@@ -985,6 +985,26 @@ describe('Explore Workflows', () => {
     wrapper.unmount()
   })
 
+  it('leaves ⌘/ to the workflow page while it is open', async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await flushPromises()
+    const workflowPage = document.createElement('div')
+    workflowPage.dataset.testid = 'catalog-workflow-dialog'
+    const menuItem = document.createElement('button')
+    workflowPage.append(menuItem)
+    document.body.append(workflowPage)
+    menuItem.focus()
+
+    menuItem.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true }))
+
+    expect(document.activeElement).toBe(menuItem)
+    workflowPage.remove()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }))
+    expect(document.activeElement).toBe(wrapper.get('input').element)
+    wrapper.unmount()
+  })
+
   it('keeps the toolbar above the cards when the list is longer than the window', async () => {
     window.localStorage.clear()
     listCatalogWorkflows.mockResolvedValue(
