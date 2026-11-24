@@ -29,6 +29,8 @@ import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, instanceById, instances, proto, toast } from '../../useProto'
 import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
+import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
+import { runBlock } from '../runCredits'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
@@ -263,6 +265,7 @@ const busyLabel = computed(() => {
   return `Starting ${s.inst.name}`
 })
 
+const creditsSheet = ref(false)
 function confirm(): void {
   const s = selected.value
   const t = template.value
@@ -273,6 +276,10 @@ function confirm(): void {
   }
   if (s.state === 'new') {
     hostActions.newInstance()
+    return
+  }
+  if (s.inst.kind === 'cloud' && runBlock.value) {
+    creditsSheet.value = true
     return
   }
   phase.value = 'busy'
@@ -769,6 +776,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
         </aside>
 
         <DialogClose class="mad-x" aria-label="Close"><X :size="18" /></DialogClose>
+        <MarRunCreditsSheet v-model:open="creditsSheet" @resolved="confirm" />
       </DialogContent>
     </DialogPortal>
   </DialogRoot>

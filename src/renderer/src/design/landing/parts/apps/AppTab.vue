@@ -18,6 +18,8 @@ import AppThemeFrame from './AppThemeFrame.vue'
 import AppRunPlace from '../../mar/apps/AppRunPlace.vue'
 import MarAppPage from '../../mar/apps/MarAppPage.vue'
 import MarSignIn from '../../mar/shell/MarSignIn.vue'
+import MarRunCreditsSheet from '../../mar/MarRunCreditsSheet.vue'
+import { runBlock } from '../../mar/runCredits'
 import { browserSignIn, SIGN_IN_COPY } from '../../mar/signIn/browserSignIn'
 import { appPage } from '../../mar/apps/appPage'
 import { can } from '../../milestones'
@@ -149,6 +151,7 @@ const panel = ref<{ run: () => void }>()
 // UI Playground › App page: the Hub's layout, or the themed page.
 const hubPage = computed(() => can.value.design && appPage.id === 'hub')
 const sheet = ref<'' | 'signin' | 'credits'>('')
+const creditsSheet = ref(false)
 const topUp = ref('10')
 const freeLeft = computed(() => Math.max(0, app.value.freeRuns - me.used))
 const sponsored = computed(() => !inTeam.value && app.value.payer === 'you' && freeLeft.value > 0)
@@ -170,11 +173,16 @@ const payer = computed(() => {
 })
 
 function gate(): boolean {
-  if (inTeam.value || local.value) return true
-  if (!me.signedIn && !me.guest) {
+  if (local.value) return true
+  if (!inTeam.value && !me.signedIn && !me.guest) {
     sheet.value = 'signin'
     return false
   }
+  if (!as.value && runBlock.value) {
+    creditsSheet.value = true
+    return false
+  }
+  if (inTeam.value) return true
   if (outOfCredits()) {
     sheet.value = 'credits'
     return false
@@ -418,5 +426,6 @@ function done(): void {
         </template>
       </DialogContent>
     </DialogRoot>
+    <MarRunCreditsSheet v-model:open="creditsSheet" @resolved="continueRun" />
   </div>
 </template>
