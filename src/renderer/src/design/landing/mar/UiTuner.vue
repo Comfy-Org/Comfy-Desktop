@@ -15,6 +15,7 @@ import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
+import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
@@ -146,6 +147,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'buildPage', show: () => when.buildPage.value },
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
+  { id: 'assetFolders', show: () => when.assetFolders.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
@@ -401,8 +403,21 @@ const linkSays = computed(() => {
               >Adds Everywhere to the build picker: every running build at once.</span
             >
           </Row>
-          <Row :show="shows('folderDepth')" label="Folders">
-            <Seg v-model="folderDepth.id" label="Folders" :options="FOLDER_DEPTHS" />
+          <Row :show="shows('assetFolders')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Folders</span>
+              <Switch
+                :model-value="assetFoldersShown.id === 'on'"
+                aria-label="Folders"
+                @update:model-value="assetFoldersShown.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >Folders in Assets, on Desktop and in ComfyUI's Assets tab.</span
+            >
+          </Row>
+          <Row :show="shows('folderDepth')" label="Folder depth">
+            <Seg v-model="folderDepth.id" label="Folder depth" :options="FOLDER_DEPTHS" />
           </Row>
           <Row :show="shows('fullAssets')" label="Full Assets">
             <Seg v-model="fullAssets.id" label="Full Assets" :options="FULL_ASSETS" />

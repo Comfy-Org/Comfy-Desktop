@@ -23,6 +23,7 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { assetLink, holdAssetLink } from './assets/assetLink'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
+import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -149,6 +150,7 @@ const PARTS: Part[] = [
   one('buildPage', buildPage, 'production', BUILD_PAGES),
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
+  one('assetFolders', assetFoldersShown, 'off', OFF_ON),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),

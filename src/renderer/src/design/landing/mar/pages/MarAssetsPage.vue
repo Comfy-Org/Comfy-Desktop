@@ -105,6 +105,7 @@ import MarItemMenu from './MarItemMenu.vue'
 import { saveFile } from '../assets/saveFile'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import { assetsEverywhere } from '../assets/assetsEverywhere'
+import { assetFoldersShown } from '../assets/assetFolderSwitch'
 import { assetLink, dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
@@ -160,9 +161,7 @@ const titleBarBuild = (): string =>
   assetBuilds.value.some((b) => b.id === proto.activeInstanceId) ? proto.activeInstanceId : ''
 const linkedBuild = assetLink.at === 'desktop' ? assetLink.build : ''
 if (followsTitleBar.value && linkedBuild) proto.activeInstanceId = linkedBuild
-const build = ref(
-  linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild()
-)
+const build = ref(linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild())
 watch(
   () => [followsTitleBar.value, proto.activeInstanceId] as const,
   ([follows]) => {
@@ -177,6 +176,8 @@ const query = ref('')
 const label = ref<AssetLabel | ''>('')
 /** And a folder, with every folder inside it. */
 const folder = ref('')
+const foldersOn = computed(() => assetFoldersShown.id === 'on')
+watch(foldersOn, (on) => !on && (folder.value = ''))
 /** And only the starred ones (the sidebar's Favorites). */
 const favOnly = ref(false)
 // In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
@@ -372,7 +373,9 @@ function labelKey(n: number, ids: string[]): void {
   else if (n <= 6 && LABELS[n - 1]) setLabel(ids, LABELS[n - 1]!.value)
 }
 /** Desktop's Filters › Folder: the build's folders, in tree order. */
-const FOLDER_LIST = computed(() => tree().map(({ folder: f, depth }) => ({ ...f, depth })))
+const FOLDER_LIST = computed(() =>
+  foldersOn.value ? tree().map(({ folder: f, depth }) => ({ ...f, depth })) : []
+)
 /** Any filter on (the folder too, on Desktop): what ⌘⌫ clears. */
 const filtered = computed(() => activeFilters(filter.value) > 0 || (!inGraph && !!folder.value))
 function clearFilters(): void {
@@ -391,10 +394,9 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
 })
 
 /** The title reads the view in ComfyUI's tab: the folder, label, Favorites
- *  or tags picked in its sidebar, else where files came from, else All.
- *  Desktop's big title stays Assets. */
+ *  or tags picked in its sidebar, else where files came from, else All. */
 const title = computed(() => {
-  if (!inGraph) return 'Assets'
+  if (!inGraph) return (foldersOn.value && folderName(folder.value)) || 'Assets'
   if (folder.value) return folderName(folder.value) ?? 'Assets'
   if (label.value) return labelName(label.value) ?? 'Assets'
   if (favOnly.value) return 'Favorites'
@@ -572,7 +574,7 @@ watch(folder, (id) => id && folderPath(id).forEach((p) => unfold(p.id, true)), {
 /** The folders above this one, from the top. */
 function folderPath(id: string): AssetFolder[] {
   const out: AssetFolder[] = []
-  for (let f = folders.find((x) => x.id === id); f?.parent; ) {
+  for (let f = folders.find((x) => x.id === id); f?.parent;) {
     const up = folders.find((x) => x.id === f!.parent)
     if (!up) break
     out.unshift(up)
@@ -583,7 +585,7 @@ function folderPath(id: string): AssetFolder[] {
 /** The title's breadcrumb in a nested folder: the top folder, the one
  *  above, and an ellipsis for the levels between (named in its tooltip). */
 const crumbs = computed(() => {
-  if (!inGraph || !folder.value) return null
+  if (!foldersOn.value || !folder.value) return null
   const path = folderPath(folder.value)
   if (!path.length) return null
   const first = path[0]!
@@ -1078,7 +1080,7 @@ function lines(a: MarAsset): MenuLine[] {
           { label: 'Export workflow', icon: FileOutput, run: () => exportWorkflow(a) }
         ]
       : []),
-    ...(inGraph ? [folderLine(() => [a.id])] : []),
+    ...(foldersOn.value ? [folderLine(() => [a.id])] : []),
     { label: 'Copy', icon: Copy, hint: '⌘C', run: () => copyAssets([a.id]) },
     // Projects are Desktop's; in ComfyUI a file takes a color label.
     ...(inGraph ? [] : [lib.moveLine(() => [a.id], a.project)]),
@@ -1406,8 +1408,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           >
             <section v-for="g in sections" :key="g.key" class="mar-asset-job">
               <p v-if="g.title" class="mar-asset-job-head">
-                <span class="mar-asset-job-name">{{ g.title }}</span
-                ><span class="mar-asset-job-n">{{ g.items.length }}</span>
+                <span class="mar-asset-job-name">{{ g.title }}</span><span
+                  class="mar-asset-job-n"
+                  >{{ g.items.length }}</span
+                >
               </p>
               <div
                 :class="
@@ -1453,7 +1457,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                     :selecting="lib.sel.ids.value.size > 0"
                     :renaming="lib.renaming.value === a.id"
                     :class="a.status === 'running' && 'mar-asset-running'"
-                    :draggable="inGraph && !a.status"
+                    :draggable="inGraph && foldersOn && !a.status"
                     @dragstart="dragCard($event, a)"
                     @mouseenter="hoverPlay(a, true)"
                     @mouseleave="hoverPlay(a, false)"
@@ -1645,9 +1649,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         },
         ...(inGraph ? [{ label: 'Tag', icon: Tag, run: () => (tagging = !tagging) }] : []),
         labelLine(() => lib.selected.value),
-        ...(inGraph
-          ? [folderLine(() => lib.selected.value)]
-          : [lib.moveLine(() => lib.selected.value)]),
+        ...(foldersOn ? [folderLine(() => lib.selected.value)] : []),
+        ...(inGraph ? [] : [lib.moveLine(() => lib.selected.value)]),
         { label: 'Delete', icon: Trash2, danger: true, run: lib.removeSelected }
       ]"
       @clear="lib.sel.clear()"
@@ -1698,7 +1701,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         <Star :size="15" /><span class="mar-anav-name">Favorites</span
         ><span class="mar-anav-n">{{ FAV_COUNT }}</span>
       </button>
-      <div class="mar-anav-head">
+      <div v-if="foldersOn" class="mar-anav-head">
         <p class="mar-anav-label">Folders</p>
         <span class="mar-anav-head-tools">
           <Tooltip content="New folder" side="bottom">
@@ -1713,7 +1716,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           </Tooltip>
         </span>
       </div>
-      <template v-for="f in FOLDER_ROWS" :key="f.id">
+      <template v-for="f in foldersOn ? FOLDER_ROWS : []" :key="f.id">
         <div
           v-if="naming?.id === f.id"
           class="mar-anav-naming"
@@ -1788,7 +1791,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           />
         </div>
       </template>
-      <div v-if="naming && !naming.id && !naming.parent" class="mar-anav-naming">
+      <div v-if="foldersOn && naming && !naming.id && !naming.parent" class="mar-anav-naming">
         <Folder :size="15" /><input
           v-model="naming.name"
           v-focus
@@ -1832,8 +1835,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
               :aria-pressed="filter.tags.includes(t.tag)"
               @click="toggleTag(t.tag)"
             >
-              <span class="mar-anav-name">{{ t.tag }}</span
-              ><span class="mar-anav-n">{{ t.count }}</span>
+              <span class="mar-anav-name">{{ t.tag }}</span><span class="mar-anav-n">{{
+                t.count
+              }}</span>
             </button>
             <span class="mar-anav-folder-tools">
               <MarItemMenu
