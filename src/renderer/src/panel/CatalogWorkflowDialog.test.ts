@@ -341,8 +341,16 @@ describe('when the page cannot say everything yet', () => {
     expect(dialog.get('[data-testid="catalog-workflow-target-status"]').text()).toBe(
       'Stopped · models not checked'
     )
+    const action = dialog.get('[data-testid="catalog-workflow-action"]')
+    expect(action.attributes('disabled')).toBeDefined()
+    await action.trigger('click')
+    expect(launchCatalogWorkflow).not.toHaveBeenCalled()
     await dialog.get('[data-testid="workflow-needs"]').trigger('click')
     await flushPromises()
+
+    expect(
+      dialog.get('[data-testid="catalog-workflow-action"]').attributes('disabled')
+    ).toBeUndefined()
 
     expect(catalogWorkflowNeeds).toHaveBeenCalledTimes(2)
     expect(dialog.get('[data-testid="workflow-needs-summary"]').text()).toBe('2 models · 34.0 GB')

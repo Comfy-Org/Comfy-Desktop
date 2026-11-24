@@ -198,7 +198,7 @@ const action = computed<{ label: string; disabled: boolean; run: () => void }>((
     label: choice.running
       ? t('workflowLaunch.action.openIn', { name })
       : t('workflowLaunch.action.launch', { name }),
-    disabled: choice.state === 'checking',
+    disabled: choice.state === 'checking' || choice.state === 'unchecked',
     run: () => void launch(choice)
   }
 })
