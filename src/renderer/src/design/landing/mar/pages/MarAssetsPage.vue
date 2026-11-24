@@ -58,7 +58,7 @@ import Select from '../../ui/Select.vue'
 import { ComfyAssets } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
 import { go, hostActions, instances, proto, toast } from '../../useProto'
-import { marTabsOn } from '../shell/titleTabs'
+import { titleBarPicksBuild } from '../shell/titleTabs'
 import { graphOpen } from '../graph/graphOpen'
 import { graphLibrary } from '../graph/comfyLook'
 import {
@@ -155,7 +155,7 @@ type Kind = 'all' | MarAsset['type']
 const kind = ref<Kind>('all')
 const where = ref('all')
 const followsTitleBar = computed(
-  () => marTabsOn.value && !fixedProject && !inGraph && assetsEverywhere.id === 'off'
+  () => titleBarPicksBuild.value && !fixedProject && !inGraph && assetsEverywhere.id === 'off'
 )
 const titleBarBuild = (): string =>
   assetBuilds.value.some((b) => b.id === proto.activeInstanceId) ? proto.activeInstanceId : ''
