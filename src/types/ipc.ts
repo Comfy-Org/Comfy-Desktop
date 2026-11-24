@@ -1342,7 +1342,7 @@ export interface ElectronApi {
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
-  listRecentWorkflows(): Promise<RecentWorkflow[]>
+  listRecentWorkflows(buildIds: string[]): Promise<RecentWorkflow[]>
   openRecentWorkflow(installationId: string, path: string): Promise<ComfyDesktopOpenInComfy>
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>

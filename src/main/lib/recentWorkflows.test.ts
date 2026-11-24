@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -52,8 +52,10 @@ const CLOUD = { id: 'inst-cloud', name: 'Comfy Cloud', sourceId: 'cloud', status
 
 let root: string
 
-function list(): Promise<RecentWorkflow[]> {
-  return mocks.handlers.get(RECENT_WORKFLOW_CHANNELS.list)!(EVENT) as Promise<RecentWorkflow[]>
+function list(buildIds?: string[]): Promise<RecentWorkflow[]> {
+  return mocks.handlers.get(RECENT_WORKFLOW_CHANNELS.list)!(EVENT, buildIds) as Promise<
+    RecentWorkflow[]
+  >
 }
 
 function open(installationId: string, savedPath: string) {
@@ -118,6 +120,31 @@ describe('recent workflows on this computer', () => {
 
     expect(recents).toHaveLength(8)
     expect(recents[0]!.title).toBe('flow 0')
+  })
+
+  it('counts the eight only among the builds asked for', async () => {
+    const lab = await localBuild('inst-lab', 'Lab')
+    const other = await localBuild('inst-other', 'Other workspace')
+    for (let i = 0; i < 10; i++) await saved(other, `newer ${i}.json`, i)
+    await saved(lab, 'portrait.json', 60)
+
+    const recents = await list(['inst-lab'])
+
+    expect(recents.map((w) => w.title)).toEqual(['portrait'])
+  })
+
+  it('refuses a file reached through a link that leaves the workflows folder', async () => {
+    const lab = await localBuild('inst-lab', 'Lab')
+    const outside = path.join(root, 'private')
+    await mkdir(outside)
+    await writeFile(path.join(outside, 'secret.json'), JSON.stringify(GRAPH))
+    await symlink(outside, path.join(lab, 'escape'), 'dir')
+
+    expect(await open('inst-lab', 'escape/secret.json')).toEqual({
+      opened: false,
+      error: 'apps.local.openUnreadable'
+    })
+    expect(mocks.openSavedWorkflow).not.toHaveBeenCalled()
   })
 
   it('opens the saved file in its own build under its saved name', async () => {

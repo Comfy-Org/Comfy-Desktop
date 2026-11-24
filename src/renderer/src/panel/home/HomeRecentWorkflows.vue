@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Cloud, Laptop, LoaderCircle } from '@lucide/vue'
 import WorkflowCover from './WorkflowCover.vue'
@@ -19,13 +19,22 @@ const now = ref(Date.now())
 
 const shown = computed(() => all.value.filter((w) => buildIds.has(w.installationId)))
 
-async function load(): Promise<void> {
+let latestLoad = 0
+
+async function listInScope(): Promise<RecentWorkflow[]> {
   try {
-    const listed: unknown = await window.api.listRecentWorkflows()
-    all.value = Array.isArray(listed) ? (listed as RecentWorkflow[]) : []
+    const listed: unknown = await window.api.listRecentWorkflows([...buildIds])
+    return Array.isArray(listed) ? (listed as RecentWorkflow[]) : []
   } catch {
-    all.value = []
+    return []
   }
+}
+
+async function load(): Promise<void> {
+  const request = ++latestLoad
+  const listed = await listInScope()
+  if (request !== latestLoad) return
+  all.value = listed
   now.value = Date.now()
 }
 
@@ -50,6 +59,11 @@ async function open(workflow: RecentWorkflow): Promise<void> {
 function onFocus(): void {
   void load()
 }
+
+watch(
+  () => [...buildIds].sort().join('\n'),
+  () => void load()
+)
 
 onMounted(() => {
   void load()

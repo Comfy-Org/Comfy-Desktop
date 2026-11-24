@@ -200,9 +200,19 @@ export function newestFirst(workflows: RecentWorkflow[], limit: number): RecentW
   return [...workflows].sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, limit)
 }
 
-export async function listRecentWorkflows(): Promise<RecentWorkflow[]> {
+export function readBuildIds(value: unknown): ReadonlySet<string> | null {
+  if (!Array.isArray(value)) return null
+  return new Set(value.filter((id): id is string => typeof id === 'string'))
+}
+
+export async function listRecentWorkflows(
+  buildIds: ReadonlySet<string> | null = null
+): Promise<RecentWorkflow[]> {
   const [local, cloud] = await Promise.all([localRecents(), cloudRecents()])
-  return newestFirst([...local, ...cloud], RECENT_WORKFLOW_LIMIT)
+  const inScope = [...local, ...cloud].filter(
+    (workflow) => buildIds === null || buildIds.has(workflow.installationId)
+  )
+  return newestFirst(inScope, RECENT_WORKFLOW_LIMIT)
 }
 
 function isInside(child: string, parent: string): boolean {
@@ -216,9 +226,12 @@ async function readLocalWorkflow(installationId: string, savedPath: string): Pro
   const root = workflowsDirOf(inst)
   const file = path.resolve(root, ...savedPath.split('/'))
   if (!isInside(file, root)) return null
-  const stat = await fsp.stat(file).catch(() => null)
+  const realRoot = await fsp.realpath(root).catch(() => null)
+  const realFile = await fsp.realpath(file).catch(() => null)
+  if (!realRoot || !realFile || !isInside(realFile, realRoot)) return null
+  const stat = await fsp.stat(realFile).catch(() => null)
   if (!stat?.isFile() || stat.size > MAX_WORKFLOW_BYTES) return null
-  const text = await fsp.readFile(file, 'utf8').catch(() => null)
+  const text = await fsp.readFile(realFile, 'utf8').catch(() => null)
   return text === null ? null : JSON.parse(text)
 }
 
@@ -257,8 +270,8 @@ export async function openRecentWorkflow(
 }
 
 export function registerRecentWorkflowHandlers(): void {
-  ipcMain.handle(RECENT_WORKFLOW_CHANNELS.list, (event) =>
-    isPanelSender(event.sender) ? listRecentWorkflows() : []
+  ipcMain.handle(RECENT_WORKFLOW_CHANNELS.list, (event, buildIds: unknown) =>
+    isPanelSender(event.sender) ? listRecentWorkflows(readBuildIds(buildIds)) : []
   )
   ipcMain.handle(
     RECENT_WORKFLOW_CHANNELS.open,

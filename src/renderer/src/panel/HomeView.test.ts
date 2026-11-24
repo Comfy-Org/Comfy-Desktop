@@ -15,7 +15,7 @@ const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
 const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
-const listRecentWorkflows = vi.fn<() => Promise<RecentWorkflow[]>>()
+const listRecentWorkflows = vi.fn<(buildIds: string[]) => Promise<RecentWorkflow[]>>()
 const openRecentWorkflow =
   vi.fn<(installationId: string, path: string) => Promise<{ opened: boolean; error?: string }>>()
 
@@ -1285,6 +1285,9 @@ describe('Home recent workflows', () => {
     const wrapper = await openHome()
 
     expect(recentTitles(wrapper)).toEqual(['Wan loop', 'Upscale'])
+    expect(listRecentWorkflows).toHaveBeenLastCalledWith(
+      expect.arrayContaining(['newest', 'cloud'])
+    )
     const first = wrapper.get('[data-testid="home-recent-workflow"]')
     expect(first.text()).toContain('My Local 1')
     expect(first.text()).toContain('5m ago')
