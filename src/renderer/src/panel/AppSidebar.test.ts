@@ -215,6 +215,60 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
   })
 
+  it('names an app left open from Development under Development, not Apps', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'home',
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Apps',
+      'Assets',
+      'Development',
+      'Character Swap',
+      'Builds',
+      ''
+    ])
+  })
+
+  it('leaves out the row for an app left open from Development while Development is shown', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'staff-apps',
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
+  it('names the rail Development while an app opened from Development is open', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'staff-apps',
+        makeRoom: true,
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true,
+        apps: [CHARACTER_SWAP]
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-app-rail"]').attributes('aria-label')).toBe(
+      'Development'
+    )
+  })
+
   it('leaves out the row for the app left open while Apps itself is shown', async () => {
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'apps', appInProgress: CHARACTER_SWAP }

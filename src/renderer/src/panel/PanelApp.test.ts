@@ -1847,6 +1847,71 @@ describe('PanelApp', () => {
     )
   })
 
+  async function openRelightFromDevelopment(): Promise<ReturnType<typeof mountPanel>> {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
+    )
+    return wrapper
+  }
+
+  it('keeps Development, not Apps, in the sidebar while an app opened from it is open', async () => {
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = await openRelightFromDevelopment()
+    await flushPromises()
+
+    const rail = wrapper.get('[data-testid="app-sidebar-app-rail"]')
+    expect(rail.attributes('aria-label')).toBe('Development')
+    expect(rail.find('[data-testid="app-sidebar-app-upscale"]').exists()).toBe(false)
+    expect(rail.get('[data-testid="app-sidebar-app-relight"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it('goes back to Development, not Apps, when an app opened from Development goes back', async () => {
+    const wrapper = await openRelightFromDevelopment()
+
+    await goBackToAllAppsFromThePage()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-staff-apps"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it('still goes back to the Apps list from an app opened on Apps while staff see Development', async () => {
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar-app-rail"]').attributes('aria-label')).toBe(
+      'Apps'
+    )
+
+    await goBackToAllAppsFromThePage()
+
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+  })
+
   it('sends a person on Development back to Apps, and drops the entry, when a sign-out empties the staff list', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })

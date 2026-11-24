@@ -50,6 +50,7 @@ const {
   makeRoom = false,
   appInProgress = null,
   apps = null,
+  appHome = 'apps',
   showStaffApps = false
 } = defineProps<{
   activePage: DashboardPage
@@ -57,6 +58,7 @@ const {
   makeRoom?: boolean
   appInProgress?: AppCard | null
   apps?: AppCard[] | null
+  appHome?: 'apps' | 'staff-apps'
   showStaffApps?: boolean
 }>()
 
@@ -296,6 +298,7 @@ function openSettings(): void {
       v-if="makeRoom"
       :current-app="appInProgress"
       :apps="apps"
+      :label="appHome === 'staff-apps' ? t('sidebar.development') : t('sidebar.apps')"
       @switch-app="switchApp"
     />
     <div
@@ -408,7 +411,7 @@ function openSettings(): void {
             </Tooltip>
           </Button>
           <Button
-            v-if="row.page === 'apps' && appInProgress && activePage !== 'apps'"
+            v-if="row.page === appHome && appInProgress && activePage !== appHome"
             variant="muted-textonly"
             size="unset"
             class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"

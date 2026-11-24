@@ -190,6 +190,11 @@ type DashboardHomePage = Extract<
   'home' | 'apps' | 'chooser' | 'assets' | 'staff-apps'
 >
 
+type AppHomePage = Extract<DashboardHomePage, 'apps' | 'staff-apps'>
+
+const staffApps = useStaffApps()
+const liveStaffApps = computed(() => staffApps.apps.value.filter((app) => app.page === 'live'))
+
 const urlDashboardPage = params.get('dashboardPage')
 const dashboardHomePage = ref<DashboardHomePage>(
   isNewWindowDashboardPage(urlDashboardPage) ? urlDashboardPage : 'home'
@@ -197,7 +202,11 @@ const dashboardHomePage = ref<DashboardHomePage>(
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
-  if (panel === 'chooser') return dashboardHomePage.value
+  if (panel === 'chooser') {
+    const openedFromDevelopment =
+      dashboardHomePage.value === 'apps' && appIsOpen.value && appHome.value === 'staff-apps'
+    return openedFromDevelopment ? 'staff-apps' : dashboardHomePage.value
+  }
   return panel === 'benchmarks' || panel === 'performance-test' ? panel : null
 })
 
@@ -290,12 +299,38 @@ const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
+let stayOnAppsAfterClose = false
+
+function homePageOf(app: AppCard): AppHomePage {
+  if (listedApps.value?.some((listed) => listed.id === app.id)) return 'apps'
+  return liveStaffApps.value.some((staffApp) => staffApp.id === app.id) ? 'staff-apps' : 'apps'
+}
+
+const openedAppHome = ref<AppHomePage>('apps')
+const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHome.value : 'apps'))
+
+const railApps = computed(() =>
+  appHome.value === 'staff-apps' ? liveStaffApps.value : listedApps.value
+)
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
 function showApp(app: AppCard): void {
+  stayOnAppsAfterClose = false
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
+}
+
+function noteCurrentApp(app: AppCard | null): void {
+  appInProgress.value = app
+  if (app) openedAppHome.value = homePageOf(app)
+}
+
+function noteAppOpen(open: boolean): void {
+  const closed = appIsOpen.value && !open
+  appIsOpen.value = open
+  if (!closed || stayOnAppsAfterClose || dashboardHomePage.value !== 'apps') return
+  if (appHome.value === 'staff-apps') dashboardHomePage.value = 'staff-apps'
 }
 
 let navigation = 0
@@ -314,8 +349,6 @@ async function openAppFromHome(app: AppCard): Promise<void> {
   if (await switchStillWanted(app)) showApp(app)
 }
 
-const staffApps = useStaffApps()
-
 watch(staffApps.shown, (shown) => {
   if (shown || dashboardHomePage.value !== 'staff-apps') return
   if (sidebarPage.value !== 'staff-apps') {
@@ -330,7 +363,7 @@ async function runningAppCard(appId: string): Promise<AppCard | undefined> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
   return (
     apps.find((listed) => listed.id === appId) ??
-    staffApps.apps.value.find((staffApp) => staffApp.page === 'live' && staffApp.id === appId)
+    liveStaffApps.value.find((staffApp) => staffApp.id === appId)
   )
 }
 
@@ -415,7 +448,10 @@ function viewInAssets(name: string): void {
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   assetsFocusName.value = null
-  if (page === 'apps') appsVisits.value += 1
+  if (page === 'apps') {
+    stayOnAppsAfterClose = true
+    appsVisits.value += 1
+  }
   if (page === 'staff-apps' && !staffApps.shown.value) return
   if (
     page === 'home' ||
@@ -701,7 +737,8 @@ onUnmounted(() => {
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
         :app-in-progress="appInProgress"
-        :apps="listedApps"
+        :apps="railApps"
+        :app-home="appHome"
         :show-staff-apps="staffApps.shown.value"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
@@ -742,8 +779,8 @@ onUnmounted(() => {
               v-else-if="dashboardHomePage === 'apps'"
               v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
-              @app-open-change="appIsOpen = $event"
-              @current-app="appInProgress = $event"
+              @app-open-change="noteAppOpen"
+              @current-app="noteCurrentApp"
               @apps-loaded="listedApps = $event"
               @view-in-assets="viewInAssets"
             />
