@@ -187,23 +187,30 @@ describe('who sees hidden apps', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it.each([401, 403, 404, 500, 503])(
-    'shows no hidden apps when the catalog answers %i',
-    async (status) => {
-      catalogPages.set('', () => Response.json({ code: 'FORBIDDEN' }, { status }))
+  it.each([401, 403])('shows no hidden apps when the catalog refuses with %i', async (status) => {
+    catalogPages.set('', () => Response.json({ code: 'FORBIDDEN' }, { status }))
 
-      expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+    expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+    expect(catalogCalls()).toHaveLength(1)
+  })
+
+  it.each([404, 429, 500, 503])(
+    'shows no hidden apps yet, and says to ask again, when the catalog answers %i',
+    async (status) => {
+      catalogPages.set('', () => Response.json({ code: 'UNAVAILABLE' }, { status }))
+
+      expect(await listHiddenApps(deps())).toEqual({ apps: [], stale: true })
       expect(catalogCalls()).toHaveLength(1)
     }
   )
 
-  it('shows no hidden apps when the catalog cannot be reached or answers with no list', async () => {
+  it('says to ask again when the catalog cannot be reached or answers with no list', async () => {
     catalogPages.set('', () => Promise.reject(new Error('offline')))
-    expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+    expect(await listHiddenApps(deps())).toEqual({ apps: [], stale: true })
 
     forgetHiddenApps()
     catalogPages.set('', () => Response.json({ items: 'none' }))
-    expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+    expect(await listHiddenApps(deps())).toEqual({ apps: [], stale: true })
   })
 
   it('asks a refusing catalog again only after 30 seconds', async () => {
@@ -244,7 +251,7 @@ describe('the hidden apps listed', () => {
       description: 'About explore-worlds',
       covers: [],
       reasons: [],
-      hasPage: false
+      page: 'missing'
     })
   })
 
@@ -287,21 +294,21 @@ describe('the hidden apps listed', () => {
     expect(asked.every((params) => params.get('limit') === '100')).toBe(true)
   })
 
-  it('shows no hidden apps when a later page of the list fails', async () => {
+  it('says to ask again when a later page of the list fails', async () => {
     catalogPages = new Map([
       ['', pageOf([row('first')], 'cursor-2')],
       ['cursor-2', () => new Response(null, { status: 409 })]
     ])
 
-    expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+    expect(await listHiddenApps(deps())).toEqual({ apps: [], stale: true })
   })
 
-  it('shows no hidden apps when the published list cannot be read', async () => {
+  it('says to ask again when the published list cannot be read', async () => {
     const publishedAppIds = async (): Promise<string[]> => {
       throw new Error('offline')
     }
 
-    expect(await listHiddenApps(deps({ publishedAppIds }))).toEqual({ apps: [] })
+    expect(await listHiddenApps(deps({ publishedAppIds }))).toEqual({ apps: [], stale: true })
   })
 })
 
@@ -312,9 +319,9 @@ describe('the page a hidden app opens', () => {
 
     const { apps } = await listHiddenApps(deps())
 
-    expect(apps.map((app) => [app.id, app.hasPage])).toEqual([
-      ['explore-worlds', true],
-      ['relight', false]
+    expect(apps.map((app) => [app.id, app.page])).toEqual([
+      ['explore-worlds', 'live'],
+      ['relight', 'missing']
     ])
     expect(pageUrlForHiddenApp('explore-worlds', deps())).toBe(pageUrl('explore-worlds'))
     expect(pageUrlForHiddenApp('relight', deps())).toBeNull()
@@ -323,19 +330,66 @@ describe('the page a hidden app opens', () => {
     expect(pageCheck?.[1].headers).toBeUndefined()
   })
 
-  it('counts a page that redirects or cannot be reached as no page', async () => {
-    catalogPages.set('', pageOf([row('moved'), row('offline')]))
-    const fetch = vi.fn(async (url: string, init: RequestInit) => {
-      if (url === pageUrl('moved')) {
-        return new Response(null, { status: 308, headers: { location: '/elsewhere' } })
-      }
-      if (url === pageUrl('offline')) throw new Error('offline')
-      return fetchMock(url, init)
-    })
+  it.each([
+    ['is not found', () => new Response(null, { status: 404 })],
+    ['is gone', () => new Response(null, { status: 410 })],
+    ['redirects', () => new Response(null, { status: 308, headers: { location: '/elsewhere' } })]
+  ])('counts a page that %s as no page', async (_label, answer) => {
+    const fetch = vi.fn(async (url: string, init: RequestInit) =>
+      url === pageUrl('explore-worlds') ? answer() : fetchMock(url, init)
+    )
 
-    const { apps } = await listHiddenApps(deps({ fetch }))
+    const listed = await listHiddenApps(deps({ fetch }))
 
-    expect(apps.map((app) => app.hasPage)).toEqual([false, false])
+    expect(listed).toEqual({ apps: [expect.objectContaining({ page: 'missing' })] })
+    expect(pageUrlForHiddenApp('explore-worlds', deps())).toBeNull()
+  })
+
+  it.each([
+    ['times out', () => Promise.reject(new DOMException('timed out', 'TimeoutError'))],
+    ['cannot be reached', () => Promise.reject(new Error('getaddrinfo ENOTFOUND comfy.org'))],
+    ['is rate limited', () => new Response(null, { status: 429 })],
+    ['is unavailable', () => new Response(null, { status: 503 })],
+    ['fails on the server', () => new Response(null, { status: 500 })]
+  ])(
+    'says a page that %s could not be checked, and checks it again 30 seconds later',
+    async (_label, answer) => {
+      let pageAnswer: () => Response | Promise<Response> = answer
+      const fetch = vi.fn(async (url: string, init: RequestInit) =>
+        url === pageUrl('explore-worlds') ? pageAnswer() : fetchMock(url, init)
+      )
+
+      const listed = await listHiddenApps(deps({ fetch }))
+
+      expect(listed).toEqual({
+        apps: [expect.objectContaining({ page: 'unchecked' })],
+        stale: true
+      })
+      expect(pageUrlForHiddenApp('explore-worlds', deps())).toBeNull()
+
+      pageAnswer = () => new Response(null, { status: 200 })
+      clock += 29_000
+      expect((await listHiddenApps(deps({ fetch }))).apps[0]?.page).toBe('unchecked')
+      clock += 2_000
+      expect(await listHiddenApps(deps({ fetch }))).toEqual({
+        apps: [expect.objectContaining({ page: 'live' })]
+      })
+      expect(pageUrlForHiddenApp('explore-worlds', deps())).toBe(pageUrl('explore-worlds'))
+    }
+  )
+
+  it('keeps a page it opened before when a later check of it cannot get through', async () => {
+    livePages.add(pageUrl('explore-worlds'))
+    await listHiddenApps(deps())
+    clock += 121_000
+    const fetch = vi.fn(async (url: string, init: RequestInit) =>
+      url === pageUrl('explore-worlds') ? new Response(null, { status: 503 }) : fetchMock(url, init)
+    )
+
+    const listed = await listHiddenApps(deps({ fetch }))
+
+    expect(listed).toEqual({ apps: [expect.objectContaining({ page: 'live' })], stale: true })
+    expect(pageUrlForHiddenApp('explore-worlds', deps())).toBe(pageUrl('explore-worlds'))
   })
 
   it('opens nothing for an app that is not on the current hidden list', async () => {
@@ -475,6 +529,56 @@ describe('keeping the hidden list', () => {
     await listHiddenApps(deps())
     expect(catalogCalls()).toHaveLength(2)
   })
+
+  it.each([
+    ['answers 503', () => new Response(null, { status: 503 })],
+    ['answers 500', () => new Response(null, { status: 500 })],
+    ['cannot be reached', () => Promise.reject(new Error('offline'))],
+    ['answers with no list', () => Response.json({ items: 'none' })]
+  ])(
+    'keeps the last good list, and the page a running app uses, when a refresh %s',
+    async (_label, answer) => {
+      livePages.add(pageUrl('explore-worlds'))
+      const good = await listHiddenApps(deps())
+      clock += 121_000
+      catalogPages.set('', answer)
+
+      expect(await listHiddenApps(deps())).toEqual({ ...good, stale: true })
+      expect(pageUrlForHiddenApp('explore-worlds', deps())).toBe(pageUrl('explore-worlds'))
+      expect(titleForHiddenApp('explore-worlds', deps())).toBe('Title of explore-worlds')
+    }
+  )
+
+  it('asks the catalog again 30 seconds after a failed refresh, and is fresh once it answers', async () => {
+    await listHiddenApps(deps())
+    clock += 121_000
+    catalogPages.set('', () => new Response(null, { status: 503 }))
+    await listHiddenApps(deps())
+
+    clock += 29_000
+    await listHiddenApps(deps())
+    expect(catalogCalls()).toHaveLength(2)
+
+    clock += 2_000
+    catalogPages.set('', pageOf([row('explore-worlds')]))
+    expect(await listHiddenApps(deps())).toEqual({
+      apps: [expect.objectContaining({ id: 'explore-worlds' })]
+    })
+    expect(catalogCalls()).toHaveLength(3)
+  })
+
+  it.each([401, 403])(
+    'drops the last good list when a refresh is refused with %i',
+    async (status) => {
+      livePages.add(pageUrl('explore-worlds'))
+      await listHiddenApps(deps())
+      clock += 121_000
+      catalogPages.set('', () => new Response(null, { status }))
+
+      expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+      expect(pageUrlForHiddenApp('explore-worlds', deps())).toBeNull()
+    }
+  )
 
   it('reads the list again, and opens nothing from the old one, once the account changes', async () => {
     livePages.add(pageUrl('explore-worlds'))

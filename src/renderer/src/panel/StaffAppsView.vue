@@ -109,7 +109,7 @@ function openPicked(app: HiddenAppCard): void {
           :class="rhythmSpanClass(index)"
         >
           <AppCardTile
-            v-if="app.hasPage"
+            v-if="app.page === 'live'"
             :app="app"
             :playing="playsCover(app)"
             :revealed="keyboardFocusedId === app.id"
@@ -127,7 +127,7 @@ function openPicked(app: HiddenAppCard): void {
             :app="app"
             :description-id-prefix="badgeIdPrefixFor(app)"
             :aria-describedby="badgesDescribing(app)"
-            :note="t('staffApps.noPage')"
+            :note="app.page === 'missing' ? t('staffApps.noPage') : t('staffApps.pageUnchecked')"
             :data-testid="`staff-app-card-${app.id}`"
           />
         </li>

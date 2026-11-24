@@ -1,7 +1,7 @@
 import { stillsOf } from '../../shared/appStills'
 import { APP_ID_PATTERN, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { HiddenAppCard, HiddenAppReason, HiddenAppsList } from '../../types/ipc'
+import type { HiddenAppCard, HiddenAppPage, HiddenAppReason, HiddenAppsList } from '../../types/ipc'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import { listApps } from './appsCatalog'
@@ -19,6 +19,7 @@ const MAX_HIDDEN_APPS = 200
 const MAX_TEXT_LENGTH = 1000
 const CACHE_TTL_MS = 2 * 60 * 1000
 const REFUSED_TTL_MS = 30 * 1000
+const RETRY_TTL_MS = 30 * 1000
 const REQUEST_TIMEOUT_MS = 8_000
 const MAX_PARALLEL_REQUESTS = 6
 const MAX_STILL_BYTES = 2 * 1024 * 1024
@@ -29,6 +30,8 @@ const STILL_TYPES: ReadonlySet<string> = new Set([
   'image/png',
   'image/webp'
 ])
+const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403])
+const MISSING_PAGE_STATUSES: ReadonlySet<number> = new Set([404, 410])
 const PICTURE_PATH = /^\/staff-apps\/[0-9a-f-]{36}\/picture\/[0-9a-f-]{36}$/i
 
 export interface HiddenAppsDeps {
@@ -53,15 +56,21 @@ interface CatalogRow {
   picturePath: string | null
 }
 
-interface Loaded {
-  apps: HiddenApp[]
-  ttl: number
+interface CheckedApp {
+  app: HiddenApp
+  checked: boolean
 }
+
+type Loaded =
+  | { kind: 'listed'; apps: HiddenApp[]; checked: boolean }
+  | { kind: 'refused' }
+  | { kind: 'unavailable' }
 
 interface CacheEntry {
   owner: string
   expiresAt: number
   apps: HiddenApp[]
+  stale: boolean
 }
 
 const defaultDeps: HiddenAppsDeps = {
@@ -74,7 +83,11 @@ const defaultDeps: HiddenAppsDeps = {
 }
 
 let cache: CacheEntry | null = null
-let inFlight: { owner: string; generation: number; request: Promise<HiddenApp[]> } | null = null
+let inFlight: {
+  owner: string
+  generation: number
+  request: Promise<CacheEntry | null>
+} | null = null
 let generation = 0
 
 type JsonRecord = Record<string, unknown>
@@ -147,14 +160,18 @@ function authorized(token: string): RequestInit {
   }
 }
 
-async function readCatalogRows(token: string, deps: HiddenAppsDeps): Promise<unknown[] | null> {
+async function readCatalogRows(
+  token: string,
+  deps: HiddenAppsDeps
+): Promise<unknown[] | 'refused' | 'unavailable'> {
   const rows: unknown[] = []
   let cursor: string | null = null
   for (let page = 0; page < MAX_PAGES; page++) {
     const response = await deps.fetch(staffAppsUrl(cursor), authorized(token))
-    if (!response.ok) return null
+    if (REFUSED_STATUSES.has(response.status)) return 'refused'
+    if (!response.ok) return 'unavailable'
     const body = asRecord(await response.json().catch(() => null))
-    if (!body || !Array.isArray(body.items)) return null
+    if (!body || !Array.isArray(body.items)) return 'unavailable'
     rows.push(...(body.items as unknown[]))
     cursor =
       body.has_more === true && typeof body.next_cursor === 'string' ? body.next_cursor : null
@@ -163,17 +180,28 @@ async function readCatalogRows(token: string, deps: HiddenAppsDeps): Promise<unk
   return rows
 }
 
-async function pageExists(pageUrl: string, deps: HiddenAppsDeps): Promise<boolean> {
+function isRedirect(response: Response): boolean {
+  return response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)
+}
+
+async function checkPage(pageUrl: string, deps: HiddenAppsDeps): Promise<HiddenAppPage> {
   try {
     const response = await deps.fetch(pageUrl, {
       method: 'HEAD',
       redirect: 'manual',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     })
-    return response.status === 200
+    if (response.status === 200) return 'live'
+    if (MISSING_PAGE_STATUSES.has(response.status) || isRedirect(response)) return 'missing'
+    return 'unchecked'
   } catch {
-    return false
+    return 'unchecked'
   }
+}
+
+function pageKnownBefore(address: string, previous: HiddenApp | undefined): HiddenAppPage {
+  if (previous?.card.page === 'live') return previous.pageUrl === address ? 'live' : 'unchecked'
+  return previous?.card.page ?? 'unchecked'
 }
 
 async function readCapped(response: Response): Promise<Uint8Array | null> {
@@ -233,52 +261,89 @@ async function hiddenAppOf(
   row: CatalogRow,
   token: string,
   location: AppsLocation,
+  previous: HiddenApp | undefined,
   deps: HiddenAppsDeps
-): Promise<HiddenApp> {
+): Promise<CheckedApp> {
   const address = hiddenPageUrlOf(row.slug, location)
-  const [hasPage, still] = await Promise.all([
-    address ? pageExists(address, deps) : Promise.resolve(false),
+  const [checkedPage, still] = await Promise.all([
+    address ? checkPage(address, deps) : Promise.resolve<HiddenAppPage>('missing'),
     row.picturePath ? stillOf(row.picturePath, token, deps) : Promise.resolve(null)
   ])
-  const pageUrl = hasPage ? address : null
+  const checked = checkedPage !== 'unchecked'
+  const page = checked || !address ? checkedPage : pageKnownBefore(address, previous)
   return {
-    pageUrl,
-    card: {
-      id: row.slug,
-      title: row.title,
-      description: row.description,
-      covers: still ? [{ url: still, stillUrl: still }] : [],
-      reasons: row.reasons,
-      hasPage: pageUrl !== null
+    checked,
+    app: {
+      pageUrl: page === 'live' ? address : null,
+      card: {
+        id: row.slug,
+        title: row.title,
+        description: row.description,
+        covers: still ? [{ url: still, stillUrl: still }] : [],
+        reasons: row.reasons,
+        page
+      }
     }
   }
+}
+
+function previousAppsOf(owner: string): Map<string, HiddenApp> {
+  const apps = cache?.owner === owner ? cache.apps : []
+  return new Map(apps.map((app) => [app.card.id, app]))
 }
 
 async function loadFor(owner: string, deps: HiddenAppsDeps): Promise<Loaded | null> {
   if (!isStaffAccount(await deps.signedInAccount())) return null
   const token = await deps.accessToken()
   if (!token || deps.cloudIdentity() !== owner) return null
-  const refused: Loaded = { apps: [], ttl: REFUSED_TTL_MS }
   try {
     const entries = await readCatalogRows(token, deps)
-    if (!entries) return refused
+    if (typeof entries === 'string') return { kind: entries }
     const rows = hiddenRows(entries, await deps.publishedAppIds())
     const location = currentAppsLocation()
-    const apps = await inTurns(rows, (row) => hiddenAppOf(row, token, location, deps))
-    return { apps, ttl: CACHE_TTL_MS }
+    const previous = previousAppsOf(owner)
+    const checkedApps = await inTurns(rows, (row) =>
+      hiddenAppOf(row, token, location, previous.get(row.slug), deps)
+    )
+    return {
+      kind: 'listed',
+      apps: checkedApps.map(({ app }) => app),
+      checked: checkedApps.every(({ checked }) => checked)
+    }
   } catch {
-    return refused
+    return { kind: 'unavailable' }
   }
 }
 
-function startLoading(owner: string, deps: HiddenAppsDeps): Promise<HiddenApp[]> {
+function cacheAfter(owner: string, loaded: Loaded, now: number): CacheEntry {
+  switch (loaded.kind) {
+    case 'listed':
+      return {
+        owner,
+        expiresAt: now + (loaded.checked ? CACHE_TTL_MS : RETRY_TTL_MS),
+        apps: loaded.apps,
+        stale: !loaded.checked
+      }
+    case 'refused':
+      return { owner, expiresAt: now + REFUSED_TTL_MS, apps: [], stale: false }
+    case 'unavailable':
+      return {
+        owner,
+        expiresAt: now + RETRY_TTL_MS,
+        apps: cache?.owner === owner ? cache.apps : [],
+        stale: true
+      }
+  }
+}
+
+function startLoading(owner: string, deps: HiddenAppsDeps): Promise<CacheEntry | null> {
   const startedIn = generation
   const request = loadFor(owner, deps)
     .then((loaded) => {
       const current = startedIn === generation && deps.cloudIdentity() === owner
-      if (!loaded || !current) return []
-      cache = { owner, expiresAt: deps.now() + loaded.ttl, apps: loaded.apps }
-      return loaded.apps
+      if (!loaded || !current) return null
+      cache = cacheAfter(owner, loaded, deps.now())
+      return cache
     })
     .finally(() => {
       if (inFlight?.request === request) inFlight = null
@@ -287,8 +352,10 @@ function startLoading(owner: string, deps: HiddenAppsDeps): Promise<HiddenApp[]>
   return request
 }
 
-function listOf(apps: readonly HiddenApp[]): HiddenAppsList {
-  return apps.length > 0 ? { apps: apps.map((app) => app.card) } : NO_HIDDEN_APPS
+function listOf(entry: CacheEntry | null): HiddenAppsList {
+  if (!entry || (entry.apps.length === 0 && !entry.stale)) return NO_HIDDEN_APPS
+  const apps = entry.apps.map((app) => app.card)
+  return entry.stale ? { apps, stale: true } : { apps }
 }
 
 export async function listHiddenApps(deps: HiddenAppsDeps = defaultDeps): Promise<HiddenAppsList> {
@@ -298,13 +365,13 @@ export async function listHiddenApps(deps: HiddenAppsDeps = defaultDeps): Promis
     return NO_HIDDEN_APPS
   }
   if (cache && cache.owner !== owner) forgetHiddenApps()
-  if (cache && deps.now() < cache.expiresAt) return listOf(cache.apps)
+  if (cache && deps.now() < cache.expiresAt) return listOf(cache)
   const pending =
     inFlight?.owner === owner && inFlight.generation === generation
       ? inFlight.request
       : startLoading(owner, deps)
-  const apps = await pending
-  return deps.cloudIdentity() === owner ? listOf(apps) : NO_HIDDEN_APPS
+  const entry = await pending
+  return deps.cloudIdentity() === owner ? listOf(entry) : NO_HIDDEN_APPS
 }
 
 function currentHiddenApp(id: string, deps: HiddenAppsDeps): HiddenApp | null {

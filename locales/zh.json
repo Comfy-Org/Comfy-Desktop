@@ -2291,6 +2291,7 @@
     "search": "搜索开发中的应用",
     "noMatchesHint": "换个词试试。",
     "noPage": "comfy.org 上还没有页面",
+    "pageUnchecked": "无法检查 comfy.org 上的页面",
     "reason": {
       "off": "已关闭",
       "draft": "草稿",

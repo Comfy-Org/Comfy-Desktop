@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { useStaffApps } from './useStaffApps'
@@ -11,10 +11,10 @@ const WORLDS: HiddenAppCard = {
   description: '',
   covers: [],
   reasons: ['hub_only'],
-  hasPage: true
+  page: 'live'
 }
 
-const listHiddenApps = vi.fn<() => Promise<HiddenAppsList>>()
+const listHiddenApps = vi.fn<() => Promise<HiddenAppsList | undefined>>()
 let listChanged: () => void = () => {}
 const stopListening = vi.fn()
 
@@ -27,6 +27,10 @@ beforeEach(() => {
       return stopListening
     }
   }
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 async function mountStaffApps() {
@@ -91,5 +95,113 @@ describe('useStaffApps', () => {
     await flushPromises()
 
     expect(staff.shown.value).toBe(false)
+  })
+
+  it.each([
+    ['no list', undefined],
+    ['a list with no apps array', { apps: 'none' } as unknown as HiddenAppsList],
+    ['nothing at all', null as unknown as HiddenAppsList]
+  ])(
+    'shows nothing, and leaves no failure behind, when Desktop answers %s',
+    async (_label, answer) => {
+      listHiddenApps.mockResolvedValue(answer)
+      const { staff } = await mountStaffApps()
+
+      expect(staff.shown.value).toBe(false)
+    }
+  )
+
+  it('shows nothing when the bridge has no list to ask', async () => {
+    ;(window as unknown as { api: Record<string, unknown> }).api.listHiddenApps = undefined
+    const { staff } = await mountStaffApps()
+
+    expect(staff.shown.value).toBe(false)
+  })
+})
+
+describe('useStaffApps after a failed list', () => {
+  it('asks again after 5, 10 and 20 seconds, and stops once the list answers', async () => {
+    vi.useFakeTimers()
+    listHiddenApps.mockRejectedValue(new Error('timed out'))
+    const { staff } = await mountStaffApps()
+    expect(listHiddenApps).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(listHiddenApps).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(listHiddenApps).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(listHiddenApps).toHaveBeenCalledTimes(3)
+
+    listHiddenApps.mockResolvedValue({ apps: [WORLDS] })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(listHiddenApps).toHaveBeenCalledTimes(4)
+    expect(staff.shown.value).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    expect(listHiddenApps).toHaveBeenCalledTimes(4)
+  })
+
+  it('asks again when Desktop says its list is out of date, keeping the apps it has', async () => {
+    vi.useFakeTimers()
+    listHiddenApps.mockResolvedValue({ apps: [WORLDS], stale: true })
+    const { staff } = await mountStaffApps()
+    expect(staff.shown.value).toBe(true)
+
+    listHiddenApps.mockRejectedValue(new Error('timed out'))
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(listHiddenApps).toHaveBeenCalledTimes(2)
+    expect(staff.apps.value.map((app) => app.id)).toEqual(['explore-worlds'])
+  })
+
+  it('never waits more than five minutes between asks', async () => {
+    vi.useFakeTimers()
+    listHiddenApps.mockResolvedValue({ apps: [], stale: true })
+    await mountStaffApps()
+
+    await vi.advanceTimersByTimeAsync(5_000 + 10_000 + 20_000 + 40_000 + 80_000 + 160_000)
+    expect(listHiddenApps).toHaveBeenCalledTimes(7)
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(listHiddenApps).toHaveBeenCalledTimes(8)
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(listHiddenApps).toHaveBeenCalledTimes(9)
+  })
+
+  it('asks again at once when the window gets focus while it is waiting to retry', async () => {
+    vi.useFakeTimers()
+    listHiddenApps.mockRejectedValue(new Error('timed out'))
+    const { staff } = await mountStaffApps()
+
+    listHiddenApps.mockResolvedValue({ apps: [WORLDS] })
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(listHiddenApps).toHaveBeenCalledTimes(2)
+    expect(staff.shown.value).toBe(true)
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    expect(listHiddenApps).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not ask again on focus once the list has answered', async () => {
+    listHiddenApps.mockResolvedValue({ apps: [WORLDS] })
+    await mountStaffApps()
+
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+
+    expect(listHiddenApps).toHaveBeenCalledOnce()
+  })
+
+  it('stops asking once unmounted', async () => {
+    vi.useFakeTimers()
+    listHiddenApps.mockRejectedValue(new Error('timed out'))
+    const { wrapper } = await mountStaffApps()
+
+    wrapper.unmount()
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+
+    expect(listHiddenApps).toHaveBeenCalledOnce()
   })
 })

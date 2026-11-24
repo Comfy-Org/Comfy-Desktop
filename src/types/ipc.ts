@@ -176,13 +176,16 @@ export interface AppCard {
 
 export type HiddenAppReason = 'off' | 'draft' | 'hub_only' | 'unpublished'
 
+export type HiddenAppPage = 'live' | 'missing' | 'unchecked'
+
 export interface HiddenAppCard extends AppCard {
   reasons: HiddenAppReason[]
-  hasPage: boolean
+  page: HiddenAppPage
 }
 
 export interface HiddenAppsList {
   apps: HiddenAppCard[]
+  stale?: true
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'

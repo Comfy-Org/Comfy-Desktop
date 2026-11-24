@@ -4,6 +4,7 @@ export type {
   AppBadgeWords,
   AppCard,
   HiddenAppCard,
+  HiddenAppPage,
   HiddenAppReason,
   HiddenAppsList,
   DraftAppRequest,

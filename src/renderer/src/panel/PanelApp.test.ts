@@ -1793,7 +1793,7 @@ describe('PanelApp', () => {
     description: 'Change the light in a photo.',
     covers: [],
     reasons: ['off' as const],
-    hasPage: true
+    page: 'live' as const
   }
 
   function tellPanelTheAppsListChanged(): void {
@@ -1898,7 +1898,7 @@ describe('PanelApp', () => {
           description: '',
           covers: [],
           reasons: ['off'],
-          hasPage: true
+          page: 'live' as const
         }
       ]
     })
@@ -1924,7 +1924,7 @@ describe('PanelApp', () => {
           description: '',
           covers: [],
           reasons: ['draft'],
-          hasPage: false
+          page: 'missing' as const
         }
       ]
     })

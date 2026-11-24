@@ -901,7 +901,7 @@ describe('AppsView', () => {
           description: '',
           covers: [],
           reasons: ['hub_only'],
-          hasPage: true
+          page: 'live'
         }
       ]
     })

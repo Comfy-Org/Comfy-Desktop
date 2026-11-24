@@ -2291,6 +2291,7 @@
     "search": "Search development apps",
     "noMatchesHint": "Try another word.",
     "noPage": "No page on comfy.org yet",
+    "pageUnchecked": "Couldn't check the page on comfy.org",
     "reason": {
       "off": "Off",
       "draft": "Draft",

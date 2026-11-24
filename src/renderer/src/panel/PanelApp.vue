@@ -326,7 +326,7 @@ async function runningAppCard(appId: string): Promise<AppCard | undefined> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
   return (
     apps.find((listed) => listed.id === appId) ??
-    staffApps.apps.value.find((staffApp) => staffApp.hasPage && staffApp.id === appId)
+    staffApps.apps.value.find((staffApp) => staffApp.page === 'live' && staffApp.id === appId)
   )
 }
 

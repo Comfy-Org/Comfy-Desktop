@@ -308,7 +308,7 @@ export const HIDDEN_APP_CARDS: HiddenAppCard[] = [
     description: 'Walk through a world made from one picture.',
     covers: [],
     reasons: ['hub_only'],
-    hasPage: true
+    page: 'live'
   },
   {
     id: 'style-transfer',
@@ -316,7 +316,7 @@ export const HIDDEN_APP_CARDS: HiddenAppCard[] = [
     description: 'Paint a picture in the style of another.',
     covers: [],
     reasons: ['off', 'draft'],
-    hasPage: false
+    page: 'missing'
   },
   {
     id: 'relight',
@@ -324,7 +324,7 @@ export const HIDDEN_APP_CARDS: HiddenAppCard[] = [
     description: 'Change the light in a photo after it was taken.',
     covers: [],
     reasons: ['unpublished'],
-    hasPage: false
+    page: 'missing'
   }
 ]
 

@@ -14,7 +14,7 @@ const WORLDS: HiddenAppCard = {
   description: 'Walk through a world made from one picture.',
   covers: [{ url: COVER, stillUrl: COVER }],
   reasons: ['hub_only'],
-  hasPage: true
+  page: 'live'
 }
 
 const RELIGHT: HiddenAppCard = {
@@ -23,7 +23,16 @@ const RELIGHT: HiddenAppCard = {
   description: 'Change the light in a photo.',
   covers: [],
   reasons: ['off', 'draft', 'unpublished'],
-  hasPage: false
+  page: 'missing'
+}
+
+const STYLE: HiddenAppCard = {
+  id: 'style-transfer',
+  title: 'Style Transfer',
+  description: '',
+  covers: [],
+  reasons: ['draft'],
+  page: 'unchecked'
 }
 
 const CARDS = '[data-testid="staff-apps-grid"] [data-testid^="staff-app-card-"]'
@@ -74,6 +83,22 @@ describe('StaffAppsView', () => {
     expect(card.element.tagName).toBe('DIV')
     expect(card.get('[data-testid="app-card-note"]').text()).toBe('No page on comfy.org yet')
     expect(card.find('[data-testid="app-card-go"]').exists()).toBe(false)
+
+    await card.trigger('click')
+
+    expect(wrapper.emitted('open-app')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('shows an app whose page could not be checked as a card that does not open and says so', async () => {
+    const wrapper = mountPage([WORLDS, STYLE])
+
+    const card = wrapper.get('[data-testid="staff-app-card-style-transfer"]')
+    expect(card.element.tagName).toBe('DIV')
+    expect(card.get('[data-testid="app-card-note"]').text()).toBe(
+      "Couldn't check the page on comfy.org"
+    )
+    expect(card.text()).not.toContain('No page on comfy.org yet')
 
     await card.trigger('click')
 
