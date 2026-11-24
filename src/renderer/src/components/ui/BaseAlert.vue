@@ -6,7 +6,6 @@ import DesktopDialogSurface from './DesktopDialogSurface.vue'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import type { ModalDetailGroup } from '../../types/ipc'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
-import { MODAL_TITLE_CLASS } from '../../lib/modalTitle'
 
 interface Props {
   open: boolean
@@ -122,7 +121,7 @@ const linkClass =
       <X :size="18" />
     </Button>
     <header class="base-alert-header relative mb-4 max-[860px]:pr-8">
-      <h2 :id="TITLE_ID" class="base-alert-title m-0" :class="MODAL_TITLE_CLASS">
+      <h2 :id="TITLE_ID" class="base-alert-title m-0 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
     </header>

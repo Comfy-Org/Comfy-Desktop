@@ -5,7 +5,6 @@ import { FileText, RefreshCw } from '@lucide/vue'
 import BaseModal from '../../components/ui/BaseModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import RevealFolderButton from '../../components/RevealFolderButton.vue'
-import { MODAL_TITLE_CLASS } from '../../lib/modalTitle'
 
 export interface ExtraModelPathDir {
   type: string
@@ -50,7 +49,7 @@ const { t } = useI18n()
   >
     <template #header>
       <div class="empm-header flex min-w-0 items-center gap-2">
-        <h2 class="empm-title m-0 min-w-0 truncate" :class="MODAL_TITLE_CLASS">
+        <h2 class="empm-title m-0 min-w-0 truncate text-heading font-semibold">
           {{ t('comfyUISettings.extraModelPathsModalTitle') }}
         </h2>
         <Button

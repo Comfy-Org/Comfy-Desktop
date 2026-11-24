@@ -7,7 +7,6 @@ import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import { TID } from '../../../../shared/testIds'
 import type { ModalDetailGroup } from '../../types/ipc'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
-import { MODAL_TITLE_CLASS } from '../../lib/modalTitle'
 
 interface Props {
   open: boolean
@@ -108,7 +107,10 @@ watch(
     @close="cancel"
   >
     <template #header>
-      <h2 :id="TITLE_ID" class="base-prompt-title m-0 text-neutral-100" :class="MODAL_TITLE_CLASS">
+      <h2
+        :id="TITLE_ID"
+        class="base-prompt-title m-0 text-base leading-[1.3] font-semibold text-neutral-100"
+      >
         {{ title }}
       </h2>
     </template>

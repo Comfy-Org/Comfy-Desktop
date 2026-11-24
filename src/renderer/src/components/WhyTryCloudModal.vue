@@ -5,7 +5,6 @@ import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { Check, X } from '@lucide/vue'
 import heroUrl from '../assets/first-use/why-cloud-hero.svg'
-import { MODAL_TITLE_CLASS } from '../lib/modalTitle'
 
 const emit = defineEmits<{
   close: []
@@ -54,7 +53,7 @@ const benefits = computed<string[]>(() => {
           class="why-cloud-body-main flex flex-auto flex-col justify-center gap-[clamp(0.75rem,1.2vw,1.25rem)]"
         >
           <header class="why-cloud-header flex flex-wrap items-center gap-3">
-            <h2 class="why-cloud-title m-0 text-foreground" :class="MODAL_TITLE_CLASS">
+            <h2 class="why-cloud-title m-0 text-title font-semibold text-foreground">
               {{ $t('firstUse.whyCloud.title') }}
             </h2>
           </header>

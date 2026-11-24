@@ -6,7 +6,6 @@ import '@typeform/embed/build/css/widget.css'
 import Button from '@comfyorg/design-system/button/Button'
 import BaseModal from './ui/BaseModal.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { MODAL_TITLE_CLASS } from '../lib/modalTitle'
 
 const FEEDBACK_FORM_ID = 'VhOXmuaL'
 const AUTOCLOSE_MS = 2000
@@ -166,7 +165,7 @@ watch(
         role="alert"
         data-testid="feedback-failed"
       >
-        <h2 class="m-0 text-foreground" :class="MODAL_TITLE_CLASS">
+        <h2 class="m-0 text-heading font-semibold text-foreground">
           {{ t('feedback.failedTitle') }}
         </h2>
         <p class="m-0 max-w-90 text-ui text-muted-foreground">

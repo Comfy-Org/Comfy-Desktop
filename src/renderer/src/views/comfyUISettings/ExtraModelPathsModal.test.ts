@@ -2,7 +2,6 @@ import { afterEach, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
 import ExtraModelPathsModal from './ExtraModelPathsModal.vue'
-import { MODAL_TITLE_CLASS } from '../../lib/modalTitle'
 
 const wrappers: VueWrapper[] = []
 
@@ -10,7 +9,7 @@ afterEach(() => {
   while (wrappers.length) wrappers.pop()?.unmount()
 })
 
-it('titles the modal with the shared modal title class, 18px like every modal', async () => {
+it('titles the modal at the shared 16px heading size, like the other small modals', async () => {
   wrappers.push(
     mount(ExtraModelPathsModal, {
       attachTo: document.body,
@@ -20,8 +19,6 @@ it('titles the modal with the shared modal title class, 18px like every modal', 
   await flushPromises()
 
   const title = document.querySelector('.empm-title')
-  expect([...(title?.classList ?? [])]).toEqual(
-    expect.arrayContaining(MODAL_TITLE_CLASS.split(' '))
-  )
-  expect(MODAL_TITLE_CLASS).toContain('text-[18px]')
+  expect(title?.classList.contains('text-heading')).toBe(true)
+  expect([...(title?.classList ?? [])].some((name) => /^text-\[\d+px\]/.test(name))).toBe(false)
 })

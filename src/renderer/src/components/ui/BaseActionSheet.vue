@@ -2,7 +2,6 @@
 import { useId } from 'vue'
 import BaseModal from './BaseModal.vue'
 import Button from '@comfyorg/design-system/button/Button'
-import { MODAL_TITLE_CLASS } from '../../lib/modalTitle'
 
 export interface ActionSheetItem {
   value: string
@@ -65,8 +64,7 @@ function onItemClick(value: string): void {
     <template #header>
       <h2
         :id="TITLE_ID"
-        class="base-action-sheet-title m-0 text-neutral-100"
-        :class="MODAL_TITLE_CLASS"
+        class="base-action-sheet-title m-0 text-base leading-[1.3] font-semibold text-neutral-100"
       >
         {{ title }}
       </h2>
