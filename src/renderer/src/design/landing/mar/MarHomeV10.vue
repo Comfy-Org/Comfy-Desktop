@@ -32,30 +32,11 @@ import CreateMenu from './CreateMenu.vue'
 import WorkflowCard from './WorkflowCard.vue'
 import { active as parts } from './marParts'
 import { allWorkflows } from '../gallery'
-import {
-  go,
-  hostActions,
-  instanceById,
-  instances,
-  openDetail,
-  proto,
-  recentInstances
-} from '../useProto'
+import { go, instanceById, instances, openDetail, proto, recentInstances } from '../useProto'
 import { can } from '../milestones'
 import { shownName } from '../account'
-import { TEMPLATES, thumb, type ProtoInstance } from '../mock'
+import { TEMPLATES, thumb } from '../mock'
 import { mock } from './assets/mock'
-
-/** A recent workflow opens in ComfyUI's graph, in this window, at any
- *  milestone: each one is a graph of nodes, so that's where it lands. */
-function openRecent(env: ProtoInstance, workflow: string): void {
-  if (can.value.oneWindow) return hostActions.launch(env, workflow)
-  proto.detail = null
-  proto.activeInstanceId = env.id
-  const id = `tab-${Date.now()}`
-  proto.tabs = [{ id, title: env.name, instanceId: env.id, workflow }]
-  proto.activeTab = id
-}
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -129,23 +110,21 @@ const recent = computed<Recent[]>(() =>
         meta: env?.name ?? '',
         when: w.modified,
         age: w.age,
-        open: () => env && openRecent(env, w.name)
+        open: () => openDetail('workflow', w.id)
       }
     }),
     // With the own workflows (Learn & Recents), the apps used lately mix in.
     ...(can.value.workflows && !firstTime.value
-      ? USED_APPS.map(
-          ({ x, age, when }): Recent => ({
-            id: `app-${x.app}`,
-            src: x.after,
-            title: x.label,
-            meta: 'App',
-            when,
-            age,
-            app: true,
-            open: () => runExample(x)
-          })
-        )
+      ? USED_APPS.map(({ x, age, when }): Recent => ({
+          id: `app-${x.app}`,
+          src: x.after,
+          title: x.label,
+          meta: 'App',
+          when,
+          age,
+          app: true,
+          open: () => runExample(x)
+        }))
       : [])
   ]
     .sort((a, b) => a.age - b.age)

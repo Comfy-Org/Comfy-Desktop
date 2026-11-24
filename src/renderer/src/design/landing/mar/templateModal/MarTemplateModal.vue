@@ -27,11 +27,14 @@ import {
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
-import { hostActions, instances, proto, toast } from '../../useProto'
+import { hostActions, instanceById, instances, proto, toast } from '../../useProto'
 import { isFavorite, toggleFavorite } from '../favorites'
+import { workflows } from '../pages/workflowsStore'
+import { thumb } from '../../mock'
 import { ComfyModel } from '../icons/comfyIcons'
 import {
   MACHINE,
+  SAVED_MISSING_MODELS,
   aboutFor,
   fmtGb,
   hasPack,
@@ -66,11 +69,29 @@ import './templateModal.css'
  * others behind one quiet picker) and what it needs. At the bottom, one
  * line and one action: what happens, or what's in the way and the way
  * through it; More beside it.
- * Templates only; saved workflows keep Pablo's DetailSheet.
+ * Templates and saved workflows alike: a saved workflow wears the same
+ * view, opens on the build it was saved in, and says what that build
+ * still needs before it runs.
  */
-const template = computed(() =>
-  proto.detail?.kind === 'template' ? tplById(proto.detail.id) : undefined
-)
+const saved = computed(() => {
+  const d = proto.detail
+  if (d?.kind !== 'workflow') return undefined
+  return workflows.items.find((w) => w.id === d.id || w.name === d.id)
+})
+const savedIn = computed(() => (saved.value?.envId ? instanceById(saved.value.envId) : undefined))
+const template = computed(() => {
+  if (proto.detail?.kind === 'template') return tplById(proto.detail.id)
+  const w = saved.value
+  if (!w) return undefined
+  const base = startedFrom(w.thumbId)
+  return base ? { ...base, title: w.name } : undefined
+})
+/** The example a saved workflow started from: its picture's id names it
+ *  (template~workflow), else the default example. */
+function startedFrom(thumbId: string): ReturnType<typeof tplById> {
+  return tplById(thumbId.split('~')[0] ?? '') ?? tplById('image_z_image_turbo')
+}
+const basedOn = computed(() => (saved.value ? startedFrom(saved.value.thumbId)?.title : undefined))
 const open = computed({
   get: () => Boolean(template.value),
   set: (v) => {
@@ -78,7 +99,11 @@ const open = computed({
   }
 })
 
-const media = computed(() => (template.value ? mediaFor(template.value) : undefined))
+const media = computed(() => {
+  if (!template.value) return undefined
+  const own = saved.value?.thumbId ? thumb(saved.value.thumbId) : undefined
+  return own ? { hero: own, output: own } : mediaFor(template.value)
+})
 const info = computed(() => (template.value ? infoFor(template.value) : undefined))
 const needs = computed(() => (template.value ? needsFor(template.value) : []))
 const total = computed(() => (template.value ? totalGb(template.value) : 0))
@@ -89,7 +114,9 @@ const graph = computed(() =>
 const targets = computed<Target[]>(() => {
   const t = template.value
   if (!t) return []
-  const list = instances.value.map((i) => targetFor(t, i, proto.signedIn))
+  const gone = (i: (typeof instances.value)[number]): boolean =>
+    Boolean(saved.value && i.id === savedIn.value?.id && SAVED_MISSING_MODELS.has(saved.value.name))
+  const list = instances.value.map((i) => targetFor(t, i, proto.signedIn, gone(i)))
   const fresh = !instances.value.some((i) => i.kind === 'local' && !i.deployment)
   const add = fresh ? newBuildTarget(t) : undefined
   return rankTargets(add ? [...list, add] : list)
@@ -119,6 +146,7 @@ const shown = computed(() => selected.value ?? targets.value[0])
 /** Why the default is the default, in one short line: the first sentence
  *  of the reason. Only while the default is the pick. */
 const fit = computed(() =>
+  !saved.value &&
   reason.value &&
   shown.value?.inst.id === best.value?.inst.id &&
   shown.value?.state !== 'running' &&
@@ -147,7 +175,11 @@ function pickBuild(x: Target): void {
   buildMenu.value = false
 }
 const favorited = computed(() =>
-  template.value ? isFavorite(template.value.id, 'template') : false
+  saved.value
+    ? Boolean(saved.value.fav)
+    : template.value
+      ? isFavorite(template.value.id, 'template')
+      : false
 )
 const selected = computed(() => targets.value.find((x) => x.inst.id === selectedId.value))
 const view = ref<'result' | 'graph'>('result')
@@ -158,7 +190,8 @@ let timer: ReturnType<typeof setInterval> | undefined
 watch(
   () => proto.detail,
   () => {
-    selectedId.value = (best.value ?? targets.value.find((x) => !x.disabled))?.inst.id
+    const home = targets.value.find((x) => x.inst.id === savedIn.value?.id && !x.disabled)
+    selectedId.value = (home ?? best.value ?? targets.value.find((x) => !x.disabled))?.inst.id
     view.value = 'result'
     buildMenu.value = false
     ratio.value = 16 / 9
@@ -261,7 +294,8 @@ function confirm(): void {
 }
 
 function favorite(): void {
-  if (template.value) toggleFavorite(template.value.id, 'template')
+  if (saved.value) workflows.star(saved.value.id)
+  else if (template.value) toggleFavorite(template.value.id, 'template')
 }
 function share(): void {
   void navigator.clipboard
@@ -431,7 +465,12 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
             <header class="mad-head">
               <div class="mad-head-text">
                 <DialogTitle class="mad-name">{{ template.title }}</DialogTitle>
-                <DialogDescription class="mar-tpl-by">
+                <DialogDescription v-if="saved" class="mar-tpl-by">
+                  <LocationIcon :kind="saved.source === 'cloud' ? 'cloud' : 'local'" :size="12" />{{
+                    savedIn?.name ?? (saved.source === 'cloud' ? 'Comfy Cloud' : 'This computer')
+                  }}<i />Edited {{ saved.modified }}
+                </DialogDescription>
+                <DialogDescription v-else class="mar-tpl-by">
                   <span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>ComfyUI<i />{{
                     info.useCase
                   }}
@@ -456,7 +495,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   />
                 </button>
               </Tooltip>
-              <Tooltip content="Copy link">
+              <Tooltip v-if="!saved" content="Copy link">
                 <button
                   type="button"
                   class="mad-icon mar-tpl-head-btn"
@@ -469,7 +508,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
             </header>
 
             <!-- What it does, short: the first paragraph. -->
-            <section class="mad-sec">
+            <section v-if="!saved" class="mad-sec">
               <!-- Four lines at most; More opens the rest in place. -->
               <div class="mar-tpl-about">
                 <p ref="aboutEl" :class="!aboutOpen && 'is-clamped'">
@@ -647,7 +686,28 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               </details>
             </section>
 
-            <section class="mad-sec">
+            <section v-if="saved" class="mad-sec">
+              <h3 class="mad-label">Details</h3>
+              <dl class="mad-rows">
+                <div>
+                  <dt>Saved in</dt>
+                  <dd>{{ savedIn?.name ?? 'This computer' }}</dd>
+                </div>
+                <div>
+                  <dt>Edited</dt>
+                  <dd>{{ saved.modified }}</dd>
+                </div>
+                <div v-if="saved.project">
+                  <dt>Project</dt>
+                  <dd>{{ saved.project }}</dd>
+                </div>
+                <div v-if="basedOn">
+                  <dt>Started from</dt>
+                  <dd :title="basedOn">{{ basedOn }}</dd>
+                </div>
+              </dl>
+            </section>
+            <section v-else class="mad-sec">
               <h3 class="mad-label">Details</h3>
               <dl class="mad-rows">
                 <div>

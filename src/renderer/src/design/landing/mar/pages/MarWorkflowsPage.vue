@@ -15,7 +15,7 @@ import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import { ComfyWorkflow } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
-import { go, hostActions, instanceById, toast } from '../../useProto'
+import { go, openDetail, toast } from '../../useProto'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
 import MarItem from './MarItem.vue'
@@ -115,9 +115,7 @@ const lib = useLibrary(workflows, shown)
 const projects = computed(() => can.value.projects)
 
 function open(w: MarWorkflow): void {
-  const env = w.envId ? instanceById(w.envId) : undefined
-  if (env) hostActions.launch(env, w.name)
-  else toast(`Opening ${w.name}`)
+  openDetail('workflow', w.id)
 }
 function newWorkflow(): void {
   const w: MarWorkflow = {

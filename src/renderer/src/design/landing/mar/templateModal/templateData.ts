@@ -187,6 +187,10 @@ const INSTALLED: Record<string, string[]> = {
   'team-build': ['templates_graphic_design_recomposer']
 }
 
+/** Saved workflows whose build lost their models since they were saved
+ *  (moved or deleted files): the modal says so before it opens. */
+export const SAVED_MISSING_MODELS = new Set(['krea-street'])
+
 /** The ComfyUI each workflow needs, when newer than every build's. */
 const MIN_COMFY: Record<string, string> = {
   [ANGLES_ID]: 'v0.38.0'
@@ -268,7 +272,12 @@ export interface Target {
 
 const credits = (t: Template): number => Math.max(4, Math.round(totalGb(t) * 0.7))
 
-export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): Target {
+export function targetFor(
+  t: Template,
+  inst: ProtoInstance,
+  signedIn: boolean,
+  modelsGone = false
+): Target {
   const base = { inst, disabled: false }
   const gb = totalGb(t)
   if (inst.kind === 'cloud') {
@@ -335,7 +344,7 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
     }
   const vram = t.vram ? parseInt(t.vram) : 0
   // Nothing to download (built-in nodes only): every build has it.
-  const has = INSTALLED[inst.id]?.includes(t.id) || !needsFor(t).length
+  const has = (!modelsGone && INSTALLED[inst.id]?.includes(t.id)) || !needsFor(t).length
   if (vram > MACHINE.memGb)
     return {
       ...base,
@@ -395,7 +404,7 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
     state: 'download',
     status:
       inst.state === 'running'
-        ? `Running · ${missing} models missing`
+        ? `Running · ${missing} model${missing === 1 ? '' : 's'} missing`
         : `${missing} model${missing === 1 ? '' : 's'} missing`,
     cost: fmtGb(gb),
     action: 'Download and start',

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Code, Palette } from 'lucide-vue-next'
-import DetailSheet from '../parts/DetailSheet.vue'
 import MarTemplateModal from '../mar/templateModal/MarTemplateModal.vue'
 import MarDeployModal from '../mar/deploy/MarDeployModal.vue'
 import LaunchOverlay from '../parts/LaunchOverlay.vue'
@@ -114,7 +113,6 @@ const MODES = computed(() => [
     </main>
 
     <MarTemplateModal />
-    <DetailSheet v-if="proto.detail?.kind !== 'template'" />
     <LaunchOverlay />
     <LoginPrompt />
     <MarDeployModal />
