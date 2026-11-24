@@ -80,7 +80,43 @@ function exploreSeed(machine: PreviewMachine): BridgeSeed {
 
 const LTX_WORKFLOW_ID = 'ae574655-5f6e-44c4-bd2a-cb8aa4dbbbc9'
 
-async function openExploreWorkflows({ click, see }: PreviewStage): Promise<void> {
+const DOWNLOAD_STEPS = 12
+const DOWNLOAD_STEP_MS = 300
+const OPEN_MS = 800
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function launchLikeDesktop(bridge: FakeBridge): void {
+  const needs = structuredClone(WORKFLOW_NEEDS)
+  bridge.reply({
+    catalogWorkflowNeeds: async () => structuredClone(needs),
+    launchCatalogWorkflow: async (id, target, _workspaceId, options) => {
+      if (target.where === 'local' && options?.downloadMissing) {
+        const missing = new Set(needs.missingByBuild[target.build] ?? [])
+        const totalBytes = needs.models
+          .filter((model) => missing.has(model.filename))
+          .reduce((total, model) => total + (model.sizeBytes ?? 0), 0)
+        for (let step = 1; step <= DOWNLOAD_STEPS; step += 1) {
+          await pause(DOWNLOAD_STEP_MS)
+          bridge.emit('onCatalogWorkflowDownload', {
+            id,
+            build: target.build,
+            receivedBytes: Math.round((totalBytes * step) / DOWNLOAD_STEPS),
+            totalBytes
+          })
+        }
+        needs.missingByBuild[target.build] = []
+      }
+      await pause(OPEN_MS)
+      return { opened: true }
+    }
+  })
+}
+
+async function openExploreWorkflows({ bridge, click, see }: PreviewStage): Promise<void> {
+  launchLikeDesktop(bridge)
   await click('[data-testid="app-sidebar-apps"]')
   await click('[data-testid="explore-workflows-tab"]')
   await see('[data-testid="workflows-grid"]')
