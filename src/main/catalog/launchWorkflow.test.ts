@@ -70,11 +70,26 @@ const GRAPH = {
     {
       id: 1,
       type: 'CheckpointLoaderSimple',
+      widgets_values: [MODEL.filename],
       properties: {
         models: [{ name: MODEL.filename, url: MODEL_URL, directory: MODEL.directory }]
       }
     },
-    { id: 2, type: 'SaveImage' }
+    {
+      id: 2,
+      type: 'UNETLoader',
+      widgets_values: ['z_image_turbo_bf16.safetensors', 'default'],
+      properties: {
+        models: [
+          {
+            name: 'z_image_bf16.safetensors',
+            url: 'https://huggingface.co/Comfy-Org/z_image/resolve/main/z_image_bf16.safetensors',
+            directory: 'diffusion_models'
+          }
+        ]
+      }
+    },
+    { id: 3, type: 'SaveImage' }
   ],
   links: []
 }
@@ -292,6 +307,10 @@ describe('launching workflows from the published catalog', () => {
     ).toEqual({ opened: true })
 
     expect(await buildIsMissing()).toEqual([])
+    expect(
+      mocks.transfer.mock.calls.map(([job]) => (job as TransferRequest).filename),
+      'a download the loader does not select is never fetched'
+    ).toEqual([MODEL.filename])
     expect(sent.at(-1)).toEqual({
       id: 'catalog-id',
       build: 'inst-local',

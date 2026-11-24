@@ -5,7 +5,7 @@ import { PERSONAL_WORKSPACE_ID } from '../../shared/workspaces'
 import { catalogBuildRefusal, type CatalogBuildRules } from '../apps/catalogBuild'
 import { usableLocalBuilds } from '../apps/localBuild'
 import { openCatalogInComfy } from '../apps/openInComfy'
-import { isBuildId, workflowName } from '../apps/openRequest'
+import { isBuildId, workflowNameFromTitle } from '../apps/openRequest'
 import { getCloudSession } from '../devplatform/session'
 import * as installations from '../installations'
 import { t } from '../lib/i18n'
@@ -77,7 +77,7 @@ async function downloadMissingModels(
 ): Promise<DownloadOutcome> {
   const installation = await installations.get(build)
   if (!installation) return { failure: t('workflowLaunch.openFailed') }
-  const missing = await missingModelFiles(build, await catalogWorkflowModels(graph))
+  const missing = await missingModelFiles(build, catalogWorkflowModels(graph))
   if (missing.length === 0) return { failure: null }
   const taskId = downloadTaskId(id, build)
   startTemplateDownloadTask(
@@ -85,7 +85,7 @@ async function downloadMissingModels(
     installation,
     id,
     await knownDownloadBytes(missing),
-    { sendOutput: () => {} },
+    { sendOutput: () => {}, models: missing },
     graph
   )
   return new Promise((resolve) => {
@@ -151,7 +151,7 @@ export async function launchCatalogWorkflow(
     minComfyUIVersion: workflow.card.minComfyUIVersion,
     isCurrent: () => !page.isDestroyed() && subject === session.currentSubject()
   }
-  const name = workflowName(workflow.card.title, 'Catalog workflow')
+  const name = workflowNameFromTitle(workflow.card.title, 'Catalog workflow')
   try {
     if (
       (target.where === 'cloud' && !(await canOpenCloudWorkspace(workspaceId, session))) ||

@@ -388,6 +388,31 @@ describe('the dedicated workflow catalog', () => {
   })
 })
 
+it('takes the catalog’s own word on whether a workflow runs on Comfy Cloud', async () => {
+  const graphMedia = {
+    website_media: { '$.workflow_files[0].file': '/catalog-media/moss-image/v1' },
+    website_media_types: { '$.workflow_files[0].file': 'application/json' }
+  }
+  mockedFetchJSON.mockResolvedValue({
+    items: [
+      catalogItem({ uid: 'moss-image', data: { ...graphMedia, works_on_cloud: true } }),
+      catalogItem({
+        uid: 'local-only',
+        data: {
+          ...graphMedia,
+          works_on_cloud: false,
+          cloud_share_url: 'https://cloud.comfy.org/?share=1785e38f230a'
+        }
+      })
+    ]
+  })
+
+  expect(await listCatalogWorkflows('en')).toMatchObject([
+    { id: 'moss-image', canOpenLocal: true, canOpenCloud: true },
+    { id: 'local-only', canOpenLocal: true, canOpenCloud: false }
+  ])
+})
+
 it('uses a legacy workflow-version graph and its Cloud share as launch metadata', async () => {
   mockedFetchJSON.mockResolvedValue({
     items: [

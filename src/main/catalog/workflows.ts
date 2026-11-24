@@ -241,9 +241,12 @@ export function toCatalogWorkflow(item: unknown, locale: string): ResolvedWorkfl
       tutorialUrl: tutorialUrlFor(data.documentation_url),
       canOpenLocal: editorGraphUrl !== null,
       canOpenCloud:
-        cloudPrompt !== null ||
-        (editorGraphUrl !== null &&
-          (website?.type === 'CLOUD' || hasCloudShare(data.cloud_share_url)))
+        (cloudPrompt !== null || editorGraphUrl !== null) &&
+        (typeof data.works_on_cloud === 'boolean'
+          ? data.works_on_cloud
+          : cloudPrompt !== null ||
+            website?.type === 'CLOUD' ||
+            hasCloudShare(data.cloud_share_url))
     }
   }
 }

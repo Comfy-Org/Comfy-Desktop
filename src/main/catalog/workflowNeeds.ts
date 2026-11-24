@@ -81,10 +81,52 @@ function sizeOf(url: string): Promise<number | null> {
   return size
 }
 
-export async function catalogWorkflowModels(
-  graph: Record<string, unknown>
-): Promise<TemplateModelDownload[]> {
-  return resolveTemplateModelsFromJson(graph)
+const INACTIVE_NODE_MODES = new Set([2, 4])
+
+type JsonRecord = Record<string, unknown>
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function selectedNames(node: JsonRecord): Set<string> {
+  const values = Array.isArray(node.widgets_values)
+    ? node.widgets_values
+    : isRecord(node.widgets_values)
+      ? Object.values(node.widgets_values)
+      : []
+  return new Set(
+    values.filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+  )
+}
+
+function declaredModels(holder: unknown): (JsonRecord & { name: string })[] {
+  const models = isRecord(holder) ? holder.models : undefined
+  return Array.isArray(models)
+    ? models.filter(
+        (model): model is JsonRecord & { name: string } =>
+          isRecord(model) && typeof model.name === 'string'
+      )
+    : []
+}
+
+function activeNodes(graph: JsonRecord): JsonRecord[] {
+  const subgraphs = isRecord(graph.definitions) ? graph.definitions.subgraphs : undefined
+  return [graph, ...(Array.isArray(subgraphs) ? subgraphs : [])]
+    .flatMap((holder) => (isRecord(holder) && Array.isArray(holder.nodes) ? holder.nodes : []))
+    .filter((node): node is JsonRecord => isRecord(node))
+    .filter((node) => !INACTIVE_NODE_MODES.has(node.mode as number))
+}
+
+export function catalogWorkflowModels(graph: JsonRecord): TemplateModelDownload[] {
+  const nodes = activeNodes(graph)
+  const onNodes = nodes.flatMap((node) => {
+    const selected = selectedNames(node)
+    return declaredModels(node.properties).filter(({ name }) => selected.has(name))
+  })
+  const everySelected = new Set(nodes.flatMap((node) => [...selectedNames(node)]))
+  const onGraph = declaredModels(graph).filter(({ name }) => everySelected.has(name))
+  return resolveTemplateModelsFromJson({ models: [...onNodes, ...onGraph] })
 }
 
 export async function knownDownloadBytes(models: TemplateModelDownload[]): Promise<number> {
@@ -122,7 +164,7 @@ export async function catalogWorkflowNeeds(id: unknown): Promise<CatalogWorkflow
   if (!workflow) return null
   if (!workflow.editorGraphUrl) return { graph: null, models: [], missingByBuild: {} }
   const graph = await fetchEditorGraph(workflow.editorGraphUrl)
-  const models = await catalogWorkflowModels(graph)
+  const models = catalogWorkflowModels(graph)
   const [described, missing] = await Promise.all([describeModels(models), missingByBuild(models)])
   return { graph, models: described, missingByBuild: missing }
 }

@@ -8,7 +8,7 @@ import {
 } from '../../lib/modelDownloadPaths'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
-import { resolveTemplateModelsFromJson } from './templateModels'
+import { resolveTemplateModelsFromJson, type TemplateModelDownload } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
@@ -58,6 +58,7 @@ function abortTemplateDownload(taskId: string): void {
 
 interface StartOpts {
   sendOutput: (text: string) => void
+  models?: TemplateModelDownload[]
 }
 
 export function startTemplateDownloadTask(
@@ -88,7 +89,7 @@ export function startTemplateDownloadTask(
     console.log(`[templateDownload:${taskId}] ${text.trimEnd()}`)
     opts.sendOutput(text)
   }
-  const taskOpts: StartOpts = { sendOutput: log }
+  const taskOpts: StartOpts = { sendOutput: log, models: opts.models }
 
   log(
     `[templates] Starting background download for "${templateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
@@ -184,7 +185,7 @@ async function runTask(
   templateId: string,
   state: TemplateDownloadState,
   signal: AbortSignal,
-  { sendOutput }: StartOpts,
+  { sendOutput, models: chosenModels }: StartOpts,
   workflowJson: unknown
 ): Promise<void> {
   await downloadTemplateInputAssets(installation, workflowJson, sendOutput, signal)
@@ -194,7 +195,7 @@ async function runTask(
   }
 
   sendOutput(`[templates] Resolving model list for "${templateId}"...\n`)
-  const models = resolveTemplateModelsFromJson(workflowJson)
+  const models = chosenModels ?? resolveTemplateModelsFromJson(workflowJson)
 
   if (signal.aborted) {
     state.status = 'cancelled'

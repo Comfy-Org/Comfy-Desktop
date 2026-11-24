@@ -65,11 +65,13 @@ const GRAPH = {
     {
       id: 1,
       type: 'VAELoader',
+      widgets_values: ['ltx_vae.safetensors'],
       properties: { models: [{ name: 'ltx_vae.safetensors', url: VAE, directory: 'vae' }] }
     },
     {
       id: 2,
       type: 'UNETLoader',
+      widgets_values: ['ltx_fp8.safetensors', 'default'],
       properties: {
         models: [{ name: 'ltx_fp8.safetensors', url: UNET, directory: 'diffusion_models' }]
       }
@@ -110,6 +112,52 @@ describe('what a catalog workflow needs', () => {
         sandbox: ['vae/ltx_vae.safetensors', 'diffusion_models/ltx_fp8.safetensors']
       }
     })
+  })
+
+  it('needs only the models the loaders select, as ComfyUI reads them', async () => {
+    const turbo = 'https://huggingface.co/Comfy-Org/z_image/resolve/main/z_image_bf16.safetensors'
+    const enhancer = {
+      nodes: [{ id: 9, type: 'Img2Img', mode: 0 }],
+      links: [],
+      models: [{ name: 'ae.safetensors', url: VAE, directory: 'vae' }],
+      definitions: {
+        subgraphs: [
+          {
+            name: 'Img2Img',
+            nodes: [
+              {
+                id: 127,
+                type: 'UNETLoader',
+                widgets_values: ['z_image_turbo_bf16.safetensors', 'default'],
+                properties: {
+                  models: [
+                    { name: 'z_image_bf16.safetensors', url: turbo, directory: 'diffusion_models' }
+                  ]
+                }
+              },
+              {
+                id: 128,
+                type: 'UNETLoader',
+                mode: 4,
+                widgets_values: ['ltx_fp8.safetensors', 'default'],
+                properties: {
+                  models: [
+                    { name: 'ltx_fp8.safetensors', url: UNET, directory: 'diffusion_models' }
+                  ]
+                }
+              },
+              { id: 130, type: 'VAELoader', widgets_values: ['ae.safetensors'] }
+            ]
+          }
+        ]
+      }
+    }
+    mocks.fetch.mockImplementation(async () => Response.json(enhancer))
+
+    const needs = await catalogWorkflowNeeds('ltx')
+
+    expect(needs?.models.map(({ filename }) => filename)).toEqual(['ae.safetensors'])
+    expect(needs?.missingByBuild.sandbox).toEqual(['vae/ae.safetensors'])
   })
 
   it('asks for the graph and each size once while the answers are known', async () => {
@@ -171,7 +219,17 @@ describe('what a catalog workflow needs', () => {
       url: `https://huggingface.co/Comfy-Org/repo/resolve/main/model-${index}.safetensors`,
       directory: 'checkpoints'
     }))
-    const big = { nodes: [{ id: 1, type: 'Loader', properties: { models: many } }], links: [] }
+    const big = {
+      nodes: [
+        {
+          id: 1,
+          type: 'Loader',
+          widgets_values: many.map(({ name }) => name),
+          properties: { models: many }
+        }
+      ],
+      links: []
+    }
     mocks.fetch.mockImplementation(async () => Response.json(big))
     answers = {}
 

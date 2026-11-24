@@ -12,7 +12,8 @@ import {
   openGraphScript,
   openWorkflowScript,
   readOpenRequest,
-  workflowName
+  workflowName,
+  workflowNameFromTitle
 } from './openRequest'
 import type { OpenRequest } from './openRequest'
 
@@ -84,6 +85,22 @@ describe('a request to open a workflow in ComfyUI', () => {
 
   it('keeps a name written in any language', () => {
     expect(workflowName('文生图 (2026-11-09)')).toBe('文生图 (2026-11-09)')
+  })
+
+  it.each([
+    ['Flux.1 [Pro]: Text to Image', 'Flux.1 (Pro) - Text to Image'],
+    ['Extend an image’s borders', "Extend an image's borders"],
+    ['Wan 2.2 + LoRA: Image to Video', 'Wan 2.2 & LoRA - Image to Video'],
+    ['First → Last Frame', 'First - Last Frame'],
+    ['图生视频：首尾帧', '图生视频 - 首尾帧'],
+    ['Text to Image', 'Text to Image']
+  ])('opens the catalog workflow "%s" as "%s"', (title, name) => {
+    expect(workflowNameFromTitle(title, 'Catalog workflow')).toBe(name)
+  })
+
+  it('falls back to the default only when nothing of a catalog title is left', () => {
+    expect(workflowNameFromTitle('→ → →', 'Catalog workflow')).toBe('Catalog workflow')
+    expect(workflowNameFromTitle('x'.repeat(100), 'Catalog workflow')).toBe('x'.repeat(80))
   })
 
   it.each([undefined, '', 'a/b', '../x', '<script>', 'x'.repeat(81), 7])(
@@ -254,6 +271,25 @@ describe('the script that loads the workflow into the ComfyUI page', () => {
     expect(context['hacked']).toBeUndefined()
   })
 
+  it('opens in a tab of its own when a workflow already has that name', async () => {
+    const calls: unknown[][] = []
+    const context = page({
+      ...app,
+      loadApiJson: (...args: unknown[]) => {
+        calls.push(args)
+      },
+      extensionManager: {
+        workflow: {
+          getWorkflowByPath: (path: string) => (path === 'workflows/Text to Image.json' ? {} : null)
+        }
+      }
+    })
+    const request = accepted({ prompt: PROMPT, where: 'local', name: 'Text to Image' })
+
+    expect(await runInNewContext(openWorkflowScript(request), context)).toBe(true)
+    expect(calls.map(([, name]) => name)).toEqual(['Text to Image (2)'])
+  })
+
   it('says it did not open when ComfyUI refuses or throws on the graph', async () => {
     const request = accepted({ prompt: PROMPT, where: 'local', name: 'x' })
     const refusing = page({ ...app, loadApiJson: () => false })
@@ -294,6 +330,25 @@ describe('the script that loads a saved graph into the ComfyUI page', () => {
     expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(true)
     expect(calls).toEqual([[graph, true, true, 'fox']])
     expect(context['hacked']).toBeUndefined()
+  })
+
+  it('opens in a tab of its own when an open or saved workflow already has that name', async () => {
+    const taken = new Set(['workflows/fox.json', 'workflows/fox (2).json'])
+    const calls: unknown[][] = []
+    const context = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      loadGraphData: (...args: unknown[]) => {
+        calls.push(args)
+      },
+      extensionManager: {
+        workflow: { getWorkflowByPath: (path: string) => (taken.has(path) ? { path } : null) }
+      }
+    })
+
+    expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(true)
+    expect(calls).toEqual([[graph, true, true, 'fox (3)']])
   })
 
   it('says it did not open in a ComfyUI that cannot load a graph', async () => {

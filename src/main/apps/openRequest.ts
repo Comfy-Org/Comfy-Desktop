@@ -1,7 +1,8 @@
 export const MAX_WORKFLOW_BYTES = 1_000_000
 const MAX_NODES = 500
 const BUILD_ID = /^[A-Za-z0-9_-]{1,64}$/
-const WORKFLOW_NAME = /^[\p{L}\p{N} .,()'&_-]{1,80}$/u
+const MAX_WORKFLOW_NAME_LENGTH = 80
+const WORKFLOW_NAME = new RegExp(`^[\\p{L}\\p{N} .,()'&_-]{1,${MAX_WORKFLOW_NAME_LENGTH}}$`, 'u')
 const CREDENTIAL_INPUT = /^(api_key_comfy_org|auth_token_comfy_org)$/i
 export const DEFAULT_WORKFLOW_NAME = 'Comfy app'
 
@@ -72,6 +73,22 @@ export function workflowName(value: unknown, fallback = DEFAULT_WORKFLOW_NAME): 
   return WORKFLOW_NAME.test(name) ? name : fallback
 }
 
+export function workflowNameFromTitle(title: string, fallback: string): string {
+  const name = title
+    .replace(/[[{]/g, '(')
+    .replace(/[\]}]/g, ')')
+    .replace(/[‘’‛`´]/g, "'")
+    .replace(/\s*\+\s*/g, ' & ')
+    .replace(/\s*[:：|]\s*/g, ' - ')
+    .replace(/[/\\→–—‐‑]/g, '-')
+    .replace(/[^\p{L}\p{N} .,()'&_-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_WORKFLOW_NAME_LENGTH)
+    .replace(/[\s.-]+$/, '')
+  return workflowName(name, fallback)
+}
+
 function carriesCredentials(prompt: Record<string, unknown>): boolean {
   return Object.values(prompt).some(
     (node) => isNode(node) && Object.keys(node.inputs).some((input) => CREDENTIAL_INPUT.test(input))
@@ -111,11 +128,18 @@ export const COMFY_STATE_SCRIPT =
   `if(workflows.isBusy===true||workflows.tabsRestored===false)return 'starting';` +
   `return workflows.activeWorkflow?'ready':'no-workflow'})()`
 
+const NAME_NO_WORKFLOW_USES =
+  `var workflows=app.extensionManager&&app.extensionManager.workflow;` +
+  `var inUse=function(candidate){return !!workflows&&typeof workflows.getWorkflowByPath==='function'` +
+  `&&!!workflows.getWorkflowByPath('workflows/'+candidate+'.json')};` +
+  `var base=name;for(var copy=2;copy<1000&&inUse(name);copy++)name=base+' ('+copy+')';`
+
 function loadScript(call: string, data: Record<string, unknown>, name: string): string {
   return (
     `(function(dataText,name){` +
     FIND_COMFY_APP +
     `if(!usable)return false;` +
+    NAME_NO_WORKFLOW_USES +
     `var data=JSON.parse(dataText);` +
     `return Promise.resolve(${call})` +
     `.then(function(r){return r!==false},function(){return false});` +
