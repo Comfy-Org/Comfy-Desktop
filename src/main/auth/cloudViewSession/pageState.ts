@@ -1,9 +1,10 @@
 import {
+  DESKTOP_SESSION_MARKER_KEY,
   storedFirebaseUidReaderSource,
   webSessionUidReaderSource
 } from '../firebaseBridge/injectScript'
 
-export const DESKTOP_SESSION_MARKER_KEY = '__comfyDesktopCloudViewSession'
+export { DESKTOP_SESSION_MARKER_KEY }
 export const WEB_SESSION_DELETE_TIMEOUT_MS = 8000
 
 export interface DesktopSessionMarker {

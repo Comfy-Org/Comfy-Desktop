@@ -1,4 +1,5 @@
 export const INJECTION_OWNER_KEY = '__comfyDesktopFirebaseSessionInjectionOwner'
+export const DESKTOP_SESSION_MARKER_KEY = '__comfyDesktopCloudViewSession'
 export const FIREBASE_SESSION_INJECTION_OWNER_FIELD = '__comfyDesktopInjectionOwner'
 export const WEB_SESSION_CREATE_TIMEOUT_MS = 8000
 export const WEB_SESSION_READ_TIMEOUT_MS = 8000
@@ -68,6 +69,7 @@ export function buildIndexedDbInjectScript(
   const ownerTokenJson = JSON.stringify(ownerToken)
   const ownerKeyJson = JSON.stringify(INJECTION_OWNER_KEY)
   const recordOwnerKeyJson = JSON.stringify(FIREBASE_SESSION_INJECTION_OWNER_FIELD)
+  const desktopMarkerKeyJson = JSON.stringify(DESKTOP_SESSION_MARKER_KEY)
   return `(async () => {
   const ownerKey = ${ownerKeyJson};
   const expectedOrigin = ${expectedOriginJson};
@@ -156,6 +158,14 @@ export function buildIndexedDbInjectScript(
       });
       return false;
     }
+  } else {
+    try {
+      const desktopMarkerKey = ${desktopMarkerKeyJson};
+      const held = JSON.parse(localStorage.getItem(desktopMarkerKey) || 'null');
+      if (held && held.state === 'active') {
+        localStorage.setItem(desktopMarkerKey, JSON.stringify({ ...held, state: 'declined' }));
+      }
+    } catch (_) {}
   }
   const idToken = userValue && userValue.stsTokenManager && userValue.stsTokenManager.accessToken;
   if (idToken) {
@@ -169,9 +179,6 @@ export function buildIndexedDbInjectScript(
     } catch (_) {}
     if (!isCurrent()) return false;
   }
-  // Tell the next page-load (handled by attach.ts's dom-ready patch) to
-  // hide documentElement briefly so the cloud login page doesn't flash
-  // between Firebase rehydrating and the FE redirecting to the workspace.
   try { sessionStorage.setItem('__comfyDesktopPostSignin', '1'); } catch (_) {}
   location.reload();
   return true;

@@ -402,4 +402,25 @@ describe('buildIndexedDbInjectScript with onlyIfSignedOut', () => {
     await expect(run(buildIndexedDbInjectScript(user, API_KEY, ORIGIN, OWNER))).resolves.toBe(true)
     await expect(storedUid()).resolves.toBe('desktop-uid')
   })
+
+  it("hands the view to a person who signs in again with Desktop's account", async () => {
+    await expect(
+      run(
+        buildIndexedDbInjectScript(user, API_KEY, ORIGIN, OWNER, { onlyIfSignedOut: true, marker })
+      )
+    ).resolves.toBe(true)
+    await withStore('readwrite', (store) => store.delete(STORAGE_KEY))
+
+    await expect(run(buildIndexedDbInjectScript(user, API_KEY, ORIGIN, OWNER))).resolves.toBe(true)
+
+    await expect(run(buildReadStateScript(API_KEY, ORIGIN))).resolves.toEqual({
+      uid: 'desktop-uid',
+      marker: serializeMarker({ ...MARKER, state: 'declined' })
+    })
+  })
+
+  it('leaves no marker behind for a sign-in Desktop never made', async () => {
+    await expect(run(buildIndexedDbInjectScript(user, API_KEY, ORIGIN, OWNER))).resolves.toBe(true)
+    expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(null)
+  })
 })

@@ -125,6 +125,15 @@ function report(outcome: string, extra: mainTelemetry.TelemetryContext = {}): vo
   mainTelemetry.emit(CLOUD_VIEW_SESSION_EVENT, { outcome, ...extra })
 }
 
+const reportedGrantOutcomes = new Set<string>()
+
+function reportOncePerGrant(outcome: string, sub: string, fam: string | null): void {
+  const key = JSON.stringify([outcome, sub, fam])
+  if (reportedGrantOutcomes.has(key)) return
+  reportedGrantOutcomes.add(key)
+  report(outcome)
+}
+
 function declinedReport(status: number | null, code?: string): mainTelemetry.TelemetryContext {
   if (status === null) return { reason: 'network' }
   const known = code && REPORTABLE_ERROR_CODES.has(code) ? code : code ? 'other' : undefined
@@ -171,11 +180,11 @@ async function signInView(target: ViewTarget): Promise<void> {
   const accessToken = await session.getGrantAccessToken()
   if (!accessToken || !unchanged()) return
   if (!holdsWebSessionScope(accessToken)) {
-    report('scope_missing')
+    reportOncePerGrant('scope_missing', sub, fam)
     return
   }
   if (!keepsTokensInOsKeychain()) {
-    report('weak_storage')
+    reportOncePerGrant('weak_storage', sub, fam)
     return
   }
 

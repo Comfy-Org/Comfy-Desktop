@@ -293,6 +293,19 @@ describe('reconcileCloudViewSession', () => {
     expect(outcomes()).toEqual([{ outcome: 'scope_missing' }])
   })
 
+  it('reports a grant without the web-session scope once, not on every page load', async () => {
+    h.session.accessToken = READ_ONLY_TOKEN
+    h.session.fam = 'fam-reported-once'
+
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+    expect(outcomes()).toEqual([{ outcome: 'scope_missing' }])
+
+    h.session.fam = 'fam-after-sign-in'
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+    expect(outcomes()).toEqual([{ outcome: 'scope_missing' }, { outcome: 'scope_missing' }])
+  })
+
   it('does not ask Cloud when Desktop cannot keep its tokens in an OS keychain', async () => {
     h.keepsTokensInOsKeychain.mockReturnValue(false)
 
