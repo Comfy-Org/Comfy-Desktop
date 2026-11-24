@@ -48,9 +48,7 @@ beforeEach(() => {
   host.style.cssText = 'position: fixed; left: 0; top: 0; width: 1200px; height: 900px'
   document.body.append(host)
   ;(window as unknown as { api: unknown }).api = {
-    listHomeWorkflows: vi.fn().mockResolvedValue([]),
-    openCatalogWorkflow: vi.fn().mockResolvedValue(true),
-    getAppsEnabled: vi.fn().mockResolvedValue(false),
+    listApps: vi.fn().mockResolvedValue([]),
     getInstallations: vi.fn().mockResolvedValue([STARTING, READY, CLOUD]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),

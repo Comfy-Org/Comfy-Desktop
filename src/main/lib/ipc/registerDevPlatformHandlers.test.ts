@@ -67,7 +67,10 @@ vi.mock('../viewWorkspaceGrants', () => ({
   })
 }))
 
-vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => false }))
+vi.mock(import('../../apps/appsPages'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  liveAppsPages: () => []
+}))
 
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: mocks.getAllWindows },
