@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import zh from '@locales/zh.json'
+import { i18n } from '../i18n'
 import { runConfirmChain, runPromptChain } from './actionShoppingList'
 import type { ActionDef } from '../types/ipc'
 
@@ -128,5 +130,27 @@ describe('runConfirmChain confirm colour', () => {
       modal
     )
     expect(confirmWithOptions.mock.calls[0]![0].confirmStyle).toBe(confirmStyle)
+  })
+})
+
+describe('runConfirmChain with no confirm text from Desktop', () => {
+  afterEach(() => {
+    i18n.global.locale.value = 'en'
+  })
+
+  it('asks in the app language', async () => {
+    i18n.global.setLocaleMessage('zh', zh)
+    i18n.global.locale.value = 'zh'
+    const confirm = vi.fn().mockResolvedValue(false)
+
+    await runConfirmChain(
+      { id: 'some-action', label: 'Do it', confirm: {} } as ActionDef,
+      { confirm } as unknown as Parameters<typeof runConfirmChain>[1]
+    )
+
+    expect(confirm.mock.calls[0]![0]).toMatchObject({
+      title: zh.modal.confirm,
+      message: zh.modal.areYouSure
+    })
   })
 })

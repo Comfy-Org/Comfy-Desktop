@@ -118,7 +118,7 @@ function closeLabel(d: DownloadEntry): string {
 }
 
 function subtitle(d: DownloadEntry): string {
-  return statusLine(d, { completedShowsSize: true })
+  return statusLine(d, t, { completedShowsSize: true })
 }
 
 function keepsActionInView(d: DownloadEntry): boolean {

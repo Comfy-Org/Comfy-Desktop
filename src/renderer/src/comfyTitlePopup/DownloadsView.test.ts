@@ -123,6 +123,45 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(sub).toContain('10%')
   })
 
+  describe('status lines in the app language', () => {
+    afterEach(resetAppLocale)
+
+    it('writes what has arrived, the time left and the finished state in Chinese', async () => {
+      switchAppLocaleToChinese()
+      const { default: DownloadsView } = await import('./DownloadsView.vue')
+      const state: MockDownloadsState = {
+        active: [
+          {
+            url: 'https://example.com/a.bin',
+            filename: 'a.bin',
+            progress: 0.42,
+            receivedBytes: 4_200_000,
+            totalBytes: 10_000_000,
+            etaSeconds: 30,
+            status: 'downloading'
+          },
+          { url: 'https://example.com/w.bin', filename: 'w.bin', progress: 0, status: 'pending' }
+        ],
+        recent: [
+          {
+            url: 'https://example.com/done.bin',
+            filename: 'done.bin',
+            savePath: '/tmp/done.bin',
+            progress: 1,
+            status: 'completed'
+          }
+        ]
+      }
+      const wrapper = mount(DownloadsView, { props: { state } })
+      await flushPromises()
+
+      const subtitles = wrapper.findAll('.downloads-item-sub').map((sub) => sub.text())
+      expect(subtitles).toContain(`4.0 MB / 9.5 MB · ${zh.downloadsPopup.timeLeftUnderMinute}`)
+      expect(subtitles).toContain(zh.downloadsPopup.statusWaiting)
+      expect(subtitles).toContain(zh.downloadsPopup.statusDownloaded)
+    })
+  })
+
   it('renders a completed entry as a clickable row with a Downloaded subtitle, a Show in Finder action and a dismiss X', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const state: MockDownloadsState = {
@@ -404,6 +443,28 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(cancelledIcon.classes()).toContain('text-text-muted')
     expect(cancelledIcon.classes()).not.toContain('text-[#ff5454]')
     expect(failedIcon.classes()).toContain('text-[#ff5454]')
+  })
+
+  it('says Download failed for a failed download with no message, like the full list', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state: MockDownloadsState = {
+      active: [],
+      recent: [
+        { url: 'https://example.com/e.bin', filename: 'e.bin', progress: 0.3, status: 'error' },
+        {
+          url: 'https://example.com/m.bin',
+          filename: 'm.bin',
+          progress: 0.3,
+          status: 'error',
+          error: 'Disk full'
+        }
+      ]
+    }
+    const wrapper = mount(DownloadsView, { props: { state } })
+    await flushPromises()
+
+    const subtitles = wrapper.findAll('.is-error .downloads-item-sub').map((sub) => sub.text())
+    expect(subtitles).toEqual(['Download failed', 'Disk full'])
   })
 
   describe('keyboard', () => {

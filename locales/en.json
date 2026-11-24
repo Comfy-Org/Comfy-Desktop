@@ -618,7 +618,9 @@
     "nothingMatches": "Nothing matches",
     "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
     "clearFilters": "Clear filters",
-    "clearSearch": "Clear search"
+    "clearSearch": "Clear search",
+    "copyToClipboard": "Copy to clipboard",
+    "exportHere": "Export here"
   },
   "comfybuilder": {
     "build": "Build",
@@ -1642,7 +1644,8 @@
     "latestLabel": "Latest:",
     "noneYet": "No snapshots yet",
     "restoreCancelled": "Restore cancelled",
-    "restoreCancelledBody": "The imported snapshot was not applied."
+    "restoreCancelledBody": "The imported snapshot was not applied.",
+    "fileTypeName": "Snapshot"
   },
   "portable": {
     "label": "Portable",
@@ -1932,7 +1935,7 @@
     "returnToDashboard": "Back to Home",
     "closeAllWindows": "Close all windows",
     "exitWindow": "Close window",
-    "exitAllWindows": "Quit Desktop",
+    "exitAllWindows": "Quit Comfy Desktop",
     "skipOnboarding": "Skip onboarding"
   },
   "feedback": {
@@ -2023,7 +2026,8 @@
     "medianSummary": "Median run · {count} measured · {failed} failed",
     "runCounts": "{count} measured · {failed} failed",
     "runPhaseWarmup": "warm-up run",
-    "runPhaseMeasured": "measured run {current} of {total}"
+    "runPhaseMeasured": "measured run {current} of {total}",
+    "exportDialogTitle": "Export performance test results"
   },
   "benchmarks": {
     "title": "Benchmarks",
@@ -2105,7 +2109,8 @@
     "exportLimit": "Up to {max} runs",
     "clearSelection": "Clear selection",
     "memory": "{gigabytes} GB RAM",
-    "referenceHidden": "Compared with session {session}, which the filters hide."
+    "referenceHidden": "Compared with session {session}, which the filters hide.",
+    "exportDialogTitle": "Export benchmark comparison"
   },
   "downloadsPopup": {
     "title": "Downloads",
@@ -2119,7 +2124,22 @@
     "viewAll": "View all",
     "viewAllLabel": "View all downloads",
     "completed": "Completed",
-    "thumbnailAlt": "Thumbnail of {name}"
+    "thumbnailAlt": "Thumbnail of {name}",
+    "statusWaiting": "Waiting…",
+    "statusPaused": "Paused · {progress}",
+    "statusDownloaded": "Downloaded",
+    "statusDownloadedSize": "Downloaded · {size}",
+    "statusCancelled": "Cancelled",
+    "statusFailed": "Download failed",
+    "bytesOf": "{received} of {total}",
+    "timeLeftUnderMinute": "Less than a minute left",
+    "timeLeftMinutes": "{minutes} min left",
+    "timeLeftHours": "{hours} h left",
+    "timeLeftHoursMinutes": "{hours} h {minutes} min left",
+    "etaLeft": "~{eta} left",
+    "etaSeconds": "{seconds}s",
+    "etaMinutes": "{minutes}m {seconds}s",
+    "etaHours": "{hours}h {minutes}m"
   },
   "downloadsTab": {
     "title": "Downloads",
@@ -2244,5 +2264,24 @@
     "detailMany": "{count} apps are still making something. Quitting stops them.",
     "quit": "Quit",
     "cancel": "Cancel"
+  },
+  "quitDesktop": {
+    "messageOne": "Quit Comfy Desktop? This will close the running ComfyUI build.",
+    "messageMany": "Quit Comfy Desktop? This will close {count} running ComfyUI builds.",
+    "openBuilds": "Open builds",
+    "operations": "In-progress operations",
+    "downloads": "Active downloads",
+    "untitled": "Untitled build"
+  },
+  "closeWindow": {
+    "message": "Close this window?",
+    "messageQuits": "Close this window? This quits Comfy Desktop.",
+    "messageStops": "Close this window? This stops the running ComfyUI build.",
+    "messageStopsAndQuits": "Close this window? This stops ComfyUI and quits Comfy Desktop."
+  },
+  "appMenu": {
+    "view": "View",
+    "window": "Window",
+    "checkForUpdates": "Check for Updates…"
   }
 }

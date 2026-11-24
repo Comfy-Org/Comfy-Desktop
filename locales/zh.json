@@ -149,7 +149,7 @@
     "openFailed": "无法打开资产",
     "openFolderFailed": "无法打开文件夹",
     "moreActions": "更多操作",
-    "showInFinder": "在 Finder 中显示",
+    "showInFinder": "在访达中显示",
     "showInExplorer": "在资源管理器中显示",
     "showInFolder": "在文件夹中显示",
     "viewInAssets": "在资产中查看",
@@ -618,7 +618,9 @@
     "nothingMatches": "没有匹配项",
     "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
     "clearFilters": "清除筛选",
-    "clearSearch": "清除搜索"
+    "clearSearch": "清除搜索",
+    "copyToClipboard": "复制到剪贴板",
+    "exportHere": "导出到此处"
   },
   "comfybuilder": {
     "build": "构建",
@@ -1642,7 +1644,8 @@
     "latestLabel": "最新：",
     "noneYet": "还没有快照",
     "restoreCancelled": "恢复已取消",
-    "restoreCancelledBody": "导入的快照未被应用。"
+    "restoreCancelledBody": "导入的快照未被应用。",
+    "fileTypeName": "快照"
   },
   "portable": {
     "label": "便携版",
@@ -1932,7 +1935,7 @@
     "returnToDashboard": "返回主页",
     "closeAllWindows": "关闭所有窗口",
     "exitWindow": "关闭窗口",
-    "exitAllWindows": "退出桌面端",
+    "exitAllWindows": "退出 Comfy Desktop",
     "skipOnboarding": "跳过引导"
   },
   "feedback": {
@@ -2023,7 +2026,8 @@
     "medianSummary": "中位运行 · {count} 次测量 · {failed} 次失败",
     "runCounts": "{count} 次测量 · {failed} 次失败",
     "runPhaseWarmup": "预热运行",
-    "runPhaseMeasured": "第 {current} / {total} 次测量运行"
+    "runPhaseMeasured": "第 {current} / {total} 次测量运行",
+    "exportDialogTitle": "导出性能测试结果"
   },
   "benchmarks": {
     "title": "性能比较",
@@ -2105,7 +2109,8 @@
     "exportLimit": "最多 {max} 次运行",
     "clearSelection": "清除选择",
     "memory": "{gigabytes} GB 内存",
-    "referenceHidden": "与会话 {session} 比较，该会话已被筛选条件隐藏。"
+    "referenceHidden": "与会话 {session} 比较，该会话已被筛选条件隐藏。",
+    "exportDialogTitle": "导出基准对比"
   },
   "downloadsPopup": {
     "title": "下载",
@@ -2114,12 +2119,27 @@
     "resume": "继续",
     "cancel": "取消",
     "retry": "重试",
-    "showInFolder": "在 Finder 中显示",
+    "showInFolder": "在访达中显示",
     "remove": "从列表中移除",
     "viewAll": "查看全部",
     "viewAllLabel": "查看所有下载",
     "completed": "已完成",
-    "thumbnailAlt": "{name} 的缩略图"
+    "thumbnailAlt": "{name} 的缩略图",
+    "statusWaiting": "等待中…",
+    "statusPaused": "已暂停 · {progress}",
+    "statusDownloaded": "已下载",
+    "statusDownloadedSize": "已下载 · {size}",
+    "statusCancelled": "已取消",
+    "statusFailed": "下载失败",
+    "bytesOf": "{received} / {total}",
+    "timeLeftUnderMinute": "剩余不到 1 分钟",
+    "timeLeftMinutes": "剩余 {minutes} 分钟",
+    "timeLeftHours": "剩余 {hours} 小时",
+    "timeLeftHoursMinutes": "剩余 {hours} 小时 {minutes} 分钟",
+    "etaLeft": "剩余约 {eta}",
+    "etaSeconds": "{seconds} 秒",
+    "etaMinutes": "{minutes} 分 {seconds} 秒",
+    "etaHours": "{hours} 小时 {minutes} 分"
   },
   "downloadsTab": {
     "title": "下载",
@@ -2244,5 +2264,24 @@
     "detailMany": "{count} 个应用仍在生成。退出会停止它们。",
     "quit": "退出",
     "cancel": "取消"
+  },
+  "quitDesktop": {
+    "messageOne": "要退出 Comfy Desktop 吗？这将关闭正在运行的 ComfyUI 构建。",
+    "messageMany": "要退出 Comfy Desktop 吗？这将关闭 {count} 个正在运行的 ComfyUI 构建。",
+    "openBuilds": "已打开的构建",
+    "operations": "进行中的操作",
+    "downloads": "进行中的下载",
+    "untitled": "未命名构建"
+  },
+  "closeWindow": {
+    "message": "要关闭此窗口吗？",
+    "messageQuits": "要关闭此窗口吗？这将退出 Comfy Desktop。",
+    "messageStops": "要关闭此窗口吗？这将停止正在运行的 ComfyUI 构建。",
+    "messageStopsAndQuits": "要关闭此窗口吗？这将停止 ComfyUI 并退出 Comfy Desktop。"
+  },
+  "appMenu": {
+    "view": "显示",
+    "window": "窗口",
+    "checkForUpdates": "检查更新…"
   }
 }

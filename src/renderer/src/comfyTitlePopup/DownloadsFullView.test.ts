@@ -149,6 +149,88 @@ describe('DownloadsFullView reveal action', () => {
   })
 })
 
+describe('DownloadsFullView status lines', () => {
+  afterEach(resetAppLocale)
+
+  it('writes a paused download in the app language', async () => {
+    switchAppLocaleToChinese()
+    const view = await mountView({
+      active: [
+        {
+          id: 'paused',
+          url: 'https://example.com/paused.bin',
+          filename: 'paused.bin',
+          progress: 0.25,
+          status: 'paused'
+        }
+      ],
+      recent: []
+    })
+
+    const row = view.findAll('.dlm-row').find((r) => r.text().includes('paused.bin'))!
+    expect(row.get('.dlm-sub').text()).toBe(
+      zh.downloadsPopup.statusPaused.replace('{progress}', '25%')
+    )
+  })
+
+  const timedState = (): PopupDownloadsState => ({
+    active: [
+      { etaSeconds: 45, id: 'secs' },
+      { etaSeconds: 90, id: 'mins' },
+      { etaSeconds: 3720, id: 'hours' }
+    ].map(({ etaSeconds, id }) => ({
+      id,
+      url: `https://example.com/${id}.bin`,
+      filename: `${id}.bin`,
+      progress: 0.5,
+      status: 'downloading' as const,
+      etaSeconds
+    })),
+    recent: [
+      {
+        id: 'finished',
+        url: 'https://example.com/finished.bin',
+        filename: 'finished.bin',
+        progress: 1,
+        status: 'completed',
+        createdAt: Date.now() - 5 * 60_000 - 1_000
+      }
+    ]
+  })
+  const subtitles = (view: VueWrapper) =>
+    Object.fromEntries(
+      ['secs', 'mins', 'hours', 'finished'].map((id) => [
+        id,
+        view
+          .findAll('.dlm-row')
+          .find((r) => r.text().includes(`${id}.bin`))!
+          .get('.dlm-sub')
+          .text()
+      ])
+    )
+
+  it('writes time left and how long ago a download finished in English', async () => {
+    const view = await mountView(timedState())
+    expect(subtitles(view)).toEqual({
+      secs: '50% · ~45s left',
+      mins: '50% · ~1m 30s left',
+      hours: '50% · ~1h 2m left',
+      finished: '5m ago'
+    })
+  })
+
+  it('writes time left and how long ago a download finished in the app language', async () => {
+    switchAppLocaleToChinese()
+    const view = await mountView(timedState())
+    expect(subtitles(view)).toEqual({
+      secs: '50% · 剩余约 45 秒',
+      mins: '50% · 剩余约 1 分 30 秒',
+      hours: '50% · 剩余约 1 小时 2 分',
+      finished: '5 分钟前'
+    })
+  })
+})
+
 describe('DownloadsFullView close', () => {
   it('puts the round close button outside the card and closes the window', async () => {
     const view = await mountView()

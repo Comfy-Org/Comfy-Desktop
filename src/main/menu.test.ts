@@ -1,9 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import zh from '../../locales/zh.json'
 
-const { setApplicationMenu, buildFromTemplate } = vi.hoisted(() => ({
+const { setApplicationMenu, buildFromTemplate, i18nState } = vi.hoisted(() => ({
   setApplicationMenu: vi.fn(),
-  buildFromTemplate: vi.fn((template: unknown) => ({ __template: template }))
+  buildFromTemplate: vi.fn((template: unknown) => ({ __template: template })),
+  i18nState: { locale: 'en' as 'en' | 'zh' }
 }))
+
+vi.mock('./lib/i18n', async () => {
+  const { translateMessage } = await import('./lib/localeTestHelper')
+  return { t: (key: string) => translateMessage(i18nState.locale, key) }
+})
 
 vi.mock('electron', () => ({
   app: { name: 'ComfyUI' },
@@ -172,5 +179,21 @@ describe('installAppMenu', () => {
     const viewEntry = template.find((e) => e.label === 'View')
     const toggle = viewEntry?.submenu?.find((i) => i.label === 'Toggle Developer Tools')
     expect(typeof toggle?.click).toBe('function')
+  })
+
+  it('names the menus in the app language', () => {
+    i18nState.locale = 'zh'
+    onTestFinished(() => {
+      i18nState.locale = 'en'
+    })
+
+    installAppMenu('darwin', undefined, { onCheckForUpdates: () => {} })
+
+    const template = buildFromTemplate.mock.calls[0]?.[0] as Array<{
+      label?: string
+      submenu?: Array<{ label?: string }>
+    }>
+    expect(template.map((entry) => entry.label)).toContain(zh.appMenu.window)
+    expect(template[0]?.submenu?.map((item) => item.label)).toContain(zh.appMenu.checkForUpdates)
   })
 })
