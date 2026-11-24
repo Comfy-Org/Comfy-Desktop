@@ -200,7 +200,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     data-testid="output-detail"
     @close="emit('close')"
   >
-    <section class="relative flex min-w-0 flex-1 flex-col gap-3 p-3">
+    <section class="flex min-w-0 flex-1 flex-col gap-3 p-3">
       <div
         class="flex min-h-0 flex-1 overflow-auto"
         :class="zoom === 'fit' && 'items-center justify-center'"
@@ -244,51 +244,51 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
 
-      <template v-if="items.length > 1">
-        <Button
-          type="button"
-          variant="secondary"
-          size="icon"
-          class="absolute top-1/2 left-4 z-10 -translate-y-1/2 rounded-full"
-          :aria-label="t('assets.detail.previousFile')"
-          data-testid="output-detail-previous"
-          @click="step(-1)"
-        >
-          <ChevronLeft :size="16" aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="icon"
-          class="absolute top-1/2 right-4 z-10 -translate-y-1/2 rounded-full"
-          :aria-label="t('assets.detail.nextFile')"
-          data-testid="output-detail-next"
-          @click="step(1)"
-        >
-          <ChevronRight :size="16" aria-hidden="true" />
-        </Button>
-      </template>
-
       <footer class="flex shrink-0 items-end justify-end gap-3">
-        <ol
-          v-if="items.length > 1"
-          ref="filmstrip"
-          class="m-0 flex min-w-0 flex-1 list-none gap-1.5 overflow-x-auto scrollbar-hide p-1"
-        >
-          <li v-for="(entry, i) in items" :key="entry.key" class="shrink-0">
-            <button
-              type="button"
-              class="flex size-12 items-center justify-center overflow-hidden rounded-md bg-secondary text-subtle-foreground outline-offset-2"
-              :class="i === index ? 'outline-2 outline-foreground' : 'opacity-60 hover:opacity-100'"
-              :aria-label="entry.name"
-              :aria-current="i === index ? 'true' : undefined"
-              :data-testid="`output-detail-thumb-${i}`"
-              @click="index = i"
-            >
-              <OutputDetailThumb :entry="entry" />
-            </button>
-          </li>
-        </ol>
+        <div v-if="items.length > 1" class="flex min-w-0 flex-1 items-center gap-1.5">
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            class="shrink-0 rounded-full"
+            :aria-label="t('assets.detail.previousFile')"
+            data-testid="output-detail-previous"
+            @click="step(-1)"
+          >
+            <ChevronLeft :size="16" aria-hidden="true" />
+          </Button>
+          <ol
+            ref="filmstrip"
+            class="m-0 flex min-w-0 list-none gap-1.5 overflow-x-auto scrollbar-hide p-1"
+          >
+            <li v-for="(entry, i) in items" :key="entry.key" class="shrink-0">
+              <button
+                type="button"
+                class="flex size-12 items-center justify-center overflow-hidden rounded-md bg-secondary text-subtle-foreground outline-offset-2"
+                :class="
+                  i === index ? 'outline-2 outline-foreground' : 'opacity-60 hover:opacity-100'
+                "
+                :aria-label="entry.name"
+                :aria-current="i === index ? 'true' : undefined"
+                :data-testid="`output-detail-thumb-${i}`"
+                @click="index = i"
+              >
+                <OutputDetailThumb :entry="entry" />
+              </button>
+            </li>
+          </ol>
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            class="shrink-0 rounded-full"
+            :aria-label="t('assets.detail.nextFile')"
+            data-testid="output-detail-next"
+            @click="step(1)"
+          >
+            <ChevronRight :size="16" aria-hidden="true" />
+          </Button>
+        </div>
         <Menu
           v-if="item.kind === 'image'"
           :modal="false"
