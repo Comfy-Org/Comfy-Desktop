@@ -2707,3 +2707,77 @@ describe('AssetsView Comfy Cloud pages', () => {
     )
   })
 })
+
+describe('AssetsView folders', () => {
+  const ROOT = '/Volumes/Work/Video Lab/output'
+
+  function dated(path: string, name: string, day: string): AssetSummary {
+    return asset(path, name, 'image', { createdAt: `2026-11-${day}T00:00:00Z` })
+  }
+
+  async function pickFolder(path: string): Promise<void> {
+    document.querySelector<HTMLElement>('[data-testid="assets-folder-picker"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLElement>(`[data-testid="assets-folder-${path}"]`)!.click()
+    await flushPromises()
+  }
+
+  async function folderChoices(): Promise<string[]> {
+    document.querySelector<HTMLElement>('[data-testid="assets-folder-picker"]')!.click()
+    await flushPromises()
+    const shown = [...document.querySelectorAll('[data-testid^="assets-folder-"]')]
+      .filter((item) => item.getAttribute('data-testid') !== 'assets-folder-picker')
+      .map((item) => shownText(item))
+    await press('Escape')
+    return shown
+  }
+
+  it('keeps the files of a sub-folder out of the view until the folder is chosen', async () => {
+    const wrapper = await mountAssets([
+      dated(`${ROOT}/forest.png`, 'forest.png', '03'),
+      dated(`${ROOT}/2026-11/harbor.png`, 'harbor.png', '02'),
+      dated(`${ROOT}/2026-11/crane.png`, 'crane.png', '01'),
+      dated(`${ROOT}/2026-11/final/hero.png`, 'hero.png', '04')
+    ])
+
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(
+      await folderChoices(),
+      'every folder is one click away, counting every file under it'
+    ).toEqual(['All files', '2026-11 3', '2026-11/final 1'])
+
+    await pickFolder('2026-11')
+
+    expect(assetNames(wrapper)).toEqual(['harbor.png', 'crane.png'])
+    expect(
+      document.querySelector('[data-testid="assets-pagination"]'),
+      'paging the whole listing says nothing about a folder'
+    ).toBeNull()
+    expect(shownText(document.querySelector('[data-testid="assets-breadcrumb"]'))).toBe(
+      'All files 2026-11'
+    )
+
+    await pickFolder('2026-11/final')
+
+    expect(assetNames(wrapper)).toEqual(['hero.png'])
+
+    document.querySelector<HTMLElement>('[data-testid="assets-breadcrumb-root"]')!.click()
+    await flushPromises()
+
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+  })
+
+  it('lays every match out flat while a search is on', async () => {
+    const wrapper = await mountAssets([
+      dated(`${ROOT}/forest.png`, 'forest.png', '03'),
+      dated(`${ROOT}/2026-11/harbor.png`, 'harbor.png', '02')
+    ])
+
+    await wrapper.get('input').setValue('r')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="assets-folder-picker"]')).toBeNull()
+    )
+
+    expect(assetNames(wrapper)).toEqual(['forest.png', 'harbor.png'])
+  })
+})

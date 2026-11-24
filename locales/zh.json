@@ -162,6 +162,8 @@
     "deleteToTrash": "它会被移到废纸篓。",
     "deleteToRecycleBin": "它会被移到回收站。",
     "deleteFailed": "无法删除资产",
+    "folderPickerLabel": "文件夹",
+    "allFiles": "全部文件",
     "noMatches": "没有匹配的资产",
     "noMatchesHint": "试试其他类型或搜索词。",
     "signedOutTitle": "登录以查看你的资产",

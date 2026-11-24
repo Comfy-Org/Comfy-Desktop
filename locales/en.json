@@ -162,6 +162,8 @@
     "deleteToTrash": "It moves to the Trash.",
     "deleteToRecycleBin": "It moves to the Recycle Bin.",
     "deleteFailed": "Couldn't delete asset",
+    "folderPickerLabel": "Folder",
+    "allFiles": "All files",
     "noMatches": "No matching assets",
     "noMatchesHint": "Try another type or search.",
     "signedOutTitle": "Log in to see your assets",

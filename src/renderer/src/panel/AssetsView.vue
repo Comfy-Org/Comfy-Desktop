@@ -7,6 +7,7 @@ import {
   Box,
   Check,
   ChevronDown,
+  ChevronRight,
   Cloud,
   Copy,
   Download,
@@ -315,6 +316,67 @@ function folderPathOf({ build, computer }: AssetBuild): string | null {
   return (computer ? folders.shared : folders.ofBuild[build.id]) ?? null
 }
 
+interface FolderEntry {
+  name: string
+  path: string
+  count: number
+}
+
+const folder = ref('')
+
+const placeFolder = computed(() => (selectedBuild.value ? folderPathOf(selectedBuild.value) : null))
+
+const browsingFlat = computed(() => !placeFolder.value || listedSearch.value.length > 0)
+
+function withSlashes(path: string): string {
+  return path.replaceAll('\\', '/')
+}
+
+function folderUnder(asset: GalleryAsset): string | null {
+  const root = placeFolder.value
+  if (!root || !isLocal(asset)) return null
+  const from = withSlashes(root).replace(/\/+$/, '')
+  const dir = withSlashes(folderOf(asset.id))
+  if (dir === from) return ''
+  return dir.startsWith(`${from}/`) ? dir.slice(from.length + 1) : null
+}
+
+function inCurrentFolder(asset: GalleryAsset): boolean {
+  return browsingFlat.value || (folderUnder(asset) ?? '') === folder.value
+}
+
+const folderOptions = computed<FolderEntry[]>(() => {
+  if (browsingFlat.value) return []
+  const counts = new Map<string, number>()
+  for (const asset of assets.value) {
+    if (kindFilter.value !== 'all' && asset.kind !== kindFilter.value) continue
+    const dir = folderUnder(asset)
+    if (!dir) continue
+    const parts = dir.split('/')
+    for (let at = 0; at < parts.length; at++) {
+      const path = parts.slice(0, at + 1).join('/')
+      counts.set(path, (counts.get(path) ?? 0) + 1)
+    }
+  }
+  return [...counts]
+    .map(([path, count]) => ({ name: path.split('/').at(-1)!, path, count }))
+    .toSorted((a, b) => a.path.localeCompare(b.path))
+})
+
+const folderLabel = computed(() => (folder.value ? folder.value : t('assets.allFiles')))
+
+const folderTrail = computed(() =>
+  folder.value
+    ? folder.value
+        .split('/')
+        .map((name, at, parts) => ({ name, path: parts.slice(0, at + 1).join('/') }))
+    : []
+)
+
+watch([() => selectedBuild.value?.build.id, listedSearch], () => {
+  folder.value = ''
+})
+
 const SHORT_PATH_LENGTH = 34
 
 function homePath(folder: string): string {
@@ -388,7 +450,9 @@ function cardKey(asset: GalleryAsset): string {
 }
 
 const pageCount = computed(() => Math.max(1, Math.ceil(assetTotal.value / pageSize.value)))
-const showPagination = computed(() => !!selectedBuild.value && assetTotal.value > 0)
+const showPagination = computed(
+  () => !!selectedBuild.value && assetTotal.value > 0 && folder.value === ''
+)
 
 const kindOptions = computed(() =>
   kinds.map((kind) => ({
@@ -419,7 +483,8 @@ watch([selectedBuild, searchOpen], () => void fitToolbar(), { flush: 'post' })
 
 const visibleAssets = computed(() => {
   const filtered = assets.value.filter(
-    (asset) => kindFilter.value === 'all' || asset.kind === kindFilter.value
+    (asset) =>
+      (kindFilter.value === 'all' || asset.kind === kindFilter.value) && inCurrentFolder(asset)
   )
   const direction = sortOrder.value === 'newest' ? -1 : 1
   return filtered.toSorted((a, b) => direction * (createdMs(a) - createdMs(b)))
@@ -1309,6 +1374,55 @@ function extensionOf(name: string): string {
           class="h-[34px] w-40 shrink-0 rounded-[10px]"
           data-testid="assets-build-picker-loading"
         />
+        <Menu
+          v-if="folderOptions.length > 0"
+          :modal="false"
+          align="start"
+          class="z-20 max-h-80 min-w-60 overflow-y-auto"
+          :aria-label="t('assets.folderPickerLabel')"
+        >
+          <template #trigger>
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              class="max-w-60 shrink-0 gap-1.5 text-[13px]"
+              :aria-label="t('assets.folderPickerLabel')"
+              data-testid="assets-folder-picker"
+            >
+              <Folder :size="14" class="shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span class="truncate">{{ folderLabel }}</span>
+              <ChevronDown :size="14" class="shrink-0 text-muted-foreground" aria-hidden="true" />
+            </Button>
+          </template>
+          <DropdownMenuRadioGroup :model-value="folder" class="flex flex-col gap-0.5">
+            <MenuRadioItem
+              as="button"
+              type="button"
+              value=""
+              class="w-full gap-2.5"
+              data-testid="assets-folder-all"
+              @select="folder = ''"
+            >
+              <span class="flex-1 text-left">{{ t('assets.allFiles') }}</span>
+              <Check v-if="folder === ''" :size="15" aria-hidden="true" />
+            </MenuRadioItem>
+            <MenuRadioItem
+              v-for="entry in folderOptions"
+              :key="entry.path"
+              as="button"
+              type="button"
+              :value="entry.path"
+              class="w-full gap-2.5"
+              :data-testid="`assets-folder-${entry.path}`"
+              @select="folder = entry.path"
+            >
+              <span class="min-w-0 flex-1 truncate text-left">{{ entry.path }}</span>
+              <span class="shrink-0 text-subtle-foreground tabular-nums">{{ entry.count }}</span>
+              <Check v-if="folder === entry.path" :size="15" aria-hidden="true" />
+            </MenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </Menu>
         <SegmentedControl
           v-if="toolbarCompactness < KINDS_AS_MENU"
           v-model="kindFilter"
@@ -1501,6 +1615,34 @@ function extensionOf(name: string): string {
           })
         }}
       </p>
+      <nav
+        v-if="folderTrail.length > 0"
+        class="mx-auto flex w-full max-w-300 flex-wrap items-center gap-0.5 px-10 pb-3 text-ui"
+        data-testid="assets-breadcrumb"
+      >
+        <button
+          type="button"
+          class="rounded-md px-1.5 py-1 text-subtle-foreground hover:text-foreground"
+          data-testid="assets-breadcrumb-root"
+          @click="folder = ''"
+        >
+          {{ t('assets.allFiles') }}
+        </button>
+        <template v-for="(crumb, at) in folderTrail" :key="crumb.path">
+          <ChevronRight :size="14" class="text-subtle-foreground" aria-hidden="true" />
+          <button
+            type="button"
+            class="rounded-md px-1.5 py-1 hover:text-foreground"
+            :class="at === folderTrail.length - 1 ? 'text-foreground' : 'text-subtle-foreground'"
+            :aria-current="at === folderTrail.length - 1 ? 'page' : undefined"
+            :data-testid="`assets-breadcrumb-${crumb.path}`"
+            @click="folder = crumb.path"
+          >
+            {{ crumb.name }}
+          </button>
+        </template>
+      </nav>
+
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
