@@ -412,9 +412,6 @@ function installMockApi(initial?: {
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
     navigatePanel: vi.fn(),
-    listHomeWorkflows: vi.fn(async () => []),
-    openCatalogWorkflow: vi.fn(async () => true),
-    getAppsEnabled: vi.fn(async () => false),
     listApps: vi.fn(async () => []),
     showAppPage: vi.fn(async () => 'loading'),
     captureAppPage: vi.fn(async () => null),
@@ -1481,7 +1478,6 @@ describe('PanelApp', () => {
 
   it('opens Apps from the sidebar in place of Home, and leaves it again', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     const wrapper = mountPanel()
     await flushPromises()
 
@@ -1532,7 +1528,6 @@ describe('PanelApp', () => {
 
   it('opens Apps from See all apps on Home', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     const wrapper = mountPanel()
     await flushPromises()
 
@@ -1546,7 +1541,6 @@ describe('PanelApp', () => {
 
   it("goes back to all apps from the app page's All apps link, with the sidebar open again", async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -1568,7 +1562,6 @@ describe('PanelApp', () => {
 
   it('gives the sidebar its width back when the person leaves Apps with an app open', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -1588,7 +1581,6 @@ describe('PanelApp', () => {
 
   it('switches to another app from the rail in one click, without asking, when no run is going', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
@@ -1621,7 +1613,6 @@ describe('PanelApp', () => {
 
   it('asks before a switch that would stop a run, and stays on Stay', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
@@ -1668,7 +1659,6 @@ describe('PanelApp', () => {
 
   it('asks before opening an app from the Apps list or Home when that would stop a run', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
@@ -1702,7 +1692,6 @@ describe('PanelApp', () => {
 
   it('switches away from a running app at once, since it keeps running in the background', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
@@ -1729,7 +1718,6 @@ describe('PanelApp', () => {
 
   it('asks before leaving a build view for a running app, and stays on the build view on Stay', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
     ])
@@ -1756,7 +1744,6 @@ describe('PanelApp', () => {
 
   it('opens the app already open from the title bar without asking, even when Desktop cannot tell', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
     ])
@@ -1780,7 +1767,6 @@ describe('PanelApp', () => {
 
   it('opens a running app picked from the title bar while a build view shows', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
@@ -1802,7 +1788,6 @@ describe('PanelApp', () => {
 
   it('drops a switch whose run check answers after the person picked another app or went back to Apps', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] },
@@ -1840,7 +1825,6 @@ describe('PanelApp', () => {
 
   it('shows no switch warning when the person left before a full background answered', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
@@ -1869,7 +1853,6 @@ describe('PanelApp', () => {
 
   it('opens the app picked on Home inside Desktop, on the Apps page beside the folded sidebar', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
       { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
@@ -1891,12 +1874,10 @@ describe('PanelApp', () => {
       'page'
     )
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
-    expect(window.api.openCatalogWorkflow).not.toHaveBeenCalled()
   })
 
   it('shows all apps, not the one picked on Home again, when Apps is opened afterwards', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -1923,7 +1904,6 @@ describe('PanelApp', () => {
 
   it('keeps an app closed after it was opened from Home, closed, and Apps is opened again from Benchmarks', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -1951,7 +1931,6 @@ describe('PanelApp', () => {
 
   it('shows the cards when Apps is opened from Benchmarks after an app from Home was left open', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -1973,7 +1952,6 @@ describe('PanelApp', () => {
 
   it('names the app left open under Apps in the sidebar, and goes back to it from Assets', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -2009,7 +1987,6 @@ describe('PanelApp', () => {
 
   it('goes back to the app left open from Benchmarks', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -2029,7 +2006,6 @@ describe('PanelApp', () => {
 
   it('drops the app from the sidebar once the person goes back to all apps', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -2051,7 +2027,6 @@ describe('PanelApp', () => {
 
   it('keeps the app left open in the sidebar after a look at all apps without opening one', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -2084,7 +2059,6 @@ describe('PanelApp', () => {
 
   it('drops the app from the sidebar when its page closes while the person is on Assets', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
@@ -2129,7 +2103,6 @@ describe('PanelApp', () => {
 
   it('records each sidebar page the person opens, and not a click on the page already shown', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     const wrapper = mountPanel()
     await flushPromises()
     const events = captureTelemetry()
@@ -2151,7 +2124,6 @@ describe('PanelApp', () => {
 
   it('opens Assets on the Cloud file an app asks to see, and passes the file on only once', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     const wrapper = mountPanel()
     await flushPromises()
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
@@ -2176,7 +2148,6 @@ describe('PanelApp', () => {
 
   it('does not record a sidebar page open for See all apps on Home', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     const wrapper = mountPanel()
     await flushPromises()
     const events = captureTelemetry()
@@ -4347,7 +4318,6 @@ describe('PanelApp', () => {
 
     it('asks before closing while an app is still making something, and keeps the window on Cancel', async () => {
       window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-      vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
       vi.mocked(window.api.listApps).mockResolvedValue([
         { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
       ])
