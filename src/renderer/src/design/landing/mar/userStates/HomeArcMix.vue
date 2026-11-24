@@ -87,19 +87,22 @@ const allOn = computed<'apps' | 'templates'>(() =>
  * up with them in place. The arc never shows half-loaded or jumping cards.
  */
 const OUT_MS = 150
+const PRELOAD_MAX_MS = 350
 const next = computed(() => ({ items: items.value, label: allLabel.value, on: allOn.value }))
 const shown = shallowRef(next.value)
 const leaving = ref(false)
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 function preload(list: ArcItem[]): Promise<unknown> {
   // The front card and two each side are what shows first.
   const near = [...list.slice(0, 3), ...list.slice(-2)]
-  return Promise.all(
+  const decoded = Promise.all(
     near.map((x) => {
       const img = new Image()
       img.src = x.src
       return img.decode().catch(() => {})
     })
   )
+  return Promise.race([decoded, wait(PRELOAD_MAX_MS)])
 }
 let swap = 0
 watch(
@@ -108,10 +111,7 @@ watch(
     const id = ++swap
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
     leaving.value = !reduce
-    await Promise.all([
-      reduce ? null : new Promise((r) => setTimeout(r, OUT_MS)),
-      preload(next.value.items)
-    ])
+    await Promise.all([reduce ? null : wait(OUT_MS), preload(next.value.items)])
     if (id !== swap) return
     shown.value = next.value
     await nextTick()
