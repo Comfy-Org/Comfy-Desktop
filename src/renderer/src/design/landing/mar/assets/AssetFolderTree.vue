@@ -1,38 +1,23 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   ArrowDownToLine,
-  Archive,
-  BadgeCheck,
-  Briefcase,
-  Building2,
-  CalendarDays,
-  Camera,
   ChevronRight,
-  CircleCheck,
-  CircleX,
-  FlaskConical,
-  Folder,
   FolderPlus,
-  Megaphone,
-  Package,
-  Palette,
   Pencil,
   Plus,
-  Scissors,
   Wand,
   Star,
-  Trash2,
-  Brush
+  Trash2
 } from 'lucide-vue-next'
 import { ComfyAssets } from '../icons/comfyIcons'
+import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import type { MenuLine } from '../pages/menu'
 import type { MarAsset } from '../pages/assetsStore'
 import { factsFor } from './assetFacts'
 import { isStarred } from './assetFavorites'
-import { LABELS } from './assetLabels'
 import {
   addFolder,
   folderName,
@@ -64,36 +49,6 @@ const favOnly = defineModel<boolean>('favOnly', { required: true })
 const INDENT = 12
 const MAX_LEVELS = 8
 
-const ICONS: Record<string, Component> = {
-  'f-client': Briefcase,
-  'f-moodboards': Palette,
-  'f-tests': FlaskConical,
-  'f-deep-1': Building2,
-  'f-deep-2': CalendarDays,
-  'f-deep-2b': Archive,
-  'f-deep-3': Megaphone,
-  'f-deep-3b': Megaphone,
-  'f-deep-4': Camera,
-  'f-deep-4b': Scissors,
-  'f-deep-5': Package,
-  'f-deep-6': CircleCheck,
-  'f-deep-6b': CircleX,
-  'f-deep-7': Brush,
-  'f-deep-8': BadgeCheck
-}
-const GROUP_HUES = ['orange', 'green', 'blue', 'purple', 'red', 'yellow']
-
-function rootOf(id: string): AssetFolder | undefined {
-  let f = folders.find((x) => x.id === id)
-  while (f?.parent) f = folders.find((x) => x.id === f!.parent)
-  return f
-}
-function colorOf(id: string): string {
-  const tops = folders.filter((f) => !f.parent)
-  const at = Math.max(0, tops.indexOf(rootOf(id)!))
-  const hue = GROUP_HUES[at % GROUP_HUES.length]
-  return LABELS.find((l) => l.value === hue)?.color ?? 'currentColor'
-}
 function ancestors(id: string): AssetFolder[] {
   const out: AssetFolder[] = []
   for (let f = folders.find((x) => x.id === id); f?.parent;) {
@@ -127,8 +82,6 @@ const ROWS = computed(() =>
         level,
         guides: Array.from({ length: level }, (_, i) => i),
         kids: folders.some((x) => x.parent === f.id),
-        icon: ICONS[f.id] ?? Folder,
-        color: colorOf(f.id),
         count: items.filter((a) => inside.has(folderOf(a.id) ?? '')).length
       }
     })
@@ -268,15 +221,15 @@ function drop(id: string): void {
       <p class="mar-ftree-label">
         Folders<span class="mar-ftree-label-n">{{ folders.length }}</span>
       </p>
-      <Tooltip content="New folder" side="bottom">
-        <button
-          type="button"
-          class="mar-ftree-add"
+      <Tooltip content="New folder">
+        <Button
+          variant="ghost"
+          size="icon-xs"
           aria-label="New folder"
           @click="startNaming({ name: 'New folder' })"
         >
-          <Plus :size="14" />
-        </button>
+          <Plus :size="13" />
+        </Button>
       </Tooltip>
     </div>
 
@@ -297,9 +250,6 @@ function drop(id: string): void {
           <i v-for="g in f.guides" :key="g" class="mar-ftree-guide" :style="{ '--at': g }" />
           <div v-if="naming?.id === f.id" class="mar-ftree-naming">
             <span class="mar-ftree-chev-room" />
-            <span class="mar-ftree-icon" :style="{ color: f.color }"
-              ><component :is="f.icon" :size="15"
-            /></span>
             <input
               v-model="naming.name"
               v-focus
@@ -318,9 +268,6 @@ function drop(id: string): void {
               @dblclick="startNaming({ id: f.id, name: f.name })"
             >
               <span class="mar-ftree-chev-room" />
-              <span class="mar-ftree-icon" :style="{ color: f.color }"
-                ><component :is="f.icon" :size="15"
-              /></span>
               <span class="mar-ftree-name" :title="f.name">{{ f.name }}</span>
               <span class="mar-ftree-n">{{ f.count }}</span>
             </button>
@@ -351,7 +298,6 @@ function drop(id: string): void {
         >
           <div class="mar-ftree-naming">
             <span class="mar-ftree-chev-room" />
-            <span class="mar-ftree-icon" :style="{ color: f.color }"><Folder :size="15" /></span>
             <input
               v-model="naming.name"
               v-focus
@@ -370,7 +316,6 @@ function drop(id: string): void {
       >
         <div class="mar-ftree-naming">
           <span class="mar-ftree-chev-room" />
-          <span class="mar-ftree-icon"><Folder :size="15" /></span>
           <input
             v-model="naming.name"
             v-focus
@@ -389,8 +334,8 @@ function drop(id: string): void {
       @click="startNaming({ name: 'New folder' })"
     >
       <span class="mar-ftree-chev-room" />
-      <span class="mar-ftree-icon"><Plus :size="15" /></span>
       <span class="mar-ftree-name">New folder</span>
+      <span class="mar-ftree-new-plus"><Plus :size="13" /></span>
     </button>
   </nav>
 </template>
@@ -493,22 +438,6 @@ function drop(id: string): void {
   font-family: var(--font-mono);
   letter-spacing: 0;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-ftree-add {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-muted-foreground);
-  cursor: pointer;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ftree-add:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  color: var(--color-base-foreground);
-}
 .mar-ftree-list {
   display: flex;
   flex-direction: column;
@@ -609,6 +538,15 @@ function drop(id: string): void {
 }
 :root .proto-ui.proto-ui.proto-ui .mar-ftree-new {
   margin-top: 4px;
+  padding-right: 4px;
   color: var(--color-subtle-foreground);
+}
+.mar-ftree-new-plus {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
 }
 </style>
