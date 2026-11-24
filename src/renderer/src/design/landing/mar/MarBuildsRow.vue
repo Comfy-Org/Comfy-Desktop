@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import Card from '../ui/Card.vue'
 import SectionHeader from '../ui/SectionHeader.vue'
+import HomeSectionHeader from './HomeSectionHeader.vue'
 import StatusDot from '../ui/StatusDot.vue'
 import LocationIcon from '../ui/LocationIcon.vue'
 import { envStatus } from '../parts/env/env'
@@ -91,22 +92,45 @@ const tourAnchor = (i: ProtoInstance): string | undefined => {
   if (i.kind === 'cloud') return 'cloud-build'
   return i.kind === 'local' ? 'local-build' : undefined
 }
-const count = computed(() =>
-  Math.min(3, shown.value.length + (cardInBuilds.value || offerNew.value ? 1 : 0))
+const ROW_SLOTS = 3
+const NARROW_SLOTS = 2
+const filled = computed(() => shown.value.length + (cardInBuilds.value ? 1 : 0))
+const canAdd = computed(() => machine.value && !installPending.value)
+const rowHasRoom = computed(() => filled.value < ROW_SLOTS)
+const newTile = computed(() =>
+  can.value.onboarding ? canAdd.value && rowHasRoom.value : offerNew.value
 )
+const tileFitsNarrow = computed(() => filled.value < NARROW_SLOTS)
+const addButton = computed(() => {
+  if (!can.value.onboarding || !canAdd.value) return 'never'
+  if (!rowHasRoom.value) return 'always'
+  return tileFitsNarrow.value ? 'never' : 'narrow'
+})
+const count = computed(() => Math.min(ROW_SLOTS, filled.value + (newTile.value ? 1 : 0)))
 </script>
 
 <template>
-  <section class="mt-10" data-home-tour="home-builds">
+  <section class="mbr-row mt-10" data-home-tour="home-builds">
+    <HomeSectionHeader
+      v-if="can.onboarding"
+      title="Builds"
+      link-tip="All builds"
+      add-label="New build"
+      add-anchor="new-build"
+      :add="addButton"
+      @open="go('environments')"
+      @add="hostActions.newInstance()"
+    />
     <!-- All builds only once the row can't show them all. -->
     <SectionHeader
+      v-else
       class="mar-sec"
       title="Builds"
       :link="recentInstances.length > shown.length ? 'All builds' : undefined"
       @link="go('environments')"
     />
     <!-- One, two or three builds fill the row; narrow, one per row. -->
-    <div class="mbr-row">
+    <div>
       <div class="mbr-grid" :class="`is-${count}`">
         <!-- Home first: the first build, installing or ready, is the first card. -->
         <HomeInstall v-if="cardInBuilds" bare />
@@ -136,9 +160,10 @@ const count = computed(() =>
             </template>
           </BuildTile>
           <button
-            v-if="offerNew"
+            v-if="newTile"
             type="button"
             class="mbr-card mbr-tile mbr-new"
+            :class="!tileFitsNarrow && can.onboarding && 'is-wide-only'"
             data-home-tour="new-build"
             style="--h: 220"
             @click="hostActions.newInstance()"
@@ -181,6 +206,11 @@ const count = computed(() =>
 </template>
 
 <style>
+@container mbr-row (max-width: 56rem) {
+  :root .proto-ui.proto-ui.proto-ui .mbr-new.is-wide-only {
+    display: none;
+  }
+}
 /* The New build tile: a grey round plus where the machine goes. */
 .mbr-new {
   text-align: left;
