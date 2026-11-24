@@ -28,7 +28,6 @@ import SidebarAccount from './SidebarAccount.vue'
 import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
-import SidebarAppRail from './SidebarAppRail.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
@@ -46,21 +45,18 @@ const {
   activePage,
   activeBuildId = null,
   makeRoom = false,
-  appInProgress = null,
-  apps = null
+  appInProgress = null
 } = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
   makeRoom?: boolean
   appInProgress?: AppCard | null
-  apps?: AppCard[] | null
 }>()
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
   'open-build': [installation: Installation]
   'open-app': [app: AppCard]
-  'switch-app': [app: AppCard]
   'new-build': []
 }>()
 
@@ -74,7 +70,16 @@ const { t } = useI18n()
 provide(TOOLTIP_GATE, () => !appPageShown.value)
 
 const collapsedByChoice = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
-const collapsed = computed(() => makeRoom || collapsedByChoice.value)
+const reopenedWhileMakingRoom = ref(false)
+watch(
+  () => makeRoom,
+  () => {
+    reopenedWhileMakingRoom.value = false
+  }
+)
+const collapsed = computed(() =>
+  makeRoom ? !reopenedWhileMakingRoom.value : collapsedByChoice.value
+)
 const faceTransition = {
   enterActiveClass:
     'transition-[opacity,scale] duration-180 ease-out motion-reduce:transition-opacity',
@@ -108,7 +113,8 @@ const header = ref<HTMLElement | null>(null)
 
 function toggleCollapsed(): void {
   const toggleHadFocus = header.value?.contains(document.activeElement) ?? false
-  collapsedByChoice.value = !collapsedByChoice.value
+  if (makeRoom) reopenedWhileMakingRoom.value = !reopenedWhileMakingRoom.value
+  else collapsedByChoice.value = !collapsedByChoice.value
   if (toggleHadFocus) void nextTick(focusToggle)
 }
 
@@ -256,11 +262,6 @@ function noteFocusOut(event: FocusEvent): void {
   }
 }
 
-function switchApp(app: AppCard): void {
-  sidebarFocused.value = false
-  emit('switch-app', app)
-}
-
 onBeforeUnmount(() => (sidebarFocused.value = false))
 
 function openSettings(): void {
@@ -281,14 +282,7 @@ function openSettings(): void {
     @focusin="noteFocusIn"
     @focusout="noteFocusOut"
   >
-    <SidebarAppRail
-      v-if="makeRoom"
-      :current-app="appInProgress"
-      :apps="apps"
-      @switch-app="switchApp"
-    />
     <div
-      v-else
       ref="header"
       class="relative mt-2 mb-3.5 h-9 w-full shrink-0"
       data-testid="app-sidebar-header"
@@ -349,7 +343,6 @@ function openSettings(): void {
     </div>
 
     <nav
-      v-if="!makeRoom"
       class="flex min-h-0 w-full flex-1 scrollbar-hide flex-col gap-1 overflow-x-hidden overflow-y-auto"
     >
       <template v-for="group in groups" :key="group.key">
@@ -578,7 +571,6 @@ function openSettings(): void {
     <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
       <SidebarDesktopUpdate :collapsed="collapsed" />
       <Button
-        v-if="!makeRoom"
         variant="muted-textonly"
         size="unset"
         class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"

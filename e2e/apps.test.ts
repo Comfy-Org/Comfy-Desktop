@@ -11,7 +11,6 @@ import { claimsOf, FakeCloud, reply, type BearerClaims } from './support/fakeClo
 
 const SIDEBAR_APPS = '[data-testid="app-sidebar-apps"]'
 const SIDEBAR_HOME = '[data-testid="app-sidebar-home"]'
-const RAIL_CUTOUT = '[data-testid="app-sidebar-app-remove-background"]'
 const HOME_VIEW = '[data-testid="home-view"]'
 const HOME_APP_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
 const HOME_APP_IN_FRONT = '[data-testid="home-carousel-card"][aria-current="true"]'
@@ -366,7 +365,7 @@ test("Home shows the website's apps, and the one in front opens inside Desktop, 
     .poll(
       () =>
         ctx.panel.evaluate<string | null>(
-          `document.querySelector('${RAIL_CUTOUT}')?.getAttribute('aria-current') ?? null`
+          `document.querySelector('${SIDEBAR_APPS}')?.getAttribute('aria-current') ?? null`
         ),
       LONG_WAIT
     )

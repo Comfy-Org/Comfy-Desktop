@@ -1579,7 +1579,7 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
   })
 
-  it('switches to another app from the rail in one click, without asking, when no run is going', async () => {
+  it('keeps the Desktop menu on the folded sidebar while an app is open', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
@@ -1591,27 +1591,15 @@ describe('PanelApp', () => {
     await flushPromises()
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')).toBe(
-      'page'
-    )
 
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe(
-      'Remove Background'
-    )
-    expect(wrapper.get('[data-testid="app-sidebar-app-cutout"]').attributes('aria-current')).toBe(
-      'page'
-    )
-    expect(
-      wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')
-    ).toBeUndefined()
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
-    expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
+    expect(wrapper.find('[data-testid="app-sidebar-home"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="app-sidebar-app-cutout"]').exists()).toBe(false)
   })
 
-  it('asks before a switch that would stop a run, and stays on Stay', async () => {
+  it('asks before a switch from the title bar that would stop a run, and stays on Stay', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
@@ -1630,7 +1618,7 @@ describe('PanelApp', () => {
     const dialogButton = (testId: string) =>
       document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
 
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
     await vi.waitFor(() => expect(dialogButton('base-alert-action')).not.toBeNull())
 
     expect(document.body.textContent).toContain('Switch to Remove Background?')
@@ -1645,7 +1633,7 @@ describe('PanelApp', () => {
     await vi.waitFor(() => expect(dialogButton('base-alert-action')).toBeNull())
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
 
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
     await vi.waitFor(() => expect(dialogButton('base-alert-action')).not.toBeNull())
     dialogButton('base-alert-action')!.click()
     await flushPromises()
@@ -1690,7 +1678,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
   })
 
-  it('switches away from a running app at once, since it keeps running in the background', async () => {
+  it('switches away from a running app from the title bar at once, since it keeps running in the background', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
@@ -1705,7 +1693,7 @@ describe('PanelApp', () => {
     reportRuns(['upscale'])
     await flushPromises()
 
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
     await flushPromises()
 
     expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
@@ -1753,7 +1741,6 @@ describe('PanelApp', () => {
     await flushPromises()
     await wrapper.get('[data-testid="app-card-cutout"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
     vi.mocked(window.api.appSwitchStopsRun).mockRejectedValue(new Error('no answer'))
 
     mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
@@ -1786,7 +1773,7 @@ describe('PanelApp', () => {
     )
   })
 
-  it('drops a switch whose run check answers after the person picked another app or went back to Apps', async () => {
+  it('drops a title bar switch whose run check answers after the person picked another app or went back to Apps', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listApps).mockResolvedValue([
       { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
@@ -1805,15 +1792,15 @@ describe('PanelApp', () => {
     )
     const hostTitle = () => wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')
 
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
-    await wrapper.get('[data-testid="app-sidebar-app-hdr"]').trigger('click')
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('hdr'))
     answers[1]?.(null)
     await flushPromises()
     answers[0]?.(null)
     await flushPromises()
     expect(hostTitle()).toBe('SDR to HDR')
 
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
     const appPageWentBackToAllApps = vi.mocked(window.api.onAppPageClosed).mock.calls.at(-1)![0]
     appPageWentBackToAllApps()
     await flushPromises()
@@ -1840,7 +1827,7 @@ describe('PanelApp', () => {
       () => new Promise((resolve) => (answer = resolve))
     )
 
-    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('cutout'))
     const appPageWentBackToAllApps = vi.mocked(window.api.onAppPageClosed).mock.calls.at(-1)![0]
     appPageWentBackToAllApps()
     await flushPromises()
@@ -1870,9 +1857,6 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
-    expect(wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')).toBe(
-      'page'
-    )
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
   })
 
@@ -1973,9 +1957,6 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
-    expect(wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')).toBe(
-      'page'
-    )
     expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
     expect(window.api.navigatePanel).toHaveBeenLastCalledWith('apps')
     expect(
