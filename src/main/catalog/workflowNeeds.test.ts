@@ -1,13 +1,15 @@
+import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
+  request: vi.fn(),
   listed: vi.fn(),
   builds: vi.fn(),
   missing: vi.fn()
 }))
 
-vi.mock('electron', () => ({ net: { fetch: mocks.fetch } }))
+vi.mock('electron', () => ({ net: { fetch: mocks.fetch, request: mocks.request } }))
 vi.mock('../lib/pythonEnv', () => ({ getActiveVenvDir: () => null }))
 vi.mock('../sources/standalone/envPaths', () => ({ findSitePackages: () => null }))
 vi.mock('../sources/standalone/curatedTemplates', () => ({ RAW_TEMPLATES_BASE: '' }))
@@ -22,6 +24,42 @@ import { _forgetModelSizesForTest, catalogWorkflowNeeds } from './workflowNeeds'
 const GRAPH_URL = 'https://cloud.comfy.org/api/v1/catalog/media/graph/version'
 const VAE = 'https://huggingface.co/Comfy-Org/repo/resolve/main/vae/ltx_vae.safetensors'
 const UNET = 'https://huggingface.co/Comfy-Org/repo/resolve/main/unet/ltx_fp8.safetensors'
+const RENAMED = 'https://huggingface.co/Comfy-Org/renamed/resolve/main/unet/ltx_fp8.safetensors'
+const CDN = 'https://cdn.example.test/ltx_fp8.safetensors'
+
+interface Answer {
+  status: number
+  headers?: Record<string, string[]>
+  to?: string
+}
+
+let answers: Record<string, Answer> = {}
+
+function answerSizeRequests(): void {
+  mocks.request.mockImplementation(({ url }: { url: string }) => {
+    let followed = false
+    const answer = (at: string): void => {
+      const { status, headers = {}, to } = answers[at] ?? { status: 404 }
+      if (to === undefined) {
+        request.emit('response', { statusCode: status, headers })
+        return
+      }
+      followed = false
+      request.emit('redirect', status, 'HEAD', to, headers)
+      if (followed) queueMicrotask(() => answer(to))
+      else if (!request.abort.mock.calls.length) request.emit('error', new Error('cancelled'))
+    }
+    const request = Object.assign(new EventEmitter(), {
+      end: () => queueMicrotask(() => answer(url)),
+      abort: vi.fn(),
+      followRedirect: () => {
+        followed = true
+      }
+    })
+    return request
+  })
+}
+
 const GRAPH = {
   nodes: [
     {
@@ -47,15 +85,12 @@ beforeEach(() => {
   mocks.listed.mockImplementation((id: string) =>
     id === 'ltx' ? { card: { id: 'ltx' }, editorGraphUrl: GRAPH_URL } : undefined
   )
-  mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-    if (url === GRAPH_URL) return Response.json(GRAPH)
-    expect(init?.method).toBe('HEAD')
-    const size = url === UNET ? '33700000000' : null
-    return new Response(null, {
-      status: 302,
-      headers: size ? { 'x-linked-size': size } : {}
-    })
-  })
+  mocks.fetch.mockImplementation(async () => Response.json(GRAPH))
+  answers = {
+    [UNET]: { status: 302, to: CDN, headers: { 'X-Linked-Size': ['33700000000'] } },
+    [VAE]: { status: 302, to: CDN }
+  }
+  answerSizeRequests()
   mocks.builds.mockResolvedValue([{ id: 'lab' }, { id: 'sandbox' }])
   mocks.missing.mockImplementation(async (build: string, models: { filename: string }[]) =>
     build === 'sandbox' ? models : []
@@ -72,7 +107,7 @@ describe('what a catalog workflow needs', () => {
       ],
       missingByBuild: {
         lab: [],
-        sandbox: ['ltx_vae.safetensors', 'ltx_fp8.safetensors']
+        sandbox: ['vae/ltx_vae.safetensors', 'diffusion_models/ltx_fp8.safetensors']
       }
     })
   })
@@ -81,15 +116,36 @@ describe('what a catalog workflow needs', () => {
     await catalogWorkflowNeeds('ltx')
     await catalogWorkflowNeeds('ltx')
 
-    const graphFetches = mocks.fetch.mock.calls.filter(([url]) => url === GRAPH_URL)
-    const unetLookups = mocks.fetch.mock.calls.filter(([url]) => url === UNET)
-    expect(graphFetches).toHaveLength(1)
+    const unetLookups = mocks.request.mock.calls.filter(([{ url }]) => url === UNET)
+    expect(mocks.fetch).toHaveBeenCalledOnce()
     expect(unetLookups).toHaveLength(1)
+  })
+
+  it('reads the size without following Hugging Face to the file host', async () => {
+    await catalogWorkflowNeeds('ltx')
+
+    expect(mocks.request).toHaveBeenCalledWith(
+      expect.objectContaining({ url: UNET, method: 'HEAD', redirect: 'manual' })
+    )
+    expect(mocks.request.mock.calls.map(([{ url }]) => url)).not.toContain(CDN)
+  })
+
+  it('follows a renamed Hugging Face repository to the size', async () => {
+    answers = {
+      [UNET]: { status: 307, to: RENAMED },
+      [RENAMED]: { status: 302, to: CDN, headers: { 'x-linked-size': ['33700000000'] } },
+      [VAE]: { status: 200, headers: { 'content-length': ['1200'] } }
+    }
+
+    expect((await catalogWorkflowNeeds('ltx'))?.models.map(({ sizeBytes }) => sizeBytes)).toEqual([
+      1200, 33700000000
+    ])
   })
 
   it('answers nothing for a workflow Explore is not showing', async () => {
     expect(await catalogWorkflowNeeds('https://example.com')).toBeNull()
     expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(mocks.request).not.toHaveBeenCalled()
   })
 
   it('fails, rather than needing nothing, when the graph cannot be downloaded', async () => {
@@ -116,14 +172,13 @@ describe('what a catalog workflow needs', () => {
       directory: 'checkpoints'
     }))
     const big = { nodes: [{ id: 1, type: 'Loader', properties: { models: many } }], links: [] }
-    mocks.fetch.mockImplementation(async (url: string) =>
-      url === GRAPH_URL ? Response.json(big) : new Response(null, { status: 404 })
-    )
+    mocks.fetch.mockImplementation(async () => Response.json(big))
+    answers = {}
 
     const needs = await catalogWorkflowNeeds('ltx')
 
     expect(needs?.models).toHaveLength(30)
     expect(needs?.missingByBuild.sandbox).toHaveLength(30)
-    expect(mocks.fetch.mock.calls.filter(([, init]) => init?.method === 'HEAD')).toHaveLength(24)
+    expect(mocks.request).toHaveBeenCalledTimes(24)
   })
 })

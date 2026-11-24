@@ -1,3 +1,4 @@
+import { modelKey } from '../panel/workflowTargets'
 import type { BridgeSeed, FakeBridge } from './fakeBridge'
 import {
   EXPLORE_WORKFLOWS,
@@ -96,7 +97,7 @@ function launchLikeDesktop(bridge: FakeBridge): void {
       if (target.where === 'local' && options?.downloadMissing) {
         const missing = new Set(needs.missingByBuild[target.build] ?? [])
         const totalBytes = needs.models
-          .filter((model) => missing.has(model.filename))
+          .filter((model) => missing.has(modelKey(model)))
           .reduce((total, model) => total + (model.sizeBytes ?? 0), 0)
         for (let step = 1; step <= DOWNLOAD_STEPS; step += 1) {
           await pause(DOWNLOAD_STEP_MS)

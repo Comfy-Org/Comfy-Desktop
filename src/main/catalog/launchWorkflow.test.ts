@@ -10,8 +10,15 @@ const mocks = vi.hoisted(() => ({
   listWorkspaces: vi.fn(),
   missing: vi.fn(),
   startDownload: vi.fn(),
+  downloadBytes: vi.fn(),
   downloadListener: null as
-    ((summary: { status: string; receivedBytes: number; totalBytes: number }) => void) | null,
+    | ((summary: {
+        status: string
+        receivedBytes: number
+        totalBytes: number
+        error?: string
+      }) => void)
+    | null,
   installation: vi.fn(),
   localBuilds: vi.fn()
 }))
@@ -28,6 +35,7 @@ vi.mock('../devplatform/session', () => ({
 vi.mock('../lib/i18n', () => ({ t: (key: string) => key }))
 vi.mock('./workflows', () => ({ listedWorkflow: mocks.listed }))
 vi.mock('./workflowNeeds', () => ({
+  knownDownloadBytes: mocks.downloadBytes,
   catalogWorkflowModels: async () => [
     { filename: 'model.safetensors', directory: 'checkpoints', url: 'https://huggingface.co/m' }
   ]
@@ -36,6 +44,7 @@ vi.mock('../installations', () => ({ get: mocks.installation }))
 vi.mock('../apps/localBuild', () => ({ usableLocalBuilds: mocks.localBuilds }))
 vi.mock('../lib/modelDownloadPaths', () => ({ missingModelFiles: mocks.missing }))
 vi.mock('../sources/standalone/templateDownloadCore', () => ({
+  DISK_SPACE_ERROR: 'insufficient-disk',
   isTerminal: (status: string) => ['done', 'error', 'cancelled'].includes(status)
 }))
 vi.mock('../sources/standalone/templateDownloadTask', () => ({
@@ -68,6 +77,7 @@ beforeEach(() => {
   mocks.installation.mockResolvedValue({ id: 'inst-local' })
   mocks.localBuilds.mockResolvedValue([{ id: 'inst-local', version: '0.3.66' }])
   mocks.missing.mockResolvedValue([])
+  mocks.downloadBytes.mockResolvedValue(0)
   mocks.subject = null
   mocks.workspaceId = null
   mocks.listWorkspaces.mockResolvedValue([])
@@ -191,17 +201,20 @@ describe('launching workflows from the published catalog', () => {
   })
 
   it('downloads the models a local build is missing, reports progress, then opens the graph', async () => {
-    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
+    const missing = [{ filename: 'model.safetensors', directory: 'checkpoints' }]
+    mocks.missing.mockResolvedValue(missing)
+    mocks.downloadBytes.mockResolvedValue(6_500_000_000)
 
     const launching = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', {
       downloadMissing: true
     })
     await vi.waitFor(() => expect(mocks.downloadListener).not.toBeNull())
+    expect(mocks.downloadBytes).toHaveBeenCalledWith(missing)
     expect(mocks.startDownload).toHaveBeenCalledWith(
       'catalog-workflow:catalog-id:inst-local',
       { id: 'inst-local' },
       'catalog-id',
-      0,
+      6_500_000_000,
       expect.anything(),
       GRAPH
     )
@@ -228,6 +241,24 @@ describe('launching workflows from the published catalog', () => {
     mocks.downloadListener!({ status: 'error', receivedBytes: 1, totalBytes: 10 })
 
     expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.downloadFailed' })
+    expect(mocks.open).not.toHaveBeenCalled()
+  })
+
+  it('says the disk is full when the models do not fit', async () => {
+    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
+
+    const launching = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', {
+      downloadMissing: true
+    })
+    await vi.waitFor(() => expect(mocks.downloadListener).not.toBeNull())
+    mocks.downloadListener!({
+      status: 'error',
+      receivedBytes: 0,
+      totalBytes: 10,
+      error: 'insufficient-disk'
+    })
+
+    expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.noDiskSpace' })
     expect(mocks.open).not.toHaveBeenCalled()
   })
 

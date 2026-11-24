@@ -27,13 +27,20 @@ import { useSessionStore } from '../stores/sessionStore'
 import type {
   CatalogWorkflow,
   CatalogWorkflowDownload,
+  CatalogWorkflowModel,
   CatalogWorkflowNeeds,
   Installation
 } from '../types/ipc'
 import WorkflowGraphPreview from './WorkflowGraphPreview.vue'
 import WorkflowResultPreview from './WorkflowResultPreview.vue'
 import { formatBytes, useWorkflowLabels } from './useWorkflowLabels'
-import { bestChoice, knownBytes, targetChoices, type TargetChoice } from './workflowTargets'
+import {
+  bestChoice,
+  knownBytes,
+  modelKey,
+  targetChoices,
+  type TargetChoice
+} from './workflowTargets'
 
 type PreviewTab = 'result' | 'graph'
 type Zoom = 'fit' | number
@@ -169,8 +176,9 @@ const needsState = computed<'installed' | 'downloads' | 'cloud' | null>(() => {
   return choice.state === 'ready' ? 'installed' : null
 })
 
-function modelMissing(filename: string): boolean {
-  return selected.value?.missing.some((model) => model.filename === filename) ?? false
+function modelMissing(wanted: CatalogWorkflowModel): boolean {
+  const key = modelKey(wanted)
+  return selected.value?.missing.some((model) => modelKey(model) === key) ?? false
 }
 
 const action = computed<{ label: string; disabled: boolean; run: () => void }>(() => {
@@ -271,6 +279,10 @@ async function launch(choice: TargetChoice): Promise<void> {
     pending.value = false
     progress.value = null
   }
+}
+
+function openTutorial(): void {
+  if (props.workflow.tutorialUrl) void window.api.openExternal(props.workflow.tutorialUrl)
 }
 
 function logIn(): void {
@@ -666,7 +678,7 @@ onBeforeUnmount(() => {
                     {{ formatBytes(model.sizeBytes) }}
                   </span>
                   <Download
-                    v-if="selected?.where === 'local' && modelMissing(model.filename)"
+                    v-if="selected?.where === 'local' && modelMissing(model)"
                     :size="13"
                     class="shrink-0 text-muted-foreground"
                     :aria-label="t('workflowLaunch.needs.state.downloads')"
@@ -713,9 +725,9 @@ onBeforeUnmount(() => {
                 <dd class="m-0">
                   <a
                     :href="workflow.tutorialUrl"
-                    target="_blank"
-                    rel="noreferrer"
                     class="inline-flex items-center gap-1 text-foreground no-underline hover:underline"
+                    data-testid="workflow-tutorial"
+                    @click.prevent="openTutorial"
                   >
                     <BookOpen :size="12" aria-hidden="true" />{{ tutorialHost }}
                   </a>

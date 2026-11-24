@@ -19,6 +19,7 @@ const catalogLocalBuildVersions = vi.fn<ElectronApi['catalogLocalBuildVersions']
 const catalogWorkflowNeeds = vi.fn<ElectronApi['catalogWorkflowNeeds']>()
 const signIn = vi.fn()
 const writeText = vi.fn<(text: string) => Promise<void>>()
+const openExternal = vi.fn<ElectronApi['openExternal']>()
 let sendProgress: (progress: CatalogWorkflowDownload) => void = () => {}
 
 const WORKFLOW: CatalogWorkflow = {
@@ -80,7 +81,7 @@ const NEEDS: CatalogWorkflowNeeds = {
   ],
   missingByBuild: {
     lab: [],
-    sandbox: ['ltx_fp8.safetensors', 'ltx_vae.safetensors'],
+    sandbox: ['diffusion_models/ltx_fp8.safetensors', 'vae/ltx_vae.safetensors'],
     old: []
   }
 }
@@ -130,6 +131,7 @@ beforeEach(() => {
   catalogWorkflowNeeds.mockReset().mockResolvedValue(NEEDS)
   signIn.mockReset().mockResolvedValue({ signedIn: true })
   writeText.mockReset().mockResolvedValue()
+  openExternal.mockReset().mockResolvedValue()
   vi.stubGlobal(
     'api',
     bridge({
@@ -137,6 +139,7 @@ beforeEach(() => {
       openCatalogWorkflow,
       catalogLocalBuildVersions,
       catalogWorkflowNeeds,
+      openExternal,
       onCatalogWorkflowDownload: (listener: typeof sendProgress) => {
         sendProgress = listener
         return () => {}
@@ -418,6 +421,19 @@ describe('the workflow page', () => {
       'ltx_fp8.safetensors'
     )
     expect(dialog.get('[data-testid="workflow-needs-list"]').text()).toContain('33.7 GB')
+  })
+
+  it('opens the tutorial in the browser, not in a window of its own', async () => {
+    const tutorialUrl = 'https://docs.comfy.org/tutorials/video/ltx'
+    const dialog = await mountDialog([LAB, CLOUD], { ...WORKFLOW, tutorialUrl })
+    const link = dialog.get('[data-testid="workflow-tutorial"]')
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+
+    link.element.dispatchEvent(click)
+
+    expect(link.attributes('target')).toBeUndefined()
+    expect(click.defaultPrevented).toBe(true)
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith(tutorialUrl)
   })
 
   it('copies the Comfy Hub link', async () => {

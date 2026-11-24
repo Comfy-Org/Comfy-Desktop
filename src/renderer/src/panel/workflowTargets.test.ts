@@ -33,7 +33,11 @@ const NEEDS: CatalogWorkflowNeeds = {
     { filename: 'ltx_fp8.safetensors', directory: 'diffusion_models', sizeBytes: 33_700_000_000 },
     { filename: 'ltx_vae.safetensors', directory: 'vae', sizeBytes: 300_000_000 }
   ],
-  missingByBuild: { lab: [], sandbox: ['ltx_fp8.safetensors', 'ltx_vae.safetensors'], old: [] }
+  missingByBuild: {
+    lab: [],
+    sandbox: ['diffusion_models/ltx_fp8.safetensors', 'vae/ltx_vae.safetensors'],
+    old: []
+  }
 }
 
 function context(over: Partial<TargetContext> = {}): TargetContext {
@@ -63,6 +67,26 @@ describe('where a catalog workflow can open', () => {
     expect(choices[2]!.disabled).toBe(true)
   })
 
+  it('tells apart two models that share a filename in different folders', () => {
+    const shared = 'diffusion_pytorch_model.safetensors'
+    const [sandbox] = targetChoices(
+      context({
+        needs: {
+          graph: null,
+          models: [
+            { filename: shared, directory: 'vae', sizeBytes: 300 },
+            { filename: shared, directory: 'controlnet', sizeBytes: 2_000 }
+          ],
+          missingByBuild: { sandbox: [`controlnet/${shared}`], lab: [], old: [] }
+        }
+      })
+    )
+
+    expect(sandbox!.missing).toEqual([
+      { filename: shared, directory: 'controlnet', sizeBytes: 2_000 }
+    ])
+  })
+
   it('picks a running build with every model, then one with every model, then Cloud', () => {
     expect(bestChoice(targetChoices(context()))?.key).toBe('local:lab')
     expect(bestChoice(targetChoices(context({ isRunning: (id) => id === 'sandbox' })))?.key).toBe(
@@ -75,8 +99,8 @@ describe('where a catalog workflow can open', () => {
             needs: {
               ...NEEDS,
               missingByBuild: {
-                lab: ['ltx_vae.safetensors'],
-                sandbox: ['ltx_vae.safetensors'],
+                lab: ['vae/ltx_vae.safetensors'],
+                sandbox: ['vae/ltx_vae.safetensors'],
                 old: []
               }
             }

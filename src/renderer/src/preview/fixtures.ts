@@ -767,8 +767,8 @@ export const WORKFLOW_NEEDS: CatalogWorkflowNeeds = {
   missingByBuild: {
     'inst-comfyui': [],
     'inst-video-experiments': [
-      'ltx-2.3-22b-dev-fp8.safetensors',
-      'gemma_3_12B_it_fp4_mixed.safetensors'
+      'checkpoints/ltx-2.3-22b-dev-fp8.safetensors',
+      'text_encoders/gemma_3_12B_it_fp4_mixed.safetensors'
     ]
   }
 }
