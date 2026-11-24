@@ -34,6 +34,7 @@ import { saveFile } from './saveFile'
 import AssetCover from './AssetCover.vue'
 import GenerationInfo from './GenerationInfo.vue'
 import { addTag, removeTag, tagsOf } from './assetTags'
+import { assetModal } from './assetModal'
 import { LABELS, labelColor, labelOf, setLabel } from './assetLabels'
 
 /**
@@ -81,6 +82,10 @@ const {
 const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
 const facts = computed(() => factsFor(asset))
+/** Full screen (UI Playground › Asset modal): the frame fills the window,
+ *  tags stay out of it, and Close sits by the name instead of outside. In
+ *  a tab there is no modal to fill, so it keeps today's look. */
+const full = computed(() => assetModal.id === 'full' && !tab)
 const tags = computed(() => tagsOf(asset))
 /** Adding a tag: "+ Add tag" turns into a chip-sized field in the same
  *  row, suggesting the tags already in use as you type. Enter adds the
@@ -460,13 +465,19 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body" :disabled="tab">
     <div :class="tab ? 'mad-host' : 'proto-ui mad-scrim'" @pointerdown.self="emit('close')">
-      <button v-if="!tab" type="button" class="mad-x" aria-label="Close" @click="emit('close')">
+      <button
+        v-if="!tab && !full"
+        type="button"
+        class="mad-x"
+        aria-label="Close"
+        @click="emit('close')"
+      >
         <X :size="18" />
       </button>
       <div
         ref="root"
         class="proto-ui mad"
-        :class="[!side && 'no-side', tab && 'is-tab']"
+        :class="[!side && 'no-side', tab && 'is-tab', full && 'is-full']"
         :role="tab ? 'region' : 'dialog'"
         :aria-modal="tab ? undefined : true"
         :aria-label="asset.name"
@@ -594,6 +605,16 @@ onBeforeUnmount(() => {
               <div class="mad-head-text">
                 <h2 class="mad-name">{{ asset.name }}</h2>
               </div>
+              <button
+                v-if="full"
+                type="button"
+                class="mad-icon mad-head-x"
+                aria-label="Close"
+                title="Close"
+                @click="emit('close')"
+              >
+                <X :size="16" />
+              </button>
               <!-- More, at the name's right: everything past the actions below. -->
               <div ref="moreBox" class="mad-pick">
                 <button
@@ -707,7 +728,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section class="mad-sec">
+            <section v-if="!full" class="mad-sec">
               <h3 class="mad-label">
                 Tags
                 <span
@@ -1624,10 +1645,23 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+/* Full screen: the frame takes the window, with the scrim as a hairline
+ * frame around it. The corners soften instead of rounding away. */
+.mad.is-full:not(.is-tab) {
+  inset: 8px;
+  border-radius: 18px;
+}
+.mad-head-x {
+  flex: none;
+}
+
 /* Smaller windows: the frame takes more of them. */
 @media (max-width: 1280px), (max-height: 760px) {
   .mad:not(.is-tab) {
     inset: 24px 64px;
+  }
+  .mad.is-full:not(.is-tab) {
+    inset: 8px;
   }
   :root .proto-ui.proto-ui.proto-ui .mad-x {
     top: 24px;
@@ -1640,6 +1674,9 @@ onBeforeUnmount(() => {
     inset: 60px 8px 8px;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 46vh);
+  }
+  .mad.is-full:not(.is-tab) {
+    inset: 8px;
   }
   .mad.is-tab {
     inset: 0;

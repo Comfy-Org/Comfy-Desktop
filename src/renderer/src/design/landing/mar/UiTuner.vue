@@ -14,6 +14,7 @@ import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
+import { ASSET_MODALS, assetModal } from './assets/assetModal'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
@@ -146,6 +147,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'buildPage', show: () => when.buildPage.value },
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
+  { id: 'assetModal', show: () => when.assetModal.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
@@ -400,6 +402,14 @@ const linkSays = computed(() => {
             <span class="text-ui text-subtle-foreground"
               >Adds Everywhere to the build picker: every running build at once.</span
             >
+          </Row>
+          <Row :show="shows('assetModal')" label="Asset modal">
+            <Seg v-model="assetModal.id" label="Asset modal" :options="ASSET_MODALS" />
+            <span class="text-ui text-subtle-foreground">{{
+              assetModal.id === 'window'
+                ? 'A frame with the app behind it, as proposed.'
+                : 'The whole window, no tags, Close by the name: the first milestone.'
+            }}</span>
           </Row>
           <Row :show="shows('folderDepth')" label="Folders">
             <Seg v-model="folderDepth.id" label="Folders" :options="FOLDER_DEPTHS" />

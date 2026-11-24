@@ -13,6 +13,7 @@ import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
+import { assetModal } from './assets/assetModal'
 import { folderDepth } from './assets/folderDepth'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
@@ -106,6 +107,8 @@ export const when = {
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
+  // The asset modal: Desktop's Assets page and ComfyUI's Assets tab open it.
+  assetModal: computed(() => (inShell.value && proto.page === 'assets') || assetsTab.open),
   // ComfyUI's Assets tab, where folders live.
   folderDepth: computed(() => assetsTab.open && assetsTab.on),
   // ComfyUI (Proposal): where the Assets panel's expand button goes.
@@ -225,6 +228,7 @@ export const TWEAKS = {
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
+  assetModal: one(assetModal, 'window'),
   folderDepth: one(folderDepth, 'few'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
