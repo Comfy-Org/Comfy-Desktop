@@ -67,6 +67,11 @@ vi.mock('../viewWorkspaceGrants', () => ({
   })
 }))
 
+vi.mock('../../apps/appsPages', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../apps/appsPages')>()),
+  liveAppsPages: () => []
+}))
+
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: mocks.getAllWindows },
   ipcMain: { handle: mocks.handle },
