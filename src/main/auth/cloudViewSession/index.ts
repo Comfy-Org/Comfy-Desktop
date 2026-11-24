@@ -69,13 +69,11 @@ export function decideCloudViewSession(
   desktop: DesktopIdentity
 ): CloudViewDecision {
   const { uid, marker } = state
-  if (uid) {
-    if (marker?.state === 'active' && marker.uid === uid) {
-      return desktop.signedIn && desktop.sub === marker.sub
-        ? { kind: 'none' }
-        : { kind: 'sign_out', uid }
-    }
-    return marker ? { kind: 'write_marker', marker: null } : { kind: 'none' }
+  if (uid && marker?.state === 'active' && marker.uid === uid) {
+    if (!desktop.signedIn || desktop.sub !== marker.sub) return { kind: 'sign_out', uid }
+    return desktop.fam === marker.fam
+      ? { kind: 'none' }
+      : { kind: 'write_marker', marker: { ...marker, fam: desktop.fam } }
   }
 
   if (marker && sameGrant(desktop, marker)) {
@@ -83,7 +81,7 @@ export function decideCloudViewSession(
       ? { kind: 'write_marker', marker: { ...marker, state: 'declined' } }
       : { kind: 'none' }
   }
-  if (!desktop.signedIn) {
+  if (uid || !desktop.signedIn) {
     return marker ? { kind: 'write_marker', marker: null } : { kind: 'none' }
   }
   return { kind: 'sign_in' }

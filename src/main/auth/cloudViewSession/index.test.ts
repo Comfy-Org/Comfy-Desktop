@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DesktopIdentity } from './index'
 import type { CloudViewAuthState, DesktopSessionMarker } from './pageState'
-import { serializeMarker } from './pageState'
+import { DESKTOP_SESSION_MARKER_KEY, serializeMarker } from './pageState'
 
 const h = vi.hoisted(() => ({
   session: {
@@ -95,13 +95,39 @@ interface FakeView {
   contents: WebContents
   executeJavaScript: ReturnType<typeof vi.fn>
   scripts: () => string[]
+  markers: () => (string | null)[]
 }
 
-function fakeView(state: { uid: string | null; marker: string | null }, url = CLOUD_URL): FakeView {
+interface PageState {
+  uid: string | null
+  marker: string | null
+}
+
+function runMarkerWrite(script: string, state: PageState, url: string): unknown {
+  const localStorage = {
+    getItem: (key: string) => (key === DESKTOP_SESSION_MARKER_KEY ? state.marker : null),
+    setItem: (key: string, value: string) => {
+      if (key === DESKTOP_SESSION_MARKER_KEY) state.marker = value
+    },
+    removeItem: (key: string) => {
+      if (key === DESKTOP_SESSION_MARKER_KEY) state.marker = null
+    }
+  }
+  const page = new Function('location', 'localStorage', `return ${script}`) as (
+    location: { origin: string },
+    storage: typeof localStorage
+  ) => unknown
+  return page({ origin: new URL(url).origin }, localStorage)
+}
+
+function fakeView(state: PageState, url = CLOUD_URL): FakeView {
+  const markers: (string | null)[] = []
   const executeJavaScript = vi.fn((script: string) => {
     if (script.includes('expectedUid')) return Promise.resolve(true)
-    if (script.includes('indexedDB.databases')) return Promise.resolve(state)
-    return Promise.resolve(true)
+    if (script.includes('indexedDB.databases')) return Promise.resolve({ ...state })
+    const written = runMarkerWrite(script, state, url)
+    markers.push(state.marker)
+    return Promise.resolve(written)
   })
   const contents = {
     isDestroyed: () => false,
@@ -111,7 +137,8 @@ function fakeView(state: { uid: string | null; marker: string | null }, url = CL
   return {
     contents,
     executeJavaScript,
-    scripts: () => executeJavaScript.mock.calls.map(([script]) => script as string)
+    scripts: () => executeJavaScript.mock.calls.map(([script]) => script as string),
+    markers: () => [...markers]
   }
 }
 
@@ -178,9 +205,21 @@ describe('decideCloudViewSession', () => {
       { kind: 'sign_out', uid: 'desktop-uid' }
     ],
     [
-      'drops a marker left by an account the person switched away from',
+      'keeps the session it added under a new Desktop sign-in to the same account',
+      { uid: 'desktop-uid', marker: marker() },
+      { signedIn: true, sub: 'desktop-sub', fam: 'fam-2' },
+      { kind: 'write_marker', marker: marker({ fam: 'fam-2' }) }
+    ],
+    [
+      "remembers that the person swapped Desktop's account for their own",
       { uid: 'person', marker: marker() },
       signedIn,
+      { kind: 'write_marker', marker: marker({ state: 'declined' }) }
+    ],
+    [
+      'drops the marker of an earlier Desktop sign-in while the person uses their own account',
+      { uid: 'person', marker: marker({ state: 'declined' }) },
+      { signedIn: true, sub: 'desktop-sub', fam: 'fam-2' },
       { kind: 'write_marker', marker: null }
     ],
     [
@@ -327,6 +366,49 @@ describe('reconcileCloudViewSession', () => {
 
     expect(h.requestWebSessionToken).not.toHaveBeenCalled()
     expect(h.injectFirebaseSession).not.toHaveBeenCalled()
+  })
+
+  it('keeps the view signed out when the person signs out after Desktop signed out and back in while the view was closed', async () => {
+    h.session.fam = 'fam-2'
+    const state: PageState = { uid: 'desktop-uid', marker: serializeMarker(marker()) }
+    const view = fakeView(state)
+    await reconcileCloudViewSession(view.contents)
+
+    state.uid = null
+    await reconcileCloudViewSession(view.contents)
+
+    expect(h.requestWebSessionToken).not.toHaveBeenCalled()
+    expect(h.injectFirebaseSession).not.toHaveBeenCalled()
+    expect(view.markers()).toEqual([
+      serializeMarker(marker({ fam: 'fam-2' })),
+      serializeMarker(marker({ fam: 'fam-2', state: 'declined' }))
+    ])
+  })
+
+  it("keeps the view signed out when the person swaps Desktop's account for their own and then signs out", async () => {
+    const state: PageState = { uid: 'person', marker: serializeMarker(marker()) }
+    const view = fakeView(state)
+    await reconcileCloudViewSession(view.contents)
+
+    state.uid = null
+    await reconcileCloudViewSession(view.contents)
+
+    expect(h.requestWebSessionToken).not.toHaveBeenCalled()
+    expect(h.injectFirebaseSession).not.toHaveBeenCalled()
+    expect(state.marker).toBe(serializeMarker(marker({ state: 'declined' })))
+  })
+
+  it('signs the view in again once Desktop signs in again after the person swapped accounts and signed out', async () => {
+    const state: PageState = { uid: 'person', marker: serializeMarker(marker()) }
+    const view = fakeView(state)
+    await reconcileCloudViewSession(view.contents)
+    state.uid = null
+
+    h.session.fam = 'fam-2'
+    await reconcileCloudViewSession(view.contents)
+
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(1)
+    expect(outcomes()).toEqual([{ outcome: 'signed_in' }])
   })
 
   it('removes the session it added once Desktop signs out', async () => {
