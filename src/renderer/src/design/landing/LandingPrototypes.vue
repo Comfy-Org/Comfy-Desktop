@@ -3,6 +3,8 @@ import { computed, onMounted, watch } from 'vue'
 import { TooltipProvider } from 'reka-ui'
 import DesktopTitleBar from './parts/DesktopTitleBar.vue'
 import ComfyTab from './parts/ComfyTab.vue'
+import CreateScreen from './mar/create/CreateScreen.vue'
+import { createTabFront } from './mar/create/createScreen'
 import SwitcherMenu from './parts/nav/SwitcherMenu.vue'
 import Toaster from './ui/Toaster.vue'
 import VariantModes from './variants/VariantModes.vue'
@@ -172,6 +174,12 @@ watch(
         :id="appsProto.front"
         :key="appsProto.front"
       />
+      <main
+        v-else-if="createTabFront"
+        class="relative min-h-0 flex-1 overflow-y-auto bg-app-background [scrollbar-width:thin]"
+      >
+        <CreateScreen />
+      </main>
       <ComfyTab v-else-if="proto.activeTab !== 'home'" />
       <ClientPortal v-else-if="can.spaces && proto.viewAs === 'client'" />
       <VariantModes v-else />

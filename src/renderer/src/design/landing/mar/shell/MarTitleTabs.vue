@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Home, X } from 'lucide-vue-next'
+import { ChevronDown, Home, Plus, X } from 'lucide-vue-next'
 import { AgentChat } from '../icons/agentChat'
 import { ComfyAssets } from '../icons/comfyIcons'
 import LocationIcon from '../../ui/LocationIcon.vue'
@@ -82,7 +82,7 @@ const close = (active: boolean): string =>
       v-for="t in state.tabs ?? []"
       :key="t.id"
       :class="[tab(t.id === state.tabFront), 'max-w-52 pr-1 pl-2']"
-      :title="`${t.name} · ${t.build}`"
+      :title="t.fresh ? t.name : `${t.name} · ${t.build}`"
     >
       <button
         type="button"
@@ -90,7 +90,8 @@ const close = (active: boolean): string =>
         :aria-current="t.id === state.tabFront ? 'page' : undefined"
         @click="emit('command', { type: 'tab', id: t.id })"
       >
-        <LocationIcon :kind="t.kind" :size="14" />
+        <Plus v-if="t.fresh" :size="14" class="shrink-0" />
+        <LocationIcon v-else :kind="t.kind" :size="14" />
         <span class="truncate">{{ t.name }}</span>
       </button>
       <button

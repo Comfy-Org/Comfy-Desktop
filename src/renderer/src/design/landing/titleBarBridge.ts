@@ -53,7 +53,13 @@ export interface TitleBarState {
   /** Mar's tabs title bar (mar/shell/titleTabs.ts), only while it's on:
    *  the open workflows as tabs, the one in front, where Home runs next,
    *  and whether the agent is open. */
-  tabs?: { id: string; name: string; build: string; kind: 'local' | 'cloud' }[]
+  tabs?: {
+    id: string
+    name: string
+    build: string
+    kind: 'local' | 'cloud'
+    fresh?: boolean
+  }[]
   tabFront?: string | null
   runsOn?: { name: string; kind: 'local' | 'cloud' }
   agent?: boolean
