@@ -1646,7 +1646,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       onModelFolderRelaunch,
       onLocaleChanged: () => {
         updateTrayMenu()
-        installTranslatedAppMenu()
+        if (process.platform === 'darwin') installTranslatedAppMenu()
       },
       onThemeChanged: applyChooserHostThemeToAll
     })

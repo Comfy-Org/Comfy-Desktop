@@ -1,4 +1,4 @@
-import { formatRelativeFromMs } from './datetime'
+import { formatRelativeFromMs, type Translator } from './datetime'
 
 export interface DownloadFormatInput {
   filename: string
@@ -27,8 +27,6 @@ export function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec < 1048576) return `${(bytesPerSec / 1024).toFixed(0)} KB/s`
   return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`
 }
-
-export type Translator = (key: string, params?: Record<string, unknown>) => string
 
 export function formatEta(seconds: number, t: Translator): string {
   if (seconds < 60) return t('downloadsPopup.etaSeconds', { seconds: Math.ceil(seconds) })
@@ -86,7 +84,7 @@ export function statusLine(
         ? t('downloadsPopup.statusDownloadedSize', { size: formatBytes(d.totalBytes) })
         : t('downloadsPopup.statusDownloaded')
     case 'error':
-      return d.error || t('common.error')
+      return d.error || t('downloadsPopup.statusFailed')
     case 'cancelled':
       return t('downloadsPopup.statusCancelled')
     default:

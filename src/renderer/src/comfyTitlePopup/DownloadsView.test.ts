@@ -444,6 +444,28 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(failedIcon.classes()).toContain('text-[#ff5454]')
   })
 
+  it('says Download failed for a failed download with no message, like the full list', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state: MockDownloadsState = {
+      active: [],
+      recent: [
+        { url: 'https://example.com/e.bin', filename: 'e.bin', progress: 0.3, status: 'error' },
+        {
+          url: 'https://example.com/m.bin',
+          filename: 'm.bin',
+          progress: 0.3,
+          status: 'error',
+          error: 'Disk full'
+        }
+      ]
+    }
+    const wrapper = mount(DownloadsView, { props: { state } })
+    await flushPromises()
+
+    const subtitles = wrapper.findAll('.is-error .downloads-item-sub').map((sub) => sub.text())
+    expect(subtitles).toEqual(['Download failed', 'Disk full'])
+  })
+
   describe('keyboard', () => {
     const state: MockDownloadsState = {
       active: [],
