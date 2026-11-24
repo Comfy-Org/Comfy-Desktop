@@ -22,7 +22,10 @@ describe('the GPU memory Desktop tells an app page', () => {
   it.each([
     ['win32', 8188, 8],
     ['linux', 24564, 24],
-    ['win32', 128, 0]
+    ['win32', 128, 0],
+    ['win32', 4094, 4],
+    ['win32', 4096, 4],
+    ['linux', 4095, 4]
   ] as const)('on %s with %d MB is %d', async (platform, mb, gb) => {
     probeFinds({ gpu_vendor: 'nvidia', gpu_model: 'RTX', gpu_vram_mb: mb, gpu_vram_gb: gb })
 
@@ -32,6 +35,8 @@ describe('the GPU memory Desktop tells an app page', () => {
   it.each([
     ['the probe knows no memory', 'win32', null, null],
     ['the probe reports zero, as when Windows gives no number', 'win32', 0, 0],
+    ['Windows fills its 32-bit field, as it does for any larger card', 'win32', 4095, 4],
+    ['Windows fills its 32-bit field to the last byte', 'win32', 4095.999999, 4],
     ['Linux reports under half a gigabyte, the size of a PCI window', 'linux', 256, 0]
   ] as const)('is left out when %s', async (_case, platform, mb, gb) => {
     probeFinds({ gpu_vendor: 'amd', gpu_model: 'Radeon', gpu_vram_mb: mb, gpu_vram_gb: gb })

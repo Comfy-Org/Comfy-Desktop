@@ -9,6 +9,7 @@ type ProbedGpus = Partial<
 >
 
 const PROBE_WAIT_MS = 5000
+const WINDOWS_32_BIT_FIELD_MB = 4096
 
 function platformOf(platform: NodeJS.Platform): Platform {
   return platform === 'darwin' || platform === 'win32' ? platform : 'linux'
@@ -18,10 +19,15 @@ function hasNoGpu({ gpu_vendor: vendor, gpus = [] }: ProbedGpus): boolean {
   return vendor === null && gpus.length > 0 && gpus.every((gpu) => isVirtualMachineGpu(gpu.model))
 }
 
+function fillsWindows32BitField(mb: number): boolean {
+  return mb >= WINDOWS_32_BIT_FIELD_MB - 1 && mb < WINDOWS_32_BIT_FIELD_MB
+}
+
 function gpuMemoryOf(probed: ProbedGpus, platform: Platform): number | undefined {
   const { gpu_model: model, gpu_vram_mb: mb, gpu_vram_gb: gb } = probed
   if (!model || isVirtualGpu(model) || !mb || typeof gb !== 'number') return undefined
-  return gb === 0 && platform !== 'win32' ? undefined : gb
+  if (platform === 'win32') return fillsWindows32BitField(mb) ? undefined : gb
+  return gb === 0 ? undefined : gb
 }
 
 export async function machine(

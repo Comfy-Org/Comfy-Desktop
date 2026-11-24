@@ -336,7 +336,8 @@ export interface ComfyDesktopMachine {
    * another card. It is what the system reports, which can be more or less
    * than the card has. `0` is less than half a gigabyte. Absent when Desktop
    * cannot read it, as on Apple silicon Macs, where the GPU shares the memory
-   * of the computer, and with `noGpu`.
+   * of the computer, and on Windows when the number is 4095 MB, which larger
+   * cards report too. Absent with `noGpu`.
    */
   gpuMemoryGb?: number
   /**
@@ -381,8 +382,8 @@ export interface ComfyDesktopHostedLocalBridge {
   /**
    * Facts about this computer. Desktop reads the GPU once per session and
    * waits at most 5 seconds for it; after that the answer has the platform
-   * alone. Rejects when the page is not in the Apps view or Apps is off.
-   * Absent on Desktop builds that predate it.
+   * alone. Rejects when the page is not in the Apps view. Absent on Desktop
+   * builds that predate it.
    */
   machine?(): Promise<ComfyDesktopMachine>
 }
