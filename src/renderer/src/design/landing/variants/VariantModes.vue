@@ -29,6 +29,9 @@ import { marSidebarClosed } from '../mar/shell/marShell'
 import MarModeSeg from '../mar/modes/MarModeSeg.vue'
 import MarModeSwitch from '../mar/modes/MarModeSwitch.vue'
 import { marTabsOn } from '../mar/shell/titleTabs'
+import MarCreateSquare from '../mar/create/MarCreateSquare.vue'
+import CreateScreen from '../mar/create/CreateScreen.vue'
+import { createScreen } from '../mar/create/createScreen'
 
 /**
  * The launcher from Milestone 2 on: a sidebar and the page it opens.
@@ -79,6 +82,7 @@ const MODES = computed(() => [
       <div class="flex min-h-full w-55 shrink-0 flex-col">
         <!-- Floating panels: the Comfy mark and the collapse toggle. -->
         <MarPanelsHead />
+        <MarCreateSquare v-if="can.onboarding" />
         <!-- Create / Build (Milestone 6: the Builder) -->
         <div v-if="can.lensSwitch" class="mb-3 flex h-8.5 shrink-0 items-center">
           <MarModeSeg v-if="marTabsOn" v-model="mode" :options="MODES" show="label" fill />
@@ -109,7 +113,8 @@ const MODES = computed(() => [
       class="proto-main relative min-w-0 flex-1 overflow-y-auto [scrollbar-color:rgb(255_255_255/0.12)_transparent] [scrollbar-width:thin]"
     >
       <MarBackdrop />
-      <ModePages />
+      <CreateScreen v-if="can.onboarding && createScreen.open" />
+      <ModePages v-else />
     </main>
 
     <MarTemplateModal />

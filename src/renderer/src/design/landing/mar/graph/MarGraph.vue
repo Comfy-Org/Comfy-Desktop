@@ -68,6 +68,8 @@ import ShortcutsPanel from './panels/ShortcutsPanel.vue'
 import TemplatesDialog from './panels/TemplatesDialog.vue'
 import SettingsDialog from './panels/SettingsDialog.vue'
 import NodeSearch from './NodeSearch.vue'
+import ScratchSearch from './ScratchSearch.vue'
+import type { Template } from '../../mock'
 import MediaViewer from './MediaViewer.vue'
 import AgentPanel from './AgentPanel.vue'
 import McpNudge from '../mcp/McpNudge.vue'
@@ -723,6 +725,7 @@ function onKey(e: KeyboardEvent): void {
   else if (!mod && !e.altKey && k === 'w') onRail('workflows')
   else if (!mod && !e.altKey && k === 'a') onRail('assets')
   else if (k === 'escape') {
+    scratch.value = false
     if (panel.value || shortcuts.value) {
       panel.value = ''
       shortcuts.value = false
@@ -872,6 +875,35 @@ function landAsset(): void {
   selection.value = [node.id]
 }
 landAsset()
+
+const scratch = ref(false)
+function startFromScratch(): void {
+  const start = graphOpen.start
+  if (!graphOpen.scratch && !start) return
+  graphOpen.scratch = false
+  graphOpen.start = null
+  sNodes.splice(0)
+  links.splice(0)
+  groups.splice(0)
+  selection.value = []
+  last = freeze()
+  if (start) startWith(start.kind, start.model)
+  else scratch.value = true
+}
+function startWith(kind: NodeKind, model?: string): void {
+  scratch.value = false
+  addFromPanel(kind)
+  const control = sNodes.at(-1)?.controls.find((c) => c.kind === 'model')
+  if (model && control?.kind === 'model') {
+    control.value = model
+    last = freeze()
+  }
+  nextTick(fit)
+}
+function startFromTemplate(t: Template): void {
+  scratch.value = false
+  shownWorkflow.value = t.title
+}
 const panel = ref<RailPanelId>(graphOpen.assets ? 'assets' : '')
 graphOpen.assets = false
 // Assets › Open workflow on a build already open: back to Media Assets.
@@ -934,6 +966,7 @@ watch(panel, (id) => {
 })
 /** The workflow on show: the tab's, or one opened from Workflows. */
 const shownWorkflow = ref(workflow)
+startFromScratch()
 const agent = ref(false)
 // The Agent and a rail panel share the left edge: one at a time.
 watch(panel, (id) => id && (agent.value = false))
@@ -1228,7 +1261,7 @@ watch(
 )
 watch(shownWorkflow, () => {
   engine.cancelAll()
-  const fresh = createCanvas()
+  const fresh = scratch.value ? { nodes: [], links: [], groups: [] } : createCanvas()
   sNodes.splice(0, sNodes.length, ...fresh.nodes)
   links.splice(0, links.length, ...fresh.links)
   groups.splice(0, groups.length, ...fresh.groups)
@@ -1609,7 +1642,13 @@ function addFromPanel(kind: NodeKind): void {
         </button>
       </div>
 
-      <p v-if="!sNodes.length" class="mg-empty">
+      <ScratchSearch
+        v-if="scratch"
+        @node="startWith"
+        @template="startFromTemplate"
+        @blank="scratch = false"
+      />
+      <p v-else-if="!sNodes.length" class="mg-empty">
         Double-click to add a node, or ask the agent to build a workflow
       </p>
 

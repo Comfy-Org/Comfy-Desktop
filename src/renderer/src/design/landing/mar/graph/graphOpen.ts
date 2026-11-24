@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import type { NodeKind } from './canvasData'
 
 /** What ComfyUI opens with when a share link asks for it (?comfy=assets,
  *  tab or inspect): the Media Assets panel, expanded to a tab, and the
@@ -7,6 +8,8 @@ export const graphOpen = reactive({
   assets: false,
   tab: false,
   inspect: false,
+  scratch: false,
+  start: null as null | { kind: NodeKind; model?: string },
   /** Assets › Open workflow: ComfyUI opens with this one on the canvas,
    *  on the workflow's output (MarGraph's landAsset). */
   select: null as null | {
