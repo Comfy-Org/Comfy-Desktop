@@ -31,6 +31,7 @@ const STILL_TYPES: ReadonlySet<string> = new Set([
   'image/webp'
 ])
 const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403])
+const NO_ROUTE_STATUS = 404
 const MISSING_PAGE_STATUSES: ReadonlySet<number> = new Set([404, 410])
 const PICTURE_PATH = /^\/staff-apps\/[0-9a-f-]{36}\/picture\/[0-9a-f-]{36}$/i
 
@@ -64,6 +65,7 @@ interface CheckedApp {
 type Loaded =
   | { kind: 'listed'; apps: HiddenApp[]; checked: boolean }
   | { kind: 'refused' }
+  | { kind: 'no_route' }
   | { kind: 'unavailable' }
 
 interface CacheEntry {
@@ -163,12 +165,13 @@ function authorized(token: string): RequestInit {
 async function readCatalogRows(
   token: string,
   deps: HiddenAppsDeps
-): Promise<unknown[] | 'refused' | 'unavailable'> {
+): Promise<unknown[] | 'refused' | 'no_route' | 'unavailable'> {
   const rows: unknown[] = []
   let cursor: string | null = null
   for (let page = 0; page < MAX_PAGES; page++) {
     const response = await deps.fetch(staffAppsUrl(cursor), authorized(token))
     if (REFUSED_STATUSES.has(response.status)) return 'refused'
+    if (response.status === NO_ROUTE_STATUS) return 'no_route'
     if (!response.ok) return 'unavailable'
     const body = asRecord(await response.json().catch(() => null))
     if (!body || !Array.isArray(body.items)) return 'unavailable'
@@ -326,6 +329,8 @@ function cacheAfter(owner: string, loaded: Loaded, now: number): CacheEntry {
       }
     case 'refused':
       return { owner, expiresAt: now + REFUSED_TTL_MS, apps: [], stale: false }
+    case 'no_route':
+      return { owner, expiresAt: Number.POSITIVE_INFINITY, apps: [], stale: false }
     case 'unavailable':
       return {
         owner,

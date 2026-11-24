@@ -194,7 +194,7 @@ describe('who sees hidden apps', () => {
     expect(catalogCalls()).toHaveLength(1)
   })
 
-  it.each([404, 429, 500, 503])(
+  it.each([429, 500, 503])(
     'shows no hidden apps yet, and says to ask again, when the catalog answers %i',
     async (status) => {
       catalogPages.set('', () => Response.json({ code: 'UNAVAILABLE' }, { status }))
@@ -211,6 +211,36 @@ describe('who sees hidden apps', () => {
     forgetHiddenApps()
     catalogPages.set('', () => Response.json({ items: 'none' }))
     expect(await listHiddenApps(deps())).toEqual({ apps: [], stale: true })
+  })
+
+  it('shows no hidden apps, and says not to ask again, while Cloud has no staff list route', async () => {
+    catalogPages.set('', () => Response.json({ code: 'NOT_FOUND' }, { status: 404 }))
+
+    expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+    expect(catalogCalls()).toHaveLength(1)
+  })
+
+  it('asks a catalog with no staff list route again only once the person signs in again', async () => {
+    catalogPages.set('', () => new Response(null, { status: 404 }))
+    await listHiddenApps(deps())
+
+    clock += 24 * 60 * 60_000
+    expect(await listHiddenApps(deps())).toEqual({ apps: [] })
+    expect(catalogCalls()).toHaveLength(1)
+
+    forgetHiddenApps()
+    await listHiddenApps(deps())
+    expect(catalogCalls()).toHaveLength(2)
+  })
+
+  it('asks a catalog with no staff list route again once the account changes', async () => {
+    catalogPages.set('', () => new Response(null, { status: 404 }))
+    await listHiddenApps(deps())
+
+    owner = OTHER_OWNER
+    await listHiddenApps(deps())
+
+    expect(catalogCalls()).toHaveLength(2)
   })
 
   it('asks a refusing catalog again only after 30 seconds', async () => {
@@ -567,7 +597,7 @@ describe('keeping the hidden list', () => {
     expect(catalogCalls()).toHaveLength(3)
   })
 
-  it.each([401, 403])(
+  it.each([401, 403, 404])(
     'drops the last good list when a refresh is refused with %i',
     async (status) => {
       livePages.add(pageUrl('explore-worlds'))
