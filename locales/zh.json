@@ -305,6 +305,7 @@
     "noTarget": "添加一个构建来打开此工作流，或在 Comfy Hub 上查看。",
     "downloadFailed": "部分模型未能下载。请检查下载列表后重试。",
     "noDiskSpace": "磁盘空间不足，无法下载此工作流所需的模型。请释放空间后重试。",
+    "downloadCancelled": "下载已取消。",
     "status": {
       "outdated": "需要 ComfyUI {version} 或更高版本",
       "notOnCloud": "暂未上线 Cloud",
@@ -338,7 +339,8 @@
       "openIn": "在 {name} 中打开",
       "launch": "启动 {name}",
       "downloading": "正在下载…",
-      "downloadingBytes": "正在下载 {done} / {total}"
+      "downloadingBytes": "正在下载 {done} / {total}",
+      "cancelDownload": "取消下载"
     },
     "note": {
       "freeCredits": "新账号可获得免费积分。",

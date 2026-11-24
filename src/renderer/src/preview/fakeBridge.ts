@@ -278,6 +278,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     catalogLocalBuildVersions: async () => ({}),
     catalogWorkflowNeeds: async () => null,
     launchCatalogWorkflow: async () => ({ opened: true }),
+    cancelCatalogWorkflowDownload: async () => false,
     getAppsEnabled: async () => true,
     listApps: async () => APP_CARDS,
     showAppPage: async () => 'ready',

@@ -1,4 +1,5 @@
 import { modelKey } from '../panel/workflowTargets'
+import type { ElectronApi } from '../types/ipc'
 import type { BridgeSeed, FakeBridge } from './fakeBridge'
 import {
   EXPLORE_WORKFLOWS,
@@ -114,6 +115,20 @@ function launchLikeDesktop(bridge: FakeBridge): void {
       return { opened: true }
     }
   })
+}
+
+function downloadThatKeepsRunning(bridge: FakeBridge): ElectronApi['launchCatalogWorkflow'] {
+  return (id, target) => {
+    if (target.where === 'local') {
+      bridge.emit('onCatalogWorkflowDownload', {
+        id,
+        build: target.build,
+        receivedBytes: 4_100_000_000,
+        totalBytes: 38_593_133_384
+      })
+    }
+    return new Promise(() => {})
+  }
 }
 
 async function openExploreWorkflows({ bridge, click, see }: PreviewStage): Promise<void> {
@@ -240,6 +255,19 @@ export const SCENARIOS: PreviewScenario[] = [
       await stage.press('[data-testid="catalog-workflow-target"]', 'Enter')
       await stage.click('[data-testid="catalog-workflow-target-local:inst-video-experiments"]')
       await stage.click('[data-testid="workflow-needs"]')
+    }
+  },
+  {
+    id: 'workflow-page-downloading',
+    title: 'Workflow page: downloading models',
+    ready: '[data-testid="catalog-workflow-progress"]',
+    seed: exploreSeed,
+    arrange: async (stage) => {
+      await openWorkflowPage(stage)
+      await stage.press('[data-testid="catalog-workflow-target"]', 'Enter')
+      await stage.click('[data-testid="catalog-workflow-target-local:inst-video-experiments"]')
+      stage.bridge.reply({ launchCatalogWorkflow: downloadThatKeepsRunning(stage.bridge) })
+      await stage.click('[data-testid="catalog-workflow-action"]')
     }
   },
   {

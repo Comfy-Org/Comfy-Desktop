@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { usableLocalBuilds } from '../../apps/localBuild'
-import { launchCatalogWorkflow } from '../../catalog/launchWorkflow'
+import { cancelCatalogWorkflowDownload, launchCatalogWorkflow } from '../../catalog/launchWorkflow'
 import { catalogWorkflowNeeds } from '../../catalog/workflowNeeds'
 import {
   hubUrlForListedWorkflow,
@@ -23,6 +23,10 @@ export function registerCatalogHandlers(): void {
     'catalog:launch-workflow',
     (event, id: unknown, target: unknown, workspaceId: unknown, options: unknown) =>
       launchCatalogWorkflow(event.sender, id, target, workspaceId, options)
+  )
+
+  ipcMain.handle('catalog:cancel-workflow-download', (_event, id: unknown, build: unknown) =>
+    cancelCatalogWorkflowDownload(id, build)
   )
 
   ipcMain.handle('catalog:workflow-needs', (_event, id: unknown) => catalogWorkflowNeeds(id))

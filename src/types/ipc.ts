@@ -1385,6 +1385,7 @@ export interface ElectronApi {
     workspaceId: string,
     options?: { downloadMissing?: boolean }
   ): Promise<ComfyDesktopOpenInComfy>
+  cancelCatalogWorkflowDownload(id: string, build: string): Promise<boolean>
   onCatalogWorkflowDownload(callback: (progress: CatalogWorkflowDownload) => void): () => void
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>

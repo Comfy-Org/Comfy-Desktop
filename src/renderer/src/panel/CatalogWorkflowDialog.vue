@@ -71,6 +71,8 @@ const pickedKey = ref<string | null>(null)
 const pending = ref(false)
 const error = ref('')
 const progress = ref<CatalogWorkflowDownload | null>(null)
+const downloadingInto = ref<string | null>(null)
+const cancelling = ref(false)
 const aboutOpen = ref(false)
 const needsOpen = ref(false)
 const linkCopied = ref(false)
@@ -257,6 +259,9 @@ async function launch(choice: TargetChoice): Promise<void> {
   pending.value = true
   error.value = ''
   progress.value = null
+  cancelling.value = false
+  downloadingInto.value =
+    choice.where === 'local' && choice.state === 'missing' ? choice.build.id : null
   try {
     const target =
       choice.where === 'cloud'
@@ -270,7 +275,7 @@ async function launch(choice: TargetChoice): Promise<void> {
     )
     if (result.opened) emit('close')
     else {
-      error.value = result.error || t('workflowLaunch.openFailed')
+      if (!cancelling.value) error.value = result.error || t('workflowLaunch.openFailed')
       if (choice.state === 'missing') void loadNeeds()
     }
   } catch {
@@ -278,7 +283,19 @@ async function launch(choice: TargetChoice): Promise<void> {
   } finally {
     pending.value = false
     progress.value = null
+    downloadingInto.value = null
+    cancelling.value = false
   }
+}
+
+async function cancelDownload(): Promise<void> {
+  const build = downloadingInto.value
+  if (!build || cancelling.value) return
+  cancelling.value = true
+  const stopped = await window.api
+    .cancelCatalogWorkflowDownload(props.workflow.id, build)
+    .catch(() => false)
+  if (!stopped && downloadingInto.value === build) cancelling.value = false
 }
 
 function openTutorial(): void {
@@ -753,24 +770,37 @@ onBeforeUnmount(() => {
           >
             {{ note }}
           </p>
-          <div
-            v-if="pending && progress"
-            class="relative h-9 overflow-hidden rounded-[10px] bg-[rgb(120_120_120)]"
-            role="progressbar"
-            :aria-valuenow="Math.round(progressPercent)"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            data-testid="catalog-workflow-progress"
-          >
-            <span
-              class="absolute inset-y-0 left-0 bg-[rgb(220_220_220)]"
-              :style="{ width: `${progressPercent}%` }"
-            />
-            <span
-              class="relative grid h-full place-items-center text-[13px] font-medium text-[rgb(20_20_20)]"
+          <div v-if="pending && progress" class="relative">
+            <div
+              class="relative h-9 overflow-hidden rounded-[10px] bg-[rgb(120_120_120)]"
+              role="progressbar"
+              :aria-valuenow="Math.round(progressPercent)"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              data-testid="catalog-workflow-progress"
             >
-              {{ progressLabel }}
-            </span>
+              <span
+                class="absolute inset-y-0 left-0 bg-[rgb(220_220_220)]"
+                :style="{ width: `${progressPercent}%` }"
+              />
+              <span
+                class="relative grid h-full place-items-center text-[13px] font-medium text-[rgb(20_20_20)]"
+              >
+                {{ progressLabel }}
+              </span>
+            </div>
+            <button
+              v-if="downloadingInto"
+              type="button"
+              class="absolute top-1 right-1 grid size-7 place-items-center rounded-lg border-0 bg-transparent p-0 text-[rgb(20_20_20)] outline-none hover:bg-black/12 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 disabled:hover:bg-transparent"
+              :aria-label="t('workflowLaunch.action.cancelDownload')"
+              :title="t('workflowLaunch.action.cancelDownload')"
+              :disabled="cancelling"
+              data-testid="catalog-workflow-cancel"
+              @click="cancelDownload"
+            >
+              <X :size="15" aria-hidden="true" />
+            </button>
           </div>
           <button
             v-else

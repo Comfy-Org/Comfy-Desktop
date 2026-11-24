@@ -305,6 +305,7 @@
     "noTarget": "Add a build to open this workflow, or view it on Comfy Hub.",
     "downloadFailed": "Some models didn't download. Check Downloads, then try again.",
     "noDiskSpace": "There is not enough disk space for this workflow's models. Free up space, then try again.",
+    "downloadCancelled": "Download cancelled.",
     "status": {
       "outdated": "Needs ComfyUI {version} or newer",
       "notOnCloud": "Not on Cloud yet",
@@ -338,7 +339,8 @@
       "openIn": "Open in {name}",
       "launch": "Launch {name}",
       "downloading": "Downloading…",
-      "downloadingBytes": "Downloading {done} of {total}"
+      "downloadingBytes": "Downloading {done} of {total}",
+      "cancelDownload": "Cancel download"
     },
     "note": {
       "freeCredits": "New accounts get free credits.",

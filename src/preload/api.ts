@@ -134,6 +134,8 @@ export function buildElectronApi(): ElectronApi {
     catalogWorkflowNeeds: (id) => ipcRenderer.invoke('catalog:workflow-needs', id),
     launchCatalogWorkflow: (id, target, workspaceId, options) =>
       ipcRenderer.invoke('catalog:launch-workflow', id, target, workspaceId, options),
+    cancelCatalogWorkflowDownload: (id, build) =>
+      ipcRenderer.invoke('catalog:cancel-workflow-download', id, build),
     onCatalogWorkflowDownload: (callback) => {
       const handler = (_event: unknown, progress: CatalogWorkflowDownload): void =>
         callback(progress)

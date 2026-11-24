@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listWorkspaces: vi.fn(),
   missing: vi.fn(),
   startDownload: vi.fn(),
+  forget: vi.fn(),
   downloadBytes: vi.fn(),
   downloadListener: null as
     | ((summary: {
@@ -53,11 +54,11 @@ vi.mock('../sources/standalone/templateDownloadTask', () => ({
     mocks.downloadListener = listener
     return () => {}
   },
-  forgetTemplateDownload: vi.fn()
+  forgetTemplateDownload: mocks.forget
 }))
 
 import { _forgetEditorGraphsForTest } from './editorGraph'
-import { launchCatalogWorkflow } from './launchWorkflow'
+import { cancelCatalogWorkflowDownload, launchCatalogWorkflow } from './launchWorkflow'
 
 const sent: unknown[] = []
 const PAGE = {
@@ -242,6 +243,22 @@ describe('launching workflows from the published catalog', () => {
 
     expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.downloadFailed' })
     expect(mocks.open).not.toHaveBeenCalled()
+  })
+
+  it('stops the download when asked, and does not open the graph', async () => {
+    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
+    expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(false)
+
+    const launching = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', {
+      downloadMissing: true
+    })
+    await vi.waitFor(() => expect(mocks.downloadListener).not.toBeNull())
+
+    expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(true)
+    expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.downloadCancelled' })
+    expect(mocks.forget).toHaveBeenCalledWith('catalog-workflow:catalog-id:inst-local')
+    expect(mocks.open).not.toHaveBeenCalled()
+    expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(false)
   })
 
   it('says the disk is full when the models do not fit', async () => {

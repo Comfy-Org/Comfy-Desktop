@@ -20,6 +20,7 @@ const catalogWorkflowNeeds = vi.fn<ElectronApi['catalogWorkflowNeeds']>()
 const signIn = vi.fn()
 const writeText = vi.fn<(text: string) => Promise<void>>()
 const openExternal = vi.fn<ElectronApi['openExternal']>()
+const cancelCatalogWorkflowDownload = vi.fn<ElectronApi['cancelCatalogWorkflowDownload']>()
 let sendProgress: (progress: CatalogWorkflowDownload) => void = () => {}
 
 const WORKFLOW: CatalogWorkflow = {
@@ -132,6 +133,7 @@ beforeEach(() => {
   signIn.mockReset().mockResolvedValue({ signedIn: true })
   writeText.mockReset().mockResolvedValue()
   openExternal.mockReset().mockResolvedValue()
+  cancelCatalogWorkflowDownload.mockReset().mockResolvedValue(true)
   vi.stubGlobal(
     'api',
     bridge({
@@ -140,6 +142,7 @@ beforeEach(() => {
       catalogLocalBuildVersions,
       catalogWorkflowNeeds,
       openExternal,
+      cancelCatalogWorkflowDownload,
       onCatalogWorkflowDownload: (listener: typeof sendProgress) => {
         sendProgress = listener
         return () => {}
@@ -225,6 +228,31 @@ describe('opening a catalog workflow', () => {
     finish({ opened: true })
     await flushPromises()
     expect(dialog.emitted('close')).toEqual([[]])
+  })
+
+  it('cancels a model download from the progress bar and stays on the page without an error', async () => {
+    let endLaunch: (result: { opened: false; error: string }) => void = () => {}
+    launchCatalogWorkflow.mockReturnValue(new Promise((resolve) => (endLaunch = resolve)))
+    cancelCatalogWorkflowDownload.mockImplementation(async () => {
+      endLaunch({ opened: false, error: 'Download cancelled.' })
+      return true
+    })
+    const dialog = await mountDialog([SANDBOX, LAB, OLD, CLOUD])
+    await pickTarget(dialog, 'local:sandbox')
+    await dialog.get('[data-testid="catalog-workflow-action"]').trigger('click')
+    sendProgress({ id: 'ltx', build: 'sandbox', receivedBytes: 4_100_000_000, totalBytes: 34e9 })
+    await flushPromises()
+
+    await dialog.get('[data-testid="catalog-workflow-cancel"]').trigger('click')
+    await flushPromises()
+
+    expect(cancelCatalogWorkflowDownload).toHaveBeenCalledExactlyOnceWith('ltx', 'sandbox')
+    expect(dialog.find('[data-testid="catalog-workflow-progress"]').exists()).toBe(false)
+    expect(dialog.find('[data-testid="catalog-workflow-error"]').exists()).toBe(false)
+    expect(dialog.get('[data-testid="catalog-workflow-action"]').text()).toContain(
+      'Download and launch'
+    )
+    expect(dialog.emitted('close')).toBeUndefined()
   })
 
   it('judges a local build by the ComfyUI version Desktop launches, not the tag it recorded', async () => {

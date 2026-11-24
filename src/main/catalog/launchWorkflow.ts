@@ -48,8 +48,20 @@ function readOptions(value: unknown): { downloadMissing: boolean } {
   return { downloadMissing: (options as { downloadMissing?: unknown }).downloadMissing === true }
 }
 
+type DownloadOutcome = { failure: string | null } | 'cancelled'
+
+const downloadCancels = new Map<string, Set<() => void>>()
+
 function downloadTaskId(id: string, build: string): string {
   return `catalog-workflow:${id}:${build}`
+}
+
+export function cancelCatalogWorkflowDownload(id: unknown, build: unknown): boolean {
+  if (typeof id !== 'string' || !isBuildId(build)) return false
+  const cancels = downloadCancels.get(downloadTaskId(id, build))
+  if (!cancels) return false
+  for (const cancel of [...cancels]) cancel()
+  return true
 }
 
 async function canReceiveModels(
@@ -68,11 +80,11 @@ async function downloadMissingModels(
   id: string,
   build: string,
   graph: Record<string, unknown>
-): Promise<string | null> {
+): Promise<DownloadOutcome> {
   const installation = await installations.get(build)
-  if (!installation) return t('workflowLaunch.openFailed')
+  if (!installation) return { failure: t('workflowLaunch.openFailed') }
   const missing = await missingModelFiles(build, await catalogWorkflowModels(graph))
-  if (missing.length === 0) return null
+  if (missing.length === 0) return { failure: null }
   const taskId = downloadTaskId(id, build)
   startTemplateDownloadTask(
     taskId,
@@ -83,6 +95,21 @@ async function downloadMissingModels(
     graph
   )
   return new Promise((resolve) => {
+    const cancels = downloadCancels.get(taskId) ?? new Set<() => void>()
+    downloadCancels.set(taskId, cancels)
+    const cancel = (): void => finish('cancelled')
+    const finish = (outcome: DownloadOutcome): void => {
+      cancels.delete(cancel)
+      if (cancels.size === 0 && downloadCancels.get(taskId) === cancels) {
+        downloadCancels.delete(taskId)
+      }
+      queueMicrotask(() => {
+        stop()
+        forgetTemplateDownload(taskId)
+      })
+      resolve(outcome)
+    }
+    cancels.add(cancel)
     const stop = subscribeTemplateDownload(taskId, (summary) => {
       if (!page.isDestroyed()) {
         const progress: CatalogWorkflowDownload = {
@@ -94,13 +121,11 @@ async function downloadMissingModels(
         page.send('catalog:workflow-download', progress)
       }
       if (!isTerminal(summary.status)) return
-      queueMicrotask(() => {
-        stop()
-        forgetTemplateDownload(taskId)
-      })
-      if (summary.status === 'done') resolve(null)
-      else if (summary.error === DISK_SPACE_ERROR) resolve(t('workflowLaunch.noDiskSpace'))
-      else resolve(t('workflowLaunch.downloadFailed'))
+      if (summary.status === 'done') finish({ failure: null })
+      else if (summary.status === 'cancelled') finish('cancelled')
+      else if (summary.error === DISK_SPACE_ERROR) {
+        finish({ failure: t('workflowLaunch.noDiskSpace') })
+      } else finish({ failure: t('workflowLaunch.downloadFailed') })
     })
   })
 }
@@ -148,8 +173,11 @@ export async function launchCatalogWorkflow(
       if (!(await canReceiveModels(target.build, workspaceId, workflow.card.minComfyUIVersion))) {
         return { opened: false, error: t('workflowLaunch.openFailed') }
       }
-      const failure = await downloadMissingModels(page, workflow.card.id, target.build, graph)
-      if (failure) return { opened: false, error: failure }
+      const outcome = await downloadMissingModels(page, workflow.card.id, target.build, graph)
+      if (outcome === 'cancelled') {
+        return { opened: false, error: t('workflowLaunch.downloadCancelled') }
+      }
+      if (outcome.failure) return { opened: false, error: outcome.failure }
       if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }
     }
     if (graph) return await openCatalogInComfy(page, { ...target, graph, name }, scope)
