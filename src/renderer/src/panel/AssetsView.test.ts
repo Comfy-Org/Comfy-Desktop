@@ -30,6 +30,7 @@ const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
 const hasAssetWorkflow = vi.fn()
+const readAssetWorkflowSummary = vi.fn()
 const openAssetWorkflow = vi.fn()
 const trashAsset = vi.fn()
 const alert = vi.fn()
@@ -260,6 +261,7 @@ beforeEach(() => {
   getSetting.mockResolvedValue(undefined)
   findCloudAsset.mockResolvedValue({ status: 'absent' })
   hasAssetWorkflow.mockResolvedValue(false)
+  readAssetWorkflowSummary.mockResolvedValue(null)
   openAssetWorkflow.mockResolvedValue({ opened: true })
   ;(window as unknown as { api: unknown }).api = {
     listAssets: async (installationId: string, request: unknown) => {
@@ -284,6 +286,7 @@ beforeEach(() => {
     copyAsset,
     readAssetModel,
     hasAssetWorkflow,
+    readAssetWorkflowSummary,
     openAssetWorkflow,
     trashAsset,
     platform: 'darwin',
@@ -1863,6 +1866,37 @@ describe('AssetsView Open workflow', () => {
     })
     await flushPromises()
   }
+
+  it('shows the prompts and the models of the workflow that made the file', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    readAssetWorkflowSummary.mockResolvedValue({
+      models: ['sdxl/base.safetensors', 'film-grain.safetensors'],
+      prompts: ['a harbor at dusk', 'blurry, watermark']
+    })
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+
+    await vi.waitFor(() =>
+      expect(shownText(viewer()!.querySelector('[data-testid="output-detail-prompts"]'))).toBe(
+        'PROMPTS a harbor at dusk blurry, watermark'
+      )
+    )
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-models"]'))).toBe(
+      'MODELS sdxl/base.safetensors film-grain.safetensors'
+    )
+    expect(readAssetWorkflowSummary).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+  })
+
+  it('leaves the prompts and models out when the file carries no workflow', async () => {
+    const wrapper = await mountAssets([asset('/out/plain.png', 'plain.png', 'image')])
+
+    await openViewer(wrapper, '/out/plain.png')
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
+    expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
+    expect(readAssetWorkflowSummary).not.toHaveBeenCalled()
+  })
 
   it('opens the workflow of a file in a build folder in that build, and closes the viewer', async () => {
     hasAssetWorkflow.mockResolvedValue(true)

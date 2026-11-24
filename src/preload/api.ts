@@ -123,6 +123,8 @@ export function buildElectronApi(): ElectronApi {
     readAssetModel: (source, assetId) => ipcRenderer.invoke('assets:read-model', source, assetId),
     hasAssetWorkflow: (source, assetId) =>
       ipcRenderer.invoke('assets:has-workflow', source, assetId),
+    readAssetWorkflowSummary: (source, assetId) =>
+      ipcRenderer.invoke('assets:workflow-summary', source, assetId),
     openAssetWorkflow: (source, assetId, name, build) =>
       ipcRenderer.invoke('assets:open-workflow', source, assetId, name, build),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),

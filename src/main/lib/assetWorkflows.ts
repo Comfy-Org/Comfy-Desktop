@@ -8,14 +8,17 @@ import { isBuildId } from '../apps/openRequest'
 import { isPanelSender } from '../host/registry'
 import type { ComfyDesktopOpenInComfy } from '../../types/comfyDesktopBridge'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
+import type { AssetWorkflowSummary } from '../../types/ipc'
 import { cloudAccessToken, firstBytes, resolveCloudContentUrl } from './assets'
 import { isPng, readEmbeddedWorkflow } from './embeddedWorkflow'
+import { summarizeWorkflow } from './workflowSummary'
 import type { EmbeddedWorkflow } from './embeddedWorkflow'
 import * as i18n from './i18n'
 import { outputFilePath, READ_WITHOUT_FOLLOWING } from './outputFolders'
 
 export const ASSET_WORKFLOW_CHANNELS = {
   has: 'assets:has-workflow',
+  summary: 'assets:workflow-summary',
   open: 'assets:open-workflow'
 } as const
 
@@ -169,6 +172,14 @@ async function openAssetWorkflow(
   return openEmbeddedWorkflow(place, read.workflow, titleOf(name))
 }
 
+async function assetWorkflowSummary(
+  source: string,
+  assetId: string
+): Promise<AssetWorkflowSummary | null> {
+  const read = await readAsset(source, assetId)
+  return read?.workflow ? summarizeWorkflow(read.workflow) : null
+}
+
 export function registerAssetWorkflowHandlers(): void {
   ipcMain.handle(
     ASSET_WORKFLOW_CHANNELS.has,
@@ -178,6 +189,13 @@ export function registerAssetWorkflowHandlers(): void {
       const read = await readAsset(source, assetId)
       return read ? read.workflow !== null : null
     }
+  )
+  ipcMain.handle(
+    ASSET_WORKFLOW_CHANNELS.summary,
+    async (event, source: unknown, assetId: unknown): Promise<AssetWorkflowSummary | null> =>
+      isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
+        ? assetWorkflowSummary(source, assetId)
+        : null
   )
   ipcMain.handle(
     ASSET_WORKFLOW_CHANNELS.open,

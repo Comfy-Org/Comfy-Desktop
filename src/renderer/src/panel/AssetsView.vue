@@ -54,6 +54,7 @@ import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
 import type {
   AssetKind,
   AssetSummary,
+  AssetWorkflowSummary,
   CloudAssetLookup,
   CloudAssetPage,
   Installation,
@@ -161,6 +162,7 @@ const assetTotal = ref(0)
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 const workflowFound = ref(new Map<string, boolean>())
+const workflowSummaries = ref(new Map<string, AssetWorkflowSummary>())
 const workflowChecks = ref(0)
 interface OpeningWorkflow {
   token: number
@@ -839,6 +841,8 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     workflow: canOpenWorkflow(asset),
     workflowSlot: mayOpenWorkflow(asset),
     workflowBuilds: workflowBuildsOf(asset),
+    models: workflowSummaries.value.get(workflowKey(asset))?.models,
+    prompts: workflowSummaries.value.get(workflowKey(asset))?.prompts,
     workflowBusy: openingWorkflows.value.has(cardKey(asset)),
     workflowStatus: workflowStatusOf(asset),
     loadModel:
@@ -887,6 +891,17 @@ async function checkWorkflow(asset: GalleryAsset, checks: number): Promise<void>
   const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => null)
   if (found === null || checks !== workflowChecks.value) return
   workflowFound.value = new Map(workflowFound.value).set(workflowKey(asset), found)
+  if (found) void readWorkflowSummary(asset, checks)
+}
+
+async function readWorkflowSummary(asset: GalleryAsset, checks: number): Promise<void> {
+  const key = workflowKey(asset)
+  if (workflowSummaries.value.has(key)) return
+  const summary = await window.api
+    .readAssetWorkflowSummary(asset.source, asset.id)
+    .catch(() => null)
+  if (!summary || checks !== workflowChecks.value) return
+  workflowSummaries.value = new Map(workflowSummaries.value).set(key, summary)
 }
 
 const WORKFLOW_CHECK_DELAY_MS = 150
@@ -896,6 +911,7 @@ watch(
   () => selectedBuild.value?.build.id,
   () => {
     workflowFound.value = new Map()
+    workflowSummaries.value = new Map()
     workflowChecks.value += 1
   }
 )

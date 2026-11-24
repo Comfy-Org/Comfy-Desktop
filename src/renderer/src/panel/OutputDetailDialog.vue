@@ -39,6 +39,8 @@ export interface OutputDetailItem {
   previewUrl: string | null
   thumbnailUrl: string | null
   savedIn?: string | null
+  models?: string[]
+  prompts?: string[]
   inCloud?: boolean
   workflow?: boolean
   workflowBuilds?: { id: string; name: string }[]
@@ -326,6 +328,36 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
         <div v-if="facts.length > 0" class="flex flex-wrap gap-1.5">
           <Tag v-for="fact in facts" :key="fact" :label="fact" />
+        </div>
+      </div>
+
+      <div
+        v-if="item.prompts?.length"
+        class="flex flex-col gap-2.5"
+        data-testid="output-detail-prompts"
+      >
+        <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+          {{ t('assets.detail.prompts') }}
+        </div>
+        <p
+          v-for="(prompt, at) in item.prompts"
+          :key="at"
+          class="m-0 max-h-40 overflow-y-auto text-ui break-words text-foreground select-text"
+        >
+          {{ prompt }}
+        </p>
+      </div>
+
+      <div
+        v-if="item.models?.length"
+        class="flex flex-col gap-2.5"
+        data-testid="output-detail-models"
+      >
+        <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+          {{ t('assets.detail.models') }}
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          <Tag v-for="model in item.models" :key="model" :label="model" />
         </div>
       </div>
 
