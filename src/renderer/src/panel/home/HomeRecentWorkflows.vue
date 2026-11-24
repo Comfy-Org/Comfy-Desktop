@@ -6,7 +6,6 @@ import { useResizeObserver } from '@vueuse/core'
 import Button from '@comfyorg/design-system/button/Button'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import WorkflowCover from './WorkflowCover.vue'
-import { HOME_BUILD_TONES } from './homeBuild'
 import { useModal } from '../../composables/useModal'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
@@ -64,11 +63,6 @@ async function load(): Promise<void> {
   if (request !== latestLoad) return
   all.value = listed
   now.value = Date.now()
-}
-
-function toneGlow(workflow: RecentWorkflow): string {
-  const { tint } = HOME_BUILD_TONES[workflow.where === 'cloud' ? 'tide' : 'iris']
-  return `radial-gradient(90% 120% at 0% 0%, rgb(${tint} / 0.38), rgb(${tint} / 0) 70%)`
 }
 
 function editedLabel(workflow: RecentWorkflow): string {
@@ -160,7 +154,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
       >
         <button
           type="button"
-          class="group relative flex w-full flex-col overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] p-1.5 text-left outline-none transition-colors hover:bg-(--build-card-hover) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default"
+          class="relative flex w-full flex-col overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--build-card-highlight)] p-1.5 text-left outline-none transition-colors hover:bg-(--build-card-hover) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default"
           :aria-label="
             t('home.openRecentWorkflow', { title: workflow.title, build: workflow.buildName })
           "
@@ -172,12 +166,6 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
         >
           <span class="relative block aspect-[16/10] overflow-hidden rounded-xl">
             <WorkflowCover :name="workflow.title" />
-            <span
-              class="pointer-events-none absolute inset-0 origin-[0%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.8] motion-reduce:transition-none"
-              :style="{ background: toneGlow(workflow) }"
-              data-testid="home-recent-workflow-glow"
-              aria-hidden="true"
-            />
             <span
               v-if="opening === workflow.id"
               class="absolute inset-0 flex items-center justify-center bg-black/40"

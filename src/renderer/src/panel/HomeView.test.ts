@@ -4,6 +4,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
+import { HOME_BUILD_TONES } from './home/homeBuild'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useAuthStore } from '../stores/authStore'
@@ -1265,5 +1266,34 @@ describe('Home recent workflows', () => {
     await flushPromises()
 
     expect(openRecentWorkflow).toHaveBeenCalledExactlyOnceWith('newest', 'video/Wan loop.json')
+  })
+
+  it('paints no build tone on a workflow card, local or Cloud, leaving the icon as the cue', async () => {
+    getInstallations.mockResolvedValue([NEWEST, CLOUD])
+    listRecentWorkflows.mockResolvedValue([
+      recent({ title: 'Wan loop' }),
+      recent({
+        title: 'Upscale',
+        installationId: 'cloud',
+        buildName: 'Comfy Cloud',
+        where: 'cloud'
+      })
+    ])
+
+    const wrapper = await openHome()
+    const [local, cloud] = wrapper.findAll('[data-testid="home-recent-workflow"]')
+
+    expect(local!.find('.lucide-laptop').exists()).toBe(true)
+    expect(cloud!.find('.lucide-cloud').exists()).toBe(true)
+    const toneColors = Object.values(HOME_BUILD_TONES).map(({ tint }) => tint.split(' ').join(', '))
+    for (const card of [local!, cloud!]) {
+      const painted = [card.element, ...card.element.querySelectorAll('*')].map((element) => {
+        const style = getComputedStyle(element)
+        return `${style.backgroundColor} ${style.backgroundImage}`
+      })
+      for (const tone of toneColors) {
+        expect(painted.filter((paint) => paint.includes(tone))).toEqual([])
+      }
+    }
   })
 })
