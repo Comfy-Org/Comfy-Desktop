@@ -30,13 +30,61 @@ export const CONSENT_PERMISSIONS = [
 type WorkspaceId = Workspace['id']
 type Finish = (workspaceId: WorkspaceId) => void
 
-export const browserSignIn = reactive({ pending: false, banner: false, browser: false })
+export const FAKE_SIGNUP_URL = 'https://cloud.comfy.org/cloud/signup?desktop_login_code=PROTO-7Q4K'
+export const FAKE_BILLING_URL = 'https://cloud.comfy.org/cloud/billing/add-credits'
+
+export const SIGN_UP_COPY = {
+  title: 'Create your Comfy account',
+  body: 'One account for Comfy Desktop and Comfy Cloud',
+  google: 'Continue with Google',
+  apple: 'Continue with Apple',
+  email: 'Continue with email',
+  emailPlaceholder: 'you@example.com',
+  haveAccount: 'Already have an account?',
+  logIn: 'Log in'
+} as const
+
+export const TOP_UP_COPY = {
+  title: 'Add credits',
+  body: 'Credits pay for runs on Comfy Cloud. You pay what a run costs, no markup.',
+  amountLabel: 'Amount',
+  card: 'Visa ending 4242',
+  pay: (usd: string) => `Pay ${usd}`,
+  paidTitle: (usd: string) => `${usd} added`,
+  paidBody: 'Your account is ready. Go back to Comfy Desktop to keep going.',
+  back: 'Back to Comfy Desktop'
+} as const
+
+export const TOP_UP_AMOUNTS = [5, 10, 20] as const
+export const DEFAULT_TOP_UP = 10
+
+export const NEW_ACCOUNT_WORKSPACE: Workspace = {
+  id: 'personal',
+  name: 'Personal',
+  plan: 'No plan',
+  role: 'OWNER',
+  initial: 'P',
+  color: '#3a3a3d'
+}
+
+export type BrowserStep = 'signup' | 'consent' | 'topup' | 'paid'
+
+export const browserSignIn = reactive({
+  pending: false,
+  banner: false,
+  browser: false,
+  step: 'consent' as BrowserStep,
+  added: 0
+})
+
+export const newAccount = reactive({ made: false, paid: false })
 
 const waiting: Finish[] = []
 let opening: ReturnType<typeof setTimeout> | undefined
 
 export function fakeBrowserSignIn(finish: Finish): void {
   waiting.push(finish)
+  if (!browserSignIn.pending) browserSignIn.added = 0
   browserSignIn.pending = true
   browserSignIn.banner = true
   clearTimeout(opening)
@@ -64,4 +112,32 @@ export function cancelInBrowser(): void {
 
 export function dismissSignInBanner(): void {
   browserSignIn.banner = false
+}
+
+export function startBrowserSteps(newUser: boolean): void {
+  browserSignIn.step = newUser && !newAccount.made ? 'signup' : 'consent'
+}
+
+export function needsFirstCredits(newUser: boolean): boolean {
+  return newUser && !newAccount.paid
+}
+
+export function createAccount(): void {
+  newAccount.made = true
+  browserSignIn.step = 'consent'
+}
+
+export function goToTopUp(): void {
+  browserSignIn.step = 'topup'
+}
+
+export function payInBrowser(amount: number): void {
+  newAccount.paid = true
+  browserSignIn.added = amount
+  browserSignIn.step = 'paid'
+}
+
+export function forgetNewAccount(): void {
+  newAccount.made = false
+  newAccount.paid = false
 }
