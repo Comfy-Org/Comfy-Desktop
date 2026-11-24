@@ -804,10 +804,17 @@ onBeforeUnmount(() => dropAssetLink(at))
 
 const meta = (a: MarAsset): string =>
   a.status && a.status !== 'failed'
-    ? [a.source === 'cloud' ? 'Cloud' : 'This computer', !fixedProject && a.project]
+    ? [
+        a.source === 'cloud' ? 'Cloud' : 'This computer',
+        !fixedProject && can.value.showsProjects && a.project
+      ]
         .filter(Boolean)
         .join(' · ')
-    : [a.when, a.size, build.value === 'all' ? buildName(a) : !fixedProject && a.project]
+    : [
+        a.when,
+        a.size,
+        build.value === 'all' ? buildName(a) : !fixedProject && can.value.showsProjects && a.project
+      ]
         .filter((x) => x && x !== '—')
         .join(' · ')
 const iconOf = (a: MarAsset) =>
@@ -1083,7 +1090,7 @@ function lines(a: MarAsset): MenuLine[] {
     ...(foldersOn.value ? [folderLine(() => [a.id])] : []),
     { label: 'Copy', icon: Copy, hint: '⌘C', run: () => copyAssets([a.id]) },
     // Projects are Desktop's; in ComfyUI a file takes a color label.
-    ...(inGraph ? [] : [lib.moveLine(() => [a.id], a.project)]),
+    ...(inGraph || !can.value.showsProjects ? [] : [lib.moveLine(() => [a.id], a.project)]),
     'sep',
     { label: 'Delete', icon: Trash2, danger: true, hint: '⌫', run: () => store.remove([a.id]) }
   ]
@@ -1650,7 +1657,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         ...(inGraph ? [{ label: 'Tag', icon: Tag, run: () => (tagging = !tagging) }] : []),
         labelLine(() => lib.selected.value),
         ...(foldersOn ? [folderLine(() => lib.selected.value)] : []),
-        ...(inGraph ? [] : [lib.moveLine(() => lib.selected.value)]),
+        ...(inGraph || !can.showsProjects ? [] : [lib.moveLine(() => lib.selected.value)]),
         { label: 'Delete', icon: Trash2, danger: true, run: lib.removeSelected }
       ]"
       @clear="lib.sel.clear()"

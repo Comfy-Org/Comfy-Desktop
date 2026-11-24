@@ -116,7 +116,7 @@ const recent = computed<Recent[]>(() =>
       }
     }),
     // With the own workflows (Recents & Assets), the apps used lately mix in.
-    ...(can.value.workflows && !firstTime.value
+    ...(can.value.workflows && !can.value.onboarding && !firstTime.value
       ? USED_APPS.map(({ x, age, when }): Recent => ({
           id: `app-${x.app}`,
           src: x.after,

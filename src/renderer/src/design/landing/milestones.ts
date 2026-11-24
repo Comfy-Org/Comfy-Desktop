@@ -104,6 +104,7 @@ export const can = computed(() => {
     onboarding: ONBOARDING(m),
     oneWindow: m >= 7,
     projects: m >= 8,
+    showsProjects: m >= 8 && !ONBOARDING(m),
     spaces: m >= 9,
     agent: m >= 10
   }

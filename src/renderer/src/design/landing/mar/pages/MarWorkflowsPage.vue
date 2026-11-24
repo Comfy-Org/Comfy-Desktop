@@ -112,7 +112,7 @@ function clear(): void {
 const lib = useLibrary(workflows, shown)
 // Projects come later (Milestone 8): until then no project filter, column,
 // meta or Move to project.
-const projects = computed(() => can.value.projects)
+const projects = computed(() => can.value.showsProjects)
 
 function open(w: MarWorkflow): void {
   openDetail('workflow', w.id)
