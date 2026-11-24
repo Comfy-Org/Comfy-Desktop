@@ -18,7 +18,7 @@ import AppThemeFrame from './AppThemeFrame.vue'
 import AppRunPlace from '../../mar/apps/AppRunPlace.vue'
 import MarAppPage from '../../mar/apps/MarAppPage.vue'
 import MarSignIn from '../../mar/shell/MarSignIn.vue'
-import { SIGN_IN_COPY } from '../../mar/signIn/browserSignIn'
+import { browserSignIn, SIGN_IN_COPY } from '../../mar/signIn/browserSignIn'
 import { appPage } from '../../mar/apps/appPage'
 import { can } from '../../milestones'
 import { APP_RUNS, appsStage, downloaded } from '../../mar/apps/appsStage'
@@ -127,12 +127,18 @@ const inTeam = computed(
 )
 
 const me = reactive({ signedIn: true, guest: false, credits: 0, used: 0 })
+const RETURNING_CREDITS = 10
+const topUpAtRun = computed(() => !can.value.onboarding)
+function startingCredits(): number {
+  if (!topUpAtRun.value) return proto.signedIn ? RETURNING_CREDITS : 0
+  return starter.value && proto.signedIn && !isNewUser.value ? RETURNING_CREDITS : 0
+}
 function reset(): void {
   Object.assign(me, {
     signedIn: starter.value ? proto.signedIn : as.value !== 'link',
     guest: false,
     // A returning user already has credits; a new one adds them at Run.
-    credits: starter.value && proto.signedIn && !isNewUser.value ? 10 : 0,
+    credits: startingCredits(),
     used: 0
   })
 }
@@ -169,14 +175,18 @@ function gate(): boolean {
     sheet.value = 'signin'
     return false
   }
-  if (!sponsored.value && me.credits < app.value.cost) {
+  if (outOfCredits()) {
     sheet.value = 'credits'
     return false
   }
   return true
 }
+function outOfCredits(): boolean {
+  return topUpAtRun.value && !sponsored.value && me.credits < app.value.cost
+}
 function signedIn(): void {
   me.signedIn = true
+  if (!topUpAtRun.value) me.credits = Math.max(me.credits, browserSignIn.added || RETURNING_CREDITS)
 }
 function signedInThenRun(): void {
   signedIn()
@@ -197,7 +207,7 @@ function addCredits(): void {
 // After sign-in, the run starts by itself: no second click on Run.
 function continueRun(): void {
   sheet.value = ''
-  if (!sponsored.value && me.credits < app.value.cost) {
+  if (outOfCredits()) {
     sheet.value = 'credits'
     return
   }
