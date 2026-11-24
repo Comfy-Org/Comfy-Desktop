@@ -7,6 +7,8 @@ import {
   Box,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
   File,
   Images,
@@ -198,7 +200,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     data-testid="output-detail"
     @close="emit('close')"
   >
-    <section class="flex min-w-0 flex-1 flex-col gap-3 p-3">
+    <section class="relative flex min-w-0 flex-1 flex-col gap-3 p-3">
       <div
         class="flex min-h-0 flex-1 overflow-auto"
         :class="zoom === 'fit' && 'items-center justify-center'"
@@ -241,6 +243,31 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           <span class="text-ui">{{ extension }}</span>
         </div>
       </div>
+
+      <template v-if="items.length > 1">
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          class="absolute top-1/2 left-4 z-10 -translate-y-1/2 rounded-full"
+          :aria-label="t('assets.detail.previousFile')"
+          data-testid="output-detail-previous"
+          @click="step(-1)"
+        >
+          <ChevronLeft :size="16" aria-hidden="true" />
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          class="absolute top-1/2 right-4 z-10 -translate-y-1/2 rounded-full"
+          :aria-label="t('assets.detail.nextFile')"
+          data-testid="output-detail-next"
+          @click="step(1)"
+        >
+          <ChevronRight :size="16" aria-hidden="true" />
+        </Button>
+      </template>
 
       <footer class="flex shrink-0 items-end justify-end gap-3">
         <ol
@@ -320,7 +347,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             class="-mt-1 -mr-1 shrink-0 rounded-full"
             :aria-label="t('common.close')"
             data-testid="output-detail-close"
-            data-initial-focus
             @click="emit('close')"
           >
             <X :size="16" aria-hidden="true" />
@@ -342,7 +368,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <p
           v-for="(prompt, at) in item.prompts"
           :key="at"
-          class="m-0 max-h-40 overflow-y-auto text-ui break-words text-foreground select-text"
+          class="m-0 max-h-40 overflow-y-auto rounded-lg bg-secondary p-3 text-ui break-words text-foreground select-text"
         >
           {{ prompt }}
         </p>

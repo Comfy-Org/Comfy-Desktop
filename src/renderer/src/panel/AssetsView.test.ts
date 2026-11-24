@@ -1749,6 +1749,35 @@ describe('AssetsView', () => {
     expect(viewerTitle()).toBe('mid.png')
   })
 
+  it('steps to the file before and after with the arrows over the picture', async () => {
+    const wrapper = await mountAssets([
+      asset('new', 'new.png', 'image', { createdAt: '2026-11-03T00:00:00Z' }),
+      asset('mid', 'mid.png', 'image', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('old', 'old.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-mid"]').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLElement>('[data-testid="output-detail-next"]')!.click()
+    await flushPromises()
+    expect(viewerTitle()).toBe('old.png')
+
+    document.querySelector<HTMLElement>('[data-testid="output-detail-previous"]')!.click()
+    await flushPromises()
+    expect(viewerTitle()).toBe('mid.png')
+  })
+
+  it('leaves the arrows out when the viewer holds a single file', async () => {
+    const wrapper = await mountAssets([asset('only', 'only.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-only"]').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="output-detail-next"]')).toBeNull()
+    expect(document.querySelector('[data-testid="output-detail-previous"]')).toBeNull()
+  })
+
   it('plays a video in the viewer with its controls', async () => {
     const wrapper = await mountAssets([
       asset('clip', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://file/surfer' })

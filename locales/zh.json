@@ -181,6 +181,8 @@
     },
     "inspect": "查看 {name}",
     "detail": {
+      "previousFile": "上一个文件",
+      "nextFile": "下一个文件",
       "prompts": "提示词",
       "models": "模型",
       "createdAt": "创建于 {date}",

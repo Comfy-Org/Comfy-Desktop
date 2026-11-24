@@ -181,6 +181,8 @@
     },
     "inspect": "Inspect {name}",
     "detail": {
+      "previousFile": "Previous file",
+      "nextFile": "Next file",
       "prompts": "Prompts",
       "models": "Models",
       "createdAt": "Created {date}",
