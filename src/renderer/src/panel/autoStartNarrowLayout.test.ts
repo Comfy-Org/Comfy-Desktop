@@ -188,6 +188,7 @@ describe('Auto start on Home build cards in the smallest window with the sidebar
 
     for (const { id } of [STUDIO, PORTRAITS]) {
       const card = onlyIn(wrapper, `div[data-testid="home-build"][data-build-id="${id}"]`)
+      await userEvent.unhover(card, { force: true })
       const name = card.querySelector('.font-semibold')!
       const cardBox = boxOf(card)
       const nameBox = boxOf(name)

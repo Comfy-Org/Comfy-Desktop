@@ -67,8 +67,8 @@ vi.mock('../viewWorkspaceGrants', () => ({
   })
 }))
 
-vi.mock('../../apps/appsPages', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../apps/appsPages')>()),
+vi.mock(import('../../apps/appsPages'), async (importOriginal) => ({
+  ...(await importOriginal()),
   liveAppsPages: () => []
 }))
 

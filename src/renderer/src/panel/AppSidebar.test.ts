@@ -736,8 +736,8 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
-    const assets = wrapper.get('[data-testid="app-sidebar-assets"]').element.getBoundingClientRect()
-    expect(assets.top - home.bottom).toBe(4)
+    const apps = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
+    expect(apps.top - home.bottom).toBe(4)
     wrapper.unmount()
   })
 
