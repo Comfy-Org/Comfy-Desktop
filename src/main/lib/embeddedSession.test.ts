@@ -853,7 +853,7 @@ describe('the hosted Apps page', () => {
     const { event, webContents } = appsPage()
     mocks.refusedAppsPages.push(webContents)
 
-    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(stateForSender(event)).resolves.toEqual(OFF)
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(cloudOriginForSender(event)).resolves.toBeNull()
