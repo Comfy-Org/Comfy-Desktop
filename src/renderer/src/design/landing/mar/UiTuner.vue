@@ -16,6 +16,7 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
+import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
@@ -174,6 +175,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'assetFolders', show: () => when.assetFolders.value },
+  { id: 'assetFolderLayout', show: () => when.assetFolderLayout.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
@@ -477,6 +479,18 @@ const linkSays = computed(() => {
             <span class="text-ui text-subtle-foreground"
               >Folders in Assets, on Desktop and in ComfyUI's Assets tab.</span
             >
+          </Row>
+          <Row :show="shows('assetFolderLayout')" label="Folders layout">
+            <Seg
+              v-model="assetFolderLayout.id"
+              label="Folders layout"
+              :options="ASSET_FOLDER_LAYOUTS"
+            />
+            <span class="text-ui text-subtle-foreground">{{
+              assetFolderLayout.id === 'tree'
+                ? 'Tree sidebar: on Assets the sidebar folds to its rail, the folder tree beside it.'
+                : 'Folders stay in Filters, as today.'
+            }}</span>
           </Row>
           <Row :show="shows('folderDepth')" label="Folder depth">
             <Seg v-model="folderDepth.id" label="Folder depth" :options="FOLDER_DEPTHS" />

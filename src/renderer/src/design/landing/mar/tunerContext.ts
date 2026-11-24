@@ -15,6 +15,7 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
+import { assetFolderLayout } from './assets/assetFolderLayout'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
@@ -116,10 +117,17 @@ export const when = {
   assetFolders: computed(
     () => (inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on)
   ),
+  assetFolderLayout: computed(
+    () => inShell.value && proto.page === 'assets' && can.value.onboarding
+  ),
   folderDepth: computed(
     () =>
-      assetFoldersShown.id === 'on' &&
-      ((inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on))
+      (assetFoldersShown.id === 'on' &&
+        ((inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on))) ||
+      (assetFolderLayout.id === 'tree' &&
+        inShell.value &&
+        proto.page === 'assets' &&
+        can.value.onboarding)
   ),
   // ComfyUI (Proposal): where the Assets panel's expand button goes.
   fullAssets: computed(() => inGraph.value && comfyLook.id === 'proposal'),
@@ -246,6 +254,7 @@ export const TWEAKS = {
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
   assetFolders: one(assetFoldersShown, 'off'),
+  assetFolderLayout: one(assetFolderLayout, 'off'),
   folderDepth: one(folderDepth, 'few'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
