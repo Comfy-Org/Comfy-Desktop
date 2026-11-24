@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { Check, ChevronDown, Eye, Link2Off, Lock, Mail, X } from 'lucide-vue-next'
+import { Check, ChevronDown, Eye, Link2Off, Lock, X } from 'lucide-vue-next'
 import {
   DialogDescription,
   DialogRoot,
@@ -12,17 +12,18 @@ import Button from '../../ui/Button.vue'
 import DialogContent from '../../ui/DialogContent.vue'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
-import Input from '../../ui/Input.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import MemberAvatar from '../MemberAvatar.vue'
 import AppThemeFrame from './AppThemeFrame.vue'
 import AppRunPlace from '../../mar/apps/AppRunPlace.vue'
 import MarAppPage from '../../mar/apps/MarAppPage.vue'
+import MarSignIn from '../../mar/shell/MarSignIn.vue'
+import { SIGN_IN_COPY } from '../../mar/signIn/browserSignIn'
 import { appPage } from '../../mar/apps/appPage'
 import { can } from '../../milestones'
 import { APP_RUNS, appsStage, downloaded } from '../../mar/apps/appsStage'
 import { assets } from '../../mar/pages/assetsStore'
-import { go, isNewUser, proto, toast } from '../../useProto'
+import { go, hostActions, isNewUser, proto, toast } from '../../useProto'
 import {
   appsProto,
   exitPreview,
@@ -143,7 +144,6 @@ const panel = ref<{ run: () => void }>()
 const hubPage = computed(() => can.value.design && appPage.id === 'hub')
 const sheet = ref<'' | 'signin' | 'credits'>('')
 const topUp = ref('10')
-const email = ref('')
 const freeLeft = computed(() => Math.max(0, app.value.freeRuns - me.used))
 const sponsored = computed(() => !inTeam.value && app.value.payer === 'you' && freeLeft.value > 0)
 const payer = computed(() => {
@@ -175,12 +175,17 @@ function gate(): boolean {
   }
   return true
 }
-function signIn(how: string): void {
+function signedIn(): void {
   me.signedIn = true
-  if (starter.value) proto.signedIn = true
-  toast(`Signed in with ${how}. Your inputs are still here.`)
+}
+function signedInThenRun(): void {
+  signedIn()
   continueRun()
 }
+const runAfterSignIn = computed(
+  () =>
+    `Your inputs stay. The run starts right after.${sponsored.value ? ` Pablo pays for your first ${app.value.freeRuns} runs.` : ''}`
+)
 function guest(): void {
   me.guest = true
   continueRun()
@@ -288,7 +293,9 @@ function done(): void {
             It is shared with {{ app.team ? 'the Silverside team' : 'invited people' }}. Use the
             account it was shared with.
           </p>
-          <Button variant="primary" class="mt-6" @click="toast('Sign in')">Sign in</Button>
+          <Button variant="primary" class="mt-6" @click="hostActions.signIn()">{{
+            SIGN_IN_COPY.cta
+          }}</Button>
         </template>
         <template v-else>
           <h1 class="mt-5 text-title font-semibold">You need access</h1>
@@ -340,14 +347,20 @@ function done(): void {
             <span v-if="me.signedIn" class="flex items-center gap-2 text-ui text-muted-foreground"
               ><MemberAvatar :name="viewer.name" size="sm" />{{ viewer.email }}</span
             >
-            <Button v-else variant="ghost" size="sm" @click="sheet = 'signin'">Sign in</Button>
+            <Button v-else variant="ghost" size="sm" @click="hostActions.signIn(signedIn)">{{
+              SIGN_IN_COPY.cta
+            }}</Button>
           </span>
         </template>
         <template #below>
           <p v-if="me.guest" class="mt-6 text-ui text-subtle-foreground">
             Results stay for 24 hours.
-            <button type="button" class="underline underline-offset-2" @click="sheet = 'signin'">
-              Sign in to keep them
+            <button
+              type="button"
+              class="underline underline-offset-2"
+              @click="hostActions.signIn(signedIn)"
+            >
+              Log in to keep them
             </button>
           </p>
         </template>
@@ -356,28 +369,18 @@ function done(): void {
 
     <!-- Sign in at Run -->
     <DialogRoot :open="!!sheet" @update:open="(v: boolean) => !v && (sheet = '')">
-      <DialogContent size="sm" class="p-6">
+      <DialogContent size="sm" :class="sheet === 'signin' ? 'p-1' : 'p-6'">
         <template v-if="sheet === 'signin'">
-          <DialogTitle class="text-heading font-semibold">Sign in to run</DialogTitle>
-          <DialogDescription class="mt-1 text-ui text-muted-foreground">
-            Your inputs stay. The run starts right after.
-            {{ sponsored ? `Pablo pays for your first ${app.freeRuns} runs.` : '' }}
-          </DialogDescription>
-          <div class="mt-6 flex flex-col gap-2">
-            <Button size="lg" block @click="signIn('Google')">Continue with Google</Button>
-            <Button size="lg" block @click="signIn('Apple')">Continue with Apple</Button>
-            <form class="mt-2 flex gap-2" @submit.prevent="signIn('an email code')">
-              <Input v-model="email" placeholder="you@company.com" class="flex-1" />
-              <Button type="submit"><Mail :size="13" />Send code</Button>
-            </form>
-          </div>
-          <template v-if="app.noAccount && sponsored">
+          <DialogTitle class="sr-only">{{ SIGN_IN_COPY.title }}</DialogTitle>
+          <DialogDescription class="sr-only">{{ runAfterSignIn }}</DialogDescription>
+          <MarSignIn :note="runAfterSignIn" :then="signedInThenRun" />
+          <div v-if="app.noAccount && sponsored" class="px-3 pb-3">
             <div class="my-5 h-px bg-border-default" />
             <Button variant="ghost" block @click="guest">Run without an account</Button>
             <p class="mt-1 text-center text-ui text-subtle-foreground">
               Results stay for 24 hours.
             </p>
-          </template>
+          </div>
         </template>
 
         <template v-else-if="sheet === 'credits'">

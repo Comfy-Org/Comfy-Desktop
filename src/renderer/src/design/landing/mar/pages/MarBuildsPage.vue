@@ -620,7 +620,7 @@ const newLabel = computed(() =>
         : 'Cloud builds are out of reach right now. The ones on this computer start as usual.'
     "
     @action="hostActions.newInstance()"
-    @second="toast('Signing in to Comfy Cloud')"
+    @second="proto.signedIn ? toast('Opening Comfy Cloud') : hostActions.signIn()"
     @clear="clear"
   >
     <template #actions="{ state }">

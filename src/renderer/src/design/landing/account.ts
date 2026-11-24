@@ -106,10 +106,11 @@ export const shownEmail = computed(() => (realAccount.value ? realEmail.value : 
 /** Credits aren't available to the app yet: null hides them. */
 export const shownCredits = computed(() => (realAccount.value ? null : USER.credits))
 
-export async function realSignIn(): Promise<void> {
+export async function realSignIn(then?: () => void): Promise<void> {
   try {
     await store.value?.signIn()
     proto.loginPrompt = null
+    if (status.value.signedIn) then?.()
   } catch {
     toast("Couldn't log in")
   }
