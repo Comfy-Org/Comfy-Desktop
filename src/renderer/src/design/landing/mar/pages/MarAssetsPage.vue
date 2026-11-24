@@ -95,6 +95,9 @@ import {
   tagsOf
 } from '../assets/assetTags'
 import { isStarred, toggleStar } from '../assets/assetFavorites'
+import { MAX_STARS, ratingOf, setRating } from '../assets/assetRating'
+import { ratingStyle } from '../assets/ratingStyle'
+import StarRating from '../assets/StarRating.vue'
 // Favorites in Assets (the star and its sidebar row) arrive with Milestone 3.
 import { can } from '../../milestones'
 import { GROUPS, groupAssets } from '../assets/assetGroups'
@@ -166,6 +169,15 @@ const label = ref<AssetLabel | ''>('')
 const folder = ref('')
 /** And only the starred ones (the sidebar's Favorites). */
 const favOnly = ref(false)
+// Rating › Five stars: the star a file is kept by becomes its rating,
+// so Favorites holds whatever has stars at all.
+const stars = computed(() => ratingStyle.id === 'stars')
+const kept = (id: string): boolean => (stars.value ? ratingOf(id) > 0 : isStarred(id))
+const minStars = ref('')
+const RATINGS = Array.from({ length: MAX_STARS }, (_, i) => ({
+  value: String(i + 1),
+  label: `${'★'.repeat(i + 1)}${i + 1 < MAX_STARS ? ' and up' : ''}`
+}))
 // In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
 const store = inGraph ? graphLibrary : assets
 
@@ -250,7 +262,8 @@ const scoped = computed(() => {
       passes(a, filter.value) &&
       (!label.value || labelOf(a.id) === label.value) &&
       (!folder.value || within(folder.value).has(folderOf(a.id) ?? '')) &&
-      (!favOnly.value || isStarred(a.id)) &&
+      (!favOnly.value || kept(a.id)) &&
+      (!minStars.value || ratingOf(a.id) >= Number(minStars.value)) &&
       (fixedProject ||
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
@@ -324,8 +337,10 @@ const scopeEmpty = computed(() => {
   if (favOnly.value)
     return {
       icon: Star,
-      title: 'No favorites yet',
-      text: 'Star an asset from its corner to keep it here.'
+      title: stars.value ? 'Nothing rated yet' : 'No favorites yet',
+      text: stars.value
+        ? 'Tap the star in an asset’s corner and pick how many.'
+        : 'Star an asset from its corner to keep it here.'
     }
   if (filter.value.source !== 'all')
     return {
@@ -344,6 +359,7 @@ function clear(): void {
   label.value = ''
   folder.value = ''
   favOnly.value = false
+  minStars.value = ''
   filter.value = noFilter()
   project.value = 'all'
   query.value = ''
@@ -353,8 +369,15 @@ function clear(): void {
 function copyAssets(ids: string[]): void {
   if (ids.length) toast('Copied to the clipboard')
 }
-/** Label keys on the selection: 1 to 6 the first six colors, 0 none. */
+/** Number keys on the selection. Labels take them as Finder does: 1 to
+ *  6 the first six colors, 0 none. With Five stars on, the stars take 1
+ *  to 5 instead — rating a run is what the keys are for — and 0 clears
+ *  them; the labels keep their own menu. */
 function labelKey(n: number, ids: string[]): void {
+  if (stars.value) {
+    if (n <= MAX_STARS) setRating(ids, n)
+    return
+  }
   if (n === 0) clearLabel(ids)
   else if (n <= 6 && LABELS[n - 1]) setLabel(ids, LABELS[n - 1]!.value)
 }
@@ -414,7 +437,7 @@ const SOURCES = computed(() =>
         : done.value.filter((a) => factsFor(a).imported === (value === 'imported')).length
   }))
 )
-const FAV_COUNT = computed(() => done.value.filter((a) => isStarred(a.id)).length)
+const FAV_COUNT = computed(() => done.value.filter((a) => kept(a.id)).length)
 /** TAGS and LABELS in the order picked from their ⋯: tags A to Z or by
  *  how many hold them, labels as made or around the color wheel. */
 const TAG_ROWS = computed(() => {
@@ -1350,6 +1373,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             v-model="filter"
             v-model:folder="folder"
             v-model:kind="kind"
+            v-model:rating="minStars"
+            v-model:fav="favOnly"
             field
             source
             range
@@ -1359,6 +1384,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :meta="metaIn(base)"
             :folders="folderPill ? undefined : FOLDER_LIST"
             :kinds="folderPill ? KINDS : undefined"
+            :ratings="stars ? RATINGS : undefined"
+            :favorite="!stars && !inGraph"
           />
           <AssetSearch v-model:query="query" />
           <AssetLayoutMenu
@@ -1480,8 +1507,13 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                     @cancel-rename="lib.renaming.value = ''"
                   >
                     <template v-if="!a.status" #tools>
+                      <StarRating
+                        v-if="can.explore && stars"
+                        :value="ratingOf(a.id)"
+                        @set="setRating([a.id], $event)"
+                      />
                       <button
-                        v-if="can.explore"
+                        v-else-if="can.explore"
                         type="button"
                         class="mar-star"
                         :class="isStarred(a.id) && 'is-on'"
