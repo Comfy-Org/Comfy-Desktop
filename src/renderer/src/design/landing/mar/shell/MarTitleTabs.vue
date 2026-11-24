@@ -82,7 +82,7 @@ const close = (active: boolean): string =>
       v-for="t in state.tabs ?? []"
       :key="t.id"
       :class="[tab(t.id === state.tabFront), 'max-w-52 pr-1 pl-2']"
-      :title="t.fresh ? t.name : `${t.name} · ${t.build}`"
+      :title="t.fresh ? undefined : `${t.name} · ${t.build}`"
     >
       <button
         type="button"
