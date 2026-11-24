@@ -14,6 +14,7 @@ import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { folderDepth } from './assets/folderDepth'
+import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
@@ -107,7 +108,14 @@ export const when = {
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
   // ComfyUI's Assets tab, where folders live.
-  folderDepth: computed(() => assetsTab.open && assetsTab.on),
+  assetFolders: computed(
+    () => (inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on)
+  ),
+  folderDepth: computed(
+    () =>
+      assetFoldersShown.id === 'on' &&
+      ((inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on))
+  ),
   // ComfyUI (Proposal): where the Assets panel's expand button goes.
   fullAssets: computed(() => inGraph.value && comfyLook.id === 'proposal'),
   // Credits: the sidebar foot; Tabs has no sidebar.
@@ -225,6 +233,7 @@ export const TWEAKS = {
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
+  assetFolders: one(assetFoldersShown, 'off'),
   folderDepth: one(folderDepth, 'few'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
