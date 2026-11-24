@@ -121,15 +121,15 @@ export const SCENARIOS: PreviewScenario[] = [
     }
   },
   {
-    id: 'apps-hidden',
-    title: 'Apps with hidden apps for staff',
-    ready: '[data-testid="apps-hidden"]',
+    id: 'staff-apps',
+    title: 'Development page for staff',
+    ready: '[data-testid="staff-apps-grid"]',
     seed: (machine) => ({
       installations: everydayBuilds(machine),
       replies: { listHiddenApps: async () => ({ apps: HIDDEN_APP_CARDS }) }
     }),
     arrange: async ({ click }) => {
-      await click('[data-testid="app-sidebar-apps"]')
+      await click('[data-testid="app-sidebar-staff-apps"]')
     }
   },
   {

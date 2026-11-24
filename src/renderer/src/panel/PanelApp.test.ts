@@ -1787,6 +1787,104 @@ describe('PanelApp', () => {
     )
   })
 
+  const RELIGHT_STAFF_APP = {
+    id: 'relight',
+    title: 'Relight',
+    description: 'Change the light in a photo.',
+    covers: [],
+    reasons: ['off' as const],
+    hasPage: true
+  }
+
+  function tellPanelTheAppsListChanged(): void {
+    for (const [listener] of vi.mocked(window.api.onAppsListChanged).mock.calls as unknown as [
+      () => void
+    ][]) {
+      listener()
+    }
+  }
+
+  it('shows no Development entry to someone who is not staff', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(window.api.listHiddenApps).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="app-sidebar-staff-apps"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(false)
+  })
+
+  it('shows staff a Development entry that opens a page of the staff apps, apart from Apps', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    const page = wrapper.get('[data-testid="staff-apps-view"]')
+    expect(page.get('h1').text()).toBe('Development')
+    expect(page.find('[data-testid="staff-app-card-relight"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    expect(window.api.navigatePanel).toHaveBeenCalledWith('staff-apps')
+  })
+
+  it('opens a staff app from Development on the app page', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+  })
+
+  it('sends a person on Development back to Apps, and drops the entry, when a sign-out empties the staff list', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+    vi.mocked(window.api.navigatePanel).mockClear()
+
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [] })
+    tellPanelTheAppsListChanged()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-sidebar-staff-apps"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(true)
+    expect(window.api.navigatePanel).toHaveBeenCalledWith('apps')
+  })
+
+  it('keeps a person who is not on Development where they are when the staff list empties', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+    vi.mocked(window.api.navigatePanel).mockClear()
+
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [] })
+    tellPanelTheAppsListChanged()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-assets"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(window.api.navigatePanel).not.toHaveBeenCalled()
+  })
+
   it('opens a running hidden app picked from the title bar while a build view shows', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listApps).mockResolvedValue([

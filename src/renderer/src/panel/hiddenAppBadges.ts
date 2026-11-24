@@ -9,23 +9,23 @@ interface ReasonWords {
 const REASON_WORDS: Record<HiddenAppReason, ReasonWords> = {
   off: {
     id: 'hidden-off',
-    text: 'apps.hidden.reason.off',
-    description: 'apps.hidden.reasonDescription.off'
+    text: 'staffApps.reason.off',
+    description: 'staffApps.reasonDescription.off'
   },
   draft: {
     id: 'hidden-draft',
-    text: 'apps.hidden.reason.draft',
-    description: 'apps.hidden.reasonDescription.draft'
+    text: 'staffApps.reason.draft',
+    description: 'staffApps.reasonDescription.draft'
   },
   hub_only: {
     id: 'hidden-hub-only',
-    text: 'apps.hidden.reason.hubOnly',
-    description: 'apps.hidden.reasonDescription.hubOnly'
+    text: 'staffApps.reason.hubOnly',
+    description: 'staffApps.reasonDescription.hubOnly'
   },
   unpublished: {
     id: 'hidden-unpublished',
-    text: 'apps.hidden.reason.unpublished',
-    description: 'apps.hidden.reasonDescription.unpublished'
+    text: 'staffApps.reason.unpublished',
+    description: 'staffApps.reasonDescription.unpublished'
   }
 }
 

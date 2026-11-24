@@ -23,6 +23,7 @@
     "apps": "应用",
     "backToApp": "返回{app}",
     "assets": "资产",
+    "development": "开发",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "signInTitle": "登录 Comfy",
@@ -106,23 +107,6 @@
     "rail": {
       "running": "{app}，正在生成",
       "finished": "{app}，已完成"
-    },
-    "hidden": {
-      "title": "隐藏的应用",
-      "body": "目录中不在上方列表里的应用。只有 Comfy 员工能看到。",
-      "noPage": "comfy.org 上还没有页面",
-      "reason": {
-        "off": "已关闭",
-        "draft": "草稿",
-        "hubOnly": "仅 Hub",
-        "unpublished": "有未发布的修改"
-      },
-      "reasonDescription": {
-        "off": "已在目录中关闭",
-        "draft": "从未发布",
-        "hubOnly": "未在 Desktop 中列出",
-        "unpublished": "有已保存但未发布的修改"
-      }
     }
   },
   "assets": {
@@ -2300,5 +2284,24 @@
     "view": "显示",
     "window": "窗口",
     "checkForUpdates": "检查更新…"
+  },
+  "staffApps": {
+    "title": "开发",
+    "body": "目录中不在“应用”页面上的应用。只有 Comfy 员工能看到此页面。",
+    "search": "搜索开发中的应用",
+    "noMatchesHint": "换个词试试。",
+    "noPage": "comfy.org 上还没有页面",
+    "reason": {
+      "off": "已关闭",
+      "draft": "草稿",
+      "hubOnly": "仅 Hub",
+      "unpublished": "有未发布的修改"
+    },
+    "reasonDescription": {
+      "off": "已在目录中关闭",
+      "draft": "从未发布",
+      "hubOnly": "未在 Desktop 中列出",
+      "unpublished": "有已保存但未发布的修改"
+    }
   }
 }

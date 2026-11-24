@@ -12,6 +12,7 @@ import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import AssetsView from './AssetsView.vue'
 import AppsView from './AppsView.vue'
+import StaffAppsView from './StaffAppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -56,6 +57,7 @@ import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { runningAppIds, watchAppRuns } from './appRuns'
 import { useAppSwitchConfirm } from './useAppSwitchConfirm'
+import { useStaffApps } from './useStaffApps'
 import type { AppCard, DashboardPage, DraftAppRequest, Installation } from '../types/ipc'
 
 const { t } = useI18n()
@@ -183,7 +185,10 @@ if (params.get('e2e') === '1') {
   })
 }
 
-type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
+type DashboardHomePage = Extract<
+  DashboardPage,
+  'home' | 'apps' | 'chooser' | 'assets' | 'staff-apps'
+>
 
 const urlDashboardPage = params.get('dashboardPage')
 const dashboardHomePage = ref<DashboardHomePage>(
@@ -309,19 +314,19 @@ async function openAppFromHome(app: AppCard): Promise<void> {
   if (await switchStillWanted(app)) showApp(app)
 }
 
-async function openableHiddenApps(): Promise<AppCard[]> {
-  try {
-    return (await window.api.listHiddenApps()).apps.filter((app) => app.hasPage)
-  } catch {
-    return []
-  }
-}
+const staffApps = useStaffApps()
+
+watch(staffApps.shown, (shown) => {
+  if (shown || dashboardHomePage.value !== 'staff-apps') return
+  window.api.navigatePanel('apps')
+  handleSidebarNavigate('apps')
+})
 
 async function runningAppCard(appId: string): Promise<AppCard | undefined> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
   return (
     apps.find((listed) => listed.id === appId) ??
-    (await openableHiddenApps()).find((hidden) => hidden.id === appId)
+    staffApps.apps.value.find((staffApp) => staffApp.hasPage && staffApp.id === appId)
   )
 }
 
@@ -407,7 +412,14 @@ function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   assetsFocusName.value = null
   if (page === 'apps') appsVisits.value += 1
-  if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
+  if (page === 'staff-apps' && !staffApps.shown.value) return
+  if (
+    page === 'home' ||
+    page === 'apps' ||
+    page === 'chooser' ||
+    page === 'assets' ||
+    page === 'staff-apps'
+  )
     dashboardHomePage.value = page
 }
 
@@ -686,6 +698,7 @@ onUnmounted(() => {
         :make-room="appIsOpen"
         :app-in-progress="appInProgress"
         :apps="listedApps"
+        :show-staff-apps="staffApps.shown.value"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
         @switch-app="openAppFromHome"
@@ -729,6 +742,11 @@ onUnmounted(() => {
               @current-app="appInProgress = $event"
               @apps-loaded="listedApps = $event"
               @view-in-assets="viewInAssets"
+            />
+            <StaffAppsView
+              v-else-if="dashboardHomePage === 'staff-apps' && staffApps.shown.value"
+              :apps="staffApps.apps.value"
+              @open-app="openAppFromHome"
             />
             <AssetsView
               v-else-if="dashboardHomePage === 'assets'"

@@ -11,9 +11,7 @@ import type {
   AppCard,
   AppPagePlacement,
   AppPageStatus,
-  DraftClosingStop,
-  HiddenAppCard,
-  HiddenAppsList
+  DraftClosingStop
 } from '../types/ipc'
 
 const WIDE_PAGE_WIDTH = 1172
@@ -62,7 +60,7 @@ const GENJUTSU: AppCard = {
 }
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
-const listHiddenApps = vi.fn<() => Promise<HiddenAppsList>>()
+const listHiddenApps = vi.fn()
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const hideAppPage = vi.fn()
 const closeAppPage = vi.fn()
@@ -148,7 +146,6 @@ beforeEach(() => {
   page.style.cssText = `position: fixed; display: flex; left: 0; top: 0; width: ${WIDE_PAGE_WIDTH}px; height: 840px`
   document.body.append(page)
   showAppPage.mockResolvedValue('loading')
-  listHiddenApps.mockResolvedValue({ apps: [] })
   ;(window as unknown as { api: unknown }).api = {
     listApps,
     listHiddenApps,
@@ -894,146 +891,24 @@ describe('AppsView', () => {
     ])
     expect(wrapper.emitted('apps-loaded')?.at(-1)).toEqual([[CUTOUT]])
   })
-})
 
-const WORLDS: HiddenAppCard = {
-  id: 'explore-worlds',
-  title: 'Explore Worlds',
-  description: 'Walk through a world made from one picture.',
-  covers: [{ url: COVER, stillUrl: COVER }],
-  reasons: ['hub_only'],
-  hasPage: true
-}
-const RELIGHT: HiddenAppCard = {
-  id: 'relight',
-  title: 'Relight',
-  description: 'Change the light in a photo.',
-  covers: [],
-  reasons: ['off', 'draft', 'unpublished'],
-  hasPage: false
-}
-
-const HIDDEN_CARDS = '[data-testid="apps-hidden-grid"] [data-testid^="hidden-app-card-"]'
-
-function chipsOf(wrapper: Awaited<ReturnType<typeof mountApps>>, id: string): string[] {
-  return wrapper
-    .get(`[data-testid="hidden-app-card-${id}"]`)
-    .findAll('[data-badge-style="chip"]')
-    .map((chip) => chip.get('[aria-hidden="true"]').text())
-}
-
-describe('AppsView hidden apps', () => {
-  it('shows no hidden section, and no heading, when Desktop lists no hidden apps', async () => {
+  it('shows only the published apps, and never asks for the staff list', async () => {
+    listHiddenApps.mockResolvedValue({
+      apps: [
+        {
+          id: 'explore-worlds',
+          title: 'Explore Worlds',
+          description: '',
+          covers: [],
+          reasons: ['hub_only'],
+          hasPage: true
+        }
+      ]
+    })
     const wrapper = await mountApps()
 
-    expect(listHiddenApps).toHaveBeenCalledOnce()
-    expect(wrapper.find('[data-testid="apps-hidden"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Hidden apps')
-  })
-
-  it('shows no hidden section when the hidden list does not answer', async () => {
-    listHiddenApps.mockRejectedValue(new Error('refused'))
-    const wrapper = await mountApps()
-
-    expect(wrapper.find('[data-testid="apps-hidden"]').exists()).toBe(false)
+    expect(listHiddenApps).not.toHaveBeenCalled()
     expect(wrapper.findAll(APP_CARDS)).toHaveLength(3)
-  })
-
-  it('lists the hidden apps below the published grid, each with a chip that says why it is hidden', async () => {
-    listHiddenApps.mockResolvedValue({ apps: [WORLDS, RELIGHT] })
-    const wrapper = await mountApps()
-
-    const section = wrapper.get('[data-testid="apps-hidden"]')
-    expect(section.get('h2').text()).toBe('Hidden apps')
-    expect(wrapper.findAll(HIDDEN_CARDS).map((card) => card.attributes('data-testid'))).toEqual([
-      'hidden-app-card-explore-worlds',
-      'hidden-app-card-relight'
-    ])
-    expect(wrapper.findAll(APP_CARDS)).toHaveLength(3)
-    const grid = wrapper.get('[data-testid="apps-grid"]').element.getBoundingClientRect()
-    expect(section.element.getBoundingClientRect().top).toBeGreaterThan(grid.bottom)
-    expect(chipsOf(wrapper, 'explore-worlds')).toEqual(['Hub only'])
-    expect(chipsOf(wrapper, 'relight')).toEqual(['Off', 'Draft', 'Unpublished edits'])
-    const worlds = wrapper.get('[data-testid="hidden-app-card-explore-worlds"]')
-    expect(worlds.text()).toContain('Explore Worlds')
-    expect(worlds.text()).toContain('Walk through a world made from one picture.')
-    expect(worlds.get('img').attributes('src')).toBe(COVER)
-  })
-
-  it('opens a hidden app that has a page the same way as a published one', async () => {
-    listHiddenApps.mockResolvedValue({ apps: [WORLDS] })
-    const wrapper = await mountApps()
-
-    await wrapper.get('[data-testid="hidden-app-card-explore-worlds"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe(
-      'Explore Worlds'
-    )
-    expect(showAppPage).toHaveBeenCalledWith(
-      'explore-worlds',
-      expect.objectContaining({ justOpened: true })
-    )
-  })
-
-  it('shows a hidden app with no page as a card that does not open and says it has no page yet', async () => {
-    listHiddenApps.mockResolvedValue({ apps: [RELIGHT] })
-    const wrapper = await mountApps()
-
-    const card = wrapper.get('[data-testid="hidden-app-card-relight"]')
-    expect(card.element.tagName).toBe('DIV')
-    expect(card.get('[data-testid="app-card-note"]').text()).toBe('No page on comfy.org yet')
-    expect(card.text()).toContain('Change the light in a photo.')
-    expect(card.find('[data-testid="app-card-go"]').exists()).toBe(false)
-
-    await card.trigger('click')
-    await flushPromises()
-
-    expect(showAppPage).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
-  })
-
-  it('narrows the hidden apps with the same search as the published ones', async () => {
-    listHiddenApps.mockResolvedValue({ apps: [WORLDS, RELIGHT] })
-    const wrapper = await mountApps()
-
-    await wrapper.get('input').setValue('light')
-
-    expect(wrapper.findAll(HIDDEN_CARDS).map((card) => card.attributes('data-testid'))).toEqual([
-      'hidden-app-card-relight'
-    ])
-  })
-
-  it('drops the hidden section when Desktop says the list changed and the new account sees none', async () => {
-    listHiddenApps.mockResolvedValue({ apps: [WORLDS] })
-    const wrapper = await mountApps()
-    expect(wrapper.find('[data-testid="apps-hidden"]').exists()).toBe(true)
-
-    listHiddenApps.mockResolvedValue({ apps: [] })
-    appsListChanged()
-    await flushPromises()
-
-    expect(listHiddenApps).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('[data-testid="apps-hidden"]').exists()).toBe(false)
-  })
-
-  it('keeps the newest hidden list when an older one answers after it', async () => {
-    listHiddenApps.mockResolvedValue({ apps: [WORLDS] })
-    const wrapper = await mountApps()
-    let answerOlder: (list: HiddenAppsList) => void = () => {}
-    listHiddenApps.mockReturnValueOnce(
-      new Promise<HiddenAppsList>((resolve) => {
-        answerOlder = resolve
-      })
-    )
-    listHiddenApps.mockReturnValueOnce(Promise.resolve({ apps: [] }))
-
-    appsListChanged()
-    appsListChanged()
-    await flushPromises()
-    answerOlder({ apps: [WORLDS] })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="apps-hidden"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Explore Worlds')
   })
 })

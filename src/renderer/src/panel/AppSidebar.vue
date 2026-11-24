@@ -6,6 +6,7 @@ import {
   AppWindow,
   Cloud,
   CornerDownRight,
+  FlaskConical,
   House,
   Images,
   Laptop,
@@ -39,6 +40,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
 import type { NewWindowDashboardPage } from '../../../shared/dashboardPages'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
@@ -47,13 +49,15 @@ const {
   activeBuildId = null,
   makeRoom = false,
   appInProgress = null,
-  apps = null
+  apps = null,
+  showStaffApps = false
 } = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
   makeRoom?: boolean
   appInProgress?: AppCard | null
   apps?: AppCard[] | null
+  showStaffApps?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -65,7 +69,7 @@ const emit = defineEmits<{
 }>()
 
 interface SidebarRow {
-  page: NewWindowDashboardPage
+  page: NewWindowDashboardPage | 'staff-apps'
   label: string
   icon: Component
 }
@@ -130,6 +134,9 @@ const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
   { page: 'apps', label: t('sidebar.apps'), icon: AppWindow },
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
+  ...(showStaffApps
+    ? [{ page: 'staff-apps' as const, label: t('sidebar.development'), icon: FlaskConical }]
+    : []),
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>(() => [
@@ -242,6 +249,10 @@ const pageMenuTarget = shallowRef<{
 function openPageMenu(event: MouseEvent, page: NewWindowDashboardPage): void {
   pageMenuTarget.value = { page, returnFocus: event.currentTarget as HTMLElement | null }
   showPageMenu(event)
+}
+
+function openRowMenu(event: MouseEvent, page: SidebarRow['page']): void {
+  if (isNewWindowDashboardPage(page)) openPageMenu(event, page)
 }
 
 function noteFocusIn(event: FocusEvent): void {
@@ -374,9 +385,11 @@ function openSettings(): void {
             :aria-current="row.page === activePage ? 'page' : undefined"
             :aria-label="row.label"
             :data-testid="`app-sidebar-${row.page}`"
-            :data-home-tour="row.page === 'home' ? undefined : row.page"
+            :data-home-tour="
+              row.page === 'home' || row.page === 'staff-apps' ? undefined : row.page
+            "
             @click="navigate(row.page)"
-            @contextmenu.prevent="openPageMenu($event, row.page)"
+            @contextmenu.prevent="openRowMenu($event, row.page)"
           >
             <Tooltip
               :text="collapsed ? row.label : undefined"

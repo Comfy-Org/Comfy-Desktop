@@ -12,9 +12,9 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { badgeDescriptionIds } from './appCardBadges'
-import { hiddenAppBadges } from './hiddenAppBadges'
+import { RHYTHM_GRID_CLASS, rhythmSpanClass } from './appGridRhythm'
 import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
-import type { AppCard, DraftClosingStop, HiddenAppCard } from '../types/ipc'
+import type { AppCard, DraftClosingStop } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
@@ -38,12 +38,10 @@ const apps = ref<AppCard[]>([])
 const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const requestOpen = ref(false)
-const hiddenApps = ref<HiddenAppCard[]>([])
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
 const badgeIdPrefix = useId()
-const hiddenHeadingId = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
@@ -90,41 +88,6 @@ async function refreshApps(): Promise<void> {
   apps.value = listed
   state.value = 'ready'
   emit('apps-loaded', listed)
-}
-
-let hiddenRequests = 0
-let shownHiddenRequest = 0
-
-async function hiddenAppsNow(): Promise<HiddenAppCard[]> {
-  try {
-    return (await window.api.listHiddenApps()).apps
-  } catch {
-    return []
-  }
-}
-
-async function loadHiddenApps(): Promise<void> {
-  const request = ++hiddenRequests
-  const listed = await hiddenAppsNow()
-  if (request < shownHiddenRequest) return
-  shownHiddenRequest = request
-  hiddenApps.value = listed
-}
-
-const hiddenCards = computed<HiddenAppCard[]>(() => {
-  const needle = query.value.trim().toLowerCase()
-  return hiddenApps.value
-    .filter((app) => !needle || `${app.title}\n${app.description}`.toLowerCase().includes(needle))
-    .map((app) => ({ ...app, badges: hiddenAppBadges(app.reasons, t) }))
-})
-
-const RHYTHM_GRID_CLASS =
-  'm-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-6 @5xl:grid-cols-12'
-
-function rhythmSpanClass(index: number): string {
-  const medium = index % 5 < 2 ? '@3xl:col-span-3' : '@3xl:col-span-2'
-  const wide = index % 7 < 3 ? '@5xl:col-span-4' : '@5xl:col-span-3'
-  return `${medium} ${wide}`
 }
 
 const REQUEST_THUMB_LIMIT = 3
@@ -283,12 +246,8 @@ onMounted(() => {
   stopBackToListAsks = window.api.onAppBackToListAsked(
     (appId, stop) => void askBackToList(appId, stop)
   )
-  stopListUpdates = window.api.onAppsListChanged(() => {
-    void refreshApps()
-    void loadHiddenApps()
-  })
+  stopListUpdates = window.api.onAppsListChanged(() => void refreshApps())
   void loadApps()
-  void loadHiddenApps()
 })
 
 onBeforeUnmount(() => {
@@ -489,50 +448,6 @@ onBeforeUnmount(() => {
             </button>
           </li>
         </ul>
-
-        <section
-          v-if="state === 'ready' && hiddenCards.length > 0"
-          class="mt-12"
-          :aria-labelledby="hiddenHeadingId"
-          data-testid="apps-hidden"
-        >
-          <h2 :id="hiddenHeadingId" class="m-0 text-heading font-semibold text-foreground">
-            {{ t('apps.hidden.title') }}
-          </h2>
-          <p class="m-0 mt-1 mb-4 text-ui text-muted-foreground">{{ t('apps.hidden.body') }}</p>
-          <ul :class="RHYTHM_GRID_CLASS" data-testid="apps-hidden-grid">
-            <li
-              v-for="(app, index) in hiddenCards"
-              :key="app.id"
-              class="min-w-0"
-              :class="rhythmSpanClass(index)"
-            >
-              <AppCardTile
-                v-if="app.hasPage"
-                :ref="(card) => rememberCard(app.id, card)"
-                :app="app"
-                :playing="playsCover(app)"
-                :revealed="keyboardFocusedId === app.id"
-                :description-id-prefix="badgeIdPrefixFor(app)"
-                :aria-describedby="badgesDescribing(app)"
-                :data-testid="`hidden-app-card-${app.id}`"
-                @click="openPicked(app)"
-                @focus="noteCardFocus(app, $event)"
-                @blur="keyboardFocusedId = null"
-                @mouseenter="hoveredId = app.id"
-                @mouseleave="hoveredId = null"
-              />
-              <AppCardTile
-                v-else
-                :app="app"
-                :description-id-prefix="badgeIdPrefixFor(app)"
-                :aria-describedby="badgesDescribing(app)"
-                :note="t('apps.hidden.noPage')"
-                :data-testid="`hidden-app-card-${app.id}`"
-              />
-            </li>
-          </ul>
-        </section>
       </div>
     </div>
     <AppRequestModal :open="requestOpen" @close="requestOpen = false" />

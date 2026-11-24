@@ -144,7 +144,7 @@ export interface Installation {
 }
 
 export type DashboardPage =
-  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+  'home' | 'apps' | 'assets' | 'chooser' | 'staff-apps' | 'benchmarks' | 'performance-test'
 
 export type AppBadgeStyle = 'crown' | 'chip' | 'label'
 
