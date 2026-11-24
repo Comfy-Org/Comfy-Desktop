@@ -37,6 +37,7 @@ import { can } from '../milestones'
 import { shownName } from '../account'
 import { TEMPLATES, thumb } from '../mock'
 import { mock } from './assets/mock'
+import { recentsCover } from './cover'
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -69,6 +70,7 @@ const builds = computed(() => recentInstances.value.slice(0, 3))
 // The top keeps the same room whether or not a build is installing: the
 // Home never changes height between states.
 const tight = computed(() => parts.value.top === 'tight')
+const recentsCoverKind = computed(() => (can.value.onboarding ? recentsCover.id : undefined))
 
 // Example workflows as compact rows (Exploration 17): photo, title, what it does.
 const EXAMPLE_ART = [1, 2, 3, 4, 5].map((n) => mock(`home-example-${n}`))
@@ -169,11 +171,11 @@ const recent = computed<Recent[]>(() =>
     <HomeInstall v-if="(installPending || flow.ready) && !cardInBuilds" />
     <template v-if="gated"></template>
     <MarStart v-else-if="firstRun && !cardInBuilds" />
-    <div v-else>
+    <div v-else :class="can.onboarding ? 'flex flex-col' : ''">
       <!-- The Apps stage: the apps arc leads for everyone from Milestone 2
            on; from Milestone 3 Apps | Workflows tabs sit over it (layout in
            UI Playground › Apps and templates). -->
-      <HomeArcMix v-if="can.explore" class="mt-6" />
+      <HomeArcMix v-if="can.explore" :class="can.onboarding ? 'mt-10' : 'mt-6'" />
       <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
       <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
@@ -215,7 +217,10 @@ const recent = computed<Recent[]>(() =>
 
       <!-- Milestone 2 is apps only: Recently used comes back with Workflows
            (Recents & Assets), apps and workflows together. -->
-      <section v-if="recent.length && (can.workflows || !can.exploreApps)" class="mt-10">
+      <section
+        v-if="recent.length && (can.workflows || !can.exploreApps)"
+        :class="['mt-10', can.onboarding ? '-order-1' : '']"
+      >
         <SectionHeader
           class="mar-sec"
           title="Recently used"
@@ -233,6 +238,7 @@ const recent = computed<Recent[]>(() =>
             :meta="r.meta"
             :right="r.when"
             :app="r.app"
+            :cover-kind="recentsCoverKind"
             @open="r.open()"
           />
         </ScrollRow>
@@ -268,7 +274,7 @@ const recent = computed<Recent[]>(() =>
     </div>
 
     <!-- What's new waits for the Builder: at Explore & Learn the apps lead. -->
-    <template v-if="can.builder">
+    <template v-if="can.builder && !can.onboarding">
       <SpotlightCarousel v-if="p20.news === 'spotlight'" />
       <WhatsNew v-else-if="parts.news === 'mar'" />
       <LaunchBanner v-else-if="parts.news === 'banner'" />

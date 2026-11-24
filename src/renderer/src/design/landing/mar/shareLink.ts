@@ -16,7 +16,7 @@ import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
-import { COVERS, cover } from './cover'
+import { COVERS, RECENTS_COVERS, cover, recentsCover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
@@ -146,6 +146,7 @@ const PARTS: Part[] = [
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),
   // The cover's default follows the milestone (cover.ts).
   one('cover', cover, () => (can.value.projects ? 'output' : 'canvas'), COVERS),
+  one('recentsCover', recentsCover, 'generic', RECENTS_COVERS),
   one('buildCard', buildCard, 'rows', BUILD_CARDS),
   one('buildPage', buildPage, 'production', BUILD_PAGES),
   one('syncPrevious', syncPrevious, 'off', OFF_ON),

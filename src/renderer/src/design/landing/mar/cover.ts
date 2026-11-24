@@ -46,3 +46,34 @@ watch(
   },
   { immediate: true }
 )
+
+export type RecentsCover = 'generic' | 'image'
+
+export const RECENTS_COVERS: { value: RecentsCover; label: string }[] = [
+  { value: 'generic', label: 'Generic' },
+  { value: 'image', label: 'Image' }
+]
+
+const RECENTS_KEY = 'comfy.design.mar.recentsCover'
+
+export const recentsCover = reactive<{ id: RecentsCover }>({
+  id: (() => {
+    try {
+      const v = localStorage.getItem(RECENTS_KEY) as RecentsCover | null
+      return v && RECENTS_COVERS.some((c) => c.value === v) ? v : 'generic'
+    } catch {
+      return 'generic'
+    }
+  })()
+})
+
+watch(
+  () => recentsCover.id,
+  (id) => {
+    try {
+      localStorage.setItem(RECENTS_KEY, id)
+    } catch {
+      return
+    }
+  }
+)
