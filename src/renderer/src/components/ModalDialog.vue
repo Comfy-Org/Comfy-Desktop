@@ -194,11 +194,7 @@ watch(
     >
       <div
         class="dialog-title -mx-5 px-5"
-        :class="
-          isMigrateConfirm
-            ? 'mb-4 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : ['mb-4', MODAL_TITLE_CLASS]
-        "
+        :class="['mb-4', MODAL_TITLE_CLASS, isMigrateConfirm && 'text-text']"
       >
         {{ state.title }}
       </div>
