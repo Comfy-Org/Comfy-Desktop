@@ -42,6 +42,7 @@ import {
 } from './registerCreditBalanceHandlers'
 import { registerAssetsHandlers } from '../assets'
 import { registerAssetWorkflowHandlers } from '../assetWorkflows'
+import { registerRecentWorkflowHandlers } from '../recentWorkflows'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
 import { registerCatalogHandlers } from './registerCatalogHandlers'
 import { registerAppsHandlers } from './registerAppsHandlers'
@@ -298,6 +299,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerCreditBalanceHandlers()
   registerAssetsHandlers()
   registerAssetWorkflowHandlers()
+  registerRecentWorkflowHandlers()
   registerEmbeddedSessionHandlers()
   registerCatalogHandlers()
   registerAppsHandlers()

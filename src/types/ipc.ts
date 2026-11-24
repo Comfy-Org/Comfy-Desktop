@@ -246,6 +246,16 @@ export interface CatalogWorkflow {
   thumbnailUrl: string | null
 }
 
+export interface RecentWorkflow {
+  id: string
+  title: string
+  path: string
+  installationId: string
+  buildName: string
+  where: 'local' | 'cloud'
+  modifiedAt: number
+}
+
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
 export type CloudAssetLookup =
@@ -1332,6 +1342,8 @@ export interface ElectronApi {
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  listRecentWorkflows(): Promise<RecentWorkflow[]>
+  openRecentWorkflow(installationId: string, path: string): Promise<ComfyDesktopOpenInComfy>
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>

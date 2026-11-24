@@ -2,6 +2,7 @@ import type {
   AppCard,
   AssetSummary,
   CatalogWorkflow,
+  RecentWorkflow,
   FieldOption,
   GPUInfo,
   Installation,
@@ -314,6 +315,37 @@ export const HOME_WORKFLOWS: CatalogWorkflow[] = [
     thumbnailUrl: null
   }
 ]
+
+const MINUTE_MS = 60_000
+
+function savedWorkflow(
+  title: string,
+  installationId: string,
+  buildName: string,
+  minutesAgo: number,
+  folder = ''
+): RecentWorkflow {
+  const path = `${folder}${title}.json`
+  return {
+    id: `${installationId}:${path}`,
+    title,
+    path,
+    installationId,
+    buildName,
+    where: installationId === 'inst-comfy-cloud' ? 'cloud' : 'local',
+    modifiedAt: Date.now() - minutesAgo * MINUTE_MS
+  }
+}
+
+export function homeRecentWorkflows(): RecentWorkflow[] {
+  return [
+    savedWorkflow('Portrait relight', 'inst-comfyui', 'ComfyUI', 12),
+    savedWorkflow('Wan 2.2 loop', 'inst-video-experiments', 'Video experiments', 95, 'video/'),
+    savedWorkflow('Upscale for print', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 26),
+    savedWorkflow('Product on marble', 'inst-comfyui', 'ComfyUI', 60 * 24 * 3),
+    savedWorkflow('Storyboard frames', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 24 * 6)
+  ]
+}
 
 export function localAssets(): AssetSummary[] {
   return ['harbor-at-dusk.png', 'paper-crane.png', 'studio-portrait.png'].map((name, index) => ({

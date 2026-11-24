@@ -290,6 +290,20 @@ async function openGraphIn(
   return openScriptIn(target, openGraphScript(graph, workflowName(name)))
 }
 
+export async function openSavedWorkflow(
+  place: WorkflowPlace,
+  graph: Record<string, unknown>,
+  savedName: string
+): Promise<ComfyDesktopOpenInComfy> {
+  try {
+    const target =
+      place.where === 'local' ? await localTarget(null, place.build) : await cloudTarget()
+    return await openScriptIn(target, openGraphScript(graph, savedName))
+  } catch {
+    return { opened: false, error: i18n.t('apps.local.openNotTaken') }
+  }
+}
+
 export async function openEmbeddedWorkflow(
   place: WorkflowPlace,
   workflow: EmbeddedWorkflow,

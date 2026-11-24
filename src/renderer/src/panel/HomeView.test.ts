@@ -8,13 +8,16 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useAuthStore } from '../stores/authStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { CatalogWorkflow, Installation } from '../types/ipc'
+import type { CatalogWorkflow, Installation, RecentWorkflow } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
 const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
+const listRecentWorkflows = vi.fn<() => Promise<RecentWorkflow[]>>()
+const openRecentWorkflow =
+  vi.fn<(installationId: string, path: string) => Promise<{ opened: boolean; error?: string }>>()
 
 function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
   return { id, title, description: '', thumbnailUrl }
@@ -73,8 +76,12 @@ beforeEach(() => {
   getAppsEnabled.mockResolvedValue(false)
   getInstallations.mockResolvedValue([])
   getAuthStatus.mockResolvedValue({ signedIn: false })
+  listRecentWorkflows.mockResolvedValue([])
+  openRecentWorkflow.mockResolvedValue({ opened: true })
   ;(window as unknown as { api: unknown }).api = {
     listHomeWorkflows,
+    listRecentWorkflows,
+    openRecentWorkflow,
     openCatalogWorkflow,
     getAppsEnabled,
     getInstallations,
@@ -1242,5 +1249,65 @@ describe('Home build auto start', () => {
     expect(statusOf(wrapper, OLDEST.id)).not.toContain('Auto start')
     expect(startingWithDesktop(wrapper)).toEqual([])
     expect(setSetting).not.toHaveBeenCalledWith('autoLaunchOnStartup', expect.anything())
+  })
+})
+
+function recent(over: Partial<RecentWorkflow> & { title: string }): RecentWorkflow {
+  return {
+    id: `${over.installationId ?? 'newest'}:${over.title}.json`,
+    path: `${over.title}.json`,
+    installationId: 'newest',
+    buildName: 'My Local 1',
+    where: 'local',
+    modifiedAt: NOW - 2 * HOUR_MS,
+    ...over
+  }
+}
+
+function recentTitles(wrapper: VueWrapper): string[] {
+  return wrapper.findAll('[data-testid="home-recent-workflow-title"]').map((title) => title.text())
+}
+
+describe('Home recent workflows', () => {
+  it('shows the saved workflows of the builds in this workspace, with build and age', async () => {
+    getInstallations.mockResolvedValue([NEWEST, CLOUD])
+    listRecentWorkflows.mockResolvedValue([
+      recent({ title: 'Wan loop', modifiedAt: NOW - 5 * MINUTE_MS }),
+      recent({
+        title: 'Upscale',
+        installationId: 'cloud',
+        buildName: 'Comfy Cloud',
+        where: 'cloud'
+      }),
+      recent({ title: 'Elsewhere', installationId: 'uninstalled' })
+    ])
+
+    const wrapper = await openHome()
+
+    expect(recentTitles(wrapper)).toEqual(['Wan loop', 'Upscale'])
+    const first = wrapper.get('[data-testid="home-recent-workflow"]')
+    expect(first.text()).toContain('My Local 1')
+    expect(first.text()).toContain('5m ago')
+  })
+
+  it('hides the section when there are no saved workflows', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+
+    const wrapper = await openHome()
+
+    expect(wrapper.find('[data-testid="home-recent-workflows"]').exists()).toBe(false)
+  })
+
+  it('opens a saved workflow in its own build', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    listRecentWorkflows.mockResolvedValue([
+      recent({ title: 'Wan loop', path: 'video/Wan loop.json' })
+    ])
+
+    const wrapper = await openHome()
+    await wrapper.get('[data-testid="home-recent-workflow"]').trigger('click')
+    await flushPromises()
+
+    expect(openRecentWorkflow).toHaveBeenCalledExactlyOnceWith('newest', 'video/Wan loop.json')
   })
 })
