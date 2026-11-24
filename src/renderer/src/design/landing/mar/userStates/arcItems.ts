@@ -2,6 +2,9 @@ import { openDetail } from '../../useProto'
 import { thumb } from '../../mock'
 import { HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
 import { EXAMPLES, runExample } from './examples'
+import { openAppPage } from '../../appFlow'
+import { can } from '../../milestones'
+import { PROD_APPS, PROD_EXAMPLES, prodId, prodStill } from '../apps/prodApps'
 
 /** One card on the Home's arc: an app or a template (a Hub workflow). */
 export interface ArcItem {
@@ -29,6 +32,19 @@ export const ARC_APPS: ArcItem[] = EXAMPLES.map((x) => ({
   focus: x.focus,
   open: () => runExample(x)
 }))
+
+export const PROD_ARC_APPS: ArcItem[] = PROD_APPS.map((p) => ({
+  id: prodId(p.slug),
+  label: p.title,
+  does: p.blurb,
+  kind: 'app',
+  topic: p.kind === 'Video' ? 'video' : 'image',
+  src: prodStill(p.slug),
+  after: PROD_EXAMPLES.find((x) => x.app === prodId(p.slug))?.after,
+  open: () => openAppPage(prodId(p.slug))
+}))
+
+export const arcApps = (): ArcItem[] => (can.value.onboarding ? PROD_ARC_APPS : ARC_APPS)
 
 function template(w: HubWorkflow): ArcItem {
   const [title, what] = w.title.split(':').map((x) => x.trim())

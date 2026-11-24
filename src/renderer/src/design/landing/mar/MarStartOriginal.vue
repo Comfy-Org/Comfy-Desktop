@@ -6,6 +6,7 @@ import { onCloud } from './shell/surface'
 import { can } from '../milestones'
 import SectionHeader from '../ui/SectionHeader.vue'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
+import HomeArcMix from './userStates/HomeArcMix.vue'
 import { installPending } from './setup/setupFlow'
 import { EXAMPLES } from './userStates/examples'
 import EditorEntry from './userStates/EditorEntry.vue'
@@ -29,7 +30,8 @@ function openCloud(): void {
 </script>
 
 <template>
-  <section class="mt-10">
+  <HomeArcMix v-if="can.onboarding" class="mt-6" />
+  <section v-else class="mt-10">
     <SectionHeader
       class="mar-sec"
       title="Run an example on Comfy Cloud"

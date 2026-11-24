@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { EXAMPLES } from '../userStates/examples'
 import { mock } from '../assets/mock'
+import { PROD_EXAMPLES } from './prodApps'
 import reshootClip from '../assets/examples/reshoot-a-video.mp4'
 import jutsuClip from '../assets/examples/openjutsu.mp4'
 
@@ -319,7 +320,7 @@ const BORROW: Record<string, string[]> = {
   's-jutsu': ['x-h3', 'x-i2v', 'x-wan']
 }
 export const examplesOf = (app: string): AppExample[] => [
-  ...APP_EXAMPLES.filter((x) => x.app === app),
+  ...[...APP_EXAMPLES, ...PROD_EXAMPLES].filter((x) => x.app === app),
   ...APP_EXAMPLES.filter((x) => BORROW[app]?.includes(x.app)).map((x) => ({
     ...x,
     id: `${app}~${x.id}`,

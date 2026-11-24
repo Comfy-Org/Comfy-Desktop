@@ -48,6 +48,7 @@ import CompareSplit from '../assets/CompareSplit.vue'
 import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
+import { PROD_HOOKS } from './prodApps'
 import { APP_RUNS } from './appsStage'
 import { flow, installingBehind, showInstall } from '../setup/setupFlow'
 
@@ -328,7 +329,9 @@ const HOOKS: Record<string, string> = {
   's-reshoot': 'Same scene, a new angle.',
   's-jutsu': 'Anyone, into any scene.'
 }
-const hook = computed(() => HOOKS[appId] ?? lib.value?.blurb ?? 'Start from something that works.')
+const hook = computed(
+  () => HOOKS[appId] ?? PROD_HOOKS[appId] ?? lib.value?.blurb ?? 'Start from something that works.'
+)
 /** Inspiration's head: two rows of the app's pictures, each repeated so
  *  the drift loops. */
 const driftRow = (r: number): AppExample[] => {

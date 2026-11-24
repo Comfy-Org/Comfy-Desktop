@@ -1,4 +1,5 @@
 import { thumbSource } from '../../../mock'
+import { PROD_STILLS } from '../../apps/prodApps'
 
 /**
  * Mar's mock pictures: one per slot, so no picture shows twice in the
@@ -36,6 +37,7 @@ const TEMPLATE_THUMBS: Record<string, string> = Object.fromEntries(
 
 thumbSource.pick = (id) => {
   const [template, slot] = id.split('~')
+  if (template === 'prod' && slot) return PROD_STILLS[slot]
   return (slot && MOCK[slot]) || TEMPLATE_THUMBS[template!]
 }
 

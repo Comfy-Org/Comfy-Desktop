@@ -2,13 +2,14 @@ import { reactive, watch } from 'vue'
 
 /** How the Home's arc shows apps and templates from Milestone 3 on
  *  (UI Playground › Apps and templates). */
-export type HomeArcMix = 'tabs' | 'mixed' | 'row' | 'topics'
+export type HomeArcMix = 'tabs' | 'mixed' | 'row' | 'topics' | 'topics-kind'
 
 export const HOME_ARC_MIXES: { value: HomeArcMix; label: string }[] = [
   { value: 'tabs', label: '1 · Apps | Templates tabs over the arc' },
   { value: 'mixed', label: '2 · One arc, apps and templates mixed' },
   { value: 'row', label: '3 · Arc of apps, row of templates' },
-  { value: 'topics', label: '4 · Arc by use case (chips)' }
+  { value: 'topics', label: '4 · Arc by use case (chips)' },
+  { value: 'topics-kind', label: '5 · Arc by use case, App/Workflow chips' }
 ]
 
 const KEY = 'comfy.design.mar.homeArcMix'
