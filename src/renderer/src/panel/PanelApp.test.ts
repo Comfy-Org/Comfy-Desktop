@@ -1885,6 +1885,34 @@ describe('PanelApp', () => {
     expect(window.api.navigatePanel).not.toHaveBeenCalled()
   })
 
+  it.each(['benchmarks', 'performance-test'])(
+    'keeps a person who left Development for %s where they are when the staff list empties, and returns them to Apps',
+    async (panel) => {
+      window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+      vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
+      const wrapper = mountPanel()
+      await flushPromises()
+      await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+      await flushPromises()
+      mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel }))
+      await flushPromises()
+      vi.mocked(window.api.navigatePanel).mockClear()
+
+      vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [] })
+      tellPanelTheAppsListChanged()
+      await flushPromises()
+
+      expect(wrapper.find(`[data-testid="${panel}"]`).exists()).toBe(true)
+      expect(window.api.navigatePanel).not.toHaveBeenCalled()
+
+      mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'chooser' }))
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(true)
+    }
+  )
+
   it('opens a running hidden app picked from the title bar while a build view shows', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listApps).mockResolvedValue([

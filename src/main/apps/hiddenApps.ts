@@ -366,12 +366,14 @@ export async function listHiddenApps(deps: HiddenAppsDeps = defaultDeps): Promis
   }
   if (cache && cache.owner !== owner) forgetHiddenApps()
   if (cache && deps.now() < cache.expiresAt) return listOf(cache)
+  const askedIn = generation
   const pending =
-    inFlight?.owner === owner && inFlight.generation === generation
+    inFlight?.owner === owner && inFlight.generation === askedIn
       ? inFlight.request
       : startLoading(owner, deps)
   const entry = await pending
-  return deps.cloudIdentity() === owner ? listOf(entry) : NO_HIDDEN_APPS
+  const current = askedIn === generation && deps.cloudIdentity() === owner
+  return current ? listOf(entry) : NO_HIDDEN_APPS
 }
 
 function currentHiddenApp(id: string, deps: HiddenAppsDeps): HiddenApp | null {

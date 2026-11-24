@@ -636,8 +636,30 @@ describe('keeping the hidden list', () => {
     const answer = await held
     forgetHiddenApps()
     answer(await pageOf([row('explore-worlds')])())
-    await asked
 
+    expect(await asked).toEqual({ apps: [] })
     expect(pageUrlForHiddenApp('explore-worlds', deps())).toBeNull()
+  })
+
+  it('hands no cards to an ask when Desktop forgets the hidden apps just as the list lands', async () => {
+    livePages.add(pageUrl('explore-worlds'))
+    let forgetOnNextStamp = false
+    const forgettingDeps = deps({
+      now: () => {
+        if (forgetOnNextStamp) {
+          forgetOnNextStamp = false
+          queueMicrotask(forgetHiddenApps)
+        }
+        return clock
+      }
+    })
+    const held = holdCatalog()
+
+    const asked = listHiddenApps(forgettingDeps)
+    const answer = await held
+    forgetOnNextStamp = true
+    answer(await pageOf([row('explore-worlds')])())
+
+    expect(await asked).toEqual({ apps: [] })
   })
 })

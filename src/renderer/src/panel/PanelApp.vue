@@ -318,6 +318,10 @@ const staffApps = useStaffApps()
 
 watch(staffApps.shown, (shown) => {
   if (shown || dashboardHomePage.value !== 'staff-apps') return
+  if (sidebarPage.value !== 'staff-apps') {
+    dashboardHomePage.value = 'apps'
+    return
+  }
   window.api.navigatePanel('apps')
   handleSidebarNavigate('apps')
 })
