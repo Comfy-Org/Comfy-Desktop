@@ -175,9 +175,9 @@ const recent = computed<Recent[]>(() =>
       <!-- The Apps stage: the apps arc leads for everyone from Milestone 2
            on; from Milestone 3 Apps | Workflows tabs sit over it (layout in
            UI Playground › Apps and templates). -->
-      <HomeArcMix v-if="can.explore" :class="can.onboarding ? 'mt-10' : 'mt-6'" />
+      <HomeArcMix v-if="can.explore" class="mt-6" />
       <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
-      <MarBuildsRow v-if="!onCloud" />
+      <MarBuildsRow v-if="!onCloud" :class="can.onboarding ? 'order-1' : ''" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). Not once the apps arc leads the Home (Milestone 2):
@@ -217,10 +217,7 @@ const recent = computed<Recent[]>(() =>
 
       <!-- Milestone 2 is apps only: Recently used comes back with Workflows
            (Recents & Assets), apps and workflows together. -->
-      <section
-        v-if="recent.length && (can.workflows || !can.exploreApps)"
-        :class="['mt-10', can.onboarding ? '-order-1' : '']"
-      >
+      <section v-if="recent.length && (can.workflows || !can.exploreApps)" :class="'mt-10'">
         <SectionHeader
           class="mar-sec"
           title="Recently used"
