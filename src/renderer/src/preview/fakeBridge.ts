@@ -277,7 +277,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     openCatalogWorkflow: async () => true,
     listRecentWorkflows: async () => homeRecentWorkflows(),
     openRecentWorkflow: async () => ({ opened: true }),
-    getAppsEnabled: async () => true,
     listApps: async () => APP_CARDS,
     showAppPage: async () => 'ready',
     captureAppPage: async () => null,

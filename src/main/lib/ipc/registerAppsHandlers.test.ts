@@ -52,7 +52,6 @@ vi.mock('../../apps/appsCatalog', () => ({
   pictureForListedApp: (id: string) =>
     id === 'remove-background' ? 'https://comfy.org/rb.webp' : null
 }))
-vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: vi.fn(async () => true) }))
 vi.mock('../../host/registry', () => ({
   isPanelSender: () => mocks.isPanel,
   findEntryByTitleBarSender: () => mocks.titleBarEntry

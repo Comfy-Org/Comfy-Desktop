@@ -131,7 +131,6 @@ export function buildElectronApi(): ElectronApi {
     listRecentWorkflows: (buildIds) => ipcRenderer.invoke('workflows:list-recent', buildIds),
     openRecentWorkflow: (installationId, path) =>
       ipcRenderer.invoke('workflows:open-recent', installationId, path),
-    getAppsEnabled: () => ipcRenderer.invoke('apps:get-enabled'),
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),

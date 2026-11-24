@@ -21,7 +21,6 @@ vi.mock('../host/registry', () => ({
 }))
 vi.mock('../lib/telemetry', () => ({ capture: mocks.capture }))
 vi.mock('./appsConfig', () => ({
-  areAppsEnabled: vi.fn(),
   currentAppsLocation: () => ({
     url: 'https://comfy.org/apps/',
     origin: 'https://comfy.org',
@@ -85,7 +84,6 @@ function deps(overrides: Partial<DraftLinkDeps> = {}): DraftLinkDeps {
     isPackaged: () => true,
     signedInAccount: async () => STAFF_ACCOUNT,
     cloudIdentity: () => STAFF,
-    appsEnabled: async () => true,
     homeWindow: () => ({ id: 1 }) as unknown as BrowserWindow,
     sendToPanel: vi.fn(),
     ...overrides
@@ -186,7 +184,6 @@ describe('openDraftLink', () => {
       {}
     ],
     ['bad_link', linkTo('http://myapp.vercel.app/apps/depth-swap/'), {}],
-    ['apps_off', LINK, { appsEnabled: async () => false }],
     ['signed_out', LINK, { signedInAccount: async () => null }]
   ] as const)(
     'says why and registers nothing when the answer is %s',
@@ -285,7 +282,6 @@ describe('openPastedDraft', () => {
     ['bad_link', 'ftp://my.dev.box/apps/x/', {}, "Couldn't open this draft app"],
     ['bad_link', 'https://me:pw@my.dev.box/', {}, "Couldn't open this draft app"],
     ['bad_link', 'http://my.dev.box/apps/x/', {}, "Couldn't open this draft app"],
-    ['apps_off', LOCAL_PAGE, { appsEnabled: async () => false }, "Couldn't open this draft app"],
     ['signed_out', LOCAL_PAGE, { signedInAccount: async () => null }, 'Sign in to open draft apps'],
     [
       'not_staff',

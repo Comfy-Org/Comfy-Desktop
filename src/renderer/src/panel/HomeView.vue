@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -28,11 +28,9 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/ipc'
+import type { AppCard, AppCover, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
-
-type LoadState = 'loading' | 'ready' | 'unavailable'
 
 const HOME_BUILD_LIMIT = 3
 const BUILDS_TITLE_LINK_CLASS =
@@ -138,44 +136,10 @@ function buildStatus(build: Installation) {
 }
 
 const { state: appsState, apps, loadApps } = useHomeApps()
-const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.value !== 'off')
-
-const state = ref<LoadState>('loading')
-const workflows = ref<CatalogWorkflow[]>([])
-const carouselIsLoading = computed(() =>
-  appsState.value === 'off'
-    ? state.value === 'loading'
-    : appsState.value === 'checking' || appsState.value === 'loading'
-)
 
 function coversOf(app: AppCard): readonly AppCover[] {
   return app.covers
 }
-
-function thumbnailOf(workflow: CatalogWorkflow): readonly AppCover[] {
-  return workflow.thumbnailUrl
-    ? [{ url: workflow.thumbnailUrl, stillUrl: workflow.thumbnailUrl }]
-    : []
-}
-
-async function loadWorkflows(): Promise<void> {
-  state.value = 'loading'
-  try {
-    workflows.value = await window.api.listHomeWorkflows()
-    state.value = workflows.value.length > 0 ? 'ready' : 'unavailable'
-  } catch {
-    workflows.value = []
-    state.value = 'unavailable'
-  }
-}
-
-function openWorkflow(workflow: CatalogWorkflow): void {
-  void window.api.openCatalogWorkflow(workflow.id)
-}
-
-watch(appsState, (now) => {
-  if (now === 'off') void loadWorkflows()
-})
 
 onMounted(() => {
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
@@ -205,12 +169,9 @@ onMounted(() => {
         {{ t('home.title') }}
       </h1>
 
-      <section
-        class="mt-[74px]"
-        :aria-label="appsState === 'off' ? t('home.exampleWorkflows') : t('sidebar.apps')"
-      >
+      <section class="mt-[74px]" :aria-label="t('sidebar.apps')">
         <div
-          v-if="carouselIsLoading"
+          v-if="appsState === 'loading'"
           class="flex h-75 items-center justify-center gap-2.5"
           aria-busy="true"
           data-testid="home-carousel-loading"
@@ -246,27 +207,8 @@ onMounted(() => {
           :title="t('apps.emptyTitle')"
           :text="t('apps.emptyBody')"
         />
-        <HomeCarousel
-          v-else-if="state === 'ready'"
-          kind="workflows"
-          :cards="workflows"
-          :pictures-of="thumbnailOf"
-          @open="openWorkflow"
-        />
-        <div
-          v-else
-          class="flex h-75 flex-col items-center justify-center gap-3"
-          data-testid="home-workflows-unavailable"
-        >
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('home.workflowsUnavailable') }}
-          </p>
-          <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
-            {{ t('home.retry') }}
-          </Button>
-        </div>
 
-        <div v-if="appsEnabled" class="mt-[30px] flex justify-center">
+        <div class="mt-[30px] flex justify-center">
           <Button
             type="button"
             variant="muted-textonly"

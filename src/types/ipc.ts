@@ -1344,7 +1344,6 @@ export interface ElectronApi {
   openCatalogWorkflow(id: string): Promise<boolean>
   listRecentWorkflows(buildIds: string[]): Promise<RecentWorkflow[]>
   openRecentWorkflow(installationId: string, path: string): Promise<ComfyDesktopOpenInComfy>
-  getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>

@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
-import type { IpcMainEvent } from 'electron'
+import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 import path from 'path'
-import { findEntryByComfySender } from '../../host/registry'
+import { findEntryByComfySender, findInstallationIdByComfySender } from '../../host/registry'
 import {
   cancelModelDownload,
   clearFinishedDownloads,
@@ -11,7 +11,8 @@ import {
   pauseModelDownload,
   resumeModelDownload,
   retryDownload,
-  startModelDownload
+  startModelDownload,
+  subscribeToInstallationModelJobs
 } from '../comfyDownloadManager'
 import { getDeviceId, getIdClass } from '../deviceId'
 import { openModelAccessPageWindow } from '../modelAccessPage'
@@ -25,6 +26,31 @@ function isTrustedCloudSender({ sender, senderFrame }: IpcMainEvent): boolean {
     senderFrame.routingId === mainFrame.routingId &&
     isTrustedCloudUrl(senderFrame.url)
   )
+}
+
+function isInstallationPageSender({
+  sender,
+  senderFrame
+}: IpcMainEvent | IpcMainInvokeEvent): boolean {
+  const comfyUrl = findEntryByComfySender(sender)?.comfyUrl
+  if (!comfyUrl || !senderFrame) return false
+  const installationOrigin = httpOriginOf(comfyUrl)
+  const mainFrame = sender.mainFrame
+  return (
+    installationOrigin !== null &&
+    senderFrame.processId === mainFrame.processId &&
+    senderFrame.routingId === mainFrame.routingId &&
+    httpOriginOf(senderFrame.url) === installationOrigin
+  )
+}
+
+function httpOriginOf(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : null
+  } catch {
+    return null
+  }
 }
 
 export function registerDownloadHandlers(): void {
@@ -50,6 +76,13 @@ export function registerDownloadHandlers(): void {
       return startModelDownload(win, url, filename, directory, event.sender)
     }
   )
+
+  ipcMain.handle('desktop2-list-model-downloads', (event) => {
+    const installationId = findInstallationIdByComfySender(event.sender)
+    return installationId && isInstallationPageSender(event)
+      ? subscribeToInstallationModelJobs(installationId, event.sender)
+      : []
+  })
 
   const controlRef = (payload?: { ref?: unknown; url?: unknown }): string | null => {
     if (typeof payload?.ref === 'string' && payload.ref) return payload.ref

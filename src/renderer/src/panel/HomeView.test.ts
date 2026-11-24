@@ -8,35 +8,36 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useAuthStore } from '../stores/authStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { CatalogWorkflow, Installation, RecentWorkflow } from '../types/ipc'
+import type { AppCard, Installation, RecentWorkflow } from '../types/ipc'
 
-const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
-const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
-const getAppsEnabled = vi.fn<() => Promise<boolean>>()
+const listApps = vi.fn<() => Promise<AppCard[]>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
 const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
 const listRecentWorkflows = vi.fn<(buildIds: string[]) => Promise<RecentWorkflow[]>>()
 const openRecentWorkflow =
   vi.fn<(installationId: string, path: string) => Promise<{ opened: boolean; error?: string }>>()
 
-function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
-  return { id, title, description: '', thumbnailUrl }
+function app(id: string, title: string): AppCard {
+  return { id, title, description: '', covers: [] }
+}
+
+function pictured(card: AppCard, url: string): AppCard {
+  return { ...card, covers: [{ url, stillUrl: url }] }
 }
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
   return { sourceLabel: 'Standalone', sourceCategory: 'local', status: 'installed', ...over }
 }
 
-const UPSCALE: CatalogWorkflow = {
+const UPSCALE_PICTURE = 'https://comfy.org/apps-media/upscale/v1'
+const UPSCALE: AppCard = {
   id: 'upscale',
   title: 'Upscale and restore detail',
   description: 'Enlarge an image and restore fine detail.',
-  thumbnailUrl: 'https://comfy.org/catalog-media/upscale/v1'
+  covers: [{ url: UPSCALE_PICTURE, stillUrl: UPSCALE_PICTURE }]
 }
-const TALK = workflow('talk', 'Make your character talk')
-const SEVEN_WORKFLOWS = Array.from({ length: 7 }, (_, index) =>
-  workflow(`workflow-${index}`, `Workflow ${index}`)
-)
+const TALK = app('talk', 'Make your character talk')
+const SEVEN_APPS = Array.from({ length: 7 }, (_, index) => app(`app-${index}`, `App ${index}`))
 
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
@@ -71,19 +72,15 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
   vi.clearAllMocks()
-  listHomeWorkflows.mockResolvedValue([])
-  openCatalogWorkflow.mockResolvedValue(true)
-  getAppsEnabled.mockResolvedValue(false)
+  listApps.mockResolvedValue([])
   getInstallations.mockResolvedValue([])
   getAuthStatus.mockResolvedValue({ signedIn: false })
   listRecentWorkflows.mockResolvedValue([])
   openRecentWorkflow.mockResolvedValue({ opened: true })
   ;(window as unknown as { api: unknown }).api = {
-    listHomeWorkflows,
+    listApps,
     listRecentWorkflows,
     openRecentWorkflow,
-    openCatalogWorkflow,
-    getAppsEnabled,
     getInstallations,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
@@ -143,68 +140,53 @@ function buildOptions(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('[data-testid="home-open-build-option"]')]
 }
 
-describe('Home example workflows', () => {
-  it('puts the first catalog workflow in front with its neighbours on either side', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+describe('Home carousel', () => {
+  it('puts the first app in front with its neighbours on either side', async () => {
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
 
-    expect(arc(wrapper)).toEqual([
-      '-2:Workflow 5',
-      '-1:Workflow 6',
-      '0:Workflow 0',
-      '1:Workflow 1',
-      '2:Workflow 2'
-    ])
+    expect(arc(wrapper)).toEqual(['-2:App 5', '-1:App 6', '0:App 0', '1:App 1', '2:App 2'])
   })
 
   it('brings a side card to the front when it is clicked, without opening it', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
 
     await cardAt(wrapper, 1).trigger('click')
 
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(cardAt(wrapper, 0).text()).toContain('App 1')
+    expect(wrapper.emitted('open-app')).toBeUndefined()
   })
 
   it('slides a card two places away to the front as the same card, with the next ones already waiting off stage', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
     const twoAway = cardAt(wrapper, 2).element
     const waitingOffStage = cardAt(wrapper, 3)
-    expect(waitingOffStage.text()).toBe('Workflow 3')
+    expect(waitingOffStage.text()).toBe('App 3')
     expect(waitingOffStage.attributes('aria-hidden')).toBe('true')
 
     await cardAt(wrapper, 2).trigger('click')
 
     expect(cardAt(wrapper, 0).element).toBe(twoAway)
     expect(cardAt(wrapper, 1).element).toBe(waitingOffStage.element)
-    expect(arc(wrapper)).toEqual([
-      '-2:Workflow 0',
-      '-1:Workflow 1',
-      '0:Workflow 2',
-      '1:Workflow 3',
-      '2:Workflow 4'
-    ])
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(arc(wrapper)).toEqual(['-2:App 0', '-1:App 1', '0:App 2', '1:App 3', '2:App 4'])
+    expect(wrapper.emitted('open-app')).toBeUndefined()
   })
 
   it('keeps cards that are off stage out of reach of the keyboard and screen readers', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
 
     const offStage = wrapper.findAll('[data-testid="home-carousel-card"][aria-hidden="true"]')
 
-    expect(offStage.map((card) => card.text())).toEqual(['Workflow 3', 'Workflow 4'])
+    expect(offStage.map((card) => card.text())).toEqual(['App 3', 'App 4'])
     expect(offStage.map((card) => card.attributes('tabindex'))).toEqual(['-1', '-1'])
   })
 
   it('loads every picture up front and fades each in once it has loaded', async () => {
-    listHomeWorkflows.mockResolvedValue(
-      SEVEN_WORKFLOWS.map((entry) => ({
-        ...entry,
-        thumbnailUrl: `https://comfy.org/catalog-media/${entry.id}/v1`
-      }))
+    listApps.mockResolvedValue(
+      SEVEN_APPS.map((entry) => pictured(entry, `https://comfy.org/apps-media/${entry.id}/v1`))
     )
     const wrapper = await openHome()
     const pictures = wrapper.findAll('[data-testid="home-carousel-card"] img')
@@ -218,51 +200,48 @@ describe('Home example workflows', () => {
     expect(pictures[5]!.attributes('data-loaded')).toBe('false')
   })
 
-  it('opens the workflow in front when it is clicked', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+  it('opens the app in front when it is clicked', async () => {
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
     await cardAt(wrapper, -1).trigger('click')
 
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-6')
+    expect(wrapper.emitted('open-app')).toEqual([[SEVEN_APPS[6]]])
   })
 
   it('turns the carousel with the arrow keys', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
     const carousel = wrapper.get('[data-testid="home-carousel"]')
 
     await carousel.trigger('keydown', { key: 'ArrowRight' })
     await carousel.trigger('keydown', { key: 'ArrowRight' })
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+    expect(cardAt(wrapper, 0).text()).toContain('App 2')
 
     await carousel.trigger('keydown', { key: 'ArrowLeft' })
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+    expect(cardAt(wrapper, 0).text()).toContain('App 1')
   })
 
   it('turns the carousel with the previous and next arrows', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
     const next = wrapper.get('[data-testid="home-carousel-next"]')
     const previous = wrapper.get('[data-testid="home-carousel-previous"]')
 
-    expect(next.attributes('aria-label')).toBe('Next workflow')
-    expect(previous.attributes('aria-label')).toBe('Previous workflow')
-
     await next.trigger('click')
     await next.trigger('click')
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+    expect(cardAt(wrapper, 0).text()).toContain('App 2')
 
     await previous.trigger('click')
     await previous.trigger('click')
     await previous.trigger('click')
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 6')
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(cardAt(wrapper, 0).text()).toContain('App 6')
+    expect(wrapper.emitted('open-app')).toBeUndefined()
   })
 
   it('stops the arrows at the ends of a short list and leaves them out for a single card', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    listApps.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
     const next = wrapper.get('[data-testid="home-carousel-next"]')
     const previous = wrapper.get('[data-testid="home-carousel-previous"]')
@@ -275,14 +254,14 @@ describe('Home example workflows', () => {
     expect(next.attributes('disabled')).toBeDefined()
     expect(previous.attributes('disabled')).toBeUndefined()
 
-    listHomeWorkflows.mockResolvedValue([UPSCALE])
+    listApps.mockResolvedValue([UPSCALE])
     const single = await openHome()
     expect(single.find('[data-testid="home-carousel-next"]').exists()).toBe(false)
     expect(single.find('[data-testid="home-carousel-previous"]').exists()).toBe(false)
   })
 
   it('keeps keyboard focus on an arrow when the one in use reaches the end of a short list', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    listApps.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
     const next = wrapper.get<HTMLButtonElement>('[data-testid="home-carousel-next"]')
     const previous = wrapper.get<HTMLButtonElement>('[data-testid="home-carousel-previous"]')
@@ -296,24 +275,24 @@ describe('Home example workflows', () => {
   })
 
   it('turns with the arrow keys from an arrow button and moves card focus to the new front card', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
 
     const next = wrapper.get('[data-testid="home-carousel-next"]')
     await next.trigger('keydown', { key: 'ArrowRight' })
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+    expect(cardAt(wrapper, 0).text()).toContain('App 1')
 
     const front = cardAt(wrapper, 0).element as HTMLButtonElement
     front.focus()
     await cardAt(wrapper, 0).trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
 
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+    expect(cardAt(wrapper, 0).text()).toContain('App 2')
     expect(document.activeElement).toBe(cardAt(wrapper, 0).element)
   })
 
-  it('shows the open arrow on hover of the front card only, and opens that workflow from it', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+  it('shows the open arrow on hover of the front card only, and opens that app from it', async () => {
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
     const front = cardAt(wrapper, 0).get('[data-testid="home-carousel-cta"]')
     const side = cardAt(wrapper, 1).get('[data-testid="home-carousel-cta"]')
@@ -324,55 +303,55 @@ describe('Home example workflows', () => {
 
     await front.trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
+    expect(wrapper.emitted('open-app')).toEqual([[SEVEN_APPS[0]]])
   })
 
   it('turns the carousel when it is dragged, and does not open the card the drag ends on', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
 
     pressCarouselAt(wrapper, 600)
     window.dispatchEvent(new PointerEvent('pointermove', { clientX: 290 }))
     await flushPromises()
 
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+    expect(cardAt(wrapper, 0).text()).toContain('App 2')
 
     window.dispatchEvent(new PointerEvent('pointerup', { clientX: 290 }))
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-app')).toBeUndefined()
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-2')
+    expect(wrapper.emitted('open-app')).toEqual([[SEVEN_APPS[2]]])
   })
 
   it('drags back the other way to earlier cards', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
 
     pressCarouselAt(wrapper, 600)
     window.dispatchEvent(new PointerEvent('pointermove', { clientX: 760 }))
     await flushPromises()
 
-    expect(cardAt(wrapper, 0).text()).toContain('Workflow 6')
+    expect(cardAt(wrapper, 0).text()).toContain('App 6')
     window.dispatchEvent(new PointerEvent('pointerup'))
   })
 
   it('still opens the front card after a press that does not move', async () => {
-    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listApps.mockResolvedValue(SEVEN_APPS)
     const wrapper = await openHome()
 
     pressCarouselAt(wrapper, 600)
     window.dispatchEvent(new PointerEvent('pointerup', { clientX: 601 }))
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
+    expect(wrapper.emitted('open-app')).toEqual([[SEVEN_APPS[0]]])
   })
 
   it('shows a short list once, without repeating cards around the arc', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    listApps.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
 
     expect(arc(wrapper)).toEqual([
@@ -385,72 +364,30 @@ describe('Home example workflows', () => {
     expect(cardAt(wrapper, 0).text()).toContain('Upscale and restore detail')
   })
 
-  it('shows the catalog picture when reduced motion is preferred', async () => {
+  it('shows the picture when reduced motion is preferred', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query === '(prefers-reduced-motion: reduce)',
       media: query,
       addEventListener: () => {},
       removeEventListener: () => {}
     }))
-    listHomeWorkflows.mockResolvedValue([UPSCALE])
+    listApps.mockResolvedValue([UPSCALE])
     const wrapper = await openHome()
 
-    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE.thumbnailUrl)
+    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE_PICTURE)
   })
 
-  it('shows the catalog picture on a card and a plain card when there is none', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+  it('shows the picture on a card and a plain card when there is none', async () => {
+    listApps.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
 
-    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE.thumbnailUrl)
+    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE_PICTURE)
     expect(cardAt(wrapper, 1).find('img').exists()).toBe(false)
 
     await cardAt(wrapper, 0).get('img').trigger('error')
 
     expect(cardAt(wrapper, 0).find('img').exists()).toBe(false)
     expect(cardAt(wrapper, 0).text()).toContain('Upscale and restore detail')
-  })
-
-  it('tells screen readers which card opens and which only comes forward', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
-    const wrapper = await openHome()
-
-    expect(cardAt(wrapper, 0).attributes('aria-label')).toBe(
-      'Open Upscale and restore detail on Comfy Hub'
-    )
-    expect(cardAt(wrapper, 1).attributes('aria-label')).toBe('Show Make your character talk')
-  })
-
-  it('leaves out See all apps while Apps is turned off', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE])
-    const wrapper = await openHome()
-
-    expect(wrapper.find('[data-testid="home-see-all-apps"]').exists()).toBe(false)
-  })
-
-  it('shows placeholders while the catalog is loading', async () => {
-    listHomeWorkflows.mockReturnValue(new Promise(() => {}))
-    const wrapper = await openHome()
-
-    expect(wrapper.get('[data-testid="home-carousel-loading"]').attributes('aria-busy')).toBe(
-      'true'
-    )
-    expect(wrapper.find('[data-testid="home-carousel-card"]').exists()).toBe(false)
-  })
-
-  it('says the workflows could not be loaded and loads them when asked to try again', async () => {
-    listHomeWorkflows.mockRejectedValueOnce(new Error('offline'))
-    const wrapper = await openHome()
-
-    const unavailable = wrapper.get('[data-testid="home-workflows-unavailable"]')
-    expect(unavailable.text()).toContain("Example workflows couldn't be loaded")
-
-    listHomeWorkflows.mockResolvedValue([UPSCALE])
-    await unavailable.get('button').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="home-workflows-unavailable"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="home-carousel-card"]')).toHaveLength(1)
   })
 })
 

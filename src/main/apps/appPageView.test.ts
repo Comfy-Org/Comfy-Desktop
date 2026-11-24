@@ -15,7 +15,6 @@ type PermissionRequest = (
 type WindowOpenHandler = (details: { url: string }) => { action: string }
 
 const mocks = vi.hoisted(() => ({
-  appsEnabled: true,
   windows: new Map<number, unknown>(),
   createView: (_options: unknown): unknown => null,
   session: null as unknown,
@@ -81,7 +80,6 @@ vi.mock('./draftLinks', () => ({
     mocks.draftAccountAllowed && mocks.drafts.get(id)?.accepted === true
 }))
 vi.mock('./appsConfig', () => ({
-  areAppsEnabled: async () => mocks.appsEnabled,
   currentAppsLocation: () => ({
     url: 'https://comfy.org/apps/',
     origin: 'https://comfy.org',
@@ -276,7 +274,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   _resetForTest()
   forgetAppsPages()
-  mocks.appsEnabled = true
   mocks.pages = new Map([
     [CUTOUT, CUTOUT_URL],
     [UPSCALE, UPSCALE_URL]
@@ -404,13 +401,6 @@ describe('opening an app', () => {
       expect(created).toHaveLength(0)
     }
   )
-
-  it('creates nothing while Apps is switched off', async () => {
-    mocks.appsEnabled = false
-
-    expect(await openCutout()).toBe('failed')
-    expect(created).toHaveLength(0)
-  })
 
   it('creates nothing for a sender that is not a panel', async () => {
     const stranger = new FakeContents() as unknown as WebContents
@@ -927,16 +917,6 @@ describe('an app page that cannot load', () => {
     expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(UPSCALE_URL)
     finishLoading(UPSCALE_URL)
     expect(hostedPage().visible).toBe(true)
-  })
-
-  it('does not load a failed app again on Try again once Apps is switched off', async () => {
-    await openCutout()
-    finishLoading(CUTOUT_URL, 503)
-    mocks.appsEnabled = false
-
-    expect(await openCutout({ ...PLACEMENT, retry: true })).toBe('failed')
-    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
-    expect(hostedPage().visible).toBe(false)
   })
 
   it("names the app with every status, so the panel can tell a hidden app's page from the one it shows", async () => {

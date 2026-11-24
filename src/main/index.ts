@@ -126,10 +126,8 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
-import { initAppsFlag } from './apps/appsFlag'
 import { runningAppCount, runningApps } from './apps/appPageView'
 import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
-import { appsEnabledAtStart } from './apps/appsConfig'
 import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
 import { openDraftLink } from './apps/draftLinks'
 import {
@@ -1076,14 +1074,12 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     } catch (err) {
       console.warn('[comfy-procs] startup scan failed:', err)
     }
-    const appsEnabled = appsEnabledAtStart()
     mainTelemetry.initTelemetry({
       appVersion: APP_VERSION,
       appEnv: app.isPackaged ? 'prod-v2' : 'dev',
       isPackaged: app.isPackaged,
       sessionStartProps: {
-        prior_session_unclean: priorSessionUnclean,
-        ...(appsEnabled === undefined ? {} : { apps_enabled: appsEnabled })
+        prior_session_unclean: priorSessionUnclean
       }
     })
     mainTelemetry.setConsentState(initialConsent)
@@ -1137,8 +1133,6 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
-
-    void initAppsFlag({ distinctId: installationId })
 
     void initWorkspaceMintSwitchFlag({ distinctId: installationId })
 
