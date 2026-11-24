@@ -1,7 +1,7 @@
 import { ref, type Ref } from 'vue'
 import type { AppCard } from '../../types/ipc'
 
-export type HomeAppsState = 'checking' | 'off' | 'loading' | 'ready' | 'empty' | 'failed'
+export type HomeAppsState = 'loading' | 'ready' | 'empty' | 'failed'
 
 export interface HomeApps {
   state: Ref<HomeAppsState>
@@ -9,16 +9,8 @@ export interface HomeApps {
   loadApps: () => Promise<void>
 }
 
-async function appsAreOn(): Promise<boolean> {
-  try {
-    return await window.api.getAppsEnabled()
-  } catch {
-    return false
-  }
-}
-
 export function useHomeApps(): HomeApps {
-  const state = ref<HomeAppsState>('checking')
+  const state = ref<HomeAppsState>('loading')
   const apps = ref<AppCard[]>([])
 
   async function loadApps(): Promise<void> {
@@ -32,10 +24,7 @@ export function useHomeApps(): HomeApps {
     }
   }
 
-  void appsAreOn().then((on) => {
-    if (on) return loadApps()
-    state.value = 'off'
-  })
+  void loadApps()
 
   return { state, apps, loadApps }
 }

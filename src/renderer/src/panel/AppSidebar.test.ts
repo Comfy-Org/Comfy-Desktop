@@ -66,19 +66,16 @@ const SDR_TO_HDR: AppCard = {
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
 const openPageInNewWindow = vi.fn()
-const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const refreshCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
-  getAppsEnabled.mockResolvedValue(false)
   refreshCreditBalance.mockResolvedValue({ status: 'signed_out' })
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
     openPageInNewWindow,
-    getAppsEnabled,
     getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
     onAppUpdateStateChanged: vi.fn(() => () => {}),
     getInstallations: vi.fn().mockResolvedValue([]),
@@ -131,11 +128,12 @@ function tooltipOf(
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Assets, then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Apps, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
+      'Apps',
       'Assets',
       'Builds',
       ''
@@ -145,8 +143,7 @@ describe('AppSidebar', () => {
     )
   })
 
-  it('adds Apps between Home and Assets once Apps is switched on', async () => {
-    getAppsEnabled.mockResolvedValue(true)
+  it('marks Apps as the current page and opens it from its row', async () => {
     const wrapper = await mountSidebar('apps')
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
@@ -165,7 +162,6 @@ describe('AppSidebar', () => {
   })
 
   it('names the app left open under Apps, and opens Apps on it', async () => {
-    getAppsEnabled.mockResolvedValue(true)
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
     })
@@ -191,7 +187,6 @@ describe('AppSidebar', () => {
   })
 
   it('leaves out the row for the app left open while Apps itself is shown', async () => {
-    getAppsEnabled.mockResolvedValue(true)
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'apps', appInProgress: CHARACTER_SWAP }
     })
@@ -201,7 +196,6 @@ describe('AppSidebar', () => {
   })
 
   it('names the app left open in the tooltip of its row on the folded rail', async () => {
-    getAppsEnabled.mockResolvedValue(true)
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'assets', appInProgress: CHARACTER_SWAP }
     })
@@ -215,17 +209,10 @@ describe('AppSidebar', () => {
     expect(tooltipOf(wrapper, 'app-sidebar-app-in-progress')).toBe('Back to Character Swap')
   })
 
-  it('shows no app row with no app left open, or with Apps switched off', async () => {
-    getAppsEnabled.mockResolvedValue(true)
-    const none = await mountSidebar('home')
-    expect(none.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  it('shows no app row with no app left open', async () => {
+    const wrapper = await mountSidebar('home')
 
-    getAppsEnabled.mockResolvedValue(false)
-    const off = mount(AppSidebar, {
-      props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
-    })
-    await flushPromises()
-    expect(off.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
   it('folds to the app rail while an app is open, with no toggle, and keeps the saved choice', async () => {
@@ -516,13 +503,6 @@ describe('AppSidebar', () => {
       )
       wrapper.unmount()
     })
-  })
-
-  it('leaves Apps out when the switch cannot be read', async () => {
-    getAppsEnabled.mockRejectedValue(new Error('main is busy'))
-    const wrapper = await mountSidebar()
-
-    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(false)
   })
 
   it('marks only the current page', async () => {
@@ -1168,7 +1148,6 @@ describe('AppSidebar', () => {
     })
 
     async function mountAttached(builds: Installation[] = []) {
-      getAppsEnabled.mockResolvedValue(true)
       useInstallationStore().installations = builds
       const wrapper = mount(AppSidebar, {
         props: { activePage: 'home' },

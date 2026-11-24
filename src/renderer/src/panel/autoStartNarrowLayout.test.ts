@@ -54,9 +54,7 @@ beforeAll(() => browserPage.viewport(1280, 1400))
 
 beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
-    listHomeWorkflows: vi.fn().mockResolvedValue([]),
-    openCatalogWorkflow: vi.fn().mockResolvedValue(true),
-    getAppsEnabled: vi.fn().mockResolvedValue(false),
+    listApps: vi.fn().mockResolvedValue([]),
     getInstallations: vi.fn().mockResolvedValue([STUDIO, PORTRAITS]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
