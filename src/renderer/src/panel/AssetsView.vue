@@ -162,7 +162,7 @@ const assetTotal = ref(0)
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 const workflowFound = ref(new Map<string, boolean>())
-const workflowSummaries = ref(new Map<string, AssetWorkflowSummary>())
+const workflowSummaries = ref(new Map<string, AssetWorkflowSummary | null>())
 const workflowChecks = ref(0)
 interface OpeningWorkflow {
   token: number
@@ -899,9 +899,19 @@ async function readWorkflowSummary(asset: GalleryAsset, checks: number): Promise
   if (workflowSummaries.value.has(key)) return
   const summary = await window.api
     .readAssetWorkflowSummary(asset.source, asset.id)
-    .catch(() => null)
-  if (!summary || checks !== workflowChecks.value) return
+    .catch(() => undefined)
+  if (summary === undefined || checks !== workflowChecks.value) return
   workflowSummaries.value = new Map(workflowSummaries.value).set(key, summary)
+}
+
+function needsWorkflowCheck(asset: GalleryAsset): boolean {
+  return mayOpenWorkflow(asset) && !workflowFound.value.has(workflowKey(asset))
+}
+
+function needsWorkflowSummary(asset: GalleryAsset): boolean {
+  const key = workflowKey(asset)
+  if (!WORKFLOW_KINDS.includes(asset.kind) || workflowSummaries.value.has(key)) return false
+  return mayOpenWorkflow(asset) ? workflowFound.value.get(key) === true : true
 }
 
 const WORKFLOW_CHECK_DELAY_MS = 150
@@ -919,8 +929,7 @@ watch(
 watch(
   () => {
     const asset = shownDetail.value
-    if (!asset || !mayOpenWorkflow(asset) || workflowFound.value.has(workflowKey(asset)))
-      return null
+    if (!asset || (!needsWorkflowCheck(asset) && !needsWorkflowSummary(asset))) return null
     return `${workflowChecks.value}\n${workflowKey(asset)}`
   },
   (pending) => {
@@ -928,10 +937,10 @@ watch(
     const asset = shownDetail.value
     if (!pending || !asset) return
     const checks = workflowChecks.value
-    workflowCheckTimer = setTimeout(
-      () => void checkWorkflow(asset, checks),
-      WORKFLOW_CHECK_DELAY_MS
-    )
+    workflowCheckTimer = setTimeout(() => {
+      if (needsWorkflowCheck(asset)) void checkWorkflow(asset, checks)
+      else if (needsWorkflowSummary(asset)) void readWorkflowSummary(asset, checks)
+    }, WORKFLOW_CHECK_DELAY_MS)
   },
   { immediate: true }
 )
