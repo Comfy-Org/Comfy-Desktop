@@ -7,7 +7,9 @@ import {
   Box,
   ChevronLeft,
   ChevronRight,
-  Video
+  PanelsTopLeft,
+  Video,
+  Workflow
 } from 'lucide-vue-next'
 import ImageGlyph from '../apps/ImageGlyph.vue'
 import { go } from '../../useProto'
@@ -28,11 +30,16 @@ import { ARC_APPS, type ArcItem } from './arcItems'
  * front. Run never says where: on Desktop it runs on Desktop, on Cloud on
  * Cloud.
  */
-const { items: given, allLabel = 'See all apps' } = defineProps<{
+const {
+  items: given,
+  allLabel = 'See all apps',
+  chip = 'topic'
+} = defineProps<{
   /** What stands on the arc: the apps unless a Home layout (M3) passes
    *  apps and workflows. */
   items?: ArcItem[]
   allLabel?: string
+  chip?: 'topic' | 'kind'
 }>()
 const emit = defineEmits<{ all: [] }>()
 
@@ -44,6 +51,12 @@ const TOPIC = {
   '3d': { label: '3D', icon: Box },
   audio: { label: 'Audio', icon: AudioLines }
 } as const
+const KIND = {
+  app: { label: 'App', icon: PanelsTopLeft },
+  template: { label: 'Workflow', icon: Workflow }
+} as const
+type Badge = (typeof TOPIC)[keyof typeof TOPIC] | (typeof KIND)[keyof typeof KIND]
+const badge = (x: ArcItem): Badge => (chip === 'kind' ? KIND[x.kind] : TOPIC[x.topic])
 const N = computed(() => items.value.length)
 const ANGLE = 25 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
@@ -286,7 +299,7 @@ function wheel(e: WheelEvent): void {
              tabs already say whether it's an app or a workflow. -->
         <span class="mar-arc-text">
           <span class="mar-arc-app"
-            ><component :is="TOPIC[x.topic].icon" :size="11" />{{ TOPIC[x.topic].label }}</span
+            ><component :is="badge(x).icon" :size="11" />{{ badge(x).label }}</span
           >
         </span>
         <span class="mar-arc-dim" />

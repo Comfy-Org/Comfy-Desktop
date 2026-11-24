@@ -7,7 +7,7 @@ import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import WorkflowCard from '../WorkflowCard.vue'
 import MarSeg from '../pages/MarSeg.vue'
-import { ARC_APPS, ARC_TEMPLATES, interleave, type ArcItem } from './arcItems'
+import { ARC_TEMPLATES, arcApps, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
 
@@ -26,6 +26,7 @@ const KINDS: { value: 'apps' | 'templates'; label: string }[] = [
 
 type Topic = 'all' | ArcItem['topic']
 const topic = ref<Topic>('all')
+const ARC_APPS = arcApps()
 const EVERY = [...ARC_APPS, ...ARC_TEMPLATES]
 const TOPICS = computed(() =>
   (
@@ -40,6 +41,7 @@ const TOPICS = computed(() =>
 )
 
 const mix = computed(() => homeArcMix.id)
+const byTopic = computed(() => mix.value === 'topics' || mix.value === 'topics-kind')
 
 const items = computed<ArcItem[]>(() => {
   switch (mix.value) {
@@ -49,7 +51,8 @@ const items = computed<ArcItem[]>(() => {
       return interleave(ARC_APPS, ARC_TEMPLATES, FEATURED)
     case 'row':
       return ARC_APPS
-    case 'topics': {
+    case 'topics':
+    case 'topics-kind': {
       const apps = ARC_APPS.filter((x) => topic.value === 'all' || x.topic === topic.value)
       const flows = ARC_TEMPLATES.filter((x) => topic.value === 'all' || x.topic === topic.value)
       return interleave(apps, flows, FEATURED)
@@ -60,7 +63,7 @@ const items = computed<ArcItem[]>(() => {
 
 const allLabel = computed(() => {
   if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
-  if (mix.value === 'topics' && topic.value !== 'all')
+  if (byTopic.value && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
   if (mix.value === 'row') return 'See all apps'
   return 'Explore all'
@@ -136,12 +139,7 @@ function scrollRow(by: number): void {
     <div v-if="mix === 'tabs'" class="mar-arcmix-picker">
       <MarSeg v-model="kind" :options="KINDS" label="Show" />
     </div>
-    <div
-      v-else-if="mix === 'topics'"
-      class="mar-arcmix-picker"
-      role="tablist"
-      aria-label="Use case"
-    >
+    <div v-else-if="byTopic" class="mar-arcmix-picker" role="tablist" aria-label="Use case">
       <button
         v-for="t in TOPICS"
         :key="t.value"
@@ -160,7 +158,12 @@ function scrollRow(by: number): void {
       :class="leaving && 'is-leaving'"
       :data-home-tour="listsApps ? 'apps-carousel' : undefined"
     >
-      <ExampleArc :items="shown.items" :all-label="shown.label" @all="seeAll(shown.on)" />
+      <ExampleArc
+        :items="shown.items"
+        :all-label="shown.label"
+        :chip="mix === 'topics-kind' ? 'kind' : 'topic'"
+        @all="seeAll(shown.on)"
+      />
     </div>
 
     <section v-if="mix === 'row'" class="mar-arcmix-row">

@@ -3,6 +3,7 @@ import { go, goIn, proto, requireLogin, toast } from './useProto'
 import { APPS } from './mock'
 import { can } from './milestones'
 import { onHubPage } from './mar/apps/appPage'
+import { PROD_APPS, prodId, prodThumbId } from './mar/apps/prodApps'
 import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './appTheme'
 
 /**
@@ -238,15 +239,13 @@ const relightFields = (): Field[] => [
     on: true,
     options: ['1', '2', '4']
   },
-  ...LOCKED.map(
-    ([label, node], i): Field => ({
-      id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `s${i}`,
-      label,
-      kind: 'text',
-      node,
-      on: false
-    })
-  )
+  ...LOCKED.map(([label, node], i): Field => ({
+    id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `s${i}`,
+    label,
+    kind: 'text',
+    node,
+    on: false
+  }))
 ]
 const simpleFields = (what: string): Field[] => [
   { id: 'photo', label: what, kind: 'image', node: 'Load Image #1', on: true },
@@ -896,6 +895,18 @@ export const STARTER_APPS: LibApp[] = [
 
 export const isStarter = (id: string): boolean => STARTER_APPS.some((a) => a.id === id)
 
+export const PROD_LIB_APPS: LibApp[] = PROD_APPS.map((p) => {
+  const like = [...EXAMPLE_APPS, ...STARTER_APPS, ...EXPLORE_APPS].find((a) => a.id === p.like)!
+  return {
+    ...like,
+    id: prodId(p.slug),
+    name: p.title,
+    blurb: p.blurb,
+    thumbId: prodThumbId(p.slug),
+    slug: p.slug
+  }
+})
+
 /** Add an Explore app to your library, or take it out. You stay its user:
  *  it opens as the app, never the admin page. */
 export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))
@@ -937,7 +948,8 @@ export const libApp = (id: string): LibApp | undefined =>
   LIB.find((a) => a.id === id) ??
   EXPLORE_APPS.find((a) => a.id === id) ??
   STARTER_APPS.find((a) => a.id === id) ??
-  EXAMPLE_APPS.find((a) => a.id === id)
+  EXAMPLE_APPS.find((a) => a.id === id) ??
+  PROD_LIB_APPS.find((a) => a.id === id)
 
 /** Who can use it, in one phrase. */
 export function accessLabel(a: LibApp): string {
@@ -966,14 +978,7 @@ export const usd = (n: number): string => `$${n.toFixed(2)}`
 // --- The creator journey (scripted agent) -----------------------------------
 
 export type Stage =
-  | 'idle'
-  | 'workflow'
-  | 'layout'
-  | 'inputs'
-  | 'look'
-  | 'preview'
-  | 'publish'
-  | 'live'
+  'idle' | 'workflow' | 'layout' | 'inputs' | 'look' | 'preview' | 'publish' | 'live'
 
 export interface Msg {
   id: number

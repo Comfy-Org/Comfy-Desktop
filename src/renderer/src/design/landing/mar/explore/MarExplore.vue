@@ -34,8 +34,9 @@ import Select from '../../ui/Select.vue'
 import { ROUTER_MODELS, TUTORIALS, thumb } from '../../mock'
 import { exploreStart } from './exploreStart'
 import { HUB_USE_CASES, HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from './hubWorkflows'
-import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
+import { EXPLORE, PROD_LIB_APPS, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
+import { PROD_EXAMPLES, prodApp, prodClip, prodStill } from '../apps/prodApps'
 import { goIn, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
@@ -68,10 +69,18 @@ exploreStart.value = null
 const type = ref('all')
 const query = ref('')
 
-const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
+const prodOnly = can.value.onboarding
+const CATALOG = prodOnly
+  ? PROD_LIB_APPS.map((a) => ({ app: a, use: '' }))
+  : [
+      ...STARTER_APPS.map((a) => ({ app: a, use: '' })),
+      ...EXPLORE.flatMap((s) => s.apps.map((a) => ({ app: a, use: s.title })))
+    ]
+const GALLERY = prodOnly ? PROD_EXAMPLES : APP_EXAMPLES
+const APPS_COUNT = CATALOG.length
 const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = asApps
   ? [
-      { value: 'examples', label: 'Inspiration', count: APP_EXAMPLES.length, icon: StarsGlyph },
+      { value: 'examples', label: 'Inspiration', count: GALLERY.length, icon: StarsGlyph },
       { value: 'apps', label: 'All apps', count: APPS_COUNT, icon: PanelsTopLeft },
       ...(library ? [{ value: 'mine' as const, label: 'My apps', count: 0, icon: UserRound }] : [])
     ]
@@ -79,7 +88,7 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
       {
         value: 'apps',
         label: 'Apps',
-        count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
+        count: APPS_COUNT
       },
       // No icons on Explore's tabs: the names say it.
       { value: 'templates', label: 'Workflows', count: HUB_WORKFLOWS.length },
@@ -184,10 +193,6 @@ const APP_SORTS = [
   { value: 'popular', label: 'Recommended' },
   { value: 'az', label: 'Name A to Z' }
 ]
-const CATALOG = [
-  ...STARTER_APPS.map((a) => ({ app: a, use: '' })),
-  ...EXPLORE.flatMap((s) => s.apps.map((a) => ({ app: a, use: s.title })))
-]
 const searched = computed(() => CATALOG.filter((c) => has(`${c.app.name} ${c.app.blurb} ${c.use}`)))
 const USES = computed(() =>
   EXPLORE.map((s) => ({
@@ -201,7 +206,7 @@ const USES = computed(() =>
 const VIDEO_APPS = ['s-reshoot', 's-jutsu', 'x-i2v', 'x-h3', 'x-wan', 'e-video']
 const KIND_ICON: Record<string, typeof Image> = { Image, Video, '3D': Box }
 const appKind = (id: string): string =>
-  VIDEO_APPS.includes(id) ? 'Video' : id === 'x-3d' ? '3D' : 'Image'
+  prodApp(id)?.kind ?? (VIDEO_APPS.includes(id) ? 'Video' : id === 'x-3d' ? '3D' : 'Image')
 const kinds = ref<string[]>([])
 const toggle = (list: string[], v: string, on: boolean): string[] =>
   on ? [...list, v] : list.filter((x) => x !== v)
@@ -221,9 +226,7 @@ const apps = computed(() => {
     .map((c) => c.app)
   return appSort.value === 'az' ? [...list].sort((a, b) => a.name.localeCompare(b.name)) : list
 })
-const searchedExamples = computed(() =>
-  APP_EXAMPLES.filter((x) => has(`${x.title} ${appName(x.app)}`))
-)
+const searchedExamples = computed(() => GALLERY.filter((x) => has(`${x.title} ${appName(x.app)}`)))
 const examples = computed(() =>
   searchedExamples.value.filter((x) => !kinds.value.length || kinds.value.includes(x.kind))
 )
@@ -301,7 +304,7 @@ const FILTER = computed<FilterGroup[]>(() => {
   }
   // The Gallery and the Milestone 2 Catalog filter by Type only: an app is
   // found from the search.
-  if (ex || asApps) return [type]
+  if (ex || asApps || prodOnly) return [type]
   return [
     {
       key: 'use',
@@ -368,7 +371,11 @@ const rhythm = computed<Rhythm[]>(() => {
   return rows
 })
 // What each app made, shown on hover: its first example (a clip plays).
-const previewOf = (id: string): AppExample | undefined => APP_EXAMPLES.find((x) => x.app === id)
+const previewOf = (id: string): Pick<AppExample, 'after' | 'video'> | undefined => {
+  const p = prodApp(id)
+  if (p) return { after: prodStill(p.slug), video: prodClip(p.slug) }
+  return APP_EXAMPLES.find((x) => x.app === id)
+}
 // Inspiration's Layout: masonry or grid, at one size (no Size here).
 const view = ref<AssetView>('masonry')
 const size = ref(2)
