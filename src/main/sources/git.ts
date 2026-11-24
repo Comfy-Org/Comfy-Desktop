@@ -226,7 +226,7 @@ export const gitSource: SourcePlugin = {
             editType: 'path',
             browseOnly: true
           },
-          { label: t('common.location'), value: installation.installPath || '—' },
+          { key: 'location', label: t('common.location'), value: installation.installPath || '—' },
           {
             label: t('common.installed'),
             value: new Date(installation.createdAt).toLocaleDateString()

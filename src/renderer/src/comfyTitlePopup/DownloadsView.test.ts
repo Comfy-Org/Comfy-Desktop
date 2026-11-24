@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import zh from '@locales/zh.json'
 import { resetAppLocale, switchAppLocaleToChinese } from '../lib/switchAppLocale'
 
@@ -543,11 +544,14 @@ describe('comfyTitlePopup/DownloadsView', () => {
     describe('in the app language', () => {
       afterEach(resetAppLocale)
 
-      it('names the reveal action in Chinese when the app is in Chinese', async () => {
-        switchAppLocaleToChinese()
+      it('renames the reveal action in Chinese when the app switches to Chinese while open', async () => {
         const wrapper = await mountRows()
-
         const reveal = wrapper.get('.is-completed .downloads-item-reveal')
+        expect(reveal.attributes('aria-label')).toBe('Show in Finder')
+
+        switchAppLocaleToChinese()
+        await nextTick()
+
         expect(reveal.attributes('aria-label')).toBe(zh.assets.showInFinder)
         expect(reveal.attributes('title')).toBe(zh.assets.showInFinder)
       })
