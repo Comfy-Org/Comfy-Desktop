@@ -1,5 +1,6 @@
 import type {
   AppCard,
+  HiddenAppCard,
   AssetSummary,
   CatalogWorkflow,
   FieldOption,
@@ -297,6 +298,33 @@ export const APP_CARDS: AppCard[] = [
     title: 'Sketch to image',
     description: 'Turn a rough drawing into a finished picture.',
     covers: []
+  }
+]
+
+export const HIDDEN_APP_CARDS: HiddenAppCard[] = [
+  {
+    id: 'explore-worlds',
+    title: 'Explore worlds',
+    description: 'Walk through a world made from one picture.',
+    covers: [],
+    reasons: ['hub_only'],
+    hasPage: true
+  },
+  {
+    id: 'style-transfer',
+    title: 'Style transfer',
+    description: 'Paint a picture in the style of another.',
+    covers: [],
+    reasons: ['off', 'draft'],
+    hasPage: false
+  },
+  {
+    id: 'relight',
+    title: 'Relight',
+    description: 'Change the light in a photo after it was taken.',
+    covers: [],
+    reasons: ['unpublished'],
+    hasPage: false
   }
 ]
 

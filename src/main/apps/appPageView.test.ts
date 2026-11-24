@@ -25,7 +25,9 @@ const mocks = vi.hoisted(() => ({
   titles: new Map<string, string>(),
   drafts: new Map<string, { url: string; accepted: boolean; card?: { title: string } }>(),
   draftSession: null as unknown,
-  draftAccountAllowed: true
+  draftAccountAllowed: true,
+  hiddenPages: new Map<string, string>(),
+  hiddenTitles: new Map<string, string>()
 }))
 
 vi.mock('electron', () => ({
@@ -74,6 +76,10 @@ vi.mock('./draftApps', () => ({
       if (!only || only.includes(draft)) mocks.drafts.delete(id)
     }
   }
+}))
+vi.mock('./hiddenApps', () => ({
+  pageUrlForHiddenApp: (id: string) => mocks.hiddenPages.get(id) ?? null,
+  titleForHiddenApp: (id: string) => mocks.hiddenTitles.get(id) ?? null
 }))
 vi.mock('./draftLinks', () => ({
   isDraftStillAllowed: async (id: string) =>
@@ -289,6 +295,8 @@ beforeEach(() => {
   mocks.drafts = new Map()
   mocks.draftSession = fakeSession()
   mocks.draftAccountAllowed = true
+  mocks.hiddenPages = new Map()
+  mocks.hiddenTitles = new Map()
   mocks.createView = () => {
     const view = new FakeView()
     created.push(view)
@@ -418,6 +426,47 @@ describe('opening an app', () => {
     expect(mocks.capture.mock.calls.filter(([name]) => name === APP_OPENED_EVENT)).toEqual([
       [APP_OPENED_EVENT, { app_id: CUTOUT }]
     ])
+  })
+})
+
+describe('a hidden app from the staff list', () => {
+  const WORLDS = 'explore-worlds'
+  const WORLDS_URL = `${APPS_URL}explore-worlds/desktop.html`
+
+  beforeEach(() => {
+    mocks.hiddenPages = new Map([[WORLDS, WORLDS_URL]])
+    mocks.hiddenTitles = new Map([[WORLDS, 'Explore Worlds']])
+  })
+
+  it('opens its page in the same apps session as a published app', async () => {
+    expect(await showAppPage(panelContents(), WORLDS, PLACEMENT)).toBe('loading')
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(WORLDS_URL)
+    expect(appsSession.check).not.toBeNull()
+    expect((mocks.draftSession as FakeSession).check).toBeNull()
+  })
+
+  it('opens nothing once the staff list no longer holds it', async () => {
+    mocks.hiddenPages.clear()
+
+    expect(await showAppPage(panelContents(), WORLDS, PLACEMENT)).toBe('failed')
+    expect(created).toHaveLength(0)
+  })
+
+  it('opens the published page when the app is on both lists', async () => {
+    mocks.hiddenPages.set(CUTOUT, `${APPS_URL}somewhere-else/desktop.html`)
+
+    await openCutout()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
+  })
+
+  it('names a running hidden app in the title bar by its title on the staff list', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+    noteAppPageRunning(hostedPage().webContents as unknown as WebContents, true)
+
+    expect(runningApps(WINDOW_KEY)).toEqual([{ id: WORLDS, title: 'Explore Worlds' }])
   })
 })
 

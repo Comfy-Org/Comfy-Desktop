@@ -1,5 +1,11 @@
 import type { BridgeSeed, FakeBridge } from './fakeBridge'
-import { INSTALL_STEPS, everydayBuilds, localAssets, type PreviewMachine } from './fixtures'
+import {
+  HIDDEN_APP_CARDS,
+  INSTALL_STEPS,
+  everydayBuilds,
+  localAssets,
+  type PreviewMachine
+} from './fixtures'
 
 export interface PreviewStage {
   bridge: FakeBridge
@@ -110,6 +116,18 @@ export const SCENARIOS: PreviewScenario[] = [
     title: 'Apps',
     ready: '[data-testid="app-sidebar-apps"][aria-current="page"]',
     seed: (machine) => ({ installations: everydayBuilds(machine) }),
+    arrange: async ({ click }) => {
+      await click('[data-testid="app-sidebar-apps"]')
+    }
+  },
+  {
+    id: 'apps-hidden',
+    title: 'Apps with hidden apps for staff',
+    ready: '[data-testid="apps-hidden"]',
+    seed: (machine) => ({
+      installations: everydayBuilds(machine),
+      replies: { listHiddenApps: async () => ({ apps: HIDDEN_APP_CARDS }) }
+    }),
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-apps"]')
     }

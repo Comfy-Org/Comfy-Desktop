@@ -174,6 +174,17 @@ export interface AppCard {
   coverPlayback?: 'always'
 }
 
+export type HiddenAppReason = 'off' | 'draft' | 'hub_only' | 'unpublished'
+
+export interface HiddenAppCard extends AppCard {
+  reasons: HiddenAppReason[]
+  hasPage: boolean
+}
+
+export interface HiddenAppsList {
+  apps: HiddenAppCard[]
+}
+
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
 
 export type DraftAppRequest =
@@ -1333,6 +1344,7 @@ export interface ElectronApi {
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   listApps(): Promise<AppCard[]>
+  listHiddenApps(): Promise<HiddenAppsList>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
   getAppRuns(): Promise<AppRun[]>

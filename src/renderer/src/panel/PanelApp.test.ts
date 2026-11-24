@@ -413,6 +413,7 @@ function installMockApi(initial?: {
     focusComfyWindow: vi.fn(async () => {}),
     navigatePanel: vi.fn(),
     listApps: vi.fn(async () => []),
+    listHiddenApps: vi.fn(async () => ({ apps: [] })),
     showAppPage: vi.fn(async () => 'loading'),
     captureAppPage: vi.fn(async () => null),
     getAppRuns: vi.fn(async () => []),
@@ -1784,6 +1785,61 @@ describe('PanelApp', () => {
         'Remove Background'
       )
     )
+  })
+
+  it('opens a running hidden app picked from the title bar while a build view shows', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [
+        {
+          id: 'relight',
+          title: 'Relight',
+          description: '',
+          covers: [],
+          reasons: ['off'],
+          hasPage: true
+        }
+      ]
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+    await flushPromises()
+
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('relight'))
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+  })
+
+  it('ignores a hidden app with no page picked from the title bar', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [
+        {
+          id: 'relight',
+          title: 'Relight',
+          description: '',
+          covers: [],
+          reasons: ['draft'],
+          hasPage: false
+        }
+      ]
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+    await flushPromises()
+
+    mockState.openRunningAppCallbacks.forEach((cb) => cb('relight'))
+    await flushPromises()
+
+    expect(wrapper.find('.panel-comfy-lifecycle').exists()).toBe(true)
+    expect(window.api.navigatePanel).not.toHaveBeenCalledWith('apps')
   })
 
   it('drops a switch whose run check answers after the person picked another app or went back to Apps', async () => {

@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   currentDrafts: vi.fn((): readonly unknown[] => []),
   draftCards: vi.fn((): unknown[] => []),
   listApps: vi.fn(async (): Promise<unknown[]> => []),
+  listHiddenApps: vi.fn(async (): Promise<unknown> => ({ apps: [] })),
+  forgetHiddenApps: vi.fn(),
+  tellPanelsTheListChanged: vi.fn(),
   openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
   isAppsPage: true,
   titleBarEntry: null as unknown,
@@ -44,7 +47,15 @@ vi.mock('../../apps/appPageView', () => ({
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
   showAppPage: vi.fn(),
+  tellPanelsTheListChanged: mocks.tellPanelsTheListChanged,
   titleBarApps: () => ({ running: mocks.running, ready: mocks.ready })
+}))
+vi.mock('../../apps/hiddenApps', () => ({
+  forgetHiddenApps: mocks.forgetHiddenApps,
+  listHiddenApps: mocks.listHiddenApps,
+  NO_HIDDEN_APPS: { apps: [] },
+  pictureForHiddenApp: (id: string) =>
+    id === 'explore-worlds' ? 'data:image/png;base64,AA==' : null
 }))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/appsCatalog', () => ({
@@ -198,6 +209,46 @@ describe('listing apps for the panel', () => {
     answerCatalog([listed])
 
     expect(await answer).toEqual([listed])
+  })
+})
+
+describe('listing hidden apps for the panel', () => {
+  const HIDDEN = { apps: [{ id: 'explore-worlds', title: 'Explore Worlds' }] }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.isPanel = true
+    cloudAuthEvents.removeAllListeners()
+    mocks.listHiddenApps.mockResolvedValue(HIDDEN)
+    registerAppsHandlers()
+  })
+
+  it('hands the panel the hidden apps of the signed-in staff account', async () => {
+    expect(await mocks.handlers.get('apps:list-hidden')?.({ sender: {} })).toEqual(HIDDEN)
+  })
+
+  it('lists no hidden apps, and asks nothing, for a page other than the panel', async () => {
+    mocks.isPanel = false
+
+    expect(await mocks.handlers.get('apps:list-hidden')?.({ sender: {} })).toEqual({ apps: [] })
+    expect(mocks.listHiddenApps).not.toHaveBeenCalled()
+  })
+
+  it('lists no hidden apps when reading them fails', async () => {
+    mocks.listHiddenApps.mockRejectedValueOnce(new Error('offline'))
+
+    expect(await mocks.handlers.get('apps:list-hidden')?.({ sender: {} })).toEqual({ apps: [] })
+  })
+
+  it('forgets the hidden apps on any Cloud account change and tells the panels to list again', () => {
+    cloudAuthEvents.emit('changed')
+
+    expect(mocks.forgetHiddenApps).toHaveBeenCalledOnce()
+    expect(mocks.tellPanelsTheListChanged).toHaveBeenCalledOnce()
+    expect(mocks.forgetHiddenApps.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.tellPanelsTheListChanged.mock.invocationCallOrder[0]!
+    )
   })
 })
 
@@ -424,6 +475,18 @@ describe('runs of apps kept open', () => {
       { x: 812, y: 36 }
     )
     expect(panelSend).not.toHaveBeenCalled()
+  })
+
+  it('pictures a running hidden app in the title bar menu with its still', () => {
+    const WORLDS = { id: 'explore-worlds', title: 'Explore Worlds' }
+    mocks.running = [REMOVE_BACKGROUND, WORLDS]
+
+    clickRunningApps()
+
+    expect(mocks.openRunningAppsMenu.mock.lastCall?.[1]).toEqual([
+      { ...REMOVE_BACKGROUND, picture: 'https://comfy.org/rb.webp', state: 'running' },
+      { ...WORLDS, picture: 'data:image/png;base64,AA==', state: 'running' }
+    ])
   })
 
   it('opens the one app whose run ended, and lists ready apps after running ones', () => {

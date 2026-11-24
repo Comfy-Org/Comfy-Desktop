@@ -27,6 +27,7 @@ import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
+import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
 import type { DraftApp } from './draftApps'
 import { isDraftStillAllowed } from './draftLinks'
 
@@ -164,6 +165,10 @@ function everyPage(): HostedPage[] {
   return [...windowKeys].flatMap(pagesOf)
 }
 
+function listedTitleOf(appId: string): string | null {
+  return titleForListedApp(appId) ?? titleForHiddenApp(appId)
+}
+
 function runsOf(windowKey: number): AppRun[] {
   return pagesOf(windowKey).flatMap(({ appId, running, finished }) =>
     appId !== null && (running || finished) ? [{ appId, running, finished }] : []
@@ -173,7 +178,7 @@ function runsOf(windowKey: number): AppRun[] {
 function appsWhere(windowKey: number, matches: (run: AppRun) => boolean): RunningApp[] {
   return runsOf(windowKey)
     .filter(matches)
-    .map((run) => ({ id: run.appId, title: titleForListedApp(run.appId) ?? run.appId }))
+    .map((run) => ({ id: run.appId, title: listedTitleOf(run.appId) ?? run.appId }))
 }
 
 export function runningApps(windowKey: number): RunningApp[] {
@@ -256,7 +261,7 @@ function isInAppRoute(base: string, url: string): boolean {
 }
 
 function pageUrlForApp(appId: string): string | null {
-  return draftPageUrl(appId) ?? pageUrlForListedApp(appId)
+  return draftPageUrl(appId) ?? pageUrlForListedApp(appId) ?? pageUrlForHiddenApp(appId)
 }
 
 function sessionForApp(appId: string): Session {
@@ -322,7 +327,7 @@ function isDraft(appId: string | null): appId is string {
   return appId !== null && draftOf(appId) !== null
 }
 
-function tellPanelsTheListChanged(): void {
+export function tellPanelsTheListChanged(): void {
   for (const windowKey of comfyWindows.keys()) panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
 }
 
@@ -361,7 +366,7 @@ function isDraftRunning(appId: string): boolean {
 }
 
 function titleForApp(appId: string): string {
-  return draftOf(appId)?.card.title ?? titleForListedApp(appId) ?? appId
+  return draftOf(appId)?.card.title ?? listedTitleOf(appId) ?? appId
 }
 
 function draftClosingStop(appId: string): DraftClosingStop {

@@ -309,9 +309,24 @@ async function openAppFromHome(app: AppCard): Promise<void> {
   if (await switchStillWanted(app)) showApp(app)
 }
 
-async function openRunningApp(appId: string): Promise<void> {
+async function openableHiddenApps(): Promise<AppCard[]> {
+  try {
+    return (await window.api.listHiddenApps()).apps.filter((app) => app.hasPage)
+  } catch {
+    return []
+  }
+}
+
+async function runningAppCard(appId: string): Promise<AppCard | undefined> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
-  const app = apps.find((listed) => listed.id === appId)
+  return (
+    apps.find((listed) => listed.id === appId) ??
+    (await openableHiddenApps()).find((hidden) => hidden.id === appId)
+  )
+}
+
+async function openRunningApp(appId: string): Promise<void> {
+  const app = await runningAppCard(appId)
   if (!app || !(await switchStillWanted(app))) return
   if (activePanel.value !== 'chooser') {
     window.api.navigatePanel('apps')
@@ -326,8 +341,8 @@ async function openRunningApp(appId: string): Promise<void> {
 async function confirmLeavingRuns(): Promise<boolean> {
   const running = [...runningAppIds.value]
   if (running.length === 0) return true
-  const onlyApp =
-    running.length === 1 ? listedApps.value?.find((app) => app.id === running[0]) : null
+  const [onlyId] = running
+  const onlyApp = running.length === 1 && onlyId ? await runningAppCard(onlyId) : null
   const choice = await dialogs.confirm({
     title: t('apps.closeWhileRunning.title'),
     message: onlyApp

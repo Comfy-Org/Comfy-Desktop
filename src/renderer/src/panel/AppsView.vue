@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, ArrowUpRight, Plus, Search } from '@lucide/vue'
+import { AppWindow, Plus, Search } from '@lucide/vue'
 import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
-import AppBadges from './AppBadges.vue'
-import CoverRotation from '../components/CoverRotation.vue'
+import AppCardTile from './AppCardTile.vue'
 import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import { badgeDescriptionIds, glassPictureOf } from './appCardBadges'
+import { badgeDescriptionIds } from './appCardBadges'
+import { hiddenAppBadges } from './hiddenAppBadges'
 import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
-import type { AppCard, DraftClosingStop } from '../types/ipc'
+import type { AppCard, DraftClosingStop, HiddenAppCard } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
@@ -38,12 +38,12 @@ const apps = ref<AppCard[]>([])
 const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const requestOpen = ref(false)
-const coversThatFailed = reactive(new Set<string>())
-const coverShowing = reactive(new Map<string, number | null>())
+const hiddenApps = ref<HiddenAppCard[]>([])
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
 const badgeIdPrefix = useId()
+const hiddenHeadingId = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
@@ -91,6 +91,32 @@ async function refreshApps(): Promise<void> {
   state.value = 'ready'
   emit('apps-loaded', listed)
 }
+
+let hiddenRequests = 0
+let shownHiddenRequest = 0
+
+async function hiddenAppsNow(): Promise<HiddenAppCard[]> {
+  try {
+    return (await window.api.listHiddenApps()).apps
+  } catch {
+    return []
+  }
+}
+
+async function loadHiddenApps(): Promise<void> {
+  const request = ++hiddenRequests
+  const listed = await hiddenAppsNow()
+  if (request < shownHiddenRequest) return
+  shownHiddenRequest = request
+  hiddenApps.value = listed
+}
+
+const hiddenCards = computed<HiddenAppCard[]>(() => {
+  const needle = query.value.trim().toLowerCase()
+  return hiddenApps.value
+    .filter((app) => !needle || `${app.title}\n${app.description}`.toLowerCase().includes(needle))
+    .map((app) => ({ ...app, badges: hiddenAppBadges(app.reasons, t) }))
+})
 
 const RHYTHM_GRID_CLASS =
   'm-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-6 @5xl:grid-cols-12'
@@ -179,7 +205,8 @@ const requestThumbs = computed(() =>
     .slice(0, REQUEST_THUMB_LIMIT)
 )
 
-function rememberCard(id: string, element: unknown): void {
+function rememberCard(id: string, card: unknown): void {
+  const element = (card as { $el?: unknown } | null)?.$el
   if (element instanceof HTMLElement) cardButtons.set(id, element)
   else cardButtons.delete(id)
 }
@@ -256,8 +283,12 @@ onMounted(() => {
   stopBackToListAsks = window.api.onAppBackToListAsked(
     (appId, stop) => void askBackToList(appId, stop)
   )
-  stopListUpdates = window.api.onAppsListChanged(() => void refreshApps())
+  stopListUpdates = window.api.onAppsListChanged(() => {
+    void refreshApps()
+    void loadHiddenApps()
+  })
   void loadApps()
+  void loadHiddenApps()
 })
 
 onBeforeUnmount(() => {
@@ -384,10 +415,12 @@ onBeforeUnmount(() => {
             class="min-w-0"
             :class="rhythmSpanClass(index)"
           >
-            <button
-              :ref="(element) => rememberCard(app.id, element)"
-              type="button"
-              class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <AppCardTile
+              :ref="(card) => rememberCard(app.id, card)"
+              :app="app"
+              :playing="playsCover(app)"
+              :revealed="keyboardFocusedId === app.id"
+              :description-id-prefix="badgeIdPrefixFor(app)"
               :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
               @click="openPicked(app)"
@@ -395,65 +428,7 @@ onBeforeUnmount(() => {
               @blur="keyboardFocusedId = null"
               @mouseenter="hoveredId = app.id"
               @mouseleave="hoveredId = null"
-            >
-              <span
-                class="absolute inset-0 block overflow-hidden transition-transform duration-600 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-focus-visible:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
-                data-testid="app-card-picture"
-              >
-                <CoverRotation
-                  v-if="app.covers.length > 0 && !coversThatFailed.has(app.id)"
-                  :pictures="app.covers"
-                  :paused="!playsCover(app)"
-                  load-on-play
-                  @broken="coversThatFailed.add(app.id)"
-                  @showing="coverShowing.set(app.id, $event)"
-                />
-                <span
-                  v-else
-                  class="flex size-full items-center justify-center text-subtle-foreground"
-                  data-testid="app-card-no-cover"
-                >
-                  <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
-                </span>
-                <AppBadges
-                  v-if="app.badges?.length"
-                  :badges="app.badges"
-                  :description-id-prefix="badgeIdPrefixFor(app)"
-                  :revealed="keyboardFocusedId === app.id"
-                  :glass-picture="
-                    coversThatFailed.has(app.id)
-                      ? null
-                      : glassPictureOf(app.covers, coverShowing.get(app.id))
-                  "
-                  class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
-                />
-              </span>
-              <span
-                class="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgb(0_0_0/0.7),rgb(0_0_0/0.55)_28%,transparent_60%)]"
-                aria-hidden="true"
-                data-testid="app-card-scrim"
-              />
-              <span
-                class="absolute top-3 right-3 grid size-8 scale-90 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-hover:delay-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:scale-100 motion-reduce:transition-none"
-                aria-hidden="true"
-                data-testid="app-card-go"
-              >
-                <ArrowUpRight :size="16" :stroke-width="2.25" />
-              </span>
-              <span class="absolute inset-x-3.5 bottom-3 grid">
-                <span
-                  data-testid="app-card-name"
-                  class="truncate text-sm/[17px] font-semibold text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:-translate-y-4.5 group-focus-visible:-translate-y-4.5 motion-reduce:transition-none"
-                >
-                  {{ app.title }}
-                </span>
-                <span
-                  class="translate-y-1.5 self-end truncate text-xs/4 text-white/78 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:translate-y-0 motion-reduce:transition-none"
-                >
-                  {{ app.description }}
-                </span>
-              </span>
-            </button>
+            />
           </li>
           <li
             class="col-span-(--request-span) min-w-0 @3xl:col-span-(--request-span-medium) @5xl:col-span-(--request-span-wide)"
@@ -514,6 +489,50 @@ onBeforeUnmount(() => {
             </button>
           </li>
         </ul>
+
+        <section
+          v-if="state === 'ready' && hiddenCards.length > 0"
+          class="mt-12"
+          :aria-labelledby="hiddenHeadingId"
+          data-testid="apps-hidden"
+        >
+          <h2 :id="hiddenHeadingId" class="m-0 text-heading font-semibold text-foreground">
+            {{ t('apps.hidden.title') }}
+          </h2>
+          <p class="m-0 mt-1 mb-4 text-ui text-muted-foreground">{{ t('apps.hidden.body') }}</p>
+          <ul :class="RHYTHM_GRID_CLASS" data-testid="apps-hidden-grid">
+            <li
+              v-for="(app, index) in hiddenCards"
+              :key="app.id"
+              class="min-w-0"
+              :class="rhythmSpanClass(index)"
+            >
+              <AppCardTile
+                v-if="app.hasPage"
+                :ref="(card) => rememberCard(app.id, card)"
+                :app="app"
+                :playing="playsCover(app)"
+                :revealed="keyboardFocusedId === app.id"
+                :description-id-prefix="badgeIdPrefixFor(app)"
+                :aria-describedby="badgesDescribing(app)"
+                :data-testid="`hidden-app-card-${app.id}`"
+                @click="openPicked(app)"
+                @focus="noteCardFocus(app, $event)"
+                @blur="keyboardFocusedId = null"
+                @mouseenter="hoveredId = app.id"
+                @mouseleave="hoveredId = null"
+              />
+              <AppCardTile
+                v-else
+                :app="app"
+                :description-id-prefix="badgeIdPrefixFor(app)"
+                :aria-describedby="badgesDescribing(app)"
+                :note="t('apps.hidden.noPage')"
+                :data-testid="`hidden-app-card-${app.id}`"
+              />
+            </li>
+          </ul>
+        </section>
       </div>
     </div>
     <AppRequestModal :open="requestOpen" @close="requestOpen = false" />
