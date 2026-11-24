@@ -2,6 +2,10 @@
 
 Rules the Desktop UI follows on top of `@comfyorg/design-system`. Each rule names the components to use and the tests that pin it.
 
+## Reference
+
+When `@comfyorg/design-system` and these rules don't decide a style, follow shadcn/ui. Take its component styles (sizes, weights, spacing) as they are, on Tailwind's default scale, unless a rule below says otherwise.
+
 ## Destructive actions
 
 A destructive action deletes files or data that cannot be brought back: Uninstall, Delete snapshot, Delete benchmark files, Delete asset, Delete workflow, Remove Comfy Desktop data.
