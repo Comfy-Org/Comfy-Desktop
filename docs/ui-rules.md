@@ -4,7 +4,7 @@ Rules the Desktop UI follows on top of `@comfyorg/design-system`. Each rule name
 
 ## Reference
 
-When `@comfyorg/design-system` and these rules don't decide a style, follow shadcn/ui. Take its component styles (sizes, weights, spacing) as they are, on Tailwind's default scale, unless a rule below says otherwise.
+When `@comfyorg/design-system` and these rules don't decide how a component looks or behaves, follow shadcn/ui. Text sizes always come from the Desktop type scale in `design-system-theme.css`: `text-ui` 13px, `text-heading` 16px, `text-subtitle` 18px, `text-title` 22px and `text-display` 34px. Where shadcn uses a Tailwind size, take the nearest step of that scale; add a step there instead of writing a pixel size.
 
 ## Destructive actions
 
@@ -21,7 +21,7 @@ An error or info notice closes with the white OK. It never takes a tone, because
 
 ## Modal titles
 
-Every modal title is `text-lg font-semibold` (18px on a 28px line), the same title style shadcn/ui gives its `DialogTitle`. Use `MODAL_TITLE_CLASS` from `lib/modalTitle.ts`; the title size never depends on how wide the modal is. That covers the shared confirm, notice and choice boxes (`BaseAlert`, `ModalDialog`), prompts (`BasePrompt`), action sheets (`BaseActionSheet`), App request, Feedback, Why try Cloud, Custom model paths, Performance tests, the build progress dialog, `SetupModal` (first use and New build) and the legal documents (`TermsModal`, moving from 22px in #2148).
+Every modal title is `text-subtitle font-semibold` (18px on a 28px line), the scale step that matches the `text-lg` shadcn/ui gives its `DialogTitle`. Use `MODAL_TITLE_CLASS` from `lib/modalTitle.ts`; the title size never depends on how wide the modal is. That covers the shared confirm, notice and choice boxes (`BaseAlert`, `ModalDialog`), prompts (`BasePrompt`), action sheets (`BaseActionSheet`), App request, Feedback, Why try Cloud, Custom model paths, Performance tests, the build progress dialog, `SetupModal` (first use and New build) and the legal documents (`TermsModal`, moving from 22px in #2148).
 
 A section heading inside a modal stays smaller than its title, so the title still leads.
 

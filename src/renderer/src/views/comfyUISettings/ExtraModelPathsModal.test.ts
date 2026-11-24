@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
+import '../../assets/main.css'
 import ExtraModelPathsModal from './ExtraModelPathsModal.vue'
 import { MODAL_TITLE_CLASS } from '../../lib/modalTitle'
 
@@ -23,5 +24,7 @@ it('titles the modal with the shared modal title class, 18px like every modal', 
   expect([...(title?.classList ?? [])]).toEqual(
     expect.arrayContaining(MODAL_TITLE_CLASS.split(' '))
   )
-  expect(MODAL_TITLE_CLASS).toBe('text-lg font-semibold')
+  expect(MODAL_TITLE_CLASS).toBe('text-subtitle font-semibold')
+  expect(getComputedStyle(title!).fontSize).toBe('18px')
+  expect(getComputedStyle(title!).lineHeight).toBe('28px')
 })

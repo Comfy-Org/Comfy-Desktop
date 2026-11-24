@@ -1,1 +1,1 @@
-export const MODAL_TITLE_CLASS = 'text-lg font-semibold'
+export const MODAL_TITLE_CLASS = 'text-subtitle font-semibold'
