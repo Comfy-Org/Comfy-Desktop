@@ -203,7 +203,7 @@ export async function confirmAndCloseAllHostWindows(
   const confirmed = await openSystemModalAsync({
     parent: overlayParentEntry.window,
     spec: {
-      title: i18n.t('quitDesktop.title'),
+      title: i18n.t('fileMenu.exitAllWindows'),
       message:
         count === 1
           ? i18n.t('quitDesktop.messageOne')

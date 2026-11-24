@@ -1935,7 +1935,7 @@
     "returnToDashboard": "返回主页",
     "closeAllWindows": "关闭所有窗口",
     "exitWindow": "关闭窗口",
-    "exitAllWindows": "退出桌面端",
+    "exitAllWindows": "退出 Comfy Desktop",
     "skipOnboarding": "跳过引导"
   },
   "feedback": {
@@ -2266,7 +2266,6 @@
     "cancel": "取消"
   },
   "quitDesktop": {
-    "title": "退出 Comfy Desktop",
     "messageOne": "要退出 Comfy Desktop 吗？这将关闭正在运行的 ComfyUI 构建。",
     "messageMany": "要退出 Comfy Desktop 吗？这将关闭 {count} 个正在运行的 ComfyUI 构建。",
     "openBuilds": "已打开的构建",

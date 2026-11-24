@@ -1935,7 +1935,7 @@
     "returnToDashboard": "Back to Home",
     "closeAllWindows": "Close all windows",
     "exitWindow": "Close window",
-    "exitAllWindows": "Quit Desktop",
+    "exitAllWindows": "Quit Comfy Desktop",
     "skipOnboarding": "Skip onboarding"
   },
   "feedback": {
@@ -2266,7 +2266,6 @@
     "cancel": "Cancel"
   },
   "quitDesktop": {
-    "title": "Quit Comfy Desktop",
     "messageOne": "Quit Comfy Desktop? This will close the running ComfyUI build.",
     "messageMany": "Quit Comfy Desktop? This will close {count} running ComfyUI builds.",
     "openBuilds": "Open builds",

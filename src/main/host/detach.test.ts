@@ -514,7 +514,7 @@ describe('quitting while a ComfyUI runs with no window', () => {
       await confirmAndCloseAllHostWindows(null, vi.fn())
 
       expect(mocks.asked[0]?.spec).toMatchObject({
-        title: zh.quitDesktop.title,
+        title: zh.fileMenu.exitAllWindows,
         message: zh.quitDesktop.messageOne,
         confirmLabel: zh.settings.closeQuitConfirm,
         cancelLabel: zh.common.cancel
