@@ -279,7 +279,7 @@ describe('model download events through the real manager and transfer', () => {
 
   it('reports HTTP access failures without credentials, URLs or file paths', async () => {
     const opts = options('denied')
-    opts.url = opts.url.replace('http://', 'http://private-user:private-password@')
+    opts.url = `${opts.url}&X-Amz-Credential=private-credential&X-Amz-Signature=private-signature`
     const job = await manager.startManagedModelJob(opts)
     await expect(job.completion).resolves.toMatchObject({ status: 'error' })
     expect(eventNames()).toEqual(['started', 'result'])

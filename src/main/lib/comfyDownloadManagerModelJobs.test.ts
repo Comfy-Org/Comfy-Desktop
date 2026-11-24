@@ -34,6 +34,7 @@ interface FakeTransfer {
     filename: string
     session?: unknown
     sha256?: string
+    validateUrl?: (url: string) => boolean
     onProgress?: (p: { receivedBytes: number; totalBytes: number }) => void
   }
   resolve: (outcome: Record<string, unknown>) => void
@@ -1140,6 +1141,276 @@ describe('model-job lifecycle races (issue #1322)', () => {
       mod.cancelModelDownload(h.id)
       await flush()
     }
+  })
+})
+
+describe('URL policy across a restart', () => {
+  it('records the secure-public policy when staging a job', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    const name = uniqueName()
+    ensureStagedPlaceholder.mockClear()
+    const handle = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints',
+      destinationBaseDir: path.join(os.tmpdir(), 'cdm-policy-stage'),
+      validateUrl: isSecurePublicDownloadUrl
+    })
+    expect(ensureStagedPlaceholder.mock.calls.at(-1)![1]).toMatchObject({
+      urlPolicy: 'secure-public'
+    })
+    mod.cancelModelDownload(handle.id)
+    await flush()
+  })
+
+  it('resumes and retries a restored job under the policy it was started with', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    mod._test_resetModelDownloadsInit()
+    const base = path.join(os.tmpdir(), 'cdm-policy-restore')
+    const strictPath = path.join(base, 'checkpoints', 'strict.safetensors')
+    const plainPath = path.join(base, 'checkpoints', 'plain.safetensors')
+    const meta = (filename: string, extra: Record<string, unknown> = {}) => ({
+      version: 2,
+      url: `http://127.0.0.1:9000/${filename}`,
+      expectedSize: 1000,
+      directory: 'checkpoints',
+      filename,
+      installationId: null,
+      ...extra
+    })
+    scanForStagedDownloads.mockResolvedValueOnce({
+      unsafeFinalPaths: [],
+      downloads: [
+        {
+          meta: meta('strict.safetensors', { urlPolicy: 'secure-public' }),
+          finalPath: strictPath,
+          stagedBytes: 100
+        },
+        { meta: meta('plain.safetensors'), finalPath: plainPath, stagedBytes: 100 }
+      ]
+    })
+    await mod.initializeModelDownloads()
+    const strictRow = activeRows().find((r) => r.filename === 'strict.safetensors')!
+    const plainRow = activeRows().find((r) => r.filename === 'plain.safetensors')!
+
+    let before = transfers.length
+    expect(mod.resumeModelDownload(strictRow.id!)).toBe(true)
+    await waitForTransfers(before + 1)
+    const strict = transfers.find((t) => t.opts.finalPath === strictPath)!
+    expect(strict.opts.validateUrl).toBe(isSecurePublicDownloadUrl)
+
+    before = transfers.length
+    expect(mod.resumeModelDownload(plainRow.id!)).toBe(true)
+    await waitForTransfers(before + 1)
+    expect(transfers.find((t) => t.opts.finalPath === plainPath)!.opts.validateUrl).toBeUndefined()
+
+    strict.resolve({ outcome: 'error', error: 'network interrupted' })
+    await flush()
+    before = transfers.length
+    expect(mod.retryDownload(strictRow.id!)).toBe(true)
+    await waitForTransfers(before + 1)
+    const retried = transfers[transfers.length - 1]!
+    expect(retried.opts.finalPath).toBe(strictPath)
+    expect(retried.opts.validateUrl).toBe(isSecurePublicDownloadUrl)
+
+    mod.cancelModelDownload(retried.opts.jobId as string)
+    mod.cancelModelDownload(plainRow.id!)
+    await flush()
+    mod._test_resetModelDownloadsInit()
+  })
+})
+
+describe('joining a job under a stricter URL policy', () => {
+  it('upgrades a paused restored job to the joining policy before it resumes', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    mod._test_resetModelDownloadsInit()
+    const base = path.join(os.tmpdir(), 'cdm-policy-join')
+    const finalPath = path.join(base, 'checkpoints', 'joined.safetensors')
+    const url = 'http://127.0.0.1:9000/joined.safetensors'
+    scanForStagedDownloads.mockResolvedValueOnce({
+      unsafeFinalPaths: [],
+      downloads: [
+        {
+          meta: {
+            version: 2,
+            url,
+            expectedSize: 1000,
+            directory: 'checkpoints',
+            filename: 'joined.safetensors',
+            installationId: null
+          },
+          finalPath,
+          stagedBytes: 100
+        }
+      ]
+    })
+    await mod.initializeModelDownloads()
+    ensureStagedPlaceholder.mockClear()
+    const before = transfers.length
+    const handle = await mod.startManagedModelJob({
+      url,
+      filename: 'joined.safetensors',
+      directory: 'checkpoints',
+      destinationBaseDir: base,
+      validateUrl: isSecurePublicDownloadUrl
+    })
+    await waitForTransfers(before + 1)
+    const resumed = transfers.find((t) => t.opts.finalPath === finalPath)!
+    expect(resumed.opts.validateUrl).toBe(isSecurePublicDownloadUrl)
+    expect(ensureStagedPlaceholder.mock.calls.at(-1)).toEqual([
+      finalPath,
+      expect.objectContaining({ urlPolicy: 'secure-public' })
+    ])
+    mod.cancelModelDownload(handle.id)
+    await flush()
+    mod._test_resetModelDownloadsInit()
+  })
+
+  it('refuses to join a transfer already running under a weaker policy', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    const name = uniqueName()
+    const base = path.join(os.tmpdir(), 'cdm-policy-join-running')
+    const url = `http://127.0.0.1:9000/${name}`
+    const before = transfers.length
+    const first = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      destinationBaseDir: base
+    })
+    await waitForTransfers(before + 1)
+    const running = transfers[transfers.length - 1]!
+    const joined = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      destinationBaseDir: base,
+      validateUrl: isSecurePublicDownloadUrl
+    })
+    await expect(joined.completion).resolves.toMatchObject({
+      status: 'error',
+      error: `Another download is already writing ${name} under a less strict URL policy`
+    })
+    expect(running.cancel).not.toHaveBeenCalled()
+    expect(transfers).toHaveLength(before + 1)
+    mod.cancelModelDownload(first.id)
+    await flush()
+  })
+
+  it('refuses the join and keeps the old policy when the upgrade cannot be saved', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    mod._test_resetModelDownloadsInit()
+    const base = path.join(os.tmpdir(), 'cdm-policy-join-unsaved')
+    const finalPath = path.join(base, 'checkpoints', 'unsaved.safetensors')
+    const url = 'http://127.0.0.1:9000/unsaved.safetensors'
+    scanForStagedDownloads.mockResolvedValueOnce({
+      unsafeFinalPaths: [],
+      downloads: [
+        {
+          meta: {
+            version: 2,
+            url,
+            expectedSize: 1000,
+            directory: 'checkpoints',
+            filename: 'unsaved.safetensors',
+            installationId: null
+          },
+          finalPath,
+          stagedBytes: 100
+        }
+      ]
+    })
+    await mod.initializeModelDownloads()
+    const row = activeRows().find((r) => r.filename === 'unsaved.safetensors')!
+    ensureStagedPlaceholder.mockReturnValueOnce(false)
+    const joined = await mod.startManagedModelJob({
+      url,
+      filename: 'unsaved.safetensors',
+      directory: 'checkpoints',
+      destinationBaseDir: base,
+      validateUrl: isSecurePublicDownloadUrl
+    })
+    await expect(joined.completion).resolves.toMatchObject({ status: 'error' })
+    const before = transfers.length
+    expect(mod.resumeModelDownload(row.id!)).toBe(true)
+    await waitForTransfers(before + 1)
+    expect(transfers.find((t) => t.opts.finalPath === finalPath)!.opts.validateUrl).toBeUndefined()
+    mod.cancelModelDownload(row.id!)
+    await flush()
+    mod._test_resetModelDownloadsInit()
+  })
+
+  it('upgrades a job that is still starting and saves the stricter policy', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    const name = uniqueName()
+    const base = path.join(os.tmpdir(), 'cdm-policy-join-starting')
+    const url = `http://127.0.0.1:9000/${name}`
+    const finalPath = path.join(base, 'checkpoints', name)
+    let releaseMkdir!: () => void
+    const held = new Promise<void>((r) => {
+      releaseMkdir = r
+    })
+    const realMkdir = fs.promises.mkdir
+    const mkdirSpy = vi.spyOn(fs.promises, 'mkdir').mockImplementation(async (dir, opts) => {
+      if (dir === path.dirname(finalPath)) await held
+      return realMkdir(dir, opts)
+    })
+    try {
+      ensureStagedPlaceholder.mockClear()
+      const before = transfers.length
+      const starting = mod.startManagedModelJob({
+        url,
+        filename: name,
+        directory: 'checkpoints',
+        destinationBaseDir: base
+      })
+      await vi.waitFor(() =>
+        expect(mkdirSpy).toHaveBeenCalledWith(path.dirname(finalPath), { recursive: true })
+      )
+      const joined = await mod.startManagedModelJob({
+        url,
+        filename: name,
+        directory: 'checkpoints',
+        destinationBaseDir: base,
+        validateUrl: isSecurePublicDownloadUrl
+      })
+      expect(ensureStagedPlaceholder).not.toHaveBeenCalled()
+      releaseMkdir()
+      const first = await starting
+      expect(joined.id).toBe(first.id)
+      expect(ensureStagedPlaceholder.mock.calls.at(-1)).toEqual([
+        finalPath,
+        expect.objectContaining({ urlPolicy: 'secure-public' })
+      ])
+      await waitForTransfers(before + 1)
+      expect(transfers[transfers.length - 1]!.opts.validateUrl).toBe(isSecurePublicDownloadUrl)
+      mod.cancelModelDownload(first.id)
+      await flush()
+    } finally {
+      releaseMkdir()
+      mkdirSpy.mockRestore()
+    }
+  })
+
+  it('joins normally when the policies match', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    const name = uniqueName()
+    const base = path.join(os.tmpdir(), 'cdm-policy-join-same')
+    const url = `https://host.example/${name}`
+    const opts = {
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      destinationBaseDir: base,
+      validateUrl: isSecurePublicDownloadUrl
+    }
+    const before = transfers.length
+    const first = await mod.startManagedModelJob(opts)
+    await waitForTransfers(before + 1)
+    const second = await mod.startManagedModelJob(opts)
+    expect(second.id).toBe(first.id)
+    mod.cancelModelDownload(first.id)
+    await flush()
   })
 })
 
