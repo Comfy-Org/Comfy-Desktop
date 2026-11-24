@@ -178,15 +178,19 @@ function layOutNode(node: Json, names: Map<string, string>): GraphNode | null {
   }
 }
 
+function isSlotIndex(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
 function linkParts(value: unknown): [string, number, string, number, string] | null {
   if (Array.isArray(value) && value.length >= 6) {
     const [id, origin, originSlot, target, targetSlot, type] = value
-    if (typeof originSlot === 'number' && typeof targetSlot === 'number') {
+    if (isSlotIndex(originSlot) && isSlotIndex(targetSlot)) {
       return [String(origin), originSlot, String(target), targetSlot, String(type ?? id)]
     }
   }
   const entry = record(value)
-  if (entry && typeof entry.origin_slot === 'number' && typeof entry.target_slot === 'number') {
+  if (entry && isSlotIndex(entry.origin_slot) && isSlotIndex(entry.target_slot)) {
     return [
       String(entry.origin_id),
       entry.origin_slot,

@@ -314,7 +314,8 @@
       "stopped": "已停止",
       "checking": "正在检查模型",
       "everyModel": "模型齐全",
-      "missing": "缺少 {count} 个模型 | 缺少 {count} 个模型"
+      "missing": "缺少 {count} 个模型 | 缺少 {count} 个模型",
+      "unchecked": "未检查模型"
     },
     "needs": {
       "partner": "Comfy Cloud 上的合作伙伴 API",
@@ -325,7 +326,9 @@
         "installed": "已安装",
         "downloads": "需先下载",
         "cloud": "在 Comfy Cloud 上"
-      }
+      },
+      "failed": "无法检查模型",
+      "retry": "重试"
     },
     "action": {
       "logIn": "登录 Comfy Cloud",

@@ -14,6 +14,7 @@ export type TargetState =
   | 'ready'
   | 'missing'
   | 'checking'
+  | 'unchecked'
   | 'outdated'
   | 'not-on-cloud'
   | 'signed-out'
@@ -52,8 +53,9 @@ function localChoice(build: Installation, context: TargetContext): TargetChoice 
     return { ...base, state: 'outdated', missing: [], disabled: true }
   }
   if (needs === undefined) return { ...base, state: 'checking', missing: [], disabled: false }
-  const missingNames = new Set(needs?.missingByBuild[build.id] ?? [])
-  const missing = (needs?.models ?? []).filter((model) => missingNames.has(model.filename))
+  if (needs === null) return { ...base, state: 'unchecked', missing: [], disabled: false }
+  const missingNames = new Set(needs.missingByBuild[build.id] ?? [])
+  const missing = needs.models.filter((model) => missingNames.has(model.filename))
   return { ...base, state: missing.length > 0 ? 'missing' : 'ready', missing, disabled: false }
 }
 
@@ -81,7 +83,8 @@ function preference(choice: TargetChoice): number {
   if (choice.where === 'local' && choice.state === 'ready') return choice.running ? 0 : 1
   if (choice.where === 'local' && choice.state === 'checking') return choice.running ? 2 : 3
   if (choice.where === 'cloud') return 4
-  return 5 + choice.missing.length
+  if (choice.state === 'unchecked') return choice.running ? 5 : 6
+  return 7 + choice.missing.length
 }
 
 export function bestChoice(choices: readonly TargetChoice[]): TargetChoice | null {

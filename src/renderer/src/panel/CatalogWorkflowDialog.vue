@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useEventListener, useOnline } from '@vueuse/core'
+import { useEventListener, useOnline, useResizeObserver } from '@vueuse/core'
 import {
   BookOpen,
   Check,
@@ -85,7 +85,17 @@ const tutorialHost = computed(() =>
   props.workflow.tutorialUrl ? new URL(props.workflow.tutorialUrl).hostname : ''
 )
 const about = computed(() => props.workflow.longDescription ?? props.workflow.description)
-const partnerOnly = computed(() => !props.workflow.canOpenLocal && props.workflow.canOpenCloud)
+const partnerOnly = computed(
+  () => props.workflow.license === 'partner' && !props.workflow.canOpenLocal
+)
+const aboutText = ref<HTMLElement | null>(null)
+const aboutOverflows = ref(false)
+useResizeObserver(aboutText, () => {
+  const element = aboutText.value
+  if (element && !aboutOpen.value) {
+    aboutOverflows.value = element.scrollHeight > element.clientHeight + 1
+  }
+})
 
 const choices = computed(() =>
   targetChoices({
@@ -106,6 +116,7 @@ const selected = computed<TargetChoice | null>(
 
 const models = computed(() => needs.value?.models ?? [])
 const totalBytes = computed(() => knownBytes(models.value))
+const shown = computed(() => selected.value ?? choices.value[0] ?? null)
 const missingBytes = computed(() => (selected.value ? knownBytes(selected.value.missing) : null))
 
 function choiceStatus(choice: TargetChoice): string {
@@ -127,6 +138,7 @@ function choiceStatus(choice: TargetChoice): string {
     ? t('workflowLaunch.status.running')
     : t('workflowLaunch.status.stopped')
   if (choice.state === 'checking') return `${run} · ${t('workflowLaunch.status.checking')}`
+  if (choice.state === 'unchecked') return `${run} · ${t('workflowLaunch.status.unchecked')}`
   if (choice.state === 'ready') return `${run} · ${t('workflowLaunch.status.everyModel')}`
   return `${run} · ${t('workflowLaunch.status.missing', { count: choice.missing.length }, choice.missing.length)}`
 }
@@ -139,6 +151,7 @@ function choiceSize(choice: TargetChoice): string | null {
 const needsSummary = computed(() => {
   if (partnerOnly.value) return t('workflowLaunch.needs.partner')
   if (needs.value === undefined) return t('workflowLaunch.needs.checking')
+  if (needs.value === null) return t('workflowLaunch.needs.failed')
   if (models.value.length === 0) return t('workflowLaunch.needs.none')
   const count = t(
     'workflowLaunch.needs.models',
@@ -472,6 +485,7 @@ onBeforeUnmount(() => {
               class="rounded-[10px] bg-[rgb(30_30_30)] px-3 py-2.5 text-[12px]/[19px] text-muted-foreground"
             >
               <p
+                ref="aboutText"
                 class="m-0 whitespace-pre-line"
                 :class="!aboutOpen && 'line-clamp-4'"
                 data-testid="workflow-about"
@@ -479,7 +493,7 @@ onBeforeUnmount(() => {
                 {{ about }}
               </p>
               <button
-                v-if="about.length > 200"
+                v-if="aboutOverflows || aboutOpen"
                 type="button"
                 class="mt-0.5 border-0 bg-transparent p-0 text-[12px]/[19px] text-foreground outline-none hover:underline focus-visible:underline"
                 data-testid="workflow-about-more"
@@ -512,31 +526,31 @@ onBeforeUnmount(() => {
                     class="relative grid size-8 shrink-0 place-items-center rounded-lg bg-[rgb(46_46_46)]"
                   >
                     <component
-                      :is="selected?.where === 'cloud' ? Cloud : Laptop"
+                      :is="shown?.where === 'cloud' ? Cloud : Laptop"
                       :size="18"
                       aria-hidden="true"
                     />
                     <span
-                      v-if="selected?.running"
+                      v-if="shown?.running"
                       class="absolute -right-1 -bottom-1 size-[9px] rounded-full bg-[rgb(89_211_140)] ring-2 ring-[rgb(31_31_31)]"
                       aria-hidden="true"
                     />
                   </span>
                   <span class="flex min-w-0 flex-1 flex-col">
                     <span class="truncate text-[13px]/[18px] text-foreground">{{
-                      selected?.build.name
+                      shown?.build.name
                     }}</span>
                     <span
                       class="truncate text-[12px]/4 text-muted-foreground"
                       data-testid="catalog-workflow-target-status"
-                      >{{ selected ? choiceStatus(selected) : '' }}</span
+                      >{{ shown ? choiceStatus(shown) : '' }}</span
                     >
                   </span>
                   <span
-                    v-if="selected && choiceSize(selected)"
+                    v-if="shown && choiceSize(shown)"
                     class="text-[12px] text-muted-foreground tabular-nums"
                   >
-                    {{ choiceSize(selected) }}
+                    {{ choiceSize(shown) }}
                   </span>
                   <ChevronDown
                     :size="14"
@@ -596,10 +610,10 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="flex h-10 w-full items-center gap-2 rounded-[10px] border-0 bg-transparent px-3 text-left outline-none hover:bg-white/4 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent"
-                :disabled="models.length === 0"
+                :disabled="models.length === 0 && needs !== null"
                 :aria-expanded="needsOpen"
                 data-testid="workflow-needs"
-                @click="needsOpen = !needsOpen"
+                @click="needs === null ? loadNeeds() : (needsOpen = !needsOpen)"
               >
                 <span
                   class="min-w-0 flex-1 truncate text-[13px] text-foreground"
@@ -607,6 +621,12 @@ onBeforeUnmount(() => {
                 >
                   {{ needsSummary }}
                 </span>
+                <span
+                  v-if="needs === null"
+                  class="text-[12px] text-foreground"
+                  data-testid="workflow-needs-retry"
+                  >{{ t('workflowLaunch.needs.retry') }}</span
+                >
                 <span
                   v-if="needsState"
                   class="text-[12px]"

@@ -10,6 +10,7 @@ import type {
   CatalogWorkflowNeeds,
   Installation
 } from '../types/ipc'
+import '../assets/main.css'
 import CatalogWorkflowDialog from './CatalogWorkflowDialog.vue'
 
 const launchCatalogWorkflow = vi.fn<ElectronApi['launchCatalogWorkflow']>()
@@ -326,6 +327,61 @@ describe('a workflow that only runs on Comfy Cloud', () => {
 
     expect(openCatalogWorkflow).toHaveBeenCalledWith('ltx')
     expect(dialog.emitted('close')).toEqual([[]])
+  })
+})
+
+describe('when the page cannot say everything yet', () => {
+  it('says the model check failed, never that nothing is needed, and checks again on request', async () => {
+    catalogWorkflowNeeds.mockRejectedValueOnce(new Error('offline'))
+    const dialog = await mountDialog([LAB])
+
+    expect(dialog.get('[data-testid="workflow-needs-summary"]').text()).toBe(
+      "Couldn't check the models"
+    )
+    expect(dialog.get('[data-testid="catalog-workflow-target-status"]').text()).toBe(
+      'Stopped · models not checked'
+    )
+    await dialog.get('[data-testid="workflow-needs"]').trigger('click')
+    await flushPromises()
+
+    expect(catalogWorkflowNeeds).toHaveBeenCalledTimes(2)
+    expect(dialog.get('[data-testid="workflow-needs-summary"]').text()).toBe('2 models · 34.0 GB')
+  })
+
+  it('shows why the only build cannot open it, and offers Comfy Hub instead', async () => {
+    const dialog = await mountDialog([OLD])
+
+    expect(dialog.get('[data-testid="catalog-workflow-target"]').text()).toContain('Old')
+    expect(dialog.get('[data-testid="catalog-workflow-target-status"]').text()).toBe(
+      'Needs ComfyUI 0.16.0 or newer'
+    )
+    expect(dialog.get('[data-testid="catalog-workflow-action"]').text()).toContain(
+      'View on Comfy Hub'
+    )
+  })
+
+  it('keeps partner wording for partner workflows only', async () => {
+    const cloudOnlyOpenSource = {
+      ...WORKFLOW,
+      canOpenLocal: false,
+      license: 'open-source' as const
+    }
+    const dialog = await mountDialog([LAB, CLOUD], cloudOnlyOpenSource)
+
+    expect(dialog.text()).not.toContain('partner model')
+    expect(dialog.get('[data-testid="workflow-needs-summary"]').text()).toBe('2 models · 34.0 GB')
+  })
+
+  it('lets a short description over several lines be read in full', async () => {
+    const steps = { ...WORKFLOW, longDescription: 'One.\nTwo.\nThree.\nFour.\nFive.\nSix.' }
+    const dialog = await mountDialog([LAB, CLOUD], steps)
+    await vi.waitFor(() =>
+      expect(dialog.find('[data-testid="workflow-about-more"]').exists()).toBe(true)
+    )
+
+    await dialog.get('[data-testid="workflow-about-more"]').trigger('click')
+
+    expect(dialog.get('[data-testid="workflow-about"]').classes()).not.toContain('line-clamp-4')
   })
 })
 

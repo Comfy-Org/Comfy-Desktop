@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   startDownload: vi.fn(),
   downloadListener: null as
     ((summary: { status: string; receivedBytes: number; totalBytes: number }) => void) | null,
-  installation: vi.fn()
+  installation: vi.fn(),
+  localBuilds: vi.fn()
 }))
 
 vi.mock('electron', () => ({ net: { fetch: mocks.fetch } }))
@@ -32,6 +33,7 @@ vi.mock('./workflowNeeds', () => ({
   ]
 }))
 vi.mock('../installations', () => ({ get: mocks.installation }))
+vi.mock('../apps/localBuild', () => ({ usableLocalBuilds: mocks.localBuilds }))
 vi.mock('../lib/modelDownloadPaths', () => ({ missingModelFiles: mocks.missing }))
 vi.mock('../sources/standalone/templateDownloadCore', () => ({
   isTerminal: (status: string) => ['done', 'error', 'cancelled'].includes(status)
@@ -64,6 +66,7 @@ beforeEach(() => {
   sent.length = 0
   mocks.downloadListener = null
   mocks.installation.mockResolvedValue({ id: 'inst-local' })
+  mocks.localBuilds.mockResolvedValue([{ id: 'inst-local', version: '0.3.66' }])
   mocks.missing.mockResolvedValue([])
   mocks.subject = null
   mocks.workspaceId = null
@@ -233,5 +236,21 @@ describe('launching workflows from the published catalog', () => {
       await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
     ).toEqual({ opened: true })
     expect(mocks.startDownload).not.toHaveBeenCalled()
+  })
+
+  it('downloads nothing into a build from another workspace or one below the workflow’s minimum', async () => {
+    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
+    mocks.installation.mockResolvedValueOnce({ id: 'inst-local', workspaceId: 'team-b' })
+    expect(
+      await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
+    ).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+
+    mocks.localBuilds.mockResolvedValueOnce([{ id: 'inst-local', version: '0.3.65' }])
+    expect(
+      await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
+    ).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+
+    expect(mocks.startDownload).not.toHaveBeenCalled()
+    expect(mocks.open).not.toHaveBeenCalled()
   })
 })

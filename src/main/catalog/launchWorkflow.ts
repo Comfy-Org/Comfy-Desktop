@@ -1,7 +1,9 @@
 import type { WebContents } from 'electron'
 import type { ComfyDesktopOpenInComfy } from '../../types/comfyDesktopBridge'
 import type { CatalogWorkflowDownload, CatalogWorkflowTarget } from '../../types/ipc'
-import { PERSONAL_WORKSPACE_ID } from '../../shared/workspaces'
+import { meetsCatalogWorkflowMinimum } from '../../shared/catalogWorkflowCompatibility'
+import { isInstallationInWorkspace, PERSONAL_WORKSPACE_ID } from '../../shared/workspaces'
+import { usableLocalBuilds } from '../apps/localBuild'
 import { openCatalogInComfy } from '../apps/openInComfy'
 import { isBuildId, workflowName } from '../apps/openRequest'
 import { getCloudSession } from '../devplatform/session'
@@ -48,6 +50,17 @@ function readOptions(value: unknown): { downloadMissing: boolean } {
 
 function downloadTaskId(id: string, build: string): string {
   return `catalog-workflow:${id}:${build}`
+}
+
+async function canReceiveModels(
+  build: string,
+  workspaceId: string,
+  minComfyUIVersion: string | null
+): Promise<boolean> {
+  const installation = await installations.get(build)
+  if (!installation || !isInstallationInWorkspace(installation, workspaceId)) return false
+  const local = (await usableLocalBuilds()).find((candidate) => candidate.id === build)
+  return local !== undefined && meetsCatalogWorkflowMinimum(local.version, minComfyUIVersion)
 }
 
 async function downloadMissingModels(
@@ -123,6 +136,9 @@ export async function launchCatalogWorkflow(
       : null
     if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }
     if (graph && target.where === 'local' && downloadMissing) {
+      if (!(await canReceiveModels(target.build, workspaceId, workflow.card.minComfyUIVersion))) {
+        return { opened: false, error: t('workflowLaunch.openFailed') }
+      }
       const failure = await downloadMissingModels(page, workflow.card.id, target.build, graph)
       if (failure) return { opened: false, error: failure }
       if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }

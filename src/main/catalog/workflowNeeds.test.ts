@@ -101,4 +101,22 @@ describe('what a catalog workflow needs', () => {
       missingByBuild: {}
     })
   })
+
+  it('keeps every model the graph needs even past the size lookups it makes', async () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      name: `model-${index}.safetensors`,
+      url: `https://huggingface.co/Comfy-Org/repo/resolve/main/model-${index}.safetensors`,
+      directory: 'checkpoints'
+    }))
+    const big = { nodes: [{ id: 1, type: 'Loader', properties: { models: many } }], links: [] }
+    mocks.fetch.mockImplementation(async (url: string) =>
+      url === GRAPH_URL ? Response.json(big) : new Response(null, { status: 404 })
+    )
+
+    const needs = await catalogWorkflowNeeds('ltx')
+
+    expect(needs?.models).toHaveLength(30)
+    expect(needs?.missingByBuild.sandbox).toHaveLength(30)
+    expect(mocks.fetch.mock.calls.filter(([, init]) => init?.method === 'HEAD')).toHaveLength(24)
+  })
 })

@@ -463,10 +463,11 @@ test('See all workflows on Home opens the full catalog and a workflow loads into
   await expect
     .poll(() => ctx.panel.textOf('[data-testid="catalog-workflow-target"]'), LONG_WAIT)
     .toContain('Comfy Cloud')
-  await expect
-    .poll(() => ctx.panel.textOf('[data-testid="catalog-workflow-action"]'), LONG_WAIT)
-    .toContain('Run on Comfy Cloud')
-  expect(await ctx.panel.click('[data-testid="catalog-workflow-action"]')).toBe(true)
+  const action = '[data-testid="catalog-workflow-action"]'
+  await expect.poll(() => ctx.panel.textOf(action), LONG_WAIT).toContain('Log in to Comfy Cloud')
+  expect(await ctx.panel.click(action)).toBe(true)
+  await expect.poll(() => ctx.panel.textOf(action), LONG_WAIT).toContain('Run on Comfy Cloud')
+  expect(await ctx.panel.click(action)).toBe(true)
 
   const editor = new WebContentsPage(ctx.app, CLOUD_EDITOR_PATH)
   await editor.waitForSelector('#loaded-workflow', LONG_WAIT)

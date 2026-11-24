@@ -314,7 +314,8 @@
       "stopped": "Stopped",
       "checking": "checking models",
       "everyModel": "every model here",
-      "missing": "{count} model missing | {count} models missing"
+      "missing": "{count} model missing | {count} models missing",
+      "unchecked": "models not checked"
     },
     "needs": {
       "partner": "Partner API on Comfy Cloud",
@@ -325,7 +326,9 @@
         "installed": "Installed",
         "downloads": "Downloads first",
         "cloud": "On Comfy Cloud"
-      }
+      },
+      "failed": "Couldn't check the models",
+      "retry": "Try again"
     },
     "action": {
       "logIn": "Log in to Comfy Cloud",

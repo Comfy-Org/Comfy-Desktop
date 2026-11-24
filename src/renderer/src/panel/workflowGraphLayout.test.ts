@@ -61,6 +61,19 @@ describe('drawing a catalog workflow’s graph', () => {
     expect(layOutGraph(GRAPH)!.bounds).toEqual({ x: -20, y: -60, width: 720, height: 310 })
   })
 
+  it('skips links that point at a slot that cannot exist', () => {
+    const layout = layOutGraph({
+      ...GRAPH,
+      links: [
+        [1, 1, 0, 2, -1, 'MODEL'],
+        [2, 1, 0, 2, 0.5, 'MODEL'],
+        { id: 3, origin_id: 1, origin_slot: 0, target_id: 2, target_slot: 9, type: 'MODEL' }
+      ]
+    })
+
+    expect(layout?.links).toEqual([])
+  })
+
   it('draws nothing for a graph with no nodes', () => {
     expect(layOutGraph({ nodes: [] })).toBeNull()
     expect(layOutGraph(null)).toBeNull()

@@ -51,15 +51,15 @@ function sizeOf(url: string): Promise<number | null> {
 export async function catalogWorkflowModels(
   graph: Record<string, unknown>
 ): Promise<TemplateModelDownload[]> {
-  return resolveTemplateModelsFromJson(graph).slice(0, MAX_SIZE_LOOKUPS)
+  return resolveTemplateModelsFromJson(graph)
 }
 
 async function describeModels(models: TemplateModelDownload[]): Promise<CatalogWorkflowModel[]> {
   return Promise.all(
-    models.map(async ({ filename, directory, url }) => ({
+    models.map(async ({ filename, directory, url }, index) => ({
       filename,
       directory,
-      sizeBytes: await sizeOf(url)
+      sizeBytes: index < MAX_SIZE_LOOKUPS ? await sizeOf(url) : null
     }))
   )
 }

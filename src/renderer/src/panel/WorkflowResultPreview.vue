@@ -69,13 +69,13 @@ function measure(event: Event): void {
     :class="zoom === 'fit' && 'overflow-hidden'"
     data-testid="workflow-result"
   >
-    <div class="flex min-h-full min-w-full items-center justify-center">
+    <div class="flex min-h-full min-w-full">
       <template v-if="media && !broken">
         <video
           v-if="media.kind === 'video'"
           :src="media.url"
           :poster="poster ?? undefined"
-          class="block shrink-0 rounded-[10px] object-contain"
+          class="m-auto block shrink-0 rounded-[10px] object-contain"
           :style="shownSize"
           autoplay
           muted
@@ -88,13 +88,13 @@ function measure(event: Event): void {
           v-else
           :src="media.url"
           alt=""
-          class="block shrink-0 rounded-[10px] object-contain"
+          class="m-auto block shrink-0 rounded-[10px] object-contain"
           :style="shownSize"
           @load="measure"
           @error="broken = true"
         />
       </template>
-      <slot v-else />
+      <div v-else class="m-auto"><slot /></div>
     </div>
   </div>
 </template>
