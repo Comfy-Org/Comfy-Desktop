@@ -28,6 +28,7 @@ function buildStatusFields(installation: InstallationRecord): Record<string, unk
   const comfy = comfyVersionLabel(installation)
   return [
     {
+      key: 'install-method',
       label: t('common.installMethod'),
       value: (installation.sourceLabel as string) || 'ComfyBuilder'
     },

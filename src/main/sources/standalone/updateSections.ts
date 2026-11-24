@@ -341,7 +341,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
   const installed = installation.status === 'installed'
 
   const infoFields: Record<string, unknown>[] = [
-    { label: t('common.installMethod'), value: installation.sourceLabel as string },
+    {
+      key: 'install-method',
+      label: t('common.installMethod'),
+      value: installation.sourceLabel as string
+    },
     {
       key: 'comfyui-version',
       label: t('standalone.currentVersion'),
