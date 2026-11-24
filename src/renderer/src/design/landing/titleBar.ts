@@ -17,6 +17,15 @@ import { buildTrail } from './mar/build/buildNav'
 import { stateOf } from './mar/build/buildFacts'
 import { onCloud } from './mar/shell/surface'
 import { assetsCrumbState, runAssetsCrumb } from './mar/shell/assetsCrumb'
+import {
+  NEW_TAB_ID,
+  NEW_TAB_TITLE,
+  closeCreate,
+  createInTab,
+  createScreen,
+  newTabIndex,
+  openCreate
+} from './mar/create/createScreen'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
@@ -130,18 +139,27 @@ const kindOf = (id: string): 'local' | 'cloud' =>
 function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'> {
   const runs = instanceById(proto.activeInstanceId)
   let untitled = 0
+  const tabs: NonNullable<TitleBarState['tabs']> = proto.tabs.map((t) => ({
+    id: t.id,
+    name:
+      t.workflow === 'Untitled workflow'
+        ? ++untitled > 1
+          ? `Untitled workflow ${untitled}`
+          : t.workflow
+        : t.workflow,
+    build: t.title,
+    kind: kindOf(t.instanceId)
+  }))
+  if (createInTab.value && createScreen.open)
+    tabs.splice(newTabIndex(), 0, {
+      id: NEW_TAB_ID,
+      name: NEW_TAB_TITLE,
+      build: '',
+      kind: 'local',
+      fresh: true
+    })
   return {
-    tabs: proto.tabs.map((t) => ({
-      id: t.id,
-      name:
-        t.workflow === 'Untitled workflow'
-          ? ++untitled > 1
-            ? `Untitled workflow ${untitled}`
-            : t.workflow
-          : t.workflow,
-      build: t.title,
-      kind: kindOf(t.instanceId)
-    })),
+    tabs,
     tabFront: appsProto.front ? null : proto.activeTab === 'home' ? null : proto.activeTab,
     runsOn:
       runs && titleBarPicksBuild.value
@@ -207,10 +225,12 @@ export function runTitleBarCommand(cmd: TitleBarCommand): void {
       break
     case 'tab':
       appsProto.front = ''
-      proto.activeTab = cmd.id
+      if (cmd.id === NEW_TAB_ID) openCreate()
+      else proto.activeTab = cmd.id
       break
     case 'closeTab':
-      closeTab(cmd.id)
+      if (cmd.id === NEW_TAB_ID) closeCreate()
+      else closeTab(cmd.id)
       break
     case 'agent':
       appsProto.front = ''

@@ -31,7 +31,7 @@ import MarModeSwitch from '../mar/modes/MarModeSwitch.vue'
 import { marTabsOn } from '../mar/shell/titleTabs'
 import MarCreateSquare from '../mar/create/MarCreateSquare.vue'
 import CreateScreen from '../mar/create/CreateScreen.vue'
-import { createScreen } from '../mar/create/createScreen'
+import { createOverHome } from '../mar/create/createScreen'
 
 /**
  * The launcher from Milestone 2 on: a sidebar and the page it opens.
@@ -113,7 +113,7 @@ const MODES = computed(() => [
       class="proto-main relative min-w-0 flex-1 overflow-y-auto [scrollbar-color:rgb(255_255_255/0.12)_transparent] [scrollbar-width:thin]"
     >
       <MarBackdrop />
-      <CreateScreen v-if="can.onboarding && createScreen.open" />
+      <CreateScreen v-if="can.onboarding && createOverHome" />
       <ModePages v-else />
     </main>
 
