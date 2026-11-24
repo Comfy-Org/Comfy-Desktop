@@ -1631,6 +1631,41 @@ describe('segmented download', () => {
     }
   )
 
+  it('refuses a part redirect to a disallowed host and never requests it', async () => {
+    const blocked = 'http://169.254.169.254/latest/meta-data/'
+    const { handle } = startSegmented({ session: callerSession })
+    const first = requests[1]!
+    first.emit('redirect', 302, 'GET', blocked)
+
+    expect(first.followRedirect).not.toHaveBeenCalled()
+    expect(first.abort).toHaveBeenCalled()
+    for (let attempt = 3; attempt < requests.length; attempt++) {
+      requests[attempt]!.emit('redirect', 302, 'GET', blocked)
+    }
+
+    const outcome = await handle.done
+    expect(outcome).toEqual({
+      outcome: 'error',
+      error: 'Download failed: redirected to a URL that is not allowed'
+    })
+    expect(requests.map((r) => r.__url)).not.toContain(blocked)
+  })
+
+  it('applies a caller-supplied policy to a same-host part redirect', async () => {
+    const validateUrl = vi.fn((url: string) => !url.includes('blocked'))
+    const { handle } = startSegmented({ validateUrl })
+    const first = requests[1]!
+    const hop = 'https://example.com/blocked/model.safetensors'
+    first.emit('redirect', 302, 'GET', hop)
+
+    expect(validateUrl).toHaveBeenCalledWith(hop)
+    expect(first.followRedirect).not.toHaveBeenCalled()
+    for (let attempt = 3; attempt < requests.length; attempt++) {
+      requests[attempt]!.emit('redirect', 302, 'GET', hop)
+    }
+    expect((await handle.done).outcome).toBe('error')
+  })
+
   it('keeps staged segments after a range fails on every attempt', async () => {
     const { handle } = startSegmented()
     const tail = rangeResponse(5, 9)
