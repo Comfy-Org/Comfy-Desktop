@@ -24,7 +24,7 @@ import * as mainTelemetry from '../lib/telemetry'
 import { COMFY_BG } from '../lib/theme'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
-import { areAppsEnabled, currentAppsLocation } from './appsConfig'
+import { currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
 import type { DraftApp } from './draftApps'
@@ -666,7 +666,7 @@ export async function showAppPage(
   rawPlacement: unknown
 ): Promise<AppPageStatus> {
   const placement = parsePlacement(rawPlacement)
-  if (typeof appId !== 'string' || !placement || !(await areAppsEnabled())) return 'failed'
+  if (typeof appId !== 'string' || !placement) return 'failed'
   const pageUrl = pageUrlForApp(appId)
   const host = hostOf(panel)
   if (!pageUrl || !host) return 'failed'

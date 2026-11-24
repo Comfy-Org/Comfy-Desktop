@@ -13,7 +13,6 @@ import {
   titleBarApps
 } from '../../apps/appPageView'
 import { listApps, pictureForListedApp } from '../../apps/appsCatalog'
-import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender } from '../../apps/appsPages'
 import { currentDrafts, draftCards } from '../../apps/draftApps'
 import {
@@ -77,10 +76,8 @@ function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): v
 }
 
 export function registerAppsHandlers(): void {
-  ipcMain.handle('apps:get-enabled', () => areAppsEnabled())
-
   ipcMain.handle('apps:list', async (event) => {
-    if (!isPanelSender(event.sender) || !(await areAppsEnabled())) return []
+    if (!isPanelSender(event.sender)) return []
     const listed = await listApps()
     return [...draftCards(), ...listed]
   })
