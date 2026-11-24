@@ -236,10 +236,7 @@ const blocker = computed<Blocker | undefined>(() => {
       title: 'Sign in to deploy',
       body: 'Deployments run on your Comfy account and spend its credits.',
       action: 'Sign in',
-      run: () => {
-        hostActions.signIn()
-        account.signedIn = true
-      }
+      run: () => hostActions.signIn(() => (account.signedIn = true))
     }
   if (account.plan.used >= account.plan.deployments)
     return {

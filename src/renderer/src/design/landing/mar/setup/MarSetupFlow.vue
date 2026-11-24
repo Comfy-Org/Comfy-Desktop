@@ -811,7 +811,7 @@ const installLog = computed(() => [
               <span class="mss-form-label"><Package :size="15" />Release</span>
               <div class="mss-form-note">
                 <span>Sign in to see your workspace's builds.</span>
-                <Button size="sm" variant="secondary" @click="hostActions.signIn()">Sign in</Button>
+                <Button size="sm" variant="secondary" @click="hostActions.signIn()">Log in</Button>
               </div>
             </div>
             <div v-else class="mss-form-row">

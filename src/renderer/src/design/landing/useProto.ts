@@ -1,5 +1,6 @@
 import { computed, reactive, watch } from 'vue'
 import { INSTANCES, WORKSPACES, type LocalFolder, type ProtoInstance } from './mock'
+import { fakeBrowserSignIn } from './mar/signIn/browserSignIn'
 
 /**
  * Shared prototype state. Module-level so every variant reads and writes the
@@ -292,10 +293,13 @@ export const hostActions = {
     if (newInstanceHooks.some((take) => take())) return
     toast('New build flow')
   },
-  signIn(): void {
-    proto.signedIn = true
-    proto.loginPrompt = null
-    toast('Logged in')
+  signIn(then?: () => void): void {
+    fakeBrowserSignIn((workspaceId) => {
+      proto.signedIn = true
+      proto.workspaceId = workspaceId
+      proto.loginPrompt = null
+      then?.()
+    })
   }
 }
 

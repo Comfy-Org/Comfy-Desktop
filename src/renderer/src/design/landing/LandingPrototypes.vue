@@ -13,6 +13,8 @@ import AppTab from './parts/apps/AppTab.vue'
 import MarUndoToast from './mar/pages/MarUndoToast.vue'
 import UiTuner from './mar/UiTuner.vue'
 import MarSetupFlow from './mar/setup/MarSetupFlow.vue'
+import MarSignInBanner from './mar/signIn/MarSignInBanner.vue'
+import MarBrowserSignIn from './mar/signIn/MarBrowserSignIn.vue'
 import { appsProto } from './appFlow'
 import { hostActions, newInstanceHooks, proto, toast } from './useProto'
 import { can } from './milestones'
@@ -131,7 +133,7 @@ onMounted(() => {
     proto.live = true
   }
   const mockSignIn = hostActions.signIn
-  hostActions.signIn = () => (realAccount.value ? void realSignIn() : mockSignIn())
+  hostActions.signIn = (then) => (realAccount.value ? void realSignIn(then) : mockSignIn(then))
   const mockNew = hostActions.newInstance
   hostActions.newInstance = () => {
     if (newInstanceHooks.some((take) => take())) return
@@ -187,6 +189,8 @@ watch(
       <SwitcherMenu v-if="standalone && can.breadcrumb" :top="44" />
       <Toaster />
       <MarUndoToast />
+      <MarSignInBanner />
+      <MarBrowserSignIn />
     </div>
   </TooltipProvider>
 </template>

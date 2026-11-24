@@ -28,6 +28,7 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, instanceById, instances, proto, toast } from '../../useProto'
+import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
@@ -755,7 +756,13 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               :style="{ '--p': progress }"
               @click="confirm"
             >
-              <span>{{ phase === 'busy' ? busyLabel : shown?.action || 'Open' }}</span>
+              <span>{{
+                phase === 'busy'
+                  ? busyLabel
+                  : browserSignIn.pending && shown?.state === 'login'
+                    ? SIGN_IN_COPY.waiting
+                    : shown?.action || 'Open'
+              }}</span>
               <kbd v-if="phase === 'idle' && selected && !selected.disabled">↵</kbd>
             </button>
           </footer>

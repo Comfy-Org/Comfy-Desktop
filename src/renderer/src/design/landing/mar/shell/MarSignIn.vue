@@ -4,11 +4,21 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Button from '../../ui/Button.vue'
 import { hostActions } from '../../useProto'
 import hillsSunset from '../assets/hills-sunset.jpg'
+import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 
 /** Signed out, in place of the workspace at the sidebar's foot: Pablo's
  *  SignInCard (Nav options › Account), restyled. A landscape shows what logging in is for; on hover
  *  it drifts. On the rail it's one icon. */
-const { open = true } = defineProps<{ open?: boolean }>()
+const {
+  open = true,
+  note = '',
+  then
+} = defineProps<{ open?: boolean; note?: string; then?: () => void }>()
+
+function logIn(event: MouseEvent): void {
+  if (event.detail > 1) return
+  hostActions.signIn(then)
+}
 </script>
 
 <template>
@@ -18,18 +28,21 @@ const { open = true } = defineProps<{ open?: boolean }>()
       <span class="mar-signin-mark"><ComfyCLogo :size="14" /></span>
     </div>
     <div class="px-2 pt-2.5 pb-3">
-      <p class="font-medium text-base-foreground">Log in to Comfy</p>
-      <p class="mt-0.5 text-subtle-foreground">Sync and run on Comfy Cloud</p>
+      <p class="font-medium text-base-foreground">{{ SIGN_IN_COPY.title }}</p>
+      <p class="mt-0.5 text-subtle-foreground" aria-live="polite" data-testid="sidebar-signin-body">
+        {{ browserSignIn.pending ? SIGN_IN_COPY.waiting : SIGN_IN_COPY.body }}
+      </p>
+      <p v-if="note" class="mt-2 text-muted-foreground">{{ note }}</p>
     </div>
-    <Button variant="primary" block @click="hostActions.signIn()">Log in</Button>
+    <Button variant="primary" block @click="logIn">{{ SIGN_IN_COPY.cta }}</Button>
   </div>
   <button
     v-else
     type="button"
     class="mar-signin-icon"
-    aria-label="Log in"
-    title="Log in"
-    @click="hostActions.signIn()"
+    :aria-label="SIGN_IN_COPY.cta"
+    :title="SIGN_IN_COPY.cta"
+    @click="logIn"
   >
     <LogIn :size="16" />
   </button>
