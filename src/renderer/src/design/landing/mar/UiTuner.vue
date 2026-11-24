@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, Link, X } from 'lucide-vue-next'
+import { Check, Link, Moon, Sun, X } from 'lucide-vue-next'
 import Button from '../ui/Button.vue'
 import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
@@ -49,7 +49,9 @@ import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
 import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
 import { proto } from '../useProto'
-import { can } from '../milestones'
+import { can, MILESTONES } from '../milestones'
+import { liveAvailable } from '../prototypeOptions'
+import { titleTabs, type TitleBarStyle } from './shell/titleTabs'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
 import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
@@ -100,6 +102,27 @@ const DEPLOY_STATES = SCENARIOS.map((s) => ({ value: s.id, label: s.label }))
 const deployState = computed({
   get: () => dep.scenario,
   set: (s: Scenario) => (scenarioPick.want = s)
+})
+
+const milestonePick = computed({
+  get: () => String(proto.milestone),
+  set: (v: string) => (proto.milestone = Number(v))
+})
+const THEME_OPTIONS = [
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'light', label: 'Light', icon: Sun }
+] as const
+const TITLE_BARS: { value: TitleBarStyle; label: string }[] = [
+  { value: 'breadcrumb', label: 'Breadcrumb' },
+  { value: 'tabs', label: 'Tabs' }
+]
+const DATA_SOURCES = [
+  { value: 'mock', label: 'Mock' },
+  { value: 'mine', label: 'Mine' }
+] as const
+const dataSource = computed({
+  get: () => (proto.live ? 'mine' : 'mock'),
+  set: (v: 'mock' | 'mine') => (proto.live = v === 'mine')
 })
 
 const zoomOptions = ZOOMS.map((z) => ({ value: String(z), label: `${Math.round(z * 100)}%` }))
@@ -205,22 +228,38 @@ const linkSays = computed(() => {
     <aside
       v-if="tuner.open"
       aria-label="UI tuner"
-      class="proto-ui fixed top-14 right-4 bottom-4 z-[80] flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
+      :class="can.design && 'bottom-4'"
+      class="proto-ui fixed top-14 right-4 z-[80] max-h-[calc(100vh-4.5rem)] flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
     >
       <header class="flex shrink-0 items-center justify-between px-4 pt-4 pb-2">
         <h2 class="text-ui font-semibold">
-          UI Playground
+          Prototype
           <kbd
             class="ml-1.5 rounded-[5px] bg-secondary-background px-1.5 py-px font-sans text-[11px] font-normal text-subtle-foreground"
             >⌘.</kbd
           >
         </h2>
-        <Button variant="ghost" size="icon-sm" aria-label="Close" @click="tuner.open = false">
-          <X :size="14" />
-        </Button>
+        <div class="flex items-center gap-1">
+          <Seg
+            v-if="can.design"
+            v-model="look.theme"
+            compact
+            label="Theme"
+            :options="THEME_OPTIONS"
+          />
+          <Button variant="ghost" size="icon-sm" aria-label="Close" @click="tuner.open = false">
+            <X :size="14" />
+          </Button>
+        </div>
       </header>
 
+      <section aria-label="Milestone" class="flex shrink-0 flex-col gap-1.5 px-4 pb-4">
+        <Select v-model="milestonePick" :options="MILESTONES" label="Milestone" class="w-full" />
+        <p class="text-ui text-subtle-foreground">⌥1–⌥0 milestone · ⌥N user</p>
+      </section>
+
       <div
+        v-if="can.design"
         ref="body"
         class="mar-tuner-body flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4"
         @scroll.passive="onScroll"
@@ -295,6 +334,9 @@ const linkSays = computed(() => {
           <Row label="Brand motif">
             <Seg v-model="brandMotif.id" label="Brand motif" :options="BRAND_MOTIFS" />
           </Row>
+          <Row v-if="can.breadcrumb" label="Title bar">
+            <Seg v-model="titleTabs.style" label="Title bar" :options="TITLE_BARS" />
+          </Row>
         </section>
 
         <!-- States: the situation on screen (who, what's installed, signed
@@ -325,6 +367,9 @@ const linkSays = computed(() => {
           </Row>
           <Row label="Account">
             <Seg v-model="account" label="Account" :options="ACCOUNTS" />
+          </Row>
+          <Row v-if="liveAvailable" label="Data">
+            <Seg v-model="dataSource" label="Data" :options="DATA_SOURCES" />
           </Row>
           <Row :show="shows('pageState')" label="Page state">
             <Select v-model="pageState.id" :options="PAGE_STATES" class="w-full" />
@@ -484,7 +529,7 @@ const linkSays = computed(() => {
 
       <!-- Share: a link that opens this screen with these tweaks, for
            anyone (mar/shareLink.ts). -->
-      <footer class="shrink-0 border-t border-border-default px-4 pt-3 pb-4">
+      <footer v-if="can.design" class="shrink-0 border-t border-border-default px-4 pt-3 pb-4">
         <p class="mb-1.5 truncate text-ui text-subtle-foreground" :title="linkSays.all">
           Link opens {{ pageName }} · {{ linkSays.line }}
         </p>
