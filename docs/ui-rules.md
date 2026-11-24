@@ -17,14 +17,11 @@ An error or info notice closes with the white OK. It never takes a tone, because
 
 ## Modal titles
 
-A modal's title is one of two sizes, always `font-semibold`:
+Every modal title is 18px, semibold, on a 28px line: `MODAL_TITLE_CLASS` from `lib/modalTitle.ts`. That covers the shared confirm, notice and choice boxes (`BaseAlert`, `ModalDialog`), prompts (`BasePrompt`), action sheets (`BaseActionSheet`), App request, Feedback, Why try Cloud, Custom model paths, Performance tests, the build progress dialog, `SetupModal` (first use and New build) and the legal documents (`TermsModal`, moving from 22px in #2148).
 
-1. **16px, the DS `text-heading` token,** for small modals that ask one thing or show one thing: the shared confirm and notice (`BaseAlert`), prompts (`BasePrompt`), App request, Feedback, Custom model paths and the asset viewer.
-2. **18px** for large modals that hold a whole flow or a long read: `SetupModal` (first use and New build), the build progress dialog and the legal documents (`TermsModal`).
+A section heading inside a modal stays smaller than its title, so the title still leads.
 
-No modal title is set in any other size. A section heading inside a large modal stays smaller than its title, so the title still leads.
-
-Pinned by `ExtraModelPathsModal.test.ts` (16px).
+Pinned by `ExtraModelPathsModal.test.ts`.
 
 ## Decided cases
 
