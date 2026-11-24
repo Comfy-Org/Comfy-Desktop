@@ -39,6 +39,10 @@ export const useInstallationStore = defineStore('installation', () => {
     fetchInstallations()
   })
 
+  window.api.onLocaleChanged?.(() => {
+    fetchInstallations()
+  })
+
   window.api.onInstallationsVersionsUpdated((updates) => {
     for (const { id, version } of updates) {
       const inst = installations.value.find((i) => i.id === id)

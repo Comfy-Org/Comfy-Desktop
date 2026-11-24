@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { config, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import type { I18n } from 'vue-i18n'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import zh from '@locales/zh.json'
+import { resetAppLocale, switchAppLocaleToChinese } from '../lib/switchAppLocale'
 import type {
   PopupDownloadAction,
   PopupDownloadsState
@@ -129,15 +129,7 @@ describe('DownloadsFullView shared controls', () => {
 })
 
 describe('DownloadsFullView reveal action', () => {
-  const appI18n = () =>
-    config.global.plugins.find(
-      (plugin): plugin is I18n<object, object, object, string, false> =>
-        typeof plugin === 'object' && plugin !== null && 'global' in plugin
-    )!
-
-  afterEach(() => {
-    appI18n().global.locale.value = 'en'
-  })
+  afterEach(resetAppLocale)
 
   const revealButton = (view: VueWrapper) =>
     view
@@ -151,9 +143,7 @@ describe('DownloadsFullView reveal action', () => {
   })
 
   it('translates the reveal action with the app locale', async () => {
-    const i18n = appI18n()
-    i18n.global.setLocaleMessage('zh', zh)
-    i18n.global.locale.value = 'zh'
+    switchAppLocaleToChinese()
     const view = await mountView()
     expect(revealButton(view).text()).toBe(zh.assets.showInFinder)
   })
