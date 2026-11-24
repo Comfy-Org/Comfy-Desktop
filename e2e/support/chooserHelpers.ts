@@ -91,10 +91,10 @@ export async function uninstallFromBuildsTileMenu(
   installationId: string
 ): Promise<void> {
   await pickFromBuildsTileMenu(panel, installationId, 'delete')
-  await panel.waitForVisible(buildMenuItem('confirm-uninstall'), { timeout: 5_000 })
+  await panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
   expect(
-    await panel.click(buildMenuItem('confirm-uninstall')),
-    'uninstall confirmed in the build menu'
+    await panel.click(byTestId(TID.baseAlertAction)),
+    'uninstall confirmed in the shared confirm box'
   ).toBe(true)
 }
 
