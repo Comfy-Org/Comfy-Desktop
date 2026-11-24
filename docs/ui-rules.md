@@ -15,6 +15,17 @@ A confirm for something that is not destructive uses the white primary button (`
 
 An error or info notice closes with the white OK. It never takes a tone, because pressing OK changes nothing.
 
+## Modal titles
+
+A modal's title is one of two sizes, always `font-semibold`:
+
+1. **16px, the DS `text-heading` token,** for small modals that ask one thing or show one thing: the shared confirm and notice (`BaseAlert`), prompts (`BasePrompt`), App request, Feedback, Custom model paths and the asset viewer.
+2. **18px** for large modals that hold a whole flow or a long read: `SetupModal` (first use and New build), the build progress dialog and the legal documents (`TermsModal`).
+
+No modal title is set in any other size. A section heading inside a large modal stays smaller than its title, so the title still leads.
+
+Pinned by `ExtraModelPathsModal.test.ts` (16px).
+
 ## Decided cases
 
 - **Forget build** takes the build off the list. Its folder stays on the computer and it can be added again with Add existing build. It starts from a plain item and confirms with the white Forget button, and its message says the folder stays and how to add it back.

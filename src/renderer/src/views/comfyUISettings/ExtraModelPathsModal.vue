@@ -49,7 +49,7 @@ const { t } = useI18n()
   >
     <template #header>
       <div class="empm-header flex min-w-0 items-center gap-2">
-        <h2 class="empm-title m-0 min-w-0 truncate text-[15px] font-semibold">
+        <h2 class="empm-title m-0 min-w-0 truncate text-heading font-semibold">
           {{ t('comfyUISettings.extraModelPathsModalTitle') }}
         </h2>
         <Button
