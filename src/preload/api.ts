@@ -2,8 +2,12 @@ import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
   AppOutputs,
+  DraftAppRequest,
+  DraftClosingStop,
   AppPageStatus,
+  AppRun,
   ElectronApi,
+  HomeTourReplayState,
   ResolvedTheme,
   AdoptPromptRequest
 } from '../types/ipc'
@@ -100,7 +104,6 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
-    closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
@@ -118,6 +121,10 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
     readAssetModel: (source, assetId) => ipcRenderer.invoke('assets:read-model', source, assetId),
+    hasAssetWorkflow: (source, assetId) =>
+      ipcRenderer.invoke('assets:has-workflow', source, assetId),
+    openAssetWorkflow: (source, assetId, name, build) =>
+      ipcRenderer.invoke('assets:open-workflow', source, assetId, name, build),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
@@ -125,6 +132,18 @@ export function buildElectronApi(): ElectronApi {
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
+    getAppRuns: () => ipcRenderer.invoke('apps:get-runs'),
+    appSwitchStopsRun: (appId) => ipcRenderer.invoke('apps:switch-stops-run', appId),
+    onAppRunsChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, runs: AppRun[]): void => callback(runs)
+      ipcRenderer.on('apps:runs-changed', handler)
+      return () => ipcRenderer.removeListener('apps:runs-changed', handler)
+    },
+    onOpenRunningApp: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string): void => callback(appId)
+      ipcRenderer.on('apps:open-running-app', handler)
+      return () => ipcRenderer.removeListener('apps:open-running-app', handler)
+    },
     hideAppPage: () => ipcRenderer.send('apps:hide-page'),
     onAppPageStatusChanged: (callback) => {
       const handler = (
@@ -140,6 +159,25 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:page-closed', handler)
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
+    onAppBackToListAsked: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string, stop: DraftClosingStop): void =>
+        callback(appId, stop)
+      ipcRenderer.on('apps:back-to-list-asked', handler)
+      return () => ipcRenderer.removeListener('apps:back-to-list-asked', handler)
+    },
+    closeAppPage: (appId) => ipcRenderer.send('apps:close-page', appId),
+    onAppsListChanged: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('apps:list-changed', handler)
+      return () => ipcRenderer.removeListener('apps:list-changed', handler)
+    },
+    onOpenDraftApp: (callback) => {
+      const handler = (_event: IpcRendererEvent, request: DraftAppRequest): void =>
+        callback(request)
+      ipcRenderer.on('apps:open-draft', handler)
+      return () => ipcRenderer.removeListener('apps:open-draft', handler)
+    },
+    acceptDraftApp: (token) => ipcRenderer.invoke('apps:accept-draft', token),
     onAppOutputs: (callback) => {
       const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs | null): void =>
         callback(appId, outputs)
@@ -173,11 +211,6 @@ export function buildElectronApi(): ElectronApi {
       }
       ipcRenderer.on('comfy-panel:open-feedback', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-feedback', handler)
-    },
-    onOpenAnnouncement: (callback) => {
-      const handler = (): void => callback()
-      ipcRenderer.on('comfy-panel:open-announcement', handler)
-      return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
     },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
@@ -255,6 +288,8 @@ export function buildElectronApi(): ElectronApi {
     getMediaSections: () => ipcRenderer.invoke('get-media-sections'),
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+    getHomeTourReplay: () => ipcRenderer.invoke('get-home-tour-replay'),
+    finishHomeTour: (shownReplayId) => ipcRenderer.invoke('finish-home-tour', shownReplayId),
     getPendingBetaNotice: (installationId) =>
       ipcRenderer.invoke('get-pending-beta-notice', installationId),
     acknowledgeBetaNotice: (installationId, shownArgs) =>
@@ -277,6 +312,7 @@ export function buildElectronApi(): ElectronApi {
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
     resetZoom: () => ipcRenderer.invoke('reset-zoom'),
     getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+    getChassisType: () => ipcRenderer.invoke('get-chassis-type'),
     getInstallationDdContext: (installationId: string) =>
       ipcRenderer.invoke('get-installation-dd-context', installationId),
     getInstallsInventory: () => ipcRenderer.invoke('get-installs-inventory'),
@@ -560,6 +596,17 @@ export function buildElectronApi(): ElectronApi {
       const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as { key: string })
       ipcRenderer.on('settings-changed', handler)
       return () => ipcRenderer.removeListener('settings-changed', handler)
+    },
+    onShowHomePage: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on('comfy-panel:show-home-page', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:show-home-page', handler)
+    },
+    onHomeTourReplayChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as HomeTourReplayState)
+      ipcRenderer.on('home-tour-replay-changed', handler)
+      return () => ipcRenderer.removeListener('home-tour-replay-changed', handler)
     },
     onPanelSwitch: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

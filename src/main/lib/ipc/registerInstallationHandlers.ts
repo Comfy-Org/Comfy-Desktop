@@ -54,6 +54,7 @@ import {
 } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
 import { startFirstBuildWithDesktop } from '../firstBuildAutoStart'
+import { seedNewInstallComfySettings } from '../newInstallSettings'
 
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
   void runStartupReleaseChecks(allInstalls, {
@@ -203,15 +204,23 @@ export function registerInstallationHandlers(): void {
   ipcMain.handle('track-installation', async (_event, data: Record<string, unknown>) => {
     const duplicate = await findDuplicatePath(data.installPath as string)
     if (duplicate) {
-      return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
+      return {
+        ok: false,
+        message: `That directory is already used by "${duplicate.name}".`,
+        reason: 'location'
+      }
     }
     if (!fs.existsSync(data.installPath as string)) {
-      return { ok: false, message: 'That directory does not exist.' }
+      return { ok: false, message: 'That directory does not exist.', reason: 'location' }
     }
     try {
       fs.writeFileSync(path.join(data.installPath as string, MARKER_FILE), 'tracked')
     } catch (err) {
-      return { ok: false, message: `Cannot write to directory: ${(err as Error).message}` }
+      return {
+        ok: false,
+        message: `Cannot write to directory: ${(err as Error).message}`,
+        reason: 'location'
+      }
     }
     const entry = await installations.add({ ...data, status: 'installed', seen: false })
     await syncOemSeedBestEffort()
@@ -296,6 +305,7 @@ export function registerInstallationHandlers(): void {
             installations.update(installationId, data).then(() => {})
           await source.postInstall(inst, { sendProgress, sendOutput, update, signal: abort.signal })
         }
+        if (!isComfyUpdate) await seedNewInstallComfySettings(inst)
 
         const freshInst = await installations.get(installationId)
         const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined

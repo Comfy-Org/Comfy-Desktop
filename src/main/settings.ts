@@ -44,8 +44,9 @@ export interface KnownSettings {
   minimaxAnnouncementSeen?: boolean
   cloudNodesAnnouncementSeen?: boolean
   comfyRouterAnnouncementSeen?: boolean
-  comfyApiAnnouncementSeen?: boolean
   hasSeenCentralPillHint?: boolean
+  homeTourAudience?: 'new' | 'updated'
+  homeTourDone?: boolean
   betaNoticeAnnouncedArgs?: string[]
   hideCloudFromPicker?: boolean
   oemManagedModelDirs?: string[]
@@ -170,8 +171,9 @@ const SETTINGS_SCHEMA = {
   minimaxAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
-  comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   hasSeenCentralPillHint: { nullable: false, telemetry: { policy: 'omit' } },
+  homeTourAudience: { nullable: false, telemetry: { policy: 'omit' } },
+  homeTourDone: { nullable: false, telemetry: { policy: 'omit' } },
   betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
@@ -585,7 +587,7 @@ export function peekBetaFeaturesEnabled(): boolean {
 
 function betaFeaturesEnabledIn(settings: Partial<Settings>, unreadable: boolean): boolean {
   const stored = settings.betaFeaturesEnabled
-  if (typeof stored === 'boolean') return stored
+  if (typeof stored === 'boolean' && !unreadable) return stored
   return consentIn(settings, unreadable) === true
 }
 

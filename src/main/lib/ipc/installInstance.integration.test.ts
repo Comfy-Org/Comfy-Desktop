@@ -593,6 +593,32 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
     })
   })
 
+  describe('Nodes 2.0 for a new install', () => {
+    const settingsFile = (): string =>
+      path.join(installPath, 'ComfyUI', 'user', 'default', 'comfy.settings.json')
+
+    it('turns Nodes 2.0 on in the frontend settings of a fresh install', async () => {
+      expect(await install(picked({ release: 'v0.3.48-env1' }))).toEqual({ ok: true })
+
+      expect(JSON.parse(fs.readFileSync(settingsFile(), 'utf-8'))).toEqual({
+        'Comfy.VueNodes.Enabled': true
+      })
+    })
+
+    it('keeps a Nodes 2.0 value the download already sets', async () => {
+      writeFile(
+        path.join(h.bundleDir, 'ComfyUI', 'user', 'default', 'comfy.settings.json'),
+        JSON.stringify({ 'Comfy.VueNodes.Enabled': false })
+      )
+
+      await install(picked({ release: 'v0.3.48-env1' }))
+
+      expect(JSON.parse(fs.readFileSync(settingsFile(), 'utf-8'))).toEqual({
+        'Comfy.VueNodes.Enabled': false
+      })
+    })
+  })
+
   it('lists four steps for the default install and names the version it will get', async () => {
     const result = await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
 

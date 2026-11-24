@@ -9,7 +9,7 @@ import type { DetailField, DetailSection, Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useInlineTextEdit } from '../../composables/useInlineTextEdit'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
-import { revealInFolderKey } from '../../composables/usePlatform'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 
 interface Props {
   installation: Installation | null
@@ -24,7 +24,6 @@ interface Props {
 const props = defineProps<Props>()
 
 const { t } = useI18n()
-const revealFolderKey = revealInFolderKey(window.api?.platform)
 const sessionStore = useSessionStore()
 
 function openPath(path: string): void {
@@ -293,21 +292,7 @@ const groups = computed<FactGroup[]>(() => {
             v-else
             class="m-0 flex min-w-0 items-center justify-start gap-1.5 text-left text-[13px] leading-[19px] text-neutral-100"
           >
-            <Button
-              v-if="row.openable"
-              variant="textonly"
-              size="unset"
-              type="button"
-              class="status-fact-value min-w-0 truncate status-fact-value-open static inline-block rounded-lg border-none bg-transparent p-0 [font:inherit] text-inherit appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-              :class="{ 'is-truncate-start [direction:rtl] text-left': row.truncate === 'start' }"
-              :title="t(revealFolderKey)"
-              @click="openPath(row.value)"
-            >
-              <bdi v-if="row.truncate === 'start'" dir="ltr">{{ row.value }}</bdi>
-              <template v-else>{{ row.value }}</template>
-            </Button>
             <span
-              v-else
               class="status-fact-value min-w-0 truncate"
               :class="{ 'is-truncate-start [direction:rtl] text-left': row.truncate === 'start' }"
               :title="row.value"
@@ -315,6 +300,12 @@ const groups = computed<FactGroup[]>(() => {
               <bdi v-if="row.truncate === 'start'" dir="ltr">{{ row.value }}</bdi>
               <template v-else>{{ row.value }}</template>
             </span>
+            <RevealFolderButton
+              v-if="row.openable"
+              class="status-fact-value-open -my-1"
+              :path="row.value"
+              @click="openPath(row.value)"
+            />
             <BaseCopyButton v-if="row.copyable" :value="row.value" />
           </dd>
         </div>

@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   confirmBeforeClosing: false,
   appsBuildRunning: false,
   agrees: true,
-  asked: [] as { spec: { message: string; details?: { items: string[] }[] } }[],
+  asked: [] as {
+    spec: { message: string; confirmStyle?: string; details?: { items: string[] }[] }
+  }[],
   stopAppsBuilds: vi.fn(async () => {}),
   keepComfyRunning: undefined as boolean | undefined
 }))
@@ -270,6 +272,9 @@ describe('closing the last Desktop window while an app uses a ComfyUI Desktop st
     expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
       'Close this window? This stops ComfyUI and quits Comfy Desktop.'
     ])
+    expect(mocks.asked[0]?.spec.confirmStyle, 'closing deletes nothing, so it is white').toBe(
+      'primary'
+    )
     expect(win.closed).toBe(false)
     expect(mocks.stopAppsBuilds).not.toHaveBeenCalled()
   })
@@ -456,6 +461,9 @@ describe('quitting while a ComfyUI runs with no window', () => {
         'Quit Desktop? This will close the running ComfyUI instance.'
       ])
       expect(mocks.asked[0]?.spec.details?.[0]?.items).toEqual(['Studio'])
+      expect(mocks.asked[0]?.spec.confirmStyle, 'Quit deletes nothing, so it is white').toBe(
+        'primary'
+      )
       expect(performQuit).toHaveBeenCalledTimes(1)
     })
 
@@ -501,6 +509,17 @@ describe('returning to the dashboard from a running ComfyUI', () => {
       'This will stop the current ComfyUI.'
     ])
     expect(entry.detachInstall).not.toHaveBeenCalled()
+  })
+
+  it('returns a running Remote Connection without asking, with keepComfyRunningWhenWindowCloses off', async () => {
+    mocks.keepComfyRunning = false
+    const entry = openRunningComfy()
+    entry.sourceCategory = 'remote'
+
+    await returnToDashboard(entry.windowKey)
+
+    expect(mocks.asked).toEqual([])
+    expect(entry.detachInstall).toHaveBeenCalledTimes(1)
   })
 
   it('leaves it running and does not ask with keepComfyRunningWhenWindowCloses absent', async () => {

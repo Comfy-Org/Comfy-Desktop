@@ -15,6 +15,7 @@ import {
 import { REQUIRES_STOPPED } from '../types/ipc'
 import type { Installation, ListAction, ActionResult, ShowProgressOpts } from '../types/ipc'
 import { progressTitle } from '../lib/progressTitle'
+import { confirmToneForActionStyle } from '../lib/destructiveStyles'
 
 export interface ListActionCallbacks {
   showProgress: (opts: ShowProgressOpts) => void
@@ -69,7 +70,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         title: action.confirm?.title || action.label,
         message,
         confirmLabel: action.label,
-        confirmStyle: action.style || 'danger'
+        confirmStyle: confirmToneForActionStyle(action.style)
       })
       if (!confirmed) {
         emitTelemetryAction('comfy.desktop.action.result', {

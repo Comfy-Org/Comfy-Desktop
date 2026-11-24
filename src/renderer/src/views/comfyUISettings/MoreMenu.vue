@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 import { TID } from '../../../../shared/testIds'
 import type { ActionDef } from '../../types/ipc'
 
@@ -76,8 +77,9 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       <MenuSeparator v-if="action.separator && index > 0" />
       <MenuItem
         :disabled="action.enabled === false"
-        :class="action.style === 'danger' && 'text-destructive focus:text-destructive'"
+        :class="action.style === 'danger' && DESTRUCTIVE_MENU_ITEM_CLASS"
         :text-value="action.label"
+        :title="action.enabled === false ? action.disabledMessage : undefined"
         :data-testid="TID.pinBottomAction(action.id)"
         @select="handlePick(action)"
       >

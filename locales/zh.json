@@ -21,11 +21,12 @@
     "navigation": "导航",
     "home": "主页",
     "apps": "应用",
+    "backToApp": "返回{app}",
     "assets": "资产",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "signInTitle": "登录 Comfy",
-    "signInBody": "在 Comfy Cloud 上同步和运行",
+    "signInBody": "免费开始使用 Comfy Cloud",
     "newBuild": "新建构建",
     "noBuilds": "还没有构建",
     "crashed": "已崩溃",
@@ -46,6 +47,19 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatchesHint": "换个关键词试试。",
     "allApps": "全部应用",
+    "switchWhileRunning": {
+      "title": "切换到{app}？",
+      "body": "{current}仍在生成。已有 {count} 个其他应用在运行，切换会停止它。",
+      "bodyUnsure": "Desktop 无法确认是否有应用仍在生成。切换可能会停止它。",
+      "bodyDraft": "{current}是草稿应用。切换会关闭它，你将看不到这次生成完成。",
+      "switch": "切换",
+      "stay": "留在这里"
+    },
+    "backWhileRunning": {
+      "title": "返回全部应用？",
+      "bodyDraft": "{current}是草稿应用。返回会关闭它，你将看不到这次生成完成。",
+      "back": "返回"
+    },
     "request": {
       "bandTitle": "没有你想要的应用？",
       "bandBody": "你的想法决定我们接下来做哪些应用。",
@@ -79,7 +93,19 @@
       "openNoCloud": "请先在 Comfy Desktop 中添加 Comfy Cloud。",
       "openCloudFailed": "Comfy Desktop 无法打开 Comfy Cloud。",
       "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
+      "openUnreadable": "Comfy Desktop 无法读取此文件。请重试。",
       "openNotTaken": "ComfyUI 没有打开这个工作流。"
+    },
+    "closeWhileRunning": {
+      "title": "仍要关闭？",
+      "bodyOne": "{app}仍在生成。关闭会停止它。",
+      "bodyMany": "{count} 个应用仍在生成。关闭会停止它们。 | {count} 个应用仍在生成。关闭会停止它们。",
+      "close": "关闭",
+      "cancel": "取消"
+    },
+    "rail": {
+      "running": "{app}，正在生成",
+      "finished": "{app}，已完成"
     }
   },
   "assets": {
@@ -162,6 +188,12 @@
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
       "openWorkflow": "打开工作流",
+      "openWorkflowFailed": "无法打开工作流",
+      "openWorkflowNoReason": "ComfyUI 未能打开工作流。请重试。",
+      "openingWorkflow": "正在打开…",
+      "openingInCloud": "正在 Comfy Cloud 中打开…",
+      "startingBuild": "正在启动 {name}…",
+      "openWorkflowIn": "打开方式",
       "savedIn": "保存位置",
       "cloudAssets": "Comfy Cloud 资产",
       "modelView": "{name} 的 3D 视图。拖动可旋转，滚动可缩放。",
@@ -189,7 +221,15 @@
     "autoStartOn": "自动启动",
     "buildRunning": "运行中",
     "buildStarting": "启动中",
-    "buildReady": "就绪",
+    "buildNeverUsed": "从未使用",
+    "cloudNoSetupNeeded": "无需设置",
+    "buildUsedJustNow": "刚刚使用",
+    "buildUsedMinutesAgo": "{count} 分钟前使用",
+    "buildUsedHoursAgo": "{count} 小时前使用",
+    "buildUsedYesterday": "昨天使用",
+    "buildUsedDaysAgo": "{count} 天前使用",
+    "buildUsedOnDate": "{date} 使用",
+    "buildLogInToUse": "登录后使用",
     "buildDidntStart": "未能启动",
     "buildCrashed": "已崩溃",
     "buildInstalling": "正在安装 ComfyUI",
@@ -211,6 +251,51 @@
     "previousApp": "上一个应用",
     "nextApp": "下一个应用",
     "retry": "重试"
+  },
+  "homeTour": {
+    "buildsIntro": {
+      "title": "构建用于运行 ComfyUI",
+      "body": "构建是一份可以打开的 ComfyUI。大多数人只需要一个。"
+    },
+    "buildsRenamed": {
+      "title": "实例现在叫作构建",
+      "body": "你的 ComfyUI 实例现在叫作构建。它们保留原有的模型和设置。"
+    },
+    "cloudBuild": {
+      "title": "Comfy Cloud",
+      "body": "Comfy Cloud 无需设置。它在云端 GPU 上运行，因此任何电脑都能使用。"
+    },
+    "localBuild": {
+      "title": "本地构建",
+      "body": "本地构建在这台电脑上免费运行。你的文件保存在这台电脑上。"
+    },
+    "allBuilds": {
+      "title": "你的全部构建",
+      "body": "点击这里查看你的全部构建。"
+    },
+    "newBuild": {
+      "title": "新建构建",
+      "body": "点击 + 新建一个构建。"
+    },
+    "newApps": {
+      "title": "新功能：应用",
+      "body": "应用是现成的工具。选择一个，添加图片或文字，然后运行。"
+    },
+    "allApps": {
+      "title": "全部应用",
+      "body": "在这里查看全部应用。"
+    },
+    "assets": {
+      "title": "资产",
+      "body": "你生成的所有内容都保存在这里。"
+    },
+    "progress": "第 {current} 步，共 {total} 步",
+    "next": "下一步",
+    "back": "上一步",
+    "skip": "跳过",
+    "done": "完成",
+    "replayHint": "可在标题栏的铃铛菜单中再次找到本导览。",
+    "replay": "查看导览"
   },
   "installType": {
     "standalone": "独立版",
@@ -234,7 +319,8 @@
     "filterLocal": "本地",
     "filterCloud": "云端",
     "filterRemote": "远程",
-    "updatePill": "更新",
+    "updateAvailableOpen": "有可用更新：打开 {name} 的更新",
+    "updateShort": "更新",
     "migratePill": "迁移",
     "openInstall": "打开",
     "manageInstall": "管理",
@@ -315,7 +401,16 @@
     "betaNoticeOffTitleNamed": "已关闭 {feature} Beta 功能",
     "betaNoticeOffBodyNamed": "我们已为此构建关闭了 {feature} Beta 功能。你可以在设置中管理 Beta 功能。",
     "betaNoticeDismiss": "知道了",
-    "betaNoticeSettings": "设置"
+    "betaNoticeSettings": "设置",
+    "runningMany": "{count} 个运行中",
+    "openRunning": "打开{app}",
+    "showRunning": "显示运行中的应用",
+    "appReady": "{app}已完成",
+    "ready": "已完成",
+    "readyMany": "{count} 个应用已完成",
+    "showReady": "显示已完成的应用",
+    "appsMany": "{count} 个应用",
+    "showApps": "显示应用"
   },
   "comfyUISettings": {
     "title": "设置",
@@ -339,7 +434,6 @@
     "refreshCustomPaths": "刷新状态",
     "extraModelPathsModalTitle": "自定义模型路径",
     "extraModelPathsModalNote": "只读 —— ComfyUI 会搜索这些目录，但启动器不会管理它们。请编辑 extra_model_paths.yaml 以更改它们。",
-    "openBaseFolder": "打开基础文件夹",
     "revealYaml": "在文件夹中显示 extra_model_paths.yaml",
     "argsTitle": "启动参数",
     "restartRequired": "重启后生效",
@@ -661,7 +755,7 @@
     "sizeLabel": "磁盘占用",
     "sizeValue": "{size}",
     "sizeUnavailable": "未知",
-    "estimatedRequired": "约需 {size}"
+    "insufficientForInstall": "仅剩 {free} 可用，安装约需 {required}"
   },
   "pathValidation": {
     "insideAppBundleTitle": "不安全的安装位置",
@@ -718,7 +812,7 @@
     "detecting": "正在检测…",
     "noDetected": "未检测到已知安装",
     "trackInstallation": "添加构建",
-    "cannotTrack": "无法添加构建",
+    "cannotTrack": "无法添加此构建",
     "version": "版本",
     "repository": "仓库",
     "branch": "分支"
@@ -731,10 +825,11 @@
     "unknownError": "发生未知错误",
     "completedSuccess": "已成功完成",
     "updatedSuccess": "已成功更新",
-    "completedError": "操作失败",
+    "completedError": "未能完成",
+    "completedErrorDetail": "Comfy Desktop 在完成前停止了。详细信息如下。",
     "completedCancelled": "操作已取消",
     "returnToDashboard": "返回主页",
-    "reboot": "重启",
+    "reboot": "重试",
     "restartComfyui": "重启 ComfyUI",
     "successChoiceGoDashboard": "返回主页",
     "successChoiceOpen": "打开构建",
@@ -811,6 +906,7 @@
     "autoUpdate": "启动时检查更新",
     "autoInstallUpdates": "自动安装桌面端更新",
     "appBehavior": "应用行为",
+    "generalSection": "常规",
     "confirmBeforeClosingWindow": "关闭窗口前确认",
     "confirmBeforeClosingWindowDescription": "关闭窗口会停止 ComfyUI 或退出 Comfy Desktop 时，先请求确认。",
     "warnBeforeRunningMultipleInstances": "运行多个构建前发出警告",
@@ -855,6 +951,12 @@
     "updatesTab": "更新",
     "diagnostics": "诊断",
     "openLogsFolder": "打开日志文件夹",
+    "developmentTab": "开发",
+    "draftAppsTitle": "草稿应用",
+    "draftAppAddress": "应用地址",
+    "draftAppPlaceholder": "https://pr-706.drafts.comfy.org/apps/depth-swap/",
+    "draftAppFailedTitle": "无法打开此草稿应用",
+    "draftAppFailedMessage": "Comfy Desktop 无法检查此地址。请重试。",
     "sharedFolders": "共享文件夹",
     "folderKindModels": "模型",
     "folderKindInput": "输入",
@@ -995,13 +1097,10 @@
     "checking": "正在检查…",
     "noGpu": "无 GPU 加速",
     "unsupported": "不受支持",
-    "free": "可用 {free}",
-    "freeRequired": "可用 {free} · 需要约 {required}",
-    "notEnoughSpace": "仅剩 {free} · 需要约 {required}",
-    "versionValue": "ComfyUI {version} · {channel}",
-    "versionChannel": "ComfyUI · {channel}",
+    "versionValue": "ComfyUI {version}",
+    "versionValueNightly": "ComfyUI {version}（每夜构建）",
     "download": "下载 {size}",
-    "downloadRequired": "下载 {download} · 需要约 {required}",
+    "installSpaceTip": "下载大小为 {download}，解压和安装需要约 {required} 的可用磁盘空间。",
     "unavailable": "无法连接 ComfyUI 下载服务器。请检查网络连接，或通过“更改”选择版本。",
     "retry": "重试",
     "agreeToInstall": "同意后才能安装。",
@@ -1065,16 +1164,6 @@
     "relaunchSkippedTitle": "{name} 未启动",
     "relaunchSkippedMessage": "{name} 正在执行另一个任务，因此未启动。请在该任务完成后再次启动。"
   },
-  "announcement": {
-    "comfyApi": {
-      "title": "Comfy API 现已推出",
-      "lead": "将你的 ComfyUI 工作流部署为生产环境 API。将工作流与其自定义节点和模型打包，部署为应用和工具可以调用的接口。你使用 ComfyUI 的方式不会有任何变化。",
-      "primaryCta": "了解 Comfy API",
-      "imageAlt": "Comfy API 公告",
-      "unmute": "取消静音",
-      "mute": "静音"
-    }
-  },
   "tray": {
     "showApp": "显示 Comfy Desktop",
     "quit": "退出"
@@ -1106,7 +1195,8 @@
     "deleteConfirmDetail": "其他安装不受影响。",
     "untrack": "忘记",
     "untrackConfirmTitle": "忘记构建",
-    "untrackConfirmMessage": "这会从应用中移除该构建。文件不会被删除。",
+    "untrackConfirmMessage": "这会从应用中移除该构建。它的文件夹会保留在你的电脑上，你可以通过“添加现有构建”重新添加。",
+    "untrackRemoteConfirmMessage": "这会从应用中移除该连接。服务器不会受影响，你可以通过“连接到服务器”重新连接。",
     "rename": "重命名",
     "renameTitle": "重命名构建",
     "renameMessage": "输入此构建的新名称。"
@@ -1458,7 +1548,7 @@
     "createSnapshot": "创建快照",
     "changesInSnapshot": "此快照中发生的更改",
     "ifYouRestore": "恢复此快照将改变的内容",
-    "noSnapshotsToShare": "还没有可分享的快照。",
+    "noSnapshotsToExport": "没有可导出的快照。",
     "shareFailed": "无法导出快照。",
     "current": "当前",
     "triggerBoot": "启动",
@@ -1631,7 +1721,8 @@
   },
   "devPlatform": {
     "signIn": {
-      "cta": "登录"
+      "cta": "登录",
+      "waiting": "请在浏览器中继续"
     },
     "account": {
       "installationInProgressTitle": "安装正在进行中",
@@ -1693,7 +1784,12 @@
     "deleteLocked": "文件无法删除，因为它正被另一个程序使用。请关闭可能正在打开此目录中文件的应用程序，然后重试。\n{path}",
     "deleteLockedBy": "文件无法删除，因为它正被以下程序使用：{processes}。请关闭这些应用程序后重试。\n{path}",
     "deleteLockedUnidentified": "文件无法删除，因为它正被另一个程序使用，但 Comfy Desktop 无法确定是哪一个。请关闭可能正在打开此目录中文件的应用程序，然后重试。\n{path}",
-    "cannotAdd": "无法添加",
+    "cannotAdd": "无法添加此构建",
+    "cannotAddDetail": "添加时出错。请重试。",
+    "cannotAddLocationDetail": "添加时出错。请检查安装位置，然后重试。",
+    "changeLocation": "更改位置",
+    "cannotUseFolder": "无法使用此文件夹",
+    "locationCheckFailed": "无法检查此文件夹。请重试，或选择其他位置。",
     "dirNotExist": "目录不存在：{path}",
     "cannotOpenDir": "无法打开目录：{error}",
     "launchCancelled": "启动已取消。",
@@ -1727,9 +1823,7 @@
     "priorScanUnavailable": "Comfy Desktop 无法检查此构建之前的 ComfyUI 是否仍在运行（无法读取进程列表），而端口 {port} 正被占用。现在启动可能会失败，因为之前的 ComfyUI 可能占用此构建的数据库。如果该进程是之前的 ComfyUI，请结束它，或稍后重试。",
     "priorScanRecent": "Comfy Desktop 无法检查此构建刚刚退出的 ComfyUI 是否正在重新启动（无法读取进程列表）。现在启动可能会失败，因为正在重新启动的 ComfyUI 可能已经占用此构建的数据库。请几分钟后重试。",
     "priorProcessUnverified": "此构建之前的 ComfyUI（PID {pid}）仍在运行，且 Comfy Desktop 无法确认可以安全地停止它。现在启动会失败，因为它占用此构建的数据库。请结束该进程后重试。",
-    "performanceTestOtherInstanceRunningOne": "性能测试需要单独运行，以免其他构建争用 GPU 和内存。请先在 Comfy Desktop 中停止{name}，或等待其完成启动或停止，然后重新运行测试。",
-    "performanceTestOtherInstanceRunning": "性能测试需要单独运行，以免其他构建争用 GPU 和内存。请先在 Comfy Desktop 中停止{names}，或等待它们完成启动或停止，然后重新运行测试。",
-    "performanceTestOfInstallation": "“{name}”的性能测试",
+    "performanceTestOtherInstanceRunning": "性能测试应单独运行，以免其他程序争用 GPU 和内存。请先停止正在运行的构建，然后重新运行测试。",
     "duplicateName": "名为“{name}”的构建已存在。请选择其他名称。",
     "nameRequired": "请输入名称。",
     "unknownSource": "此构建的来源类型无法识别。它可能由其他版本创建。请删除并重新安装。",
@@ -1872,6 +1966,8 @@
     "preparingExampleWorkflow": "正在准备工作流并下载所需模型…",
     "importFailed": "无法导入工作流。",
     "deleteWorkflow": "删除工作流",
+    "deleteWorkflowTitle": "删除 {workflow}？",
+    "deleteWorkflowMessage": "这会将其从性能测试中移除。如果还没有运行使用过它，为性能测试保存的副本会被删除。你的原始文件和之前运行的结果会保留。",
     "deleteFailed": "无法删除工作流。",
     "run": "运行",
     "runNeedsBuild": "请先选择一个构建。",
@@ -1920,6 +2016,8 @@
     "startingBuild": "正在启动构建…",
     "runFailedTitle": "测试未完成",
     "runFailedHint": "详情请查看下方日志。",
+    "runRefusedTitle": "性能测试未启动",
+    "blockingBuildStopped": "已停止",
     "runNumber": "第 {current} / {total} 次运行",
     "resultsEmptyTitle": "暂无结果",
     "medianSummary": "中位运行 · {count} 次测量 · {failed} 次失败",
@@ -1934,6 +2032,7 @@
     "searchPlaceholder": "搜索工作流、构建或硬件…",
     "columns": "列",
     "columnsToDisplay": "要显示的列",
+    "measures": "测量值",
     "unmanagedWorkspace": "无工作区",
     "unknownHardware": "未知硬件",
     "session": "会话",
@@ -1988,15 +2087,9 @@
     "filterWorkflow": "工作流",
     "compareBy": "比较依据",
     "groupMeta": "{sessions} · {runs}",
-    "groupBy": "分组依据",
-    "groupByNone": "无",
     "allRuns": "所有运行",
     "sessionCount": "{count} 个会话 | {count} 个会话",
     "runCount": "{count} 次运行 | {count} 次运行",
-    "groupActions": "{workflow} 的更多操作",
-    "selectGroup": "选择所有运行",
-    "exportGroup": "导出此组",
-    "singleRun": "此处只有一个构建运行过此工作流。在另一个构建上运行它即可比较。",
     "metricAndRange": "{metric}及范围",
     "vsBaseline": "与基准相比",
     "selection": "已选运行",
@@ -2007,7 +2100,6 @@
     "moreActions": "会话 {session} 的更多操作",
     "setBaseline": "设为基准",
     "renameSession": "重命名会话",
-    "speedFormula": "速度 = 基准耗时 ÷ 运行耗时",
     "resetBaseline": "重置基准",
     "selectedCount": "已选择 {count} 项",
     "exportLimit": "最多 {max} 次运行",
@@ -2102,7 +2194,7 @@
     "progressWorking": "正在处理…",
     "progressError": "出现了问题",
     "progressCancelled": "已取消",
-    "restartToApply": "重启以应用更改"
+    "restartToApply": "重启以应用"
   },
   "installShowcase": {
     "cloud": {
@@ -2145,5 +2237,12 @@
     "label": "等待期间",
     "cloudFailedTitle": "无法打开 Comfy Cloud",
     "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
+  },
+  "appsQuit": {
+    "message": "仍要退出？",
+    "detailOne": "{app}仍在生成。退出会停止它。",
+    "detailMany": "{count} 个应用仍在生成。退出会停止它们。",
+    "quit": "退出",
+    "cancel": "取消"
   }
 }

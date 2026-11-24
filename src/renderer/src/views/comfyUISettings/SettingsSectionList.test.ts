@@ -35,6 +35,24 @@ describe('SettingsSectionList', () => {
       expect(desc.text()).toContain('gitcode.com')
     })
 
+    it('renders the description as plain muted text with no coloured icon', () => {
+      const wrapper = mountList([
+        {
+          id: 'hardwareAcceleration',
+          label: 'Use hardware acceleration',
+          value: true,
+          editable: true,
+          editType: 'boolean',
+          description:
+            'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
+        }
+      ])
+      const desc = wrapper.find('.settings-v2-field-description')
+      expect(desc.classes()).toContain('text-text-muted')
+      expect(desc.find('svg').exists()).toBe(false)
+      expect(desc.html()).not.toMatch(/--info|blue/)
+    })
+
     it('does not render the description block when none is attached', () => {
       const wrapper = mountList([
         {
@@ -123,13 +141,18 @@ describe('SettingsSectionList', () => {
   })
 
   describe('readonly path rows', () => {
-    it('renders a clickable button that emits open-path for a path value', async () => {
+    it('shows a path value as plain text with a reveal button that emits open-path', async () => {
       const wrapper = mountReadonly([
         { id: 'location', label: 'Location', value: '/home/user/ComfyUI', editType: 'path' }
       ])
+      const text = wrapper.find('.settings-v2-field-readonly-path')
+      expect(text.element.tagName).not.toBe('BUTTON')
+      expect(text.text()).toBe('/home/user/ComfyUI')
+      expect(text.attributes('title')).toBe('/home/user/ComfyUI')
       const btn = wrapper.find('button.settings-v2-field-readonly-open')
       expect(btn.exists()).toBe(true)
-      expect(btn.text()).toBe('/home/user/ComfyUI')
+      expect(btn.classes()).toContain('reveal-folder-button')
+      expect(btn.attributes('aria-label')).toContain('/home/user/ComfyUI')
       await btn.trigger('click')
       expect(wrapper.emitted('open-path')?.[0]).toEqual(['/home/user/ComfyUI'])
     })
@@ -152,6 +175,30 @@ describe('SettingsSectionList', () => {
     it('does not make a date value clickable', () => {
       const wrapper = mountReadonly([{ id: 'updated', label: 'Last updated', value: '2024/01/02' }])
       expect(wrapper.find('button.settings-v2-field-readonly-open').exists()).toBe(false)
+    })
+  })
+
+  describe('a danger section action', () => {
+    function dangerButton() {
+      const wrapper = mount(SettingsSectionList, {
+        props: {
+          sections: [
+            {
+              title: 'Danger zone',
+              actions: [{ id: 'delete', label: 'Uninstall', style: 'danger' }]
+            }
+          ]
+        }
+      })
+      return wrapper.findAll('button').find((button) => button.text() === 'Uninstall')!
+    }
+
+    it('is red text that only tints on hover, never a filled red button', () => {
+      const classes = dangerButton().classes()
+      expect(classes).toContain('text-danger')
+      expect(classes).toContain('hover:bg-destructive/12')
+      expect(classes.some((name) => /^hover:bg-\[var\(--danger\)\]$/.test(name))).toBe(false)
+      expect(classes.some((name) => name.startsWith('hover:text-'))).toBe(false)
     })
   })
 
@@ -342,11 +389,11 @@ describe('SettingsSectionList', () => {
       expect(descriptions[0]!.element.closest('header')).not.toBeNull()
     })
 
-    it('pairs grouped fields in two columns with a 16px gap when they wrap', () => {
+    it('pairs grouped fields in two columns 16px apart, and 24px apart when they wrap', () => {
       const wrapper = mountSections([{ title: 'Launch settings', fields: pairedFields }], true)
       const paired = wrapper.findAll('.settings-v2-field-row.is-paired')
       expect(paired).toHaveLength(1)
-      expect(paired[0]!.classes()).toEqual(expect.arrayContaining(['gap-4']))
+      expect(paired[0]!.classes()).toEqual(expect.arrayContaining(['gap-x-4', 'gap-y-6']))
     })
 
     it('pairs grouped fields when the layout is not stacked', () => {

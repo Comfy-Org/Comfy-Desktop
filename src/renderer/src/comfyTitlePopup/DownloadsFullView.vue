@@ -10,7 +10,7 @@ import {
   CheckCircle2,
   CircleAlert,
   Download,
-  FolderOpen,
+  FolderSearch,
   Pause,
   Play,
   RotateCcw,
@@ -366,7 +366,7 @@ const footerStats = computed<string[]>(() =>
                   class="dlm-btn"
                   @click="showInFolder(d)"
                 >
-                  <FolderOpen :size="14" />
+                  <FolderSearch :size="14" />
                   {{ revealLabel }}
                 </Button>
               </div>

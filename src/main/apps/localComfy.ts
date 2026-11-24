@@ -26,7 +26,7 @@ import {
   stopRunning
 } from '../lib/ipc/shared'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
-import { liveAppsPages } from './appsPages'
+import { appsPageAdmits, liveAppsPages } from './appsPages'
 import {
   _resetForTest as _resetLocalAppEventsForTest,
   buildsWithRuns,
@@ -112,6 +112,7 @@ let idleTimer: ReturnType<typeof setTimeout> | null = null
 let watchingSessions = false
 let downloadsUnderWay = 0
 const targetByPage = new WeakMap<WebContents, Target>()
+const pageSends = new WeakMap<WebContents, ComfyDesktopLocalEvent[]>()
 const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
 const keptRunning = new Set<string>()
@@ -135,8 +136,31 @@ function rememberBounded<T>(map: Map<string, T>, key: string, value: T, limit: n
   }
 }
 
+async function sendIfAdmitted(page: WebContents, batch: ComfyDesktopLocalEvent[]): Promise<void> {
+  if (page.isDestroyed() || !(await appsPageAdmits(page)) || page.isDestroyed()) return
+  for (const event of batch) page.send(LOCAL_EVENT_CHANNEL, event)
+}
+
+async function drainPage(page: WebContents, pending: ComfyDesktopLocalEvent[]): Promise<void> {
+  while (pending.length > 0) {
+    await sendIfAdmitted(page, pending.splice(0)).catch(() => {})
+  }
+  pageSends.delete(page)
+}
+
+function sendToPage(page: WebContents, event: ComfyDesktopLocalEvent): void {
+  const pending = pageSends.get(page)
+  if (pending) {
+    pending.push(event)
+    return
+  }
+  const fresh = [event]
+  pageSends.set(page, fresh)
+  void drainPage(page, fresh)
+}
+
 function sendToPages(event: ComfyDesktopLocalEvent): void {
-  for (const page of liveAppsPages()) page.send(LOCAL_EVENT_CHANNEL, event)
+  for (const page of liveAppsPages()) sendToPage(page, event)
 }
 
 function relayRunUpdate(message: unknown): void {
@@ -448,7 +472,7 @@ async function chooseInstalledTarget(
   await waitForInstall(build.id, appId)
   const installed = await chooseTarget(page, want)
   if (typeof installed !== 'string' && !installed.installing) {
-    page.send(LOCAL_EVENT_CHANNEL, { type: 'setup', data: { state: 'done' } })
+    sendToPage(page, { type: 'setup', data: { state: 'done' } })
   }
   return installed
 }
@@ -567,7 +591,8 @@ async function sendRun(
   const started = parsed(answer)
   if (isRecord(started) && typeof started['prompt_id'] === 'string') {
     rememberBounded(ownRuns, started['prompt_id'], buildId, MAX_RUNS_REMEMBERED)
-    runAccepted(started['prompt_id'], buildId, appId, submittedAt)
+    const queueNumber = typeof started['number'] === 'number' ? started['number'] : undefined
+    runAccepted(started['prompt_id'], buildId, appId, submittedAt, queueNumber)
   }
   return answer
 }

@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import '../assets/main.css'
 import HomeView from './HomeView.vue'
 import { useProgressStore, type Operation } from '../stores/progressStore'
+import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
 
 const MIN_WINDOW_BUILDS_WIDTH = 452
@@ -179,6 +180,38 @@ describe('Home build tiles', () => {
     const moreBox = more.getBoundingClientRect()
     expect(moreBox.right).toBeLessThanOrEqual(tileBox.right)
     expect(moreBox.top + moreBox.height / 2).toBeCloseTo(tileBox.top + tileBox.height / 2, 0)
+    wrapper.unmount()
+  })
+  it('keeps a running build in view at 700px after more recently stopped builds pass it', async () => {
+    const running: Installation = { ...READY, id: 'running', name: 'ComfyUI', lastLaunchedAt: 50 }
+    const stopped = (id: string, name: string, lastStoppedAt: number): Installation => ({
+      ...READY,
+      id,
+      name,
+      lastLaunchedAt: 10,
+      lastStoppedAt
+    })
+    vi.mocked(window.api.getInstallations).mockResolvedValue([
+      running,
+      stopped('nightly', 'ComfyUI Nightly', 400),
+      stopped('private', 'ComfyUI Private', 500),
+      { ...CLOUD, lastLaunchedAt: 300 }
+    ])
+    const wrapper = mount(HomeView, { attachTo: host })
+    await flushPromises()
+    useSessionStore().runningInstances.set(running.id, {
+      installationId: running.id,
+      installationName: running.name,
+      mode: 'window'
+    } as never)
+    await flushPromises()
+
+    const section = await layBuildsOut(700)
+
+    expect(shownTiles(section).map((tile) => tile.getAttribute('data-build-id'))).toEqual([
+      'private',
+      'running'
+    ])
     wrapper.unmount()
   })
 })

@@ -4,8 +4,9 @@ import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import { Folder, FolderOpen, MoreHorizontal, Plus } from '@lucide/vue'
+import { Folder, MoreHorizontal, Plus } from '@lucide/vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
+import RevealFolderButton from '../../components/RevealFolderButton.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
 
@@ -53,6 +54,11 @@ function onMenuKeydown(event: KeyboardEvent): void {
 onMounted(() => window.addEventListener('blur', closeMenu))
 onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
 
+function handleBrowse(row: SharedFolderRow): void {
+  closeMenu()
+  emit('browse', row)
+}
+
 function handleRemove(row: SharedFolderRow): void {
   closeMenu()
   emit('remove', row)
@@ -68,16 +74,12 @@ function handleRemove(row: SharedFolderRow): void {
       :data-kind="row.kind"
     >
       <StorageItemIcon :icon="Folder" shared />
-      <Button
-        type="button"
-        variant="textonly"
-        size="unset"
-        class="shared-folder-path static block min-w-0 max-w-full truncate [direction:rtl] gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+      <span
+        class="shared-folder-path block min-w-0 max-w-full truncate [direction:rtl] text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100"
         :title="row.path"
-        @click.stop="emit('open', row)"
       >
         <bdi dir="ltr">{{ row.path }}</bdi>
-      </Button>
+      </span>
       <span class="shared-folder-kind truncate text-[12px] text-text-muted">
         {{ t(kindLabelKey[row.kind]) }}
       </span>
@@ -98,19 +100,12 @@ function handleRemove(row: SharedFolderRow): void {
         </Button>
       </div>
       <div class="shared-folder-actions inline-flex items-center justify-start gap-0.5">
-        <Button
-          type="button"
-          variant="textonly"
-          size="icon"
-          :class="iconButtonClass"
-          :aria-label="t('common.browse')"
-          :title="t('common.browse')"
-          @click.stop="emit('browse', row)"
-        >
-          <FolderOpen :size="14" aria-hidden="true" />
-        </Button>
+        <RevealFolderButton
+          class="shared-folder-reveal"
+          :path="row.path"
+          @click.stop="emit('open', row)"
+        />
         <Menu
-          v-if="row.removable"
           :open="openMenuKey === row.key"
           :modal="false"
           align="end"
@@ -130,7 +125,10 @@ function handleRemove(row: SharedFolderRow): void {
               <MoreHorizontal :size="14" aria-hidden="true" />
             </Button>
           </template>
-          <MenuItem class="text-destructive" @select="handleRemove(row)">
+          <MenuItem class="shared-folder-change" @select="handleBrowse(row)">
+            {{ t('models.changeDir') }}
+          </MenuItem>
+          <MenuItem v-if="row.removable" class="shared-folder-remove" @select="handleRemove(row)">
             {{ t('models.removeDir') }}
           </MenuItem>
         </Menu>

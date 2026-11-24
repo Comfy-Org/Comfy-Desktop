@@ -106,17 +106,52 @@ it('groups common desktop-card actions in the requested order', () => {
   expect(items.map(({ id }) => id)).toEqual([
     'manage',
     'update',
+    'rename',
     'copy-install',
     'reveal-in-folder',
     'share',
     'restore-snapshot',
     'promote-to-workspace',
+    'untrack',
     'delete'
   ])
   expect(items.filter(({ separator }) => separator).map(({ id }) => id)).toEqual([
     'share',
-    'delete'
+    'untrack'
   ])
+})
+
+it('leaves Forget out for a build adopted from an existing folder', () => {
+  const { menu } = mountHarness(makeInstall({ adopted: true }))
+
+  expect(findItem(menu.ctxMenuItems.value, 'untrack')).toBeUndefined()
+  expect(findItem(menu.ctxMenuItems.value, 'rename')).toBeDefined()
+})
+
+it('turns Forget off while a task runs on the build', () => {
+  const inst = makeInstall()
+  const { menu } = mountHarness(inst, ({ progress }) => {
+    progress.operations.set(inst.id, {
+      title: 'Updating...',
+      steps: null,
+      activePhase: null,
+      activePercent: 0,
+      lastStatus: {},
+      flatStatus: 'Working...',
+      flatPercent: 0.5,
+      terminalOutput: '',
+      done: false,
+      finished: false,
+      error: null,
+      cancelRequested: false,
+      result: null,
+      unsubProgress: null,
+      unsubOutput: null,
+      apiCall: null
+    } as never)
+  })
+
+  expect(findItem(menu.ctxMenuItems.value, 'untrack')).toMatchObject({ disabled: true })
 })
 
 describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
@@ -530,7 +565,7 @@ describe('useInstallContextMenu - export latest snapshot', () => {
 
     expect(apiMock.exportSnapshot).not.toHaveBeenCalled()
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
-    expect(modalMock.alert.mock.calls[0]![0].message).toBe('There are no snapshots to share yet.')
+    expect(modalMock.alert.mock.calls[0]![0].message).toBe('There are no snapshots to export.')
   })
 
   it('surfaces a real export error but stays silent on a dialog cancel', async () => {
@@ -667,6 +702,18 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     expect(findItem(running.ctxMenuItems.value, 'stop')).toBeTruthy()
   })
 
+  it('shows Stop as a plain item and Uninstall as the red one, since only Uninstall deletes', () => {
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, ({ session }) => {
+      session.runningInstances.set(inst.id, {
+        installationId: inst.id,
+        installationName: inst.name
+      } as never)
+    })
+    expect(findItem(menu.ctxMenuItems.value, 'stop')?.style).toBeUndefined()
+    expect(findItem(menu.ctxMenuItems.value, 'delete')?.style).toBe('danger')
+  })
+
   it('hides the Stop item for cloud installs (no local Python to stop)', () => {
     const inst = makeInstall({ sourceCategory: 'cloud' })
     const { menu } = mountHarness(inst, ({ session }) => {
@@ -678,7 +725,7 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     expect(findItem(menu.ctxMenuItems.value, 'stop')).toBeUndefined()
   })
 
-  it('shows a danger confirm, stops the backend, and closes its window on confirm', async () => {
+  it('shows a white confirm, stops the backend, and closes its window on confirm', async () => {
     modalMock.confirm.mockResolvedValue(true)
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
@@ -690,7 +737,7 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     expect(args.title).toBe('Stop ComfyUI')
     expect(args.message).toBe('This will stop ComfyUI. Any unsaved work will be lost.')
     expect(args.confirmLabel).toBe('Stop')
-    expect(args.confirmStyle).toBe('danger')
+    expect(args.confirmStyle, 'Stop is not destructive, so its confirm is not red').toBeUndefined()
     expect(apiMock.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(apiMock.stopComfyUI).toHaveBeenCalledWith(inst.id)
     expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith(inst.id, {

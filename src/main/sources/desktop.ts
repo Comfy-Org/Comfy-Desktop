@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { shell } from 'electron'
-import { revealInFolderLabel, untrackAction } from '../lib/actions'
+import { renameAction, revealInFolderLabel, untrackAction } from '../lib/actions'
 import { findDesktopExecutable } from '../lib/desktopDetect'
 import { t } from '../lib/i18n'
 import type { InstallationRecord } from '../installations'
@@ -127,6 +127,7 @@ export const desktop: SourcePlugin = {
               confirmLabel: t('desktop.migrateConfirm')
             }
           },
+          renameAction(installation.name),
           {
             id: 'open-folder',
             label: revealInFolderLabel(),

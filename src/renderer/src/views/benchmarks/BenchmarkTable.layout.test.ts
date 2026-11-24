@@ -117,7 +117,7 @@ describe('Benchmarks table card', () => {
       await flushPromises()
       await new Promise((resolve) => requestAnimationFrame(resolve))
 
-      const box = document.querySelector<HTMLElement>('.benchmarks__group-box')!
+      const box = document.querySelector<HTMLElement>('.benchmarks__runs-box')!
       const card = box.getBoundingClientRect()
       expect(getComputedStyle(box).borderRadius).toBe('14px')
       expect(getComputedStyle(box).borderTopWidth).toBe('0px')
@@ -132,15 +132,9 @@ describe('Benchmarks table card', () => {
       expect(cells[cells.length - 1].getBoundingClientRect().right).toBeCloseTo(card.right, 0)
 
       const rowMenu = row.querySelector('.benchmarks__row-menu svg')!.getBoundingClientRect()
-      const chevron = document
-        .querySelector('.benchmarks__group-toggle svg')!
-        .getBoundingClientRect()
-      const groupMenu = document
-        .querySelector('.benchmarks__group-menu svg')!
-        .getBoundingClientRect()
-      expect(chevron.left - card.left).toBeCloseTo(18, 0)
+      const title = textBox(document.querySelector('.benchmarks__runs-title')!)
+      expect(title.left - card.left).toBeCloseTo(18, 0)
       expect(card.right - rowMenu.right).toBeCloseTo(18, 0)
-      expect(card.right - groupMenu.right).toBeCloseTo(18, 0)
     }
   )
 })
@@ -177,19 +171,22 @@ function sessionParts(row: HTMLElement) {
 
 describe('Benchmarks session cell', () => {
   it.each([960, 1280])(
-    'starts the session text at the ALL RUNS chevron and keeps it still on hover at %ipx',
+    'starts each row with the grip and checkbox under the ALL RUNS title, text under Session, at %ipx',
     async (width) => {
       await mountWith([run('11', 1.2), run('12', 2.2), run('13', 18.7)], width)
 
-      const chevron = document
-        .querySelector('.benchmarks__group-toggle svg')!
-        .getBoundingClientRect()
-      const row = document.querySelector<HTMLElement>('.benchmarks__group-box tbody tr')!
+      const title = textBox(document.querySelector('.benchmarks__runs-title')!)
+      const sessionHead = textBox(document.querySelector('thead th .benchmarks__sort')!)
+      const row = document.querySelector<HTMLElement>('.benchmarks__runs-box tbody tr')!
       const { cell, name, meta, grip, controls } = sessionParts(row)
+      const check = controls.querySelector('[role="checkbox"]')!.getBoundingClientRect()
 
       const before = { name: textBox(name).left, meta: textBox(meta).left }
-      expect(Math.abs(before.name - chevron.left)).toBeLessThanOrEqual(1)
-      expect(Math.abs(before.meta - chevron.left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(grip.getBoundingClientRect().left - title.left)).toBeLessThanOrEqual(1)
+      expect(grip.getBoundingClientRect().right).toBeLessThanOrEqual(check.left)
+      expect(before.name - check.right).toBeGreaterThanOrEqual(8)
+      expect(Math.abs(before.name - sessionHead.left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(before.meta - sessionHead.left)).toBeLessThanOrEqual(1)
       expect(getComputedStyle(grip).opacity).toBe('0')
 
       await userEvent.hover(cell, { force: true })
@@ -198,12 +195,8 @@ describe('Benchmarks session cell', () => {
       expect(textBox(name).left).toBe(before.name)
       expect(textBox(meta).left).toBe(before.meta)
 
-      const controlsBox = controls.getBoundingClientRect()
       const cellBox = cell.getBoundingClientRect()
-      expect(controlsBox.right).toBeLessThanOrEqual(cellBox.right)
-      expect(
-        controlsBox.left - Math.max(textBox(name).right, textBox(meta).right)
-      ).toBeGreaterThanOrEqual(8)
+      expect(Math.max(textBox(name).right, textBox(meta).right)).toBeLessThanOrEqual(cellBox.right)
       expect(meta.scrollWidth).toBeLessThanOrEqual(meta.clientWidth)
       expect(
         cell.querySelector('.benchmarks__session-body')!.getBoundingClientRect().width
@@ -212,7 +205,7 @@ describe('Benchmarks session cell', () => {
     }
   )
 
-  it('truncates a long session name and its date before the hover controls', async () => {
+  it('truncates a long session name and its date inside the session cell', async () => {
     await mountWith([run(LONG_SESSION, 1.2, '11'), run('12', 2.2)])
 
     const row = document.querySelector<HTMLElement>(
@@ -222,15 +215,44 @@ describe('Benchmarks session cell', () => {
     await userEvent.hover(cell, { force: true })
 
     const cellBox = cell.getBoundingClientRect()
-    const controlsLeft = controls.getBoundingClientRect().left
     expect(
       cell.querySelector('.benchmarks__session-body')!.getBoundingClientRect().width
     ).toBeLessThanOrEqual(180)
     expect(name.scrollWidth).toBeGreaterThan(name.clientWidth)
-    expect(name.getBoundingClientRect().right).toBeLessThanOrEqual(controlsLeft - 8)
-    expect(meta.getBoundingClientRect().right).toBeLessThanOrEqual(controlsLeft - 8)
+    expect(textBox(name).left).toBeGreaterThanOrEqual(controls.getBoundingClientRect().right + 8)
+    expect(name.getBoundingClientRect().right).toBeLessThanOrEqual(cellBox.right - 8)
+    expect(meta.getBoundingClientRect().right).toBeLessThanOrEqual(cellBox.right - 8)
     expect(name.getAttribute('title')).toContain(LONG_SESSION)
     expect(meta.getAttribute('title')).toBe(meta.textContent?.trim())
     await userEvent.unhover(cell, { force: true })
+  })
+})
+
+describe('Benchmarks bar tooltip', () => {
+  it('lists fastest and slowest on the left, average and median on the right', async () => {
+    await mountWith([run('11', 1.2), run('12', 2.2)])
+
+    const wrap = document.querySelector<HTMLElement>(
+      '[data-testid="benchmark-row-12"] .tooltip-wrap'
+    )!
+    wrap.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await flushPromises()
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    const timings = Array.from(
+      document.querySelector('.benchmarks__bar-tip .grid')!.children,
+      (timing) => ({
+        label: timing.firstElementChild!.textContent!.trim(),
+        box: timing.getBoundingClientRect()
+      })
+    )
+    const left = Math.min(...timings.map(({ box }) => box.left))
+    const column = (inLeft: boolean) =>
+      timings
+        .filter(({ box }) => Math.abs(box.left - left) < 1 === inLeft)
+        .sort((a, b) => a.box.top - b.box.top)
+        .map(({ label }) => label)
+    expect(column(true), 'left column').toEqual(['Fastest', 'Slowest'])
+    expect(column(false), 'right column').toEqual(['Average', 'Median'])
   })
 })

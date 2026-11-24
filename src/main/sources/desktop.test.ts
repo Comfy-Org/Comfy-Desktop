@@ -115,3 +115,21 @@ describe('desktop.probeInstallation', () => {
     expect(await desktop.probeInstallation(dir)).toBeNull()
   })
 })
+
+describe('desktop.getDetailSections', () => {
+  it('offers Rename, so the build menu can rename a Legacy Desktop build', () => {
+    const sections = desktop.getDetailSections({
+      id: 'desktop-1',
+      name: 'ComfyUI Desktop',
+      sourceId: 'desktop',
+      installPath: '/legacy',
+      status: 'installed',
+      createdAt: new Date(0).toISOString()
+    } as never)
+    const actions = sections.flatMap(
+      (section) => (section as { actions?: { id: string }[] }).actions ?? []
+    )
+
+    expect(actions.map((action) => action.id)).toContain('rename')
+  })
+})

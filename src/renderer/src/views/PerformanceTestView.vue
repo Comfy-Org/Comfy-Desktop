@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, toRef, useTemplateRef, watch } from 'vue'
 import { I18nT, useI18n } from 'vue-i18n'
-import { CircleAlert, FolderOpen, ImageDown, Play, Square, X } from '@lucide/vue'
+import { CircleAlert, FolderSearch, ImageDown, Play, Square, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
@@ -11,6 +11,7 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { usePerformanceTestRun } from '../composables/usePerformanceTestRun'
 import { usePerformanceTestWorkflow } from '../composables/usePerformanceTestWorkflow'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
+import { useDialogs } from '../composables/useDialogs'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import {
@@ -27,6 +28,7 @@ import type { PerformanceTestResultsSummary } from '../types/ipc'
 import PerformanceTestBuildMenu, {
   type BuildOption
 } from './performanceTest/PerformanceTestBuildMenu.vue'
+import PerformanceTestBlockingBuilds from './performanceTest/PerformanceTestBlockingBuilds.vue'
 import PerformanceTestCard from './performanceTest/PerformanceTestCard.vue'
 import PerformanceTestLogs from './performanceTest/PerformanceTestLogs.vue'
 import PerformanceTestProgress from './performanceTest/PerformanceTestProgress.vue'
@@ -42,6 +44,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const dialogs = useDialogs()
 const revealFolderKey = revealInFolderKey(window.api?.platform)
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
@@ -100,6 +103,7 @@ const runBlockedReason = computed(() => {
   return t('performanceTest.runWaitsForBuild')
 })
 const summary = computed(() => run.result?.resultsSummary ?? null)
+const runRefused = computed(() => run.blockingSessions.length > 0)
 const resultsFolder = computed(() => {
   const resultPath = run.result?.resultsSummaryPath ?? run.result?.resultPath
   return resultPath ? parentFolder(resultPath) : null
@@ -147,6 +151,20 @@ function startRun(): void {
     warmupRuns: warmups,
     measuredRuns: measured
   })
+}
+
+async function removeWorkflow(): Promise<void> {
+  if (workflow.example.download) return workflow.remove()
+  const selectedPath = workflow.filePath
+  const choice = await dialogs.confirm({
+    title: t('performanceTest.deleteWorkflowTitle', { workflow: workflow.label }),
+    message: t('performanceTest.deleteWorkflowMessage'),
+    confirmLabel: t('performanceTest.deleteWorkflow'),
+    tone: 'danger'
+  })
+  if (choice === 'primary' && selectedPath === workflow.filePath) {
+    await workflow.remove(selectedPath)
+  }
 }
 
 function openResultsFolder(): void {
@@ -227,13 +245,13 @@ async function exportResultsImage(): Promise<void> {
               :locked="run.isBusy"
               :importing="workflow.isImporting"
               :deleting="workflow.isDeleting"
-              :can-choose-example="selectedBuildId !== null"
+              :build-selected="selectedBuildId !== null"
               :loading-examples="workflow.example.isPickerLoading"
               :downloading="workflow.example.download !== null"
               @choose-example="workflow.example.openPicker()"
               @import="workflow.importFrom()"
               @import-file="workflow.importFile"
-              @remove="workflow.remove()"
+              @remove="removeWorkflow()"
             />
             <section class="performance-test__step flex min-w-0">
               <h2 class="sr-only">{{ t('performanceTest.measurementSettings') }}</h2>
@@ -378,7 +396,7 @@ async function exportResultsImage(): Promise<void> {
                   :title="t(revealFolderKey)"
                   @click="openResultsFolder"
                 >
-                  <FolderOpen :size="15" aria-hidden="true" />
+                  <FolderSearch :size="15" aria-hidden="true" />
                   <span class="@max-[640px]:sr-only">{{ t(revealFolderKey) }}</span>
                 </Button>
                 <Button
@@ -408,17 +426,26 @@ async function exportResultsImage(): Promise<void> {
                 role="alert"
               >
                 <CircleAlert :size="16" class="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
-                <div class="min-w-0">
+                <div class="min-w-0 flex-1">
                   <p class="m-0 mb-1 text-[15px] font-medium text-foreground">
-                    {{ t('performanceTest.runFailedTitle') }}
+                    {{
+                      runRefused
+                        ? t('performanceTest.runRefusedTitle')
+                        : t('performanceTest.runFailedTitle')
+                    }}
                   </p>
                   <p
-                    class="performance-test__failure-message m-0 line-clamp-2 [overflow-wrap:anywhere]"
+                    class="performance-test__failure-message m-0 [overflow-wrap:anywhere]"
+                    :class="{ 'line-clamp-2': !runRefused }"
                     :title="run.failure"
                   >
                     {{ run.failure }}
                   </p>
-                  <p class="m-0 mt-1">{{ t('performanceTest.runFailedHint') }}</p>
+                  <PerformanceTestBlockingBuilds
+                    v-if="runRefused"
+                    :sessions="run.blockingSessions"
+                  />
+                  <p v-else class="m-0 mt-1">{{ t('performanceTest.runFailedHint') }}</p>
                 </div>
               </div>
               <PerformanceTestProgress

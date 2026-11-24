@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { WebContentsView } from 'electron'
 import path from 'path'
+import { titleBarApps, TITLE_BAR_APPS_CHANNEL } from '../apps/appPageView'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
@@ -454,7 +455,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     const activeComfyView = entry?.comfyView ?? comfyView
 
     const mode = entry ? computeBodyMode(entry) : 'comfy'
-    const isOverlayMode = mode === 'feedback' || mode === 'announcement'
+    const isOverlayMode = mode === 'feedback'
     const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)
@@ -553,6 +554,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
       updater.getCurrentUpdateState()
     )
     titleBarView.webContents.send('comfy-titlebar:downloads-changed', getDownloadsTrayState())
+    titleBarView.webContents.send(TITLE_BAR_APPS_CHANNEL, titleBarApps(windowKey))
     const installId = entry?.installationId ?? null
     if (installId !== null) {
       void fx.computeInstallUpdateAvailable(installId).then((state) => {
@@ -731,8 +733,7 @@ export function buildComfyView(
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
-    const liveEntry = comfyWindows.get(windowKey)
-    if (!liveEntry || isChooserHost(liveEntry)) return
+    if (!comfyWindows.has(windowKey)) return
     e.preventDefault()
   })
   attachContextMenu(comfyWindow, comfyContents)

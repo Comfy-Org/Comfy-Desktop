@@ -19,6 +19,12 @@ import { dispatchSessionAction, _getActiveOperations } from './sessionActions'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 
+const WAITS_FOR_OPERATIONS_TOO = new Set(['remove'])
+
+function waitsForOperations(actionId: string): boolean {
+  return REQUIRES_STOPPED.has(actionId) || WAITS_FOR_OPERATIONS_TOO.has(actionId)
+}
+
 export function registerSessionHandlers(): void {
   ipcMain.handle('stop-comfyui', async (_event, installationId?: string) => {
     recordIpcInvocation('stop-comfyui', installationId)
@@ -36,10 +42,9 @@ export function registerSessionHandlers(): void {
   ipcMain.handle('get-active-operations', () => _getActiveOperations())
 
   ipcMain.handle('cancel-launch', () => {
-    for (const [_id, abort] of _operationAborts) {
+    for (const abort of _operationAborts.values()) {
       abort.abort()
     }
-    _operationAborts.clear()
   })
 
   ipcMain.handle('cancel-operation', (_event, installationId: string) => {
@@ -85,7 +90,7 @@ export function registerSessionHandlers(): void {
       if (REQUIRES_STOPPED.has(actionId) && hasRunningSessionForInstallation(installationId)) {
         return { ok: false, message: i18n.t('errors.stopRequired'), running: true }
       }
-      if (REQUIRES_STOPPED.has(actionId) && _operationAborts.has(installationId)) {
+      if (waitsForOperations(actionId) && _operationAborts.has(installationId)) {
         const labelKey = `actions.${actionId}`
         const label = i18n.t(labelKey)
         const operation = label === labelKey ? actionId : label

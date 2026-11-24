@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listeners: new Map<string, Listener>(),
   isAppsPage: true,
   appsEnabled: true,
+  pageAdmitted: true,
   page: { appId: 'remove-background', document: 1 } as LoadedPage | null,
   whileAuthorizing: () => {},
   capture: vi.fn<(event: string, properties: unknown) => boolean>(() => true),
@@ -31,7 +32,10 @@ vi.mock('../../apps/appsConfig', () => ({
     return mocks.appsEnabled
   }
 }))
-vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
+vi.mock('../../apps/appsPages', () => ({
+  appsPageAdmits: async () => mocks.pageAdmitted,
+  isAppsPageSender: () => mocks.isAppsPage
+}))
 vi.mock('../../apps/appPageView', () => ({ loadedAppPage: () => mocks.page }))
 vi.mock('../telemetry', () => ({
   capture: mocks.capture,
@@ -58,6 +62,7 @@ beforeEach(() => {
   mocks.listeners.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
+  mocks.pageAdmitted = true
   mocks.page = { appId: 'remove-background', document: 1 }
   mocks.whileAuthorizing = () => {}
   _resetPageEventLimitsForTest()
@@ -116,6 +121,7 @@ describe('usage events from the hosted Apps page', () => {
   it.each([
     ['a sender that is not the hosted Apps page', { isAppsPage: false }],
     ['the Apps page while Apps is switched off', { appsEnabled: false }],
+    ['a draft app page whose draft was dropped', { pageAdmitted: false }],
     ['a page Desktop holds no loaded app for, as while the next app loads', { page: null }]
   ])('refuses %s', async (_who, state) => {
     Object.assign(mocks, state)

@@ -39,6 +39,16 @@ describe('useInstallList', () => {
       expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['new', 'mid', 'old', 'never'])
     })
 
+    it('orders a build by when it was last stopped when that is later than its start', () => {
+      const installations = ref<Installation[]>([
+        makeInstall({ id: 'started-later', lastLaunchedAt: 400 }),
+        makeInstall({ id: 'ran-long', lastLaunchedAt: 100, lastStoppedAt: 600 })
+      ])
+      const list = withI18nScope(i18n, () => useInstallList({ installations }))
+
+      expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['ran-long', 'started-later'])
+    })
+
     it('places a cloud install below a more-recent local install (no cloud pinning)', () => {
       const installations = ref<Installation[]>([
         makeInstall({
@@ -229,6 +239,20 @@ describe('useInstallList', () => {
 
       const inst = makeInstall({ id: 'a', lastLaunchedAt: Date.now() - 3 * 3_600_000 })
       expect(list.lastLaunchedShortLabel(inst)).toBe('3h ago')
+    })
+
+    it('counts from when the build was stopped after a long run', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-05-18T12:00:00Z'))
+      const installations = ref<Installation[]>([])
+      const list = withI18nScope(i18n, () => useInstallList({ installations }))
+
+      const inst = makeInstall({
+        id: 'a',
+        lastLaunchedAt: Date.now() - 6 * 3_600_000,
+        lastStoppedAt: Date.now() - 5 * 60_000
+      })
+      expect(list.lastLaunchedShortLabel(inst)).toBe('5m ago')
     })
   })
 

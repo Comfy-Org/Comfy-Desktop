@@ -21,11 +21,12 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "backToApp": "Back to {app}",
     "assets": "Assets",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
-    "signInBody": "Sync and run on Comfy Cloud",
+    "signInBody": "Start on Comfy Cloud for free",
     "newBuild": "New build",
     "noBuilds": "No builds yet",
     "crashed": "Crashed",
@@ -46,6 +47,19 @@
     "emptyBody": "New apps will show up here.",
     "noMatchesHint": "Try another word.",
     "allApps": "All apps",
+    "switchWhileRunning": {
+      "title": "Switch to {app}?",
+      "body": "{current} is still making something. {count} other apps are already running, so switching stops it.",
+      "bodyUnsure": "Desktop could not check whether an app is still making something. Switching may stop it.",
+      "bodyDraft": "{current} is a draft app. Switching closes it, and you won't see this run finish.",
+      "switch": "Switch",
+      "stay": "Stay"
+    },
+    "backWhileRunning": {
+      "title": "Go back to all apps?",
+      "bodyDraft": "{current} is a draft app. Going back closes it, and you won't see this run finish.",
+      "back": "Go back"
+    },
     "request": {
       "bandTitle": "Missing an app?",
       "bandBody": "Your ideas decide which apps we build next.",
@@ -79,7 +93,19 @@
       "openNoCloud": "Add Comfy Cloud in Comfy Desktop first.",
       "openCloudFailed": "Comfy Desktop could not open Comfy Cloud.",
       "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
+      "openUnreadable": "Comfy Desktop could not read this file. Try again.",
       "openNotTaken": "ComfyUI did not open the workflow."
+    },
+    "closeWhileRunning": {
+      "title": "Close anyway?",
+      "bodyOne": "{app} is still making something. Closing stops it.",
+      "bodyMany": "{count} app is still making something. Closing stops it. | {count} apps are still making something. Closing stops them.",
+      "close": "Close",
+      "cancel": "Cancel"
+    },
+    "rail": {
+      "running": "{app}, making something",
+      "finished": "{app}, ready"
     }
   },
   "assets": {
@@ -162,6 +188,12 @@
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
       "openWorkflow": "Open workflow",
+      "openWorkflowFailed": "Couldn't open workflow",
+      "openWorkflowNoReason": "ComfyUI did not open the workflow. Try again.",
+      "openingWorkflow": "Opening…",
+      "openingInCloud": "Opening in Comfy Cloud…",
+      "startingBuild": "Starting {name}…",
+      "openWorkflowIn": "Open in",
       "savedIn": "Saved in",
       "cloudAssets": "Comfy Cloud assets",
       "modelView": "3D view of {name}. Drag to turn it, scroll to zoom.",
@@ -189,7 +221,15 @@
     "autoStartOn": "Auto start",
     "buildRunning": "Running",
     "buildStarting": "Starting",
-    "buildReady": "Ready",
+    "buildNeverUsed": "Never used",
+    "cloudNoSetupNeeded": "No setup needed",
+    "buildUsedJustNow": "Used just now",
+    "buildUsedMinutesAgo": "Used {count}m ago",
+    "buildUsedHoursAgo": "Used {count}h ago",
+    "buildUsedYesterday": "Used yesterday",
+    "buildUsedDaysAgo": "Used {count}d ago",
+    "buildUsedOnDate": "Used {date}",
+    "buildLogInToUse": "Log in to use",
     "buildDidntStart": "Didn't start",
     "buildCrashed": "Crashed",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
@@ -211,6 +251,51 @@
     "buildClickToStart": "Click to start",
     "buildClickToOpen": "Click to open",
     "buildClickToViewLogs": "Click to view logs"
+  },
+  "homeTour": {
+    "buildsIntro": {
+      "title": "Builds run ComfyUI",
+      "body": "A build is a copy of ComfyUI that you can open. Most people need only one."
+    },
+    "buildsRenamed": {
+      "title": "Instances are now builds",
+      "body": "Your ComfyUI instances are now called builds. They keep the same models and settings."
+    },
+    "cloudBuild": {
+      "title": "Comfy Cloud",
+      "body": "Comfy Cloud needs no setup. It runs on GPUs in the cloud, so it works on any computer."
+    },
+    "localBuild": {
+      "title": "Local build",
+      "body": "A local build runs on this computer, for free. Your files stay on this computer."
+    },
+    "allBuilds": {
+      "title": "All your builds",
+      "body": "Click here to see all your builds."
+    },
+    "newBuild": {
+      "title": "New build",
+      "body": "Click + to start a new build."
+    },
+    "newApps": {
+      "title": "New: Apps",
+      "body": "Apps are ready-made tools. Pick one, add your image or text, and run it."
+    },
+    "allApps": {
+      "title": "All apps",
+      "body": "Find all apps here."
+    },
+    "assets": {
+      "title": "Assets",
+      "body": "Everything you generate is saved here."
+    },
+    "progress": "{current} of {total}",
+    "next": "Next",
+    "back": "Back",
+    "skip": "Skip",
+    "done": "Done",
+    "replayHint": "Find the tour again in the bell menu.",
+    "replay": "Take the tour"
   },
   "installType": {
     "standalone": "Standalone",
@@ -234,7 +319,8 @@
     "filterLocal": "Local",
     "filterCloud": "Cloud",
     "filterRemote": "Remote",
-    "updatePill": "Update",
+    "updateAvailableOpen": "Update available: open Update for {name}",
+    "updateShort": "Update",
     "migratePill": "Migrate",
     "openInstall": "Open",
     "manageInstall": "Manage",
@@ -243,7 +329,7 @@
     "menuMigrate": "Migrate to Standalone",
     "menuRestoreSnapshot": "Restore snapshot",
     "menuExportSnapshot": "Export snapshot",
-    "menuRevealInFolder": "Open Folder",
+    "menuRevealInFolder": "Open folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running build first.",
     "gatedReasonStopping": "Wait for the build to stop.",
@@ -315,7 +401,16 @@
     "betaNoticeOffTitleNamed": "The {feature} beta is off",
     "betaNoticeOffBodyNamed": "We've turned the {feature} beta off for this build. You can manage beta features in Settings.",
     "betaNoticeDismiss": "Got it",
-    "betaNoticeSettings": "Settings"
+    "betaNoticeSettings": "Settings",
+    "runningMany": "{count} running",
+    "openRunning": "Open {app}",
+    "showRunning": "Show running apps",
+    "appReady": "{app} is ready",
+    "ready": "Ready",
+    "readyMany": "{count} apps are ready",
+    "showReady": "Show ready apps",
+    "appsMany": "{count} apps",
+    "showApps": "Show apps"
   },
   "comfyUISettings": {
     "title": "Settings",
@@ -339,7 +434,6 @@
     "refreshCustomPaths": "Refresh status",
     "extraModelPathsModalTitle": "Custom model paths",
     "extraModelPathsModalNote": "Read-only. ComfyUI searches these directories, but Desktop does not manage them. Edit extra_model_paths.yaml to change them.",
-    "openBaseFolder": "Open base folder",
     "revealYaml": "Show extra_model_paths.yaml",
     "argsTitle": "Startup arguments",
     "restartRequired": "Restart to apply",
@@ -661,7 +755,7 @@
     "sizeLabel": "Disk usage",
     "sizeValue": "{size}",
     "sizeUnavailable": "Unknown",
-    "estimatedRequired": "~{size} required"
+    "insufficientForInstall": "Only {free} free, about {required} needed to install"
   },
   "pathValidation": {
     "insideAppBundleTitle": "Unsafe install location",
@@ -718,7 +812,7 @@
     "detecting": "Detecting…",
     "noDetected": "No known install detected",
     "trackInstallation": "Add build",
-    "cannotTrack": "Cannot Add Build",
+    "cannotTrack": "Couldn't add this build",
     "version": "Version",
     "repository": "Repository",
     "branch": "Branch"
@@ -731,10 +825,11 @@
     "unknownError": "An unknown error occurred",
     "completedSuccess": "Completed successfully",
     "updatedSuccess": "Updated successfully",
-    "completedError": "Operation failed",
+    "completedError": "Couldn't finish",
+    "completedErrorDetail": "Comfy Desktop stopped before this finished. The details are below.",
     "completedCancelled": "Operation was cancelled",
     "returnToDashboard": "Back to Home",
-    "reboot": "Reboot",
+    "reboot": "Try again",
     "restartComfyui": "Restart ComfyUI",
     "successChoiceGoDashboard": "Back to Home",
     "successChoiceOpen": "Open build",
@@ -811,6 +906,7 @@
     "autoUpdate": "Check for updates on startup",
     "autoInstallUpdates": "Automatically install Desktop updates",
     "appBehavior": "App behavior",
+    "generalSection": "General",
     "confirmBeforeClosingWindow": "Confirm before closing a window",
     "confirmBeforeClosingWindowDescription": "Ask before closing a window when that stops ComfyUI or quits Comfy Desktop.",
     "warnBeforeRunningMultipleInstances": "Warn before running multiple builds",
@@ -855,6 +951,12 @@
     "updatesTab": "Updates",
     "diagnostics": "Diagnostics",
     "openLogsFolder": "Open logs folder",
+    "developmentTab": "Development",
+    "draftAppsTitle": "Draft apps",
+    "draftAppAddress": "App address",
+    "draftAppPlaceholder": "https://pr-706.drafts.comfy.org/apps/depth-swap/",
+    "draftAppFailedTitle": "Couldn't open this draft app",
+    "draftAppFailedMessage": "Comfy Desktop could not check this address. Try again.",
     "sharedFolders": "Shared folders",
     "folderKindModels": "Models",
     "folderKindInput": "Input",
@@ -995,13 +1097,10 @@
     "checking": "Checking…",
     "noGpu": "No GPU acceleration",
     "unsupported": "Not supported",
-    "free": "{free} free",
-    "freeRequired": "{free} free · ~{required} required",
-    "notEnoughSpace": "Only {free} free · ~{required} required",
-    "versionValue": "ComfyUI {version} · {channel}",
-    "versionChannel": "ComfyUI · {channel}",
+    "versionValue": "ComfyUI {version}",
+    "versionValueNightly": "ComfyUI {version} (nightly)",
     "download": "{size} download",
-    "downloadRequired": "{download} download · ~{required} required",
+    "installSpaceTip": "Allow about {required} of disk space to unpack and install the {download} download.",
     "unavailable": "Couldn't reach the ComfyUI download server. Check your connection, or pick a build with Change.",
     "retry": "Try again",
     "agreeToInstall": "Agree to install.",
@@ -1065,16 +1164,6 @@
     "relaunchSkippedTitle": "{name} didn't start",
     "relaunchSkippedMessage": "{name} is busy with another task, so it didn't start. Start it again when that task finishes."
   },
-  "announcement": {
-    "comfyApi": {
-      "title": "Introducing Comfy API",
-      "lead": "Deploy your ComfyUI workflows as production APIs. Package your workflow with its custom nodes and models, and deploy it as an endpoint that apps and tools can call. Nothing changes in how you use ComfyUI.",
-      "primaryCta": "Learn about Comfy API",
-      "imageAlt": "Comfy API announcement",
-      "unmute": "Unmute video",
-      "mute": "Mute video"
-    }
-  },
   "tray": {
     "showApp": "Show Comfy Desktop",
     "quit": "Quit"
@@ -1106,7 +1195,8 @@
     "deleteConfirmDetail": "Other installs are not affected.",
     "untrack": "Forget",
     "untrackConfirmTitle": "Forget build",
-    "untrackConfirmMessage": "This will remove the build from the app. The files will not be deleted.",
+    "untrackConfirmMessage": "This removes the build from the app. Its folder stays on your computer, and you can add it again with Add existing build.",
+    "untrackRemoteConfirmMessage": "This removes the connection from the app. The server isn't changed, and you can connect again with Connect to a server.",
     "rename": "Rename",
     "renameTitle": "Rename build",
     "renameMessage": "Enter a new name for this build."
@@ -1458,7 +1548,7 @@
     "createSnapshot": "Create snapshot",
     "changesInSnapshot": "What changed in this snapshot",
     "ifYouRestore": "What restoring this would change",
-    "noSnapshotsToShare": "There are no snapshots to share yet.",
+    "noSnapshotsToExport": "There are no snapshots to export.",
     "shareFailed": "Could not export the snapshot.",
     "current": "Current",
     "triggerBoot": "Boot",
@@ -1631,7 +1721,8 @@
   },
   "devPlatform": {
     "signIn": {
-      "cta": "Log in"
+      "cta": "Log in",
+      "waiting": "Continue in your browser"
     },
     "account": {
       "installationInProgressTitle": "Installation in progress",
@@ -1693,7 +1784,12 @@
     "deleteLocked": "A file could not be deleted because it is in use by another program. Close any applications that may have files open in this directory and try again.\n{path}",
     "deleteLockedBy": "A file could not be deleted because it is in use by: {processes}. Close these applications and try again.\n{path}",
     "deleteLockedUnidentified": "A file could not be deleted because it is in use by another program, and Comfy Desktop could not identify which one. Close any applications that may have files open in this directory and try again.\n{path}",
-    "cannotAdd": "Cannot Add",
+    "cannotAdd": "Couldn't add this build",
+    "cannotAddDetail": "Something went wrong while adding it. Try again.",
+    "cannotAddLocationDetail": "Something went wrong while adding it. Check the install location, then try again.",
+    "changeLocation": "Change location",
+    "cannotUseFolder": "Couldn't use this folder",
+    "locationCheckFailed": "Couldn't check this folder. Try again, or pick another location.",
     "dirNotExist": "Directory does not exist: {path}",
     "cannotOpenDir": "Could not open directory: {error}",
     "launchCancelled": "Launch cancelled.",
@@ -1727,9 +1823,7 @@
     "priorScanUnavailable": "Comfy Desktop could not check whether an earlier ComfyUI for this build is still running (the process list could not be read), and port {port} is in use. Launching now could fail because an earlier ComfyUI may hold the build's database. End that process if it is an earlier ComfyUI, or try again.",
     "priorScanRecent": "Comfy Desktop could not check whether an earlier ComfyUI for this build, which exited moments ago, is starting up again (the process list could not be read). Launching now could fail because a restarting ComfyUI may already hold the build's database. Try again in a few minutes.",
     "priorProcessUnverified": "An earlier ComfyUI for this build (PID {pid}) is still running, and Comfy Desktop could not confirm it is safe to stop. Launching now would fail because it holds the build's database. End the process, then try again.",
-    "performanceTestOtherInstanceRunningOne": "A performance test runs on its own, so nothing else competes for the GPU and memory. Stop {name} in Comfy Desktop, or wait for it to finish starting or stopping, then run the test again.",
-    "performanceTestOtherInstanceRunning": "A performance test runs on its own, so nothing else competes for the GPU and memory. Stop {names} in Comfy Desktop, or wait for them to finish starting or stopping, then run the test again.",
-    "performanceTestOfInstallation": "the performance test of “{name}”",
+    "performanceTestOtherInstanceRunning": "A performance test should run on its own, so nothing else competes for the GPU and memory. Stop the running builds then run the test again.",
     "duplicateName": "A build named \"{name}\" already exists. Please choose a different name.",
     "nameRequired": "Please enter a name.",
     "unknownSource": "This build has an unrecognized source type. It may have been created by a different version. Uninstall it and reinstall.",
@@ -1872,6 +1966,8 @@
     "preparingExampleWorkflow": "Preparing workflow and downloading required models…",
     "importFailed": "Could not import the workflow.",
     "deleteWorkflow": "Delete workflow",
+    "deleteWorkflowTitle": "Delete {workflow}?",
+    "deleteWorkflowMessage": "This removes it from Performance tests. The copy saved for Performance tests is deleted if no run has used it yet. Your original file and results from earlier runs are kept.",
     "deleteFailed": "Could not delete the workflow.",
     "run": "Run",
     "runNeedsBuild": "Select a build first.",
@@ -1920,6 +2016,8 @@
     "startingBuild": "Starting the build…",
     "runFailedTitle": "The test didn't finish",
     "runFailedHint": "See the logs below for details.",
+    "runRefusedTitle": "The performance test did not start",
+    "blockingBuildStopped": "Stopped",
     "runNumber": "Run {current} of {total}",
     "resultsEmptyTitle": "No results yet",
     "medianSummary": "Median run · {count} measured · {failed} failed",
@@ -1934,6 +2032,7 @@
     "searchPlaceholder": "Search runs…",
     "columns": "Columns",
     "columnsToDisplay": "Columns to display",
+    "measures": "Measures",
     "unmanagedWorkspace": "No workspace",
     "unknownHardware": "Unknown hardware",
     "session": "Session",
@@ -1988,15 +2087,9 @@
     "filterWorkflow": "Workflow",
     "compareBy": "Compare by",
     "groupMeta": "{sessions} · {runs}",
-    "groupBy": "Group by",
-    "groupByNone": "None",
     "allRuns": "All runs",
     "sessionCount": "{count} session | {count} sessions",
     "runCount": "{count} run | {count} runs",
-    "groupActions": "More actions for {workflow}",
-    "selectGroup": "Select all runs",
-    "exportGroup": "Export this group",
-    "singleRun": "Only one build ran this workflow here. Run it on another build to compare.",
     "metricAndRange": "{metric} and range",
     "vsBaseline": "Compared to baseline",
     "selection": "Selected runs",
@@ -2007,7 +2100,6 @@
     "moreActions": "More actions for session {session}",
     "setBaseline": "Set as baseline",
     "renameSession": "Rename session",
-    "speedFormula": "Speed = baseline time ÷ run time",
     "resetBaseline": "Reset baseline",
     "selectedCount": "{count} selected",
     "exportLimit": "Up to {max} runs",
@@ -2102,7 +2194,7 @@
     "progressWorking": "Working…",
     "progressError": "Something went wrong",
     "progressCancelled": "Cancelled",
-    "restartToApply": "Restart to apply changes"
+    "restartToApply": "Restart to apply"
   },
   "installShowcase": {
     "cloud": {
@@ -2145,5 +2237,12 @@
     "label": "While you wait",
     "cloudFailedTitle": "Couldn't open Comfy Cloud",
     "cloudFailedMessage": "Check your connection and try again from Home."
+  },
+  "appsQuit": {
+    "message": "Quit anyway?",
+    "detailOne": "{app} is still making something. Quitting stops it.",
+    "detailMany": "{count} apps are still making something. Quitting stops them.",
+    "quit": "Quit",
+    "cancel": "Cancel"
   }
 }

@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowUpRight, Plus, Search } from '@lucide/vue'
-import { stillsOf } from '../lib/appStills'
+import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
@@ -12,8 +12,9 @@ import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import { badgeDescriptionIds } from './appCardBadges'
-import type { AppCard } from '../types/ipc'
+import { badgeDescriptionIds, glassPictureOf } from './appCardBadges'
+import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
+import type { AppCard, DraftClosingStop } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
@@ -25,6 +26,8 @@ const startWith = defineModel<AppCard | null>('startWith', { default: null })
 
 const emit = defineEmits<{
   'app-open-change': [open: boolean]
+  'current-app': [app: AppCard | null]
+  'apps-loaded': [apps: AppCard[]]
   'view-in-assets': [name: string]
 }>()
 
@@ -36,6 +39,7 @@ const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const requestOpen = ref(false)
 const coversThatFailed = reactive(new Set<string>())
+const coverShowing = reactive(new Map<string, number | null>())
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
@@ -43,6 +47,8 @@ const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
+let stopBackToListAsks: (() => void) | null = null
+let stopListUpdates: (() => void) | null = null
 
 const matchingApps = computed(() => {
   const needle = query.value.trim().toLowerCase()
@@ -52,15 +58,38 @@ const matchingApps = computed(() => {
   )
 })
 
+let listRequests = 0
+let shownListRequest = 0
+
+function isNewestAnswer(request: number): boolean {
+  if (request < shownListRequest) return false
+  shownListRequest = request
+  return true
+}
+
 async function loadApps(): Promise<void> {
+  const request = ++listRequests
   state.value = 'loading'
   try {
-    apps.value = await window.api.listApps()
+    const listed = await window.api.listApps()
+    if (!isNewestAnswer(request)) return
+    apps.value = listed
     state.value = 'ready'
   } catch {
+    if (!isNewestAnswer(request)) return
     apps.value = []
     state.value = 'failed'
   }
+  emit('apps-loaded', apps.value)
+}
+
+async function refreshApps(): Promise<void> {
+  const request = ++listRequests
+  const listed = await window.api.listApps().catch(() => null)
+  if (!listed || !isNewestAnswer(request)) return
+  apps.value = listed
+  state.value = 'ready'
+  emit('apps-loaded', listed)
 }
 
 const RHYTHM_GRID_CLASS =
@@ -177,10 +206,17 @@ function playsCover(app: AppCard): boolean {
   )
 }
 
+const confirmAppSwitch = useAppSwitchConfirm()
+const confirmBackToList = useBackToListConfirm()
+
 function open(app: AppCard): void {
   hoveredId.value = null
   lastOpenedId = app.id
   openApp.value = app
+}
+
+async function openPicked(app: AppCard): Promise<void> {
+  if (await confirmAppSwitch(app, lastOpenedId)) open(app)
 }
 
 async function closeApp(): Promise<void> {
@@ -190,12 +226,20 @@ async function closeApp(): Promise<void> {
   if (lastOpenedId) cardButtons.get(lastOpenedId)?.focus()
 }
 
+async function askBackToList(appId: string, stop: DraftClosingStop): Promise<void> {
+  if (openApp.value?.id !== appId) return
+  if (await confirmBackToList(stop)) window.api.closeAppPage(appId)
+}
+
 watch(
   () => revisit,
   () => void closeApp()
 )
 
-watch(openApp, (app) => emit('app-open-change', app !== null))
+watch(openApp, (app) => {
+  emit('app-open-change', app !== null)
+  emit('current-app', app)
+})
 
 watch(
   startWith,
@@ -209,11 +253,17 @@ watch(
 
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())
+  stopBackToListAsks = window.api.onAppBackToListAsked(
+    (appId, stop) => void askBackToList(appId, stop)
+  )
+  stopListUpdates = window.api.onAppsListChanged(() => void refreshApps())
   void loadApps()
 })
 
 onBeforeUnmount(() => {
   stopClosedUpdates?.()
+  stopBackToListAsks?.()
+  stopListUpdates?.()
   if (openApp.value) emit('app-open-change', false)
 })
 </script>
@@ -340,7 +390,7 @@ onBeforeUnmount(() => {
               class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
               :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
-              @click="open(app)"
+              @click="openPicked(app)"
               @focus="noteCardFocus(app, $event)"
               @blur="keyboardFocusedId = null"
               @mouseenter="hoveredId = app.id"
@@ -356,6 +406,7 @@ onBeforeUnmount(() => {
                   :paused="!playsCover(app)"
                   load-on-play
                   @broken="coversThatFailed.add(app.id)"
+                  @showing="coverShowing.set(app.id, $event)"
                 />
                 <span
                   v-else
@@ -369,6 +420,11 @@ onBeforeUnmount(() => {
                   :badges="app.badges"
                   :description-id-prefix="badgeIdPrefixFor(app)"
                   :revealed="keyboardFocusedId === app.id"
+                  :glass-picture="
+                    coversThatFailed.has(app.id)
+                      ? null
+                      : glassPictureOf(app.covers, coverShowing.get(app.id))
+                  "
                   class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
                 />
               </span>

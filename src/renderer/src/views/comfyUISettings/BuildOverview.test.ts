@@ -180,7 +180,8 @@ describe('BuildOverview — ComfyUI card', () => {
     })
     const update = w.get('[data-testid="build-overview-update"]').text()
     expect(update).toContain('v0.3.65 available')
-    expect(update).toContain('Saves a snapshot first · Checked 5m ago')
+    expect(update).toContain('Saves a snapshot first')
+    expect(update, 'the check time gives way to the snapshot note').not.toContain('Checked')
     expect(w.find('[data-testid="update-action-check-update"]').exists()).toBe(false)
 
     await w.get('[data-testid="update-action-update-comfyui"]').trigger('click')
@@ -265,6 +266,15 @@ describe('BuildOverview — PyTorch card', () => {
 })
 
 describe('BuildOverview — facts', () => {
+  it('places Python right after PyTorch, before the size on disk', () => {
+    const sections = mountOverview().findAll('.build-overview-facts > section')
+    expect(sections.slice(0, 3).map((s) => s.attributes('data-testid'))).toEqual([
+      'build-overview-pytorch',
+      'build-overview-python',
+      'build-overview-disk'
+    ])
+  })
+
   it('shows the size on disk with the free space, and Python with its source', () => {
     const w = mountOverview()
     const disk = w.get('[data-testid="build-overview-disk"]').text()

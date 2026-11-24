@@ -152,6 +152,10 @@ export interface ComfyDesktop2AuthBridge {
    *  as `getWorkspaceToken`. Desktop mints and renews it; null means use the
    *  workspace token. Absent on Desktop builds before it. */
   getPartnerNodeToken?(workspaceId: string): Promise<string | null>
+  /** The Comfy Cloud origin Desktop's account belongs to, such as
+   *  `https://cloud.comfy.org`; send the workspace token's calls there. Null
+   *  when the session is disabled. Absent on Desktop builds before it. */
+  getCloudOrigin?(): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
   /** Signs Desktop out of its account (every view follows) and resolves with
@@ -186,7 +190,8 @@ export type ComfyDesktopHostedAuthBridge = Required<
     ComfyDesktop2AuthBridge,
     'getState' | 'getWorkspaceToken' | 'getPartnerNodeToken' | 'requestSignIn' | 'onChanged'
   >
->
+> &
+  Pick<ComfyDesktop2AuthBridge, 'getCloudOrigin'>
 /** What a hosted page needs from the ComfyUI on this computer. */
 export interface ComfyDesktopLocalRequirements {
   /** The oldest ComfyUI the page can run on, such as `0.41.0`. */
@@ -289,6 +294,22 @@ export interface ComfyDesktopLocalBuild {
   version?: string
   /** True when it is running now. Absent on Desktop builds that predate it. */
   running?: boolean
+  /**
+   * Another app in Desktop's Apps view whose run this build is working on, or
+   * the first run in its queue ahead of the asking app's own runs. Never the
+   * app that asks, and never an app queued behind it. A build runs one
+   * workflow at a time, so a new run waits in its queue until that one ends.
+   * `title` is the app's name for the person, such as `Remove Background`. It
+   * is absent when Desktop has no name for the app, so the page can say
+   * `another app` in its own words and language. `busyWith` is absent
+   * when no other app in the Apps view has a run on this build: the build can
+   * still be busy with a run from somewhere else, such as its ComfyUI window.
+   * Absent on Desktop builds that predate it.
+   */
+  busyWith?: {
+    appId: string
+    title?: string
+  }
 }
 /**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
@@ -315,6 +336,36 @@ export interface ComfyDesktopHostedLocalBridge {
   openInComfy?(request: ComfyDesktopOpenInComfyRequest): Promise<ComfyDesktopOpenInComfy>
   /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
   localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
+  /**
+   * Calls back with the builds `localBuilds` would give whenever a run from an
+   * app in the Apps view starts or ends on a build. Runs from anywhere else,
+   * such as a build's ComfyUI window, do not call it. Absent on Desktop builds
+   * that predate it.
+   */
+  onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
+}
+/** Whether a Comfy page hosted in Desktop's Apps view has a run going. */
+export interface ComfyDesktopRunState {
+  running: boolean
+}
+/**
+ * Run state from a Comfy page hosted in Desktop's Apps view. Desktop exposes
+ * it to that page as `window.comfyDesktopRuns`. Desktop keeps a page with a
+ * run going alive when the person switches to another app, shows a spinner on
+ * the app's picture in the rail and a running indicator in the title bar, and
+ * asks before a window closes or Desktop quits while a run is going.
+ */
+export interface ComfyDesktopHostedRunsBridge {
+  /**
+   * Reports whether the page has any run going. Send `running: true` when the
+   * person presses Run, and keep it through every queue wait. Send
+   * `running: false` only when the page has no run left: each report replaces
+   * the page's whole state, so with two runs going, report false only after
+   * the last one finishes, fails or is cancelled. Once a page calls this,
+   * Desktop uses only these reports for that page. Pages that never call it
+   * are followed through their run progress toast (`.cs-toasts .cs-toast`).
+   */
+  reportRun(state: ComfyDesktopRunState): void
 }
 /**
  * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop
@@ -575,6 +626,11 @@ export interface ComfyDesktop2Bridge {
   listModelDownloads?: () => Promise<ComfyDownloadProgress[]>
   onDownloadProgress?: (callback: (data: ComfyDownloadProgress) => void) => () => void
   reportTheme?: (bg: string, text: string) => void
+  /** Tells Desktop whether the hosted frontend is waiting on the user, such as an agent
+   *  approval or question. While `true` and the window is not focused, Desktop flashes the
+   *  taskbar entry (Windows, Linux) or bounces the dock icon once (macOS); focusing the
+   *  window or sending `false` stops it. Absent on Desktop builds predating it. */
+  setAttentionNeeded?: (needed: boolean) => void
   Terminal?: ComfyDesktop2TerminalBridge
   Logs?: ComfyDesktop2LogsBridge
   Telemetry?: ComfyDesktop2TelemetryBridge

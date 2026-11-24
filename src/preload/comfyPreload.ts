@@ -336,6 +336,9 @@ const bridge = {
   reportTheme: (bg: string, text: string): void => {
     ipcRenderer.send('desktop2-theme-report', { bg, text })
   },
+  setAttentionNeeded: (needed: boolean): void => {
+    ipcRenderer.send('desktop2-attention-needed', needed === true)
+  },
   openTerminal,
   Terminal,
   Logs,

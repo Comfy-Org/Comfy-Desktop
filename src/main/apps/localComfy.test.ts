@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
   installing: new Set<string>(),
   ownModels: new Set<string>(),
   windows: new Map<string, unknown>(),
-  pages: [] as { send: (channel: string, event: unknown) => void }[],
+  pages: [] as { send: (channel: string, event: unknown) => void; isDestroyed: () => boolean }[],
+  admits: (_page: unknown): Promise<boolean> => Promise.resolve(true),
   handleLaunch: (_ctx: unknown): Promise<Record<string, unknown>> => Promise.resolve({ ok: false }),
   stopRunning: (_id: string): Promise<void> => Promise.resolve(),
   probeQueue: (_port: number): Promise<unknown> => Promise.resolve({ running: 0, pending: 0 }),
@@ -76,7 +77,10 @@ vi.mock('../lib/models', () => ({
   resolveComfyDir: (installPath: string) => `${installPath}/ComfyUI`
 }))
 vi.mock('../lib/process', () => ({ COMFY_BOOT_TIMEOUT_MS: 300_000 }))
-vi.mock('./appsPages', () => ({ liveAppsPages: () => mocks.pages }))
+vi.mock('./appsPages', () => ({
+  appsPageAdmits: (page: unknown) => mocks.admits(page),
+  liveAppsPages: () => mocks.pages
+}))
 vi.mock('./localRelay', () => ({
   createLocalRelay: (
     onMessage: (message: unknown) => void,
@@ -99,6 +103,7 @@ import { _resetCrashBuffer, getAllCrashes } from '../lib/crashBuffer'
 import type { InstallationRecord } from '../installations'
 import { sessionLifecycleEvents } from '../lib/ipc/shared'
 import * as local from './localComfy'
+import { busyAppOn } from './localAppEvents'
 
 const { LOCAL_EVENT_CHANNEL, LOCAL_IDLE_STOP_MS, _resetForTest } = local
 
@@ -195,7 +200,10 @@ interface FakeRelay {
   stop: ReturnType<typeof vi.fn>
 }
 
-type FakePage = { send: ReturnType<typeof vi.fn<(channel: string, event: unknown) => void>> }
+type FakePage = {
+  send: ReturnType<typeof vi.fn<(channel: string, event: unknown) => void>>
+  isDestroyed: () => boolean
+}
 
 let comfy: FakeComfy
 let relay: FakeRelay
@@ -209,6 +217,10 @@ const startLocal = (want: unknown, from: FakePage = page) =>
 const localFetch = (raw: unknown, from: FakePage = page) => local.localFetch(asContents(from), raw)
 const localDownload = (raw: unknown, from: FakePage = page) =>
   local.localDownload(asContents(from), raw)
+
+function fakePage(): FakePage {
+  return { send: vi.fn<(channel: string, event: unknown) => void>(), isDestroyed: () => false }
+}
 
 function fakeRelay(clientId: string): FakeRelay {
   return { clientId, follow: vi.fn(), whenOpen: vi.fn(async () => true), stop: vi.fn() }
@@ -253,10 +265,14 @@ async function startARun(): Promise<void> {
   await post('/prompt', { prompt: { 1: { class_type: 'LoadImage', inputs: {} } } })
 }
 
-function sentToPage(): unknown[] {
-  return page.send.mock.calls
+function sentToPage(to: FakePage = page): unknown[] {
+  return to.send.mock.calls
     .filter(([channel]) => channel === LOCAL_EVENT_CHANNEL)
     .map(([, event]) => event)
+}
+
+async function sendsArrive(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0)
 }
 
 beforeEach(() => {
@@ -265,12 +281,13 @@ beforeEach(() => {
   comfy = new FakeComfy()
   vi.stubGlobal('fetch', vi.fn(comfy.answer))
   relay = fakeRelay('desktop-client')
-  page = { send: vi.fn<(channel: string, event: unknown) => void>() }
+  page = fakePage()
   launches = []
   stopped = []
   mocks.makeRelay = () => relay
   mocks.captured = []
   mocks.pages = [page]
+  mocks.admits = async () => true
   mocks.records = [build()]
   mocks.onList = () => {}
   mocks.sessions.clear()
@@ -466,6 +483,22 @@ describe('a run from an app page', () => {
     await localState(WANT)
   })
 
+  it("keeps ComfyUI's queue number, so a build names the app really ahead of a run", async () => {
+    const send = (appId: string) =>
+      local.localFetch(
+        asContents(page),
+        { method: 'POST', path: '/prompt', body: JSON.stringify({ prompt: {} }) },
+        appId
+      )
+    comfy.promptAnswer = { status: 200, body: { prompt_id: 'sent-first', number: 11 } }
+    await send('remove-background')
+    comfy.promptAnswer = { status: 200, body: { prompt_id: 'sent-second', number: 10 } }
+    await send('product-swap')
+
+    expect(busyAppOn(STUDIO, 'product-swap')).toBeNull()
+    expect(busyAppOn(STUDIO, 'remove-background')).toBe('product-swap')
+  })
+
   it("is sent as Desktop's client, whatever client the page named", async () => {
     const prompt = { 1: { class_type: 'LoadImage', inputs: { image: 'a.png' } } }
     const extraData = { comfy_app: { name: 'Remove Background', seconds: 12 } }
@@ -582,7 +615,7 @@ describe("what is not the page's own", () => {
 
 describe('two app pages open in two windows', () => {
   it('each reach the ComfyUI their own app was given, as its own client', async () => {
-    const other: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+    const other = fakePage()
     const relays = [fakeRelay('client-for-studio'), fakeRelay('client-for-lab')]
     mocks.makeRelay = () => relays.shift()
     mocks.records = [
@@ -689,7 +722,7 @@ describe('two runs from one page on two builds', () => {
 
 describe('two app pages on two builds that each made a file of the same name', () => {
   it('each get the file from their own build', async () => {
-    const studioPage: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+    const studioPage = fakePage()
     mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
     running(STUDIO, PORT)
     running(LAB, LAB_PORT)
@@ -771,12 +804,13 @@ describe('what ComfyUI says about a run', () => {
     await startARun()
   })
 
-  it("reaches the app page for the page's own run", () => {
+  it("reaches the app page for the page's own run", async () => {
     mocks.hearFromComfy({ type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } })
     mocks.hearFromComfy({
       type: 'progress',
       data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 }
     })
+    await sendsArrive()
 
     expect(sentToPage()).toEqual([
       { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } },
@@ -784,13 +818,107 @@ describe('what ComfyUI says about a run', () => {
     ])
   })
 
-  it('does not reach it for another run, or for anything that is not a run update', () => {
+  it('does not reach it for another run, or for anything that is not a run update', async () => {
     mocks.hearFromComfy({ type: 'executing', data: { prompt_id: OTHER_RUN, node: '3' } })
     mocks.hearFromComfy({ type: 'status', data: { status: { exec_info: { queue_remaining: 2 } } } })
     mocks.hearFromComfy({ type: 'logs', data: { prompt_id: RUN, entries: ['secret path'] } })
     mocks.hearFromComfy({ type: 'executing' })
     mocks.hearFromComfy('junk')
     mocks.hearFromComfy(null)
+    await sendsArrive()
+
+    expect(sentToPage()).toEqual([])
+  })
+
+  it('reaches only the pages Desktop still admits, in the order ComfyUI sent them', async () => {
+    const refused = fakePage()
+    mocks.pages = [refused, page]
+    mocks.admits = async (asked) => asked !== refused
+
+    mocks.hearFromComfy({ type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } })
+    mocks.hearFromComfy({ type: 'executing', data: { prompt_id: RUN, node: 'cut' } })
+    mocks.hearFromComfy({
+      type: 'progress',
+      data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 }
+    })
+    await sendsArrive()
+
+    expect(sentToPage(refused)).toEqual([])
+    expect(sentToPage()).toEqual([
+      { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } },
+      { type: 'executing', data: { prompt_id: RUN, node: 'cut' } },
+      { type: 'progress', data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 } }
+    ])
+  })
+
+  it('asks about the next update for a page only once the one before it is through', async () => {
+    const answers: ((admitted: boolean) => void)[] = []
+    mocks.admits = () => new Promise((resolve) => answers.push(resolve))
+
+    mocks.hearFromComfy({ type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } })
+    mocks.hearFromComfy({ type: 'executing', data: { prompt_id: RUN, node: 'cut' } })
+    await sendsArrive()
+    expect(answers).toHaveLength(1)
+
+    answers[0]?.(true)
+    await sendsArrive()
+    answers[1]?.(true)
+    await sendsArrive()
+
+    expect(sentToPage()).toEqual([
+      { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } },
+      { type: 'executing', data: { prompt_id: RUN, node: 'cut' } }
+    ])
+  })
+
+  it('asks once for all the updates that came while it was still asking, and sends them in order', async () => {
+    const answers: ((admitted: boolean) => void)[] = []
+    mocks.admits = () => new Promise((resolve) => answers.push(resolve))
+
+    mocks.hearFromComfy({ type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } })
+    await sendsArrive()
+    mocks.hearFromComfy({ type: 'executing', data: { prompt_id: RUN, node: 'cut' } })
+    mocks.hearFromComfy({
+      type: 'progress',
+      data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 }
+    })
+    mocks.hearFromComfy({
+      type: 'progress',
+      data: { prompt_id: RUN, node: 'cut', value: 5, max: 8 }
+    })
+    await sendsArrive()
+    expect(answers).toHaveLength(1)
+    expect(sentToPage()).toEqual([])
+
+    answers[0]?.(true)
+    await sendsArrive()
+    expect(answers).toHaveLength(2)
+    expect(sentToPage()).toEqual([
+      { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } }
+    ])
+
+    answers[1]?.(true)
+    await sendsArrive()
+
+    expect(answers).toHaveLength(2)
+    expect(sentToPage()).toEqual([
+      { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } },
+      { type: 'executing', data: { prompt_id: RUN, node: 'cut' } },
+      { type: 'progress', data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 } },
+      { type: 'progress', data: { prompt_id: RUN, node: 'cut', value: 5, max: 8 } }
+    ])
+  })
+
+  it('does not reach a page that closed before its turn came', async () => {
+    let closed = false
+    page.isDestroyed = () => closed
+    mocks.admits = async () => {
+      closed = true
+      return true
+    }
+
+    mocks.hearFromComfy({ type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } })
+    await sendsArrive()
 
     expect(sentToPage()).toEqual([])
   })
@@ -839,10 +967,32 @@ describe('downloading a model for an app', () => {
     await vi.advanceTimersByTimeAsync(300)
     progress(200, 400)
     progress(400, 400)
+    await sendsArrive()
 
     expect(sentToPage()).toEqual([
       { type: 'download', data: { name: 'birefnet.safetensors', done: 10, total: 400 } },
       { type: 'download', data: { name: 'birefnet.safetensors', done: 200, total: 400 } },
+      { type: 'download', data: { name: 'birefnet.safetensors', done: 400, total: 400 } }
+    ])
+  })
+
+  it('tells only the pages Desktop still admits how far along it is', async () => {
+    const refused = fakePage()
+    mocks.pages = [refused, page]
+    mocks.admits = async (asked) => asked !== refused
+    const job = modelJob(new Promise(() => {}))
+    void localDownload(BIREFNET)
+    await vi.advanceTimersByTimeAsync(0)
+    const progress = job.started[0]?.['onProgress'] as (done: number, total: number) => void
+
+    progress(10, 400)
+    await vi.advanceTimersByTimeAsync(300)
+    progress(400, 400)
+    await sendsArrive()
+
+    expect(sentToPage(refused)).toEqual([])
+    expect(sentToPage()).toEqual([
+      { type: 'download', data: { name: 'birefnet.safetensors', done: 10, total: 400 } },
       { type: 'download', data: { name: 'birefnet.safetensors', done: 400, total: 400 } }
     ])
   })
@@ -890,7 +1040,7 @@ describe('downloading a model for an app', () => {
 
   it('downloads nothing for a page that has not asked which build it runs on', async () => {
     const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
-    const otherPage: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+    const otherPage = fakePage()
 
     expect(await localDownload(BIREFNET, otherPage)).toEqual({
       state: 'failed',
@@ -1025,6 +1175,7 @@ describe('an app opened while the first build is still installing', () => {
     finishInstall()
     await vi.advanceTimersByTimeAsync(1_000)
     await starting
+    await sendsArrive()
 
     expect(sentToPage()).toEqual([{ type: 'setup', data: { state: 'done' } }])
   })

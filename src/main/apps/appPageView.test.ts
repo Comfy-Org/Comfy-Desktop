@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 
 import type { AppOutputs } from '../../types/ipc'
+import type { DraftApp } from './draftApps'
 
 type PermissionCheck = (contents: unknown, permission: string, requestingOrigin: string) => boolean
 type PermissionRequest = (
@@ -21,7 +22,11 @@ const mocks = vi.hoisted(() => ({
   openExternal: vi.fn((_url: string) => Promise.resolve()),
   attachDownloads: vi.fn(),
   capture: vi.fn(),
-  pages: new Map<string, string>()
+  pages: new Map<string, string>(),
+  titles: new Map<string, string>(),
+  drafts: new Map<string, { url: string; accepted: boolean; card?: { title: string } }>(),
+  draftSession: null as unknown,
+  draftAccountAllowed: true
 }))
 
 vi.mock('electron', () => ({
@@ -51,7 +56,29 @@ vi.mock('../lib/telemetry', () => ({
   DEFAULT_EVENT_PROPERTY_NAMES: new Set<string>()
 }))
 vi.mock('./appsCatalog', () => ({
-  pageUrlForListedApp: (id: string) => mocks.pages.get(id) ?? null
+  pageUrlForListedApp: (id: string) => mocks.pages.get(id) ?? null,
+  titleForListedApp: (id: string) => mocks.titles.get(id) ?? null
+}))
+vi.mock('./draftApps', () => ({
+  draftOf: (id: string) => mocks.drafts.get(id) ?? null,
+  draftPageUrl: (id: string) => {
+    const draft = mocks.drafts.get(id)
+    return draft?.accepted ? draft.url : null
+  },
+  draftSession: () => mocks.draftSession,
+  revokeDraft: (id: string) => {
+    const draft = mocks.drafts.get(id)
+    if (draft) draft.accepted = false
+  },
+  forgetDrafts: (only?: readonly unknown[]) => {
+    for (const [id, draft] of mocks.drafts) {
+      if (!only || only.includes(draft)) mocks.drafts.delete(id)
+    }
+  }
+}))
+vi.mock('./draftLinks', () => ({
+  isDraftStillAllowed: async (id: string) =>
+    mocks.draftAccountAllowed && mocks.drafts.get(id)?.accepted === true
 }))
 vi.mock('./appsConfig', () => ({
   areAppsEnabled: async () => mocks.appsEnabled,
@@ -62,19 +89,36 @@ vi.mock('./appsConfig', () => ({
   })
 }))
 
-import { _resetForTest as forgetAppsPages, isAppsPageSender, liveAppsPages } from './appsPages'
+import {
+  _resetForTest as forgetAppsPages,
+  appsPageAdmits,
+  isAppsPageSender,
+  liveAppsPages
+} from './appsPages'
 import {
   APP_OPENED_EVENT,
   APP_OUTPUT_ACTION_CHANNEL,
   APP_OUTPUTS_CHANNEL,
+  APP_BACK_TO_LIST_ASKED_CHANNEL,
   APP_PAGE_CLOSED_CHANNEL,
   APP_PAGE_FAILED_EVENT,
   APP_PAGE_STATUS_CHANNEL,
+  APPS_LIST_CHANGED_CHANNEL,
+  APP_RUNS_CHANNEL,
+  MAX_BACKGROUND_RUNS,
+  TITLE_BAR_APPS_CHANNEL,
   _resetForTest,
+  appSwitchStopsRun,
   captureAppPage,
+  closeAppPage,
+  closeDraftPages,
   hideAppPage,
   loadedAppPage,
+  noteAppPageRunning,
+  runningAppCount,
+  runningApps,
   sendAppOutputAction,
+  titleBarApps,
   showAppOutputs,
   shownOutputFile,
   showAppPage
@@ -86,6 +130,8 @@ const CUTOUT = 'remove-background'
 const CUTOUT_URL = `${APPS_URL}remove-background/desktop.html`
 const UPSCALE = 'upscale'
 const UPSCALE_URL = `${APPS_URL}#/upscale`
+const DRAFT = 'draft-pr683-depth-swap'
+const DRAFT_URL = `${APPS_URL}depth-swap/desktop.html`
 const WINDOW_KEY = 7
 const PANEL_FRAME = { x: 0, y: 41, width: 1200, height: 760 }
 const PLACEMENT = { x: 256, y: 8, width: 936, height: 744, cornerRadius: 14 }
@@ -99,6 +145,7 @@ class FakeContents extends EventEmitter {
   send = vi.fn()
   focus = vi.fn()
   capturePage = vi.fn()
+  executeJavaScript = vi.fn()
   loadURL = vi.fn((url: string) => {
     this.url = url
     return Promise.resolve()
@@ -179,6 +226,19 @@ let panel: FakeView
 let created: FakeView[]
 let appsSession: FakeSession
 
+function fakeSession(): FakeSession {
+  return {
+    check: null,
+    request: null,
+    setPermissionCheckHandler(handler) {
+      this.check = handler
+    },
+    setPermissionRequestHandler(handler) {
+      this.request = handler
+    }
+  }
+}
+
 function panelContents(): WebContents {
   return panel.webContents as unknown as WebContents
 }
@@ -227,17 +287,11 @@ beforeEach(() => {
   panel = new FakeView()
   panel.bounds = { ...PANEL_FRAME }
   hostWindow.contentView.addChildView(panel)
-  appsSession = {
-    check: null,
-    request: null,
-    setPermissionCheckHandler(handler) {
-      this.check = handler
-    },
-    setPermissionRequestHandler(handler) {
-      this.request = handler
-    }
-  }
+  appsSession = fakeSession()
   mocks.session = appsSession
+  mocks.drafts = new Map()
+  mocks.draftSession = fakeSession()
+  mocks.draftAccountAllowed = true
   mocks.createView = () => {
     const view = new FakeView()
     created.push(view)
@@ -247,6 +301,20 @@ beforeEach(() => {
 })
 
 describe('opening an app', () => {
+  it('loads a page asked for hidden without showing it, and shows it once asked', async () => {
+    expect(await openCutout({ ...PLACEMENT, hidden: true })).toBe('loading')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
+
+    finishLoading()
+
+    expect(lastStatusSentToPanel()).toBe('ready')
+    expect(hostedPage().visible).toBe(false)
+
+    expect(await openCutout()).toBe('ready')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hostedPage().visible).toBe(true)
+  })
+
   it("loads the app's page hidden, then shows it where the panel placed it", async () => {
     expect(await openCutout()).toBe('loading')
     expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
@@ -408,6 +476,299 @@ describe('going back to all apps', () => {
 
     expect(hostedPage().visible).toBe(true)
     expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+})
+
+describe('a draft app', () => {
+  function openDraft(): Promise<string> {
+    return showAppPage(panelContents(), DRAFT, PLACEMENT)
+  }
+
+  beforeEach(async () => {
+    mocks.drafts.set(DRAFT, { url: DRAFT_URL, accepted: true })
+    await openDraft()
+    finishLoading(DRAFT_URL)
+  })
+
+  it('loads in its own session', () => {
+    expect(mocks.draftSession).not.toBe(appsSession)
+    expect((mocks.draftSession as FakeSession).check).not.toBeNull()
+    expect(appsSession.check).toBeNull()
+  })
+
+  function draftPage(): WebContents {
+    return hostedPage().webContents as unknown as WebContents
+  }
+
+  it('drops the draft from the list and closes its page when it goes back to all apps', async () => {
+    hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+
+    expect(sentToPanel(APP_BACK_TO_LIST_ASKED_CHANNEL)).toHaveLength(0)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
+    expect(sentToPanel(APPS_LIST_CHANGED_CHANNEL)).toHaveLength(1)
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(false)
+    expect(liveAppsPages()).toEqual([])
+    expect(await openDraft()).toBe('failed')
+  })
+
+  it('drops the draft and closes its page when it routes back to the list', async () => {
+    const page = draftPage()
+
+    hostedPage().webContents.emit('did-navigate-in-page', {}, `${APPS_URL}#/`, true)
+
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    await expect(appsPageAdmits(page)).resolves.toBe(false)
+  })
+
+  it('drops the draft and closes its page once the person opens another app', async () => {
+    const page = draftPage()
+
+    await openCutout()
+
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
+    expect(sentToPanel(APPS_LIST_CHANGED_CHANNEL)).toHaveLength(1)
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    await expect(appsPageAdmits(page)).resolves.toBe(false)
+  })
+
+  it('closes a running draft instead of keeping it in the background when another app opens', async () => {
+    noteAppPageRunning(draftPage(), true)
+
+    await openCutout()
+
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(created).toHaveLength(2)
+    expect(runningAppCount()).toBe(0)
+    expect(sentToPanel(APP_RUNS_CHANNEL).at(-1)?.[1]).toEqual([])
+  })
+
+  async function openDraftInAnotherWindow(): Promise<FakeView> {
+    const otherWindow = new FakeWindow()
+    windowsByContentView.set(otherWindow.contentView, otherWindow)
+    const otherPanel = new FakeView()
+    otherPanel.bounds = { ...PANEL_FRAME }
+    otherWindow.contentView.addChildView(otherPanel)
+    mocks.windows.set(WINDOW_KEY + 1, { window: otherWindow, panelView: otherPanel })
+    await showAppPage(otherPanel.webContents as unknown as WebContents, DRAFT, PLACEMENT)
+    const otherPage = created.at(-1)!
+    otherPage.webContents.url = DRAFT_URL
+    otherPage.webContents.emit('did-navigate', {}, DRAFT_URL, 200)
+    otherPage.webContents.emit('dom-ready')
+    return otherPage
+  }
+
+  it('says a switch closes the draft while the draft is running', () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
+    noteAppPageRunning(draftPage(), true)
+
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toEqual({
+      appTitle: 'Depth Swap',
+      closesDraft: true
+    })
+    expect(appSwitchStopsRun(panelContents(), DRAFT)).toBeNull()
+  })
+
+  it('says a switch closes the draft while it runs in another window', async () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
+    const otherPage = await openDraftInAnotherWindow()
+    noteAppPageRunning(otherPage.webContents as unknown as WebContents, true)
+
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toEqual({
+      appTitle: 'Depth Swap',
+      closesDraft: true
+    })
+  })
+
+  it('says nothing about a switch while the draft is not running', async () => {
+    await openDraftInAnotherWindow()
+
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toBeNull()
+  })
+
+  it('keeps a running draft open and asks the panel first when the page goes back to all apps', () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
+    noteAppPageRunning(draftPage(), true)
+    const navigation = navigationEvent()
+
+    hostedPage().webContents.emit('will-navigate', navigation, APPS_URL)
+
+    expect(navigation.preventDefault).toHaveBeenCalled()
+    expect(sentToPanel(APP_BACK_TO_LIST_ASKED_CHANNEL)).toEqual([
+      [APP_BACK_TO_LIST_ASKED_CHANNEL, DRAFT, { appTitle: 'Depth Swap', closesDraft: true }]
+    ])
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(true)
+    expect(runningAppCount()).toBe(1)
+  })
+
+  it('asks the panel first when the draft runs in another window and this page goes back', async () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
+    const otherPage = await openDraftInAnotherWindow()
+    noteAppPageRunning(otherPage.webContents as unknown as WebContents, true)
+
+    hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+
+    expect(sentToPanel(APP_BACK_TO_LIST_ASKED_CHANNEL)).toHaveLength(1)
+    expect(otherPage.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('closes the running draft once the panel says go back', () => {
+    mocks.drafts.get(DRAFT)!.card = { title: 'Depth Swap' }
+    noteAppPageRunning(draftPage(), true)
+    hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+
+    closeAppPage(panelContents(), DRAFT)
+
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
+    expect(runningAppCount()).toBe(0)
+  })
+
+  it('leaves the page open when the go-back answer names an app the window no longer shows', () => {
+    noteAppPageRunning(draftPage(), true)
+
+    closeAppPage(panelContents(), CUTOUT)
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+
+  it('keeps a running draft and its run when the panel goes back to all apps', () => {
+    noteAppPageRunning(draftPage(), true)
+
+    hideAppPage(panelContents())
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(true)
+    expect(runningAppCount()).toBe(1)
+  })
+
+  it('closes the draft in another window too once one window drops it', async () => {
+    const otherWindow = new FakeWindow()
+    windowsByContentView.set(otherWindow.contentView, otherWindow)
+    const otherPanel = new FakeView()
+    otherPanel.bounds = { ...PANEL_FRAME }
+    otherWindow.contentView.addChildView(otherPanel)
+    mocks.windows.set(WINDOW_KEY + 1, { window: otherWindow, panelView: otherPanel })
+    await showAppPage(otherPanel.webContents as unknown as WebContents, DRAFT, PLACEMENT)
+    const otherPage = created[1]!
+
+    hostedPage().webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+
+    expect(otherPage.webContents.close).toHaveBeenCalled()
+    await expect(appsPageAdmits(otherPage.webContents as unknown as WebContents)).resolves.toBe(
+      false
+    )
+    expect(
+      otherPanel.webContents.send.mock.calls.filter(([sent]) => sent === APP_PAGE_CLOSED_CHANNEL)
+    ).toHaveLength(1)
+    expect(
+      otherPanel.webContents.send.mock.calls.filter(([sent]) => sent === APPS_LIST_CHANGED_CHANNEL)
+    ).toHaveLength(1)
+  })
+
+  it('lets the draft page use the Desktop bridge while the draft is still allowed', async () => {
+    await expect(appsPageAdmits(draftPage())).resolves.toBe(true)
+  })
+
+  it('refuses the Desktop bridge to the draft page as soon as the signed-in account no longer allows it', async () => {
+    mocks.draftAccountAllowed = false
+
+    await expect(appsPageAdmits(draftPage())).resolves.toBe(false)
+  })
+
+  it('keeps the draft as it was when the person comes back to it', async () => {
+    hideAppPage(panelContents())
+
+    expect(await openDraft()).toBe('ready')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads the draft again when its address changed since the page loaded', async () => {
+    hideAppPage(panelContents())
+    mocks.drafts.set(DRAFT, { url: `${APPS_URL}depth-swap/`, accepted: true })
+
+    expect(await openDraft()).toBe('loading')
+    expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(`${APPS_URL}depth-swap/`)
+  })
+
+  it('closes the draft back to the list and forgets every draft when the Cloud account changes', async () => {
+    const page = draftPage()
+
+    closeDraftPages()
+
+    await expect(appsPageAdmits(page)).resolves.toBe(false)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
+    expect(sentToPanel(APPS_LIST_CHANGED_CHANNEL).length).toBeGreaterThan(0)
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(mocks.drafts.size).toBe(0)
+  })
+
+  it('closes only the drafts the account change checked, not one registered again since', async () => {
+    const page = draftPage()
+    const checked = mocks.drafts.get(DRAFT)!
+    const newer = { url: DRAFT_URL, accepted: true }
+    mocks.drafts.set(DRAFT, newer)
+
+    closeDraftPages([checked] as unknown as DraftApp[])
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(mocks.drafts.get(DRAFT)).toBe(newer)
+    expect(newer.accepted).toBe(true)
+    await expect(appsPageAdmits(page)).resolves.toBe(true)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+
+  it('closes a draft the account change checked', async () => {
+    const page = draftPage()
+
+    closeDraftPages([mocks.drafts.get(DRAFT)!] as unknown as DraftApp[])
+
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(mocks.drafts.size).toBe(0)
+    await expect(appsPageAdmits(page)).resolves.toBe(false)
+  })
+
+  it('watches its window once however many times the draft is opened and dropped', async () => {
+    for (let round = 0; round < 3; round += 1) {
+      created.at(-1)!.webContents.emit('will-navigate', navigationEvent(), APPS_URL)
+      mocks.drafts.set(DRAFT, { url: DRAFT_URL, accepted: true })
+      expect(await openDraft()).toBe('loading')
+    }
+
+    expect(created).toHaveLength(4)
+    expect(hostWindow.listenerCount('closed')).toBe(1)
+
+    hostWindow.emit('closed')
+
+    expect(created.at(-1)!.webContents.close).toHaveBeenCalled()
+    expect(liveAppsPages()).toEqual([])
+  })
+})
+
+describe('a Cloud account change', () => {
+  it('leaves an open listed app as it is and tells the panel to list apps again', async () => {
+    mocks.drafts.set(DRAFT, { url: DRAFT_URL, accepted: true })
+    await openCutout()
+    finishLoading()
+
+    closeDraftPages()
+
+    await expect(appsPageAdmits(hostedPage().webContents as unknown as WebContents)).resolves.toBe(
+      true
+    )
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(true)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+    expect(sentToPanel(APPS_LIST_CHANGED_CHANNEL)).toHaveLength(1)
+    expect(mocks.drafts.size).toBe(0)
   })
 })
 
@@ -710,9 +1071,11 @@ describe('staying in step with the panel', () => {
   it('hands the panel a frame of the page only while it is on screen', async () => {
     hostedPage().webContents.capturePage.mockResolvedValue({
       isEmpty: () => false,
-      toDataURL: () => 'data:image/png;base64,frame'
+      toJPEG: () => Buffer.from('frame')
     })
-    expect(await captureAppPage(panelContents())).toBe('data:image/png;base64,frame')
+    expect(await captureAppPage(panelContents())).toBe(
+      `data:image/jpeg;base64,${Buffer.from('frame').toString('base64')}`
+    )
 
     hideAppPage(panelContents())
     expect(await captureAppPage(panelContents())).toBeNull()
@@ -723,6 +1086,308 @@ describe('staying in step with the panel', () => {
 
     expect(hostedPage().webContents.close).toHaveBeenCalled()
     expect(liveAppsPages()).toEqual([])
+  })
+})
+
+describe('keeping apps running in the background', () => {
+  const HDR = 'sdr-to-hdr'
+  const HDR_URL = `${APPS_URL}sdr-to-hdr/desktop.html`
+  const SWAP = 'product-swap'
+  const SWAP_URL = `${APPS_URL}product-swap/desktop.html`
+  const ADS = 'product-ads'
+  const ADS_URL = `${APPS_URL}product-ads/desktop.html`
+  const ROOM = 'room-design'
+  const ROOM_URL = `${APPS_URL}room-design/desktop.html`
+  const URLS: Record<string, string> = {
+    [CUTOUT]: CUTOUT_URL,
+    [HDR]: HDR_URL,
+    [SWAP]: SWAP_URL,
+    [ADS]: ADS_URL,
+    [ROOM]: ROOM_URL
+  }
+
+  beforeEach(() => {
+    for (const [id, url] of Object.entries(URLS)) mocks.pages.set(id, url)
+    mocks.titles = new Map([
+      [CUTOUT, 'Remove Background'],
+      [HDR, 'SDR to HDR']
+    ])
+  })
+
+  function pageOf(url: string): FakeView {
+    const view = created.findLast((one) => one.webContents.url === url)
+    if (!view) throw new Error(`No page loaded ${url}`)
+    return view
+  }
+
+  async function openAndLoad(appId: string): Promise<FakeView> {
+    await showAppPage(panelContents(), appId, PLACEMENT)
+    const view = pageOf(URLS[appId] ?? '')
+    view.webContents.emit('did-navigate', {}, view.webContents.url, 200)
+    view.webContents.emit('dom-ready')
+    return view
+  }
+
+  function reportRun(view: FakeView, running: unknown): void {
+    noteAppPageRunning(view.webContents as unknown as WebContents, running)
+  }
+
+  async function runInBackground(appId: string): Promise<FakeView> {
+    const view = await openAndLoad(appId)
+    reportRun(view, true)
+    return view
+  }
+
+  function runsSentToPanel(): unknown {
+    return sentToPanel(APP_RUNS_CHANNEL).at(-1)?.[1]
+  }
+
+  it('loads the next app over an idle page, as before', async () => {
+    const cutout = await openAndLoad(CUTOUT)
+
+    await showAppPage(panelContents(), HDR, PLACEMENT)
+
+    expect(created).toEqual([cutout])
+    expect(cutout.webContents.loadURL).toHaveBeenLastCalledWith(HDR_URL)
+  })
+
+  it('keeps a running app alive and hidden in its own page while the next app opens', async () => {
+    const cutout = await runInBackground(CUTOUT)
+
+    await showAppPage(panelContents(), HDR, PLACEMENT)
+
+    expect(created).toHaveLength(2)
+    expect(cutout.visible).toBe(false)
+    expect(cutout.webContents.close).not.toHaveBeenCalled()
+    expect(cutout.webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(pageOf(HDR_URL)).not.toBe(cutout)
+    expect(runsSentToPanel()).toEqual([{ appId: CUTOUT, running: true, finished: false }])
+    expect(runningAppCount()).toBe(1)
+  })
+
+  it('shows a kept app again at once without loading it again', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    const hdr = await openAndLoad(HDR)
+
+    expect(await showAppPage(panelContents(), CUTOUT, PLACEMENT)).toBe('ready')
+
+    expect(cutout.visible).toBe(true)
+    expect(cutout.webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hdr.webContents.close).toHaveBeenCalled()
+  })
+
+  it('keeps a running app in the background while a draft opens, and drops the draft on the way back', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    mocks.drafts.set(DRAFT, { url: DRAFT_URL, accepted: true })
+
+    await showAppPage(panelContents(), DRAFT, PLACEMENT)
+    const draft = pageOf(DRAFT_URL)
+
+    expect(draft).not.toBe(cutout)
+    expect(cutout.webContents.close).not.toHaveBeenCalled()
+    expect(runningAppCount()).toBe(1)
+
+    expect(await showAppPage(panelContents(), CUTOUT, PLACEMENT)).toBe('ready')
+
+    expect(draft.webContents.close).toHaveBeenCalled()
+    expect(mocks.drafts.get(DRAFT)?.accepted).toBe(false)
+    expect(cutout.visible).toBe(true)
+    expect(cutout.webContents.loadURL).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks a run that ends in the background as done until its app is opened', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+
+    reportRun(cutout, false)
+    expect(runsSentToPanel()).toEqual([{ appId: CUTOUT, running: false, finished: true }])
+
+    await showAppPage(panelContents(), CUTOUT, PLACEMENT)
+    expect(runsSentToPanel()).toEqual([])
+  })
+
+  it('drops the done mark when a kept page starts another run', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    reportRun(cutout, false)
+
+    reportRun(cutout, true)
+
+    expect(runsSentToPanel()).toEqual([{ appId: CUTOUT, running: true, finished: false }])
+  })
+
+  it('does not mark a run done that ends while its page is on screen', async () => {
+    const cutout = await runInBackground(CUTOUT)
+
+    reportRun(cutout, false)
+
+    expect(runsSentToPanel()).toEqual([])
+  })
+
+  it('tells the title bar which apps are running, by name', async () => {
+    const titleBar = new FakeView()
+    mocks.windows = new Map([
+      [WINDOW_KEY, { window: hostWindow, panelView: panel, titleBarView: titleBar }]
+    ])
+    await runInBackground(CUTOUT)
+
+    expect(titleBar.webContents.send).toHaveBeenLastCalledWith(TITLE_BAR_APPS_CHANNEL, {
+      running: [{ id: CUTOUT, title: 'Remove Background' }],
+      ready: []
+    })
+    expect(runningApps(WINDOW_KEY)).toEqual([{ id: CUTOUT, title: 'Remove Background' }])
+  })
+
+  it('tells the title bar which runs ended in the background, until their app is opened', async () => {
+    const titleBar = new FakeView()
+    mocks.windows = new Map([
+      [WINDOW_KEY, { window: hostWindow, panelView: panel, titleBarView: titleBar }]
+    ])
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+
+    reportRun(cutout, false)
+    expect(titleBarApps(WINDOW_KEY)).toEqual({
+      running: [],
+      ready: [{ id: CUTOUT, title: 'Remove Background' }]
+    })
+    expect(titleBar.webContents.send).toHaveBeenLastCalledWith(
+      TITLE_BAR_APPS_CHANNEL,
+      titleBarApps(WINDOW_KEY)
+    )
+
+    await showAppPage(panelContents(), CUTOUT, PLACEMENT)
+    expect(titleBarApps(WINDOW_KEY)).toEqual({ running: [], ready: [] })
+  })
+
+  it(`keeps at most ${MAX_BACKGROUND_RUNS} running apps, and loads over a further running app`, async () => {
+    await runInBackground(CUTOUT)
+    await runInBackground(HDR)
+    await runInBackground(SWAP)
+    const ads = await runInBackground(ADS)
+
+    await showAppPage(panelContents(), ROOM, PLACEMENT)
+
+    expect(created).toHaveLength(4)
+    expect(ads.webContents.loadURL).toHaveBeenLastCalledWith(ROOM_URL)
+  })
+
+  it('closes a done page in the background to make room for another running app', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await runInBackground(HDR)
+    await runInBackground(SWAP)
+    reportRun(cutout, false)
+    const ads = await runInBackground(ADS)
+
+    await showAppPage(panelContents(), ROOM, PLACEMENT)
+
+    expect(cutout.webContents.close).toHaveBeenCalled()
+    expect(ads.visible).toBe(false)
+    expect(ads.webContents.close).not.toHaveBeenCalled()
+    expect(runningAppCount()).toBe(3)
+  })
+
+  it('ignores run reports from a page with no app loaded, and reports that are not true or false', async () => {
+    await openCutout()
+    reportRun(hostedPage(), true)
+    expect(runningAppCount()).toBe(0)
+
+    finishLoading()
+    reportRun(hostedPage(), 'yes')
+    expect(runningAppCount()).toBe(0)
+  })
+
+  it('does not call a run done when its page crashes', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+
+    cutout.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+
+    expect(runsSentToPanel()).toEqual([])
+    expect(runningAppCount()).toBe(0)
+  })
+
+  it('stops calling an app ready when its page crashes after the run finished in the background', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    reportRun(cutout, false)
+    expect(titleBarApps(WINDOW_KEY).ready).toEqual([{ id: CUTOUT, title: 'Remove Background' }])
+
+    cutout.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+
+    expect(titleBarApps(WINDOW_KEY)).toEqual({ running: [], ready: [] })
+    expect(runsSentToPanel()).toEqual([])
+  })
+
+  it('says a switch stops a run only once the open app runs and the background is full of runs', async () => {
+    await runInBackground(CUTOUT)
+    await runInBackground(HDR)
+    await runInBackground(SWAP)
+    expect(appSwitchStopsRun(panelContents(), ROOM)).toBeNull()
+
+    await runInBackground(ADS)
+
+    expect(appSwitchStopsRun(panelContents(), ROOM)).toEqual({ appTitle: ADS, otherRuns: 3 })
+    expect(appSwitchStopsRun(panelContents(), CUTOUT)).toBeNull()
+    expect(appSwitchStopsRun(panelContents(), ADS)).toBeNull()
+  })
+
+  it('says a switch keeps the run when a done page in the background can make room', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await runInBackground(HDR)
+    await runInBackground(SWAP)
+    await runInBackground(ADS)
+
+    reportRun(cutout, false)
+
+    expect(appSwitchStopsRun(panelContents(), ROOM)).toBeNull()
+  })
+
+  it('forgets a run once its page loads a new document', async () => {
+    const cutout = await runInBackground(CUTOUT)
+
+    cutout.webContents.emit('did-navigate', {}, CUTOUT_URL, 200)
+
+    expect(runningAppCount()).toBe(0)
+    expect(runsSentToPanel()).toEqual([])
+  })
+
+  it('closes a kept page that leaves for the apps list on its own, without closing the open app', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    const leave = navigationEvent()
+
+    cutout.webContents.emit('will-navigate', leave, APPS_URL)
+
+    expect(leave.preventDefault).toHaveBeenCalled()
+    expect(cutout.webContents.close).toHaveBeenCalled()
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toEqual([])
+    expect(runningAppCount()).toBe(0)
+  })
+
+  it('closes every page of a window when the window closes', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    const hdr = await openAndLoad(HDR)
+
+    hostWindow.emit('closed')
+
+    expect(cutout.webContents.close).toHaveBeenCalled()
+    expect(hdr.webContents.close).toHaveBeenCalled()
+    expect(runningAppCount()).toBe(0)
+  })
+
+  it('stops Chromium from slowing down pages that run in the background', async () => {
+    let options: unknown = null
+    mocks.createView = (given) => {
+      options = given
+      const view = new FakeView()
+      created.push(view)
+      return view
+    }
+
+    await openCutout()
+
+    expect(options).toMatchObject({ webPreferences: { backgroundThrottling: false } })
   })
 })
 

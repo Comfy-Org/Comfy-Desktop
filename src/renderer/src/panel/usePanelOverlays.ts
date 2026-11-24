@@ -28,7 +28,6 @@ export type PanelKey =
   | 'track'
   | 'load-snapshot'
   | 'progress'
-  | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -40,8 +39,7 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'new-install',
   'track',
   'load-snapshot',
-  'progress',
-  'announcement'
+  'progress'
 ])
 
 const FLOW_PANELS: ReadonlySet<PanelKey> = new Set(['new-install', 'track', 'load-snapshot'])
@@ -70,6 +68,7 @@ export interface FirstUseChainHooks {
 export interface SetupHandoff {
   needsConsent: boolean
   restore?: ChangeSetupDraft
+  installRoot?: string
 }
 
 export interface UsePanelOverlaysOpts {
@@ -335,7 +334,8 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
           ? {
               cameFromSetup: true,
               needsConsent: setupHandoff.needsConsent,
-              restore: setupHandoff.restore
+              restore: setupHandoff.restore,
+              installRoot: setupHandoff.installRoot
             }
           : {})
       })

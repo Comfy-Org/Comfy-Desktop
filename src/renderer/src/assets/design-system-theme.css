@@ -54,6 +54,9 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --animate-pop-in: pop-in 160ms var(--ease-out-expo);
   --animate-fade-in: fade-in 160ms ease-out;
+  --animate-bell-nudge: bell-nudge 600ms ease-out 1;
+  --animate-bell-fade: bell-fade 600ms ease-out 1;
+  --animate-rail-thumb-bounce: rail-thumb-bounce 650ms 1;
   --animate-status-pulse: status-pulse 2s ease-out infinite;
   --animate-status-breathe: status-breathe 1.6s ease-in-out infinite;
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
@@ -76,6 +79,43 @@
   @keyframes fade-in {
     from {
       opacity: 0;
+    }
+  }
+  @keyframes bell-nudge {
+    20% {
+      transform: rotate(14deg);
+    }
+    45% {
+      transform: rotate(-10deg);
+    }
+    70% {
+      transform: rotate(5deg);
+    }
+  }
+  @keyframes rail-thumb-bounce {
+    0% {
+      transform: translateY(0);
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+    30% {
+      transform: translateY(-6px);
+      animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+    }
+    55% {
+      transform: translateY(0);
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+    75% {
+      transform: translateY(-2.5px);
+      animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+  @keyframes bell-fade {
+    50% {
+      opacity: 0.45;
     }
   }
   @keyframes status-pulse {

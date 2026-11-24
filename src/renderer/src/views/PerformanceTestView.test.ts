@@ -1,12 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import PerformanceTestView from './PerformanceTestView.vue'
 import PerformanceTestBuildMenu from './performanceTest/PerformanceTestBuildMenu.vue'
 import PerformanceTestWorkflowMenu from './performanceTest/PerformanceTestWorkflowMenu.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { useDialogs } from '../composables/useDialogs'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../lib/destructiveStyles'
 
 const scopedInstallations = vi.hoisted(() => ({ value: [] as unknown[] }))
+const runningSessions = vi.hoisted(() => new Set<string>())
+const operationInstances = vi.hoisted(
+  () => new Map<string, { actionId: string; sessionId?: string }>()
+)
 
 vi.mock('../stores/authStore', () => ({
   useAuthStore: () => ({ isSignedIn: false })
@@ -15,7 +22,15 @@ vi.mock('../stores/installationStore', () => ({
   useInstallationStore: () => ({ installations: [] })
 }))
 vi.mock('../stores/sessionStore', () => ({
-  useSessionStore: () => ({ getSession: vi.fn(), isLaunching: vi.fn(), isRunning: vi.fn() })
+  useSessionStore: () => ({
+    getSession: vi.fn(),
+    isLaunching: vi.fn(),
+    isStopping: vi.fn(),
+    isRunning: (id: string) => runningSessions.has(id),
+    operationInstances,
+    startSession: vi.fn(),
+    appendOutput: vi.fn()
+  })
 }))
 vi.mock('../composables/useWorkspaceInstallScope', async () => {
   const { ref } = await import('vue')
@@ -43,6 +58,8 @@ function mountView() {
 
 beforeEach(() => {
   scopedInstallations.value = []
+  runningSessions.clear()
+  operationInstances.clear()
   const methods = new Map<PropertyKey, ReturnType<typeof vi.fn>>()
   window.api = new Proxy(
     {},
@@ -160,6 +177,58 @@ describe('PerformanceTestView Run reason', () => {
   })
 })
 
+describe('PerformanceTestView refused by other running builds', () => {
+  it('lists each running or preparing build with a Stop button that asks first', async () => {
+    scopedInstallations.value = [
+      { id: 'b1', name: 'Build 1', sourceCategory: 'local', status: 'installed' }
+    ]
+    runningSessions.add('performance-test:b3')
+    operationInstances.set('b2', { actionId: 'launch' })
+    vi.mocked(window.api.importPerformanceTestWorkflow).mockResolvedValue({
+      ok: true,
+      filePath: '/workflows/flow.json'
+    } as Awaited<ReturnType<typeof window.api.importPerformanceTestWorkflow>>)
+    vi.mocked(window.api.runAction).mockResolvedValue({
+      ok: false,
+      message: 'Stop the ComfyUI builds then run the test again.',
+      blockingSessions: [
+        { sessionId: 'b2', name: 'Build 2' },
+        { sessionId: 'performance-test:b3', name: 'Build 3' }
+      ]
+    })
+    const wrapper = mountView()
+    wrapper.getComponent(PerformanceTestBuildMenu).vm.$emit('update:modelValue', 'b1')
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('import')
+    await flushPromises()
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    const failure = wrapper.get('.performance-test__failure')
+    expect(failure.text()).toContain('The performance test did not start')
+    expect(failure.text()).not.toContain('See the logs below')
+    const rows = wrapper.findAll('.performance-test__blocking-build')
+    expect(rows.map((row) => row.text())).toEqual([
+      'Build 2 Stop',
+      'Performance test: Build 3 Stop'
+    ])
+
+    const dialogs = useDialogs()
+    await rows[1]!.get('.performance-test__blocking-build-stop').trigger('click')
+    expect(dialogs.state.kind).toBe('confirm')
+    expect(dialogs.state.confirm.title).toBe('Stop ComfyUI')
+    dialogs.cancel()
+    await flushPromises()
+    expect(window.api.stopComfyUI).not.toHaveBeenCalled()
+
+    await rows[1]!.get('.performance-test__blocking-build-stop').trigger('click')
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(window.api.stopComfyUI).toHaveBeenCalledWith('performance-test:b3')
+    expect(window.api.stopComfyUI).not.toHaveBeenCalledWith('b2')
+  })
+})
+
 describe('PerformanceTestView example workflow picker', () => {
   function mountWithPicker() {
     return mount(PerformanceTestView, {
@@ -214,5 +283,142 @@ describe('PerformanceTestView example workflow picker', () => {
       .find((c) => c.find('.performance-test__run').exists())
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
     expect(runTooltip?.props('text')).toBe('Wait for the workflow to be ready.')
+  })
+})
+
+describe('PerformanceTestView Delete workflow', () => {
+  async function mountWithWorkflow() {
+    vi.mocked(window.api.importPerformanceTestWorkflow).mockResolvedValue({
+      ok: true,
+      filePath: '/benchmarks/s1/portrait.json'
+    } as Awaited<ReturnType<typeof window.api.importPerformanceTestWorkflow>>)
+    vi.mocked(window.api.deletePerformanceTestWorkflow).mockResolvedValue({
+      ok: true,
+      status: 'deleted'
+    } as Awaited<ReturnType<typeof window.api.deletePerformanceTestWorkflow>>)
+    const wrapper = mountView()
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('import')
+    await flushPromises()
+    return wrapper
+  }
+
+  afterEach(() => {
+    const dialogs = useDialogs()
+    if (dialogs.state.open) dialogs.cancel()
+  })
+
+  it('asks in the shared confirm box, with a red Delete workflow button, before deleting', async () => {
+    const wrapper = await mountWithWorkflow()
+    const dialogs = useDialogs()
+
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('remove')
+    await flushPromises()
+
+    expect(window.api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+    expect(dialogs.state.kind).toBe('confirm')
+    expect(dialogs.state.confirm.title).toBe('Delete portrait.json?')
+    expect(dialogs.state.confirm.confirmLabel).toBe('Delete workflow')
+    expect(dialogs.state.confirm.tone).toBe('danger')
+    expect(
+      dialogs.state.confirm.message,
+      'the saved copy stays when a run has already written results next to it'
+    ).toBe(
+      'This removes it from Performance tests. The copy saved for Performance tests is deleted if no run has used it yet. Your original file and results from earlier runs are kept.'
+    )
+
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(window.api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(
+      '/benchmarks/s1/portrait.json'
+    )
+  })
+
+  it('deletes nothing when another import finishes while the confirm is open', async () => {
+    const wrapper = await mountWithWorkflow()
+    const dialogs = useDialogs()
+    let finishLandscapeImport: (value: { ok: true; filePath: string }) => void = () => {}
+    vi.mocked(window.api.importPerformanceTestWorkflow).mockReturnValue(
+      new Promise((resolve) => {
+        finishLandscapeImport = resolve
+      }) as ReturnType<typeof window.api.importPerformanceTestWorkflow>
+    )
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('import')
+    await flushPromises()
+
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('remove')
+    await flushPromises()
+    expect(dialogs.state.confirm.title).toBe('Delete portrait.json?')
+
+    finishLandscapeImport({ ok: true, filePath: '/benchmarks/s1/landscape.json' })
+    await flushPromises()
+    dialogs.confirmPrimary()
+    await flushPromises()
+
+    expect(window.api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(PerformanceTestWorkflowMenu).props('filePath')).toBe(
+      '/benchmarks/s1/landscape.json'
+    )
+  })
+
+  it('keeps the workflow when the confirm is cancelled', async () => {
+    const wrapper = await mountWithWorkflow()
+    const dialogs = useDialogs()
+
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('remove')
+    await flushPromises()
+    dialogs.cancel()
+    await flushPromises()
+
+    expect(window.api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(PerformanceTestWorkflowMenu).props('filePath')).toBe(
+      '/benchmarks/s1/portrait.json'
+    )
+  })
+})
+
+describe('PerformanceTestWorkflowMenu last item', () => {
+  async function openMenu(downloading: boolean) {
+    const wrapper = mount(PerformanceTestWorkflowMenu, {
+      attachTo: document.body,
+      props: {
+        label: 'portrait.json',
+        source: 'api',
+        filePath: '/benchmarks/s1/portrait.json',
+        locked: false,
+        importing: false,
+        deleting: false,
+        canChooseExample: true,
+        loadingExamples: false,
+        downloading
+      }
+    })
+    await userEvent.click(wrapper.get('.performance-test__workflow-trigger').element)
+    const item = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('.performance-test__delete-workflow')
+      if (!found) throw new Error('menu is not open yet')
+      return found
+    })
+    return { wrapper, item }
+  }
+
+  it('shows Delete workflow as red text with its bin icon', async () => {
+    const { wrapper, item } = await openMenu(false)
+
+    expect(item.textContent).toContain('Delete workflow')
+    expect([...item.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
+    expect(item.querySelector('svg[class*="lucide-trash"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows Cancel download, which needs no confirm, as a neutral item', async () => {
+    const { wrapper, item } = await openMenu(true)
+
+    expect(item.textContent).toContain('Cancel download')
+    expect(item.classList).not.toContain('text-destructive')
+    expect(item.querySelector('svg[class*="lucide-trash"]')).toBeNull()
+    wrapper.unmount()
   })
 })
