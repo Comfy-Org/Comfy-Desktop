@@ -21,7 +21,8 @@ const shown = computed(() => all.value.filter((w) => buildIds.has(w.installation
 
 async function load(): Promise<void> {
   try {
-    all.value = await window.api.listRecentWorkflows()
+    const listed: unknown = await window.api.listRecentWorkflows()
+    all.value = Array.isArray(listed) ? (listed as RecentWorkflow[]) : []
   } catch {
     all.value = []
   }
