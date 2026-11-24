@@ -36,7 +36,53 @@ export interface AssetFacts {
   uploadedBy?: string
   /** The workflow file the run came from, when the file carries it. */
   workflowName?: string
+  embedded: EmbeddedSummary
 }
+
+export interface EmbeddedSummary {
+  prompts: string[]
+  models: string[]
+}
+
+const NO_EMBEDDED: EmbeddedSummary = { prompts: [], models: [] }
+const MAX_EMBEDDED_PROMPTS = 6
+const MAX_EMBEDDED_MODELS = 10
+
+function embeddedSummary(prompts: (string | undefined)[], models: string[]): EmbeddedSummary {
+  return {
+    prompts: [...new Set(prompts.filter((p): p is string => !!p))].slice(0, MAX_EMBEDDED_PROMPTS),
+    models: [...new Set(models)].slice(0, MAX_EMBEDDED_MODELS)
+  }
+}
+
+const EMBEDDED_PROMPTS: [RegExp, string][] = [
+  [
+    /actor_ref/,
+    'studio portrait of a young woman with short curly hair, grey backdrop, soft key light'
+  ],
+  [
+    /neon_alley/,
+    'dolly shot down a rain-soaked neon alley at night, a woman with a clear umbrella'
+  ],
+  [/alpine_lake/, 'still alpine lake at sunrise, snow peaks mirrored in the water, crisp air'],
+  [
+    /dancer_smoke/,
+    'dancer turning through drifting stage smoke, single hard backlight, slow motion'
+  ],
+  [/desert_drone/, 'aerial drone pass over red desert dunes at golden hour, long shadows'],
+  [/keyframe_astronaut/, 'astronaut standing on a pale moon ridge, earth low on the horizon'],
+  [/keyframe_forest/, 'path through a misty pine forest, shafts of morning light'],
+  [/krea_street/, 'busy city street after rain, reflections on the asphalt, 35mm film grain'],
+  [/lighthouse_storm/, 'lighthouse on a cliff in a storm, waves breaking, lightning in the clouds'],
+  [/minimax_eye/, 'extreme close-up of an eye opening, iris in sharp detail'],
+  [/night_market/, 'handheld walk through a crowded night market, lanterns and steam'],
+  [/surfer_slowmo/, 'surfer cutting through a turquoise wave, spray in slow motion'],
+  [/train_window/, 'view from a train window, countryside passing at dusk'],
+  [/wok_fire/, 'chef tossing a flaming wok, sparks and oil in the air, warm kitchen light']
+]
+const promptFromName = (name: string, stem: string): string =>
+  EMBEDDED_PROMPTS.find(([re]) => re.test(name))?.[1] ??
+  `${stem.replace(/[_-]+/g, ' ').trim()}, natural light, sharp focus, high detail`
 
 const hash = (s: string): number => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)
 
@@ -126,7 +172,8 @@ export function factsFor(a: MarAsset): AssetFacts {
       history: 'missing',
       metadata: a.type === 'text' || a.type === 'other' ? 'missing' : 'available',
       models: [],
-      uploadedBy: PEOPLE[h % PEOPLE.length]
+      uploadedBy: PEOPLE[h % PEOPLE.length],
+      embedded: NO_EMBEDDED
     }
 
   const kept = recent(a.when)
@@ -184,7 +231,14 @@ export function factsFor(a: MarAsset): AssetFacts {
         )
       : undefined,
     uploadedBy: h % 3 ? 'You' : undefined,
-    workflowName: workflow === 'available' ? `${template || stem}.json` : undefined
+    workflowName: workflow === 'available' ? `${template || stem}.json` : undefined,
+    embedded:
+      workflow === 'available'
+        ? embeddedSummary(
+            [prompt ?? promptFromName(a.name, stem), negative],
+            models.length ? models : MODELS.image_z_image_turbo!
+          )
+        : NO_EMBEDDED
   }
 }
 
