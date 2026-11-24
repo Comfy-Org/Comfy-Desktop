@@ -472,6 +472,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
 // The graph takes the whole stage so zoomed in it runs to the edges; it
 // fits inside the room the picture has (under the bar, over the zoom).
 const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
+const full = computed(() => can.value.onboarding)
 </script>
 
 <template>
@@ -482,6 +483,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
         v-if="template && info && media"
         ref="content"
         class="proto-ui mad mar-tpl"
+        :class="full && 'is-full'"
         :data-busy="phase === 'busy' || undefined"
         @open-auto-focus="focusPicker"
         @escape-key-down="onEscape"
@@ -529,7 +531,9 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
           <div class="mad-body">
             <header class="mad-head">
               <div class="mad-head-text">
-                <DialogTitle class="mad-name">{{ template.title }}</DialogTitle>
+                <DialogTitle class="mad-name" :class="full && 'is-clamped'">{{
+                  template.title
+                }}</DialogTitle>
                 <DialogDescription v-if="saved" class="mar-tpl-by">
                   <LocationIcon :kind="saved.source === 'cloud' ? 'cloud' : 'local'" :size="12" />{{
                     savedIn?.name ?? (saved.source === 'cloud' ? 'Comfy Cloud' : 'This computer')
@@ -570,6 +574,13 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   <Link2 :size="15" />
                 </button>
               </Tooltip>
+              <DialogClose
+                v-if="full"
+                class="mad-icon mad-head-close"
+                aria-label="Close"
+                title="Close"
+                ><X :size="16"
+              /></DialogClose>
             </header>
 
             <!-- What it does, short: the first paragraph. -->
@@ -843,7 +854,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
           </footer>
         </aside>
 
-        <DialogClose class="mad-x" aria-label="Close"><X :size="18" /></DialogClose>
+        <DialogClose v-if="!full" class="mad-x" aria-label="Close"><X :size="18" /></DialogClose>
         <MarRunCreditsSheet v-model:open="creditsSheet" @resolved="confirm" />
       </DialogContent>
     </DialogPortal>
