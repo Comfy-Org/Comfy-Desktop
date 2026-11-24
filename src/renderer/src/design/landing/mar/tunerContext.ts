@@ -127,7 +127,12 @@ export const when = {
   // The Deploy as API modal (deploy/MarDeployModal.vue), while it's open.
   deployState: computed(() => Boolean(proto.deploying)),
   // The template modal (templateModal/MarTemplateModal.vue), while it's open.
-  wfCase: computed(() => proto.detail?.kind === 'template'),
+  wfCase: computed(() => proto.detail?.kind === 'template' && !can.value.onboarding),
+  tplCases: computed(
+    () =>
+      can.value.onboarding &&
+      (proto.detail?.kind === 'template' || (inShell.value && proto.page === 'explore'))
+  ),
   // Nav options (NavOptionsTuner.vue): each switch acts on the Floating
   // sidebar and the Tabs bar, each in its own situation.
   ports: computed(() => inShell.value && (marSideOn.value || marNav.id === 'tabs'))

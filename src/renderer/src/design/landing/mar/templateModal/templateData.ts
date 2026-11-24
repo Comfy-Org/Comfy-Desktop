@@ -2,6 +2,7 @@ import { reactive, watch } from 'vue'
 import { thumb, type ProtoInstance, type Template } from '../../mock'
 import { modelsFor, templateAbout, templateById, templateStats, type ModelReq } from '../../fit'
 import { hubById, hubTemplate, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
+import { can } from '../../milestones'
 import heroAngles from './angles-hero.jpg'
 import inputAngles from './angles-input.jpg'
 import outputAngles from './angles-output.jpg'
@@ -15,7 +16,7 @@ import outputAngles from './angles-output.jpg'
  */
 
 /** This computer, shared by every local build. */
-export const MACHINE = { name: 'This Mac', chip: 'Apple M3 Max', memGb: 36 }
+export const MACHINE = { name: 'This Mac', chip: 'Apple M3 Max', memGb: 36, diskFreeGb: 18.4 }
 
 /** Prototype-only switches for the states that need a world change. */
 export const tplMock = reactive({ offline: false })
@@ -38,6 +39,167 @@ watch(
   { immediate: true }
 )
 
+/** The Hub's angles workflow: Mar's contact sheet and its graph. */
+export const ANGLES_ID = 'template_qwen_multiangle.app'
+
+export type CantRun =
+  | 'models'
+  | 'nodes'
+  | 'update'
+  | 'modelsNodes'
+  | 'updateNodes'
+  | 'memory'
+  | 'disk'
+  | 'stopped'
+  | 'repair'
+  | 'platform'
+  | 'offline'
+  | 'signIn'
+  | 'credits'
+  | 'plan'
+  | 'partner'
+  | 'gated'
+  | 'media'
+  | 'cloudNodes'
+
+export interface CantRunCase {
+  id: CantRun
+  label: string
+  template: string
+  build: string
+  packs?: string[]
+  installedOn?: string[]
+}
+
+export const CANT_RUN_CASES: CantRunCase[] = [
+  { id: 'models', label: 'Models missing', template: 'image_moss_image_t2i', build: 'local-1' },
+  {
+    id: 'nodes',
+    label: 'Node packs missing',
+    template: 'template_purz_wan22_animate_auto_character_replace',
+    build: 'local-video',
+    packs: ['ComfyUI-WanAnimatePreprocess', 'ComfyUI-KJNodes'],
+    installedOn: ['local-video']
+  },
+  {
+    id: 'update',
+    label: 'Needs a newer ComfyUI',
+    template: 'image_qwen_image_2_1_image_edit',
+    build: 'local-1'
+  },
+  {
+    id: 'modelsNodes',
+    label: 'Models and node packs missing',
+    template: 'templates-wan2_1_infinitetalk_music',
+    build: 'local-video',
+    packs: ['ComfyUI-WanVideoWrapper', 'ComfyUI-MelBandRoFormer']
+  },
+  {
+    id: 'updateNodes',
+    label: 'Newer ComfyUI and node packs',
+    template: ANGLES_ID,
+    build: 'local-1'
+  },
+  {
+    id: 'memory',
+    label: 'Not enough GPU memory',
+    template: 'video_minimax_h3_t2v',
+    build: 'local-video',
+    installedOn: ['local-video']
+  },
+  {
+    id: 'disk',
+    label: 'Not enough disk space',
+    template: 'video_ltx2_5_t2v',
+    build: 'local-1'
+  },
+  {
+    id: 'stopped',
+    label: 'Build stopped',
+    template: 'utility_seedvr2_image_upscale',
+    build: 'local-flux'
+  },
+  {
+    id: 'repair',
+    label: 'Build needs a repair',
+    template: 'image_krea2_turbo_t2i',
+    build: 'local-1'
+  },
+  {
+    id: 'platform',
+    label: 'GPU not supported',
+    template: 'utility_nvidia_rtx_video_enhance',
+    build: 'cloud'
+  },
+  { id: 'offline', label: 'Offline', template: 'audio_ace_step1_5_xl_turbo', build: 'local-1' },
+  { id: 'signIn', label: 'Needs a Comfy account', template: 'api_nano_banana_pro', build: 'cloud' },
+  {
+    id: 'credits',
+    label: 'Out of credits',
+    template: 'api_seedance2_5_i2v_1080p',
+    build: 'cloud'
+  },
+  {
+    id: 'plan',
+    label: 'Needs a Cloud plan',
+    template: 'video_ltx2_3_ia2v',
+    build: 'cloud'
+  },
+  {
+    id: 'partner',
+    label: 'Partner model, Cloud only',
+    template: 'api_elevenlabs_v4_text_to_speech',
+    build: 'cloud'
+  },
+  {
+    id: 'gated',
+    label: 'Model licence to accept',
+    template: 'image_flux2',
+    build: 'local-1'
+  },
+  {
+    id: 'media',
+    label: 'Input image missing',
+    template: 'image_qwen_image_2_1_background_removal',
+    build: 'local-video',
+    installedOn: ['local-video']
+  },
+  {
+    id: 'cloudNodes',
+    label: 'Node pack not on Cloud',
+    template: 'templates_hellorob_facegen_skindetail_upscale',
+    build: 'cloud',
+    packs: ['ComfyUI-SkinDetailer'],
+    installedOn: ['local-1']
+  }
+]
+
+const CASE_BY_TEMPLATE = new Map(CANT_RUN_CASES.map((c) => [c.template, c]))
+
+export function caseFor(t: Template): CantRunCase | undefined {
+  if (!can.value.onboarding) return undefined
+  const c = CASE_BY_TEMPLATE.get(t.id)
+  return c && tplById(t.id)?.title === t.title ? c : undefined
+}
+
+const caseIs = (t: Template, ...ids: CantRun[]): boolean => {
+  const c = caseFor(t)
+  return Boolean(c && ids.includes(c.id))
+}
+
+const legacyCase = (): WfCase => (can.value.onboarding ? 'catalog' : tplCase.id)
+
+export const isOffline = (t: Template): boolean =>
+  can.value.onboarding ? caseIs(t, 'offline') : tplMock.offline
+
+const NOT_ON_CLOUD = new Set(
+  CANT_RUN_CASES.filter((c) => c.id === 'cloudNodes').flatMap((c) => c.packs ?? [])
+)
+
+export const GATED_LICENCE = 'FLUX.2 [dev]'
+export const MISSING_INPUT = 'portrait.png'
+const RUN_CREDITS = 12
+
 export interface TplMedia {
   hero: string
   /** Graph previews: the image going in and the one coming out. */
@@ -46,9 +208,6 @@ export interface TplMedia {
   /** Labels over a contact-sheet hero, clockwise from top left. */
   quadrants?: string[]
 }
-
-/** The Hub's angles workflow: Mar's contact sheet and its graph. */
-export const ANGLES_ID = 'template_qwen_multiangle.app'
 
 /** A workflow by id: the Hub's (real), else the prototype's mock. */
 export function tplById(id: string): Template | undefined {
@@ -215,16 +374,26 @@ const CASE_VERSION = 'v0.38.0'
 const CASE_PACK = 'ComfyUI-KJNodes'
 
 export const minComfyFor = (t: Template): string =>
-  tplCase.id === 'update' || tplCase.id === 'several' ? CASE_VERSION : (MIN_COMFY[t.id] ?? '')
+  legacyCase() === 'update' || legacyCase() === 'several' || caseIs(t, 'update')
+    ? CASE_VERSION
+    : (MIN_COMFY[t.id] ?? '')
 
 export function packsFor(t: Template): string[] {
-  const own = PACKS[t.id] ?? []
-  const add = tplCase.id === 'nodes' || tplCase.id === 'several'
+  const own = caseFor(t)?.packs ?? PACKS[t.id] ?? []
+  const add = legacyCase() === 'nodes' || legacyCase() === 'several'
   return add && !own.includes(CASE_PACK) ? [...own, CASE_PACK] : own
 }
 
 export const hasPack = (inst: ProtoInstance, pack: string): boolean =>
-  inst.kind === 'cloud' || Boolean(INSTALLED_PACKS[inst.id]?.includes(pack))
+  inst.kind === 'cloud'
+    ? !(can.value.onboarding && NOT_ON_CLOUD.has(pack))
+    : Boolean(INSTALLED_PACKS[inst.id]?.includes(pack))
+
+function hasModels(t: Template, inst: ProtoInstance): boolean {
+  if (caseIs(t, 'gated')) return false
+  const c = caseFor(t)
+  return Boolean(INSTALLED[inst.id]?.includes(t.id) || c?.installedOn?.includes(inst.id))
+}
 
 const parts = (v: string): number[] => v.replace(/^v/, '').split('-')[0]!.split('.').map(Number)
 
@@ -253,6 +422,13 @@ export type TargetState =
   | 'login'
   | 'blocked'
   | 'offline'
+  | 'repair'
+  | 'disk'
+  | 'gated'
+  | 'platform'
+  | 'credits'
+  | 'plan'
+  | 'media'
 
 export interface Target {
   inst: ProtoInstance
@@ -280,8 +456,9 @@ export function targetFor(
 ): Target {
   const base = { inst, disabled: false }
   const gb = totalGb(t)
+  const kase = caseFor(t)?.id
   if (inst.kind === 'cloud') {
-    if (tplMock.offline)
+    if (isOffline(t))
       return {
         ...base,
         state: 'offline',
@@ -291,14 +468,17 @@ export function targetFor(
         note: 'Comfy Cloud needs a connection.',
         disabled: true
       }
-    if (!signedIn)
+    if (!signedIn || kase === 'signIn')
       return {
         ...base,
         state: 'login',
         status: 'Needs a Comfy account',
         cost: '',
         action: 'Log in to Comfy Cloud',
-        note: 'New accounts get free credits.'
+        note:
+          kase === 'signIn'
+            ? 'Partner models need a Comfy account. New accounts get free credits.'
+            : 'New accounts get free credits.'
       }
     if (t.runs === 'local')
       return {
@@ -310,7 +490,37 @@ export function targetFor(
         note: '',
         disabled: true
       }
-    const c = t.runs === 'cloud' ? 12 : credits(t)
+    if (kase === 'cloudNodes')
+      return {
+        ...base,
+        state: 'blocked',
+        status: inst.deployment
+          ? 'Its node pack isn’t on this build'
+          : 'Its node pack isn’t on Cloud yet',
+        cost: '',
+        action: '',
+        note: '',
+        disabled: true
+      }
+    const c = t.runs === 'cloud' ? RUN_CREDITS : credits(t)
+    if (kase === 'credits' && !inst.deployment)
+      return {
+        ...base,
+        state: 'credits',
+        status: 'Out of credits · 0 left',
+        cost: `${c} credits`,
+        action: 'Add credits',
+        note: 'Add credits to your account to run it. Then it opens on Comfy Cloud.'
+      }
+    if (kase === 'plan' && !inst.deployment)
+      return {
+        ...base,
+        state: 'plan',
+        status: 'Free plan · can’t run workflows',
+        cost: `${c} credits`,
+        action: 'See plans',
+        note: 'Subscribe to a plan to run workflows on Comfy Cloud.'
+      }
     if (inst.deployment) {
       const awake = inst.state === 'running'
       return {
@@ -342,9 +552,19 @@ export function targetFor(
       note: '',
       disabled: true
     }
+  if (kase === 'platform')
+    return {
+      ...base,
+      state: 'platform',
+      status: 'Needs an NVIDIA GPU',
+      cost: '',
+      action: '',
+      note: '',
+      disabled: true
+    }
   const vram = t.vram ? parseInt(t.vram) : 0
   // Nothing to download (built-in nodes only): every build has it.
-  const has = (!modelsGone && INSTALLED[inst.id]?.includes(t.id)) || !needsFor(t).length
+  const has = (!modelsGone && hasModels(t, inst)) || !needsFor(t).length
   if (vram > MACHINE.memGb)
     return {
       ...base,
@@ -354,6 +574,47 @@ export function targetFor(
       action: 'Start anyway',
       note: `It may run out of memory. Smaller sizes help, or run it on Cloud.`
     }
+  if (!has && isOffline(t))
+    return {
+      ...base,
+      state: 'offline',
+      status: `Offline · can’t download ${fmtGb(gb)}`,
+      cost: fmtGb(gb),
+      action: 'Download and start',
+      note: 'Its models download from the internet. Connect, then try again.',
+      disabled: true
+    }
+  if (kase === 'repair' && inst.id === caseFor(t)?.build)
+    return {
+      ...base,
+      state: 'repair',
+      status: 'Didn’t start last time · needs a repair',
+      cost: '',
+      action: 'Repair and start',
+      note: `Repairs ${inst.name}'s Python environment, starts it, then opens this graph.`
+    }
+  if (!has && kase === 'disk')
+    return {
+      ...base,
+      state: 'disk',
+      status: `Needs ${fmtGb(gb)} · ${fmtGb(MACHINE.diskFreeGb)} free`,
+      cost: fmtGb(gb),
+      action: 'Download and start',
+      note: `Needs ~${fmtGb(gb + 0.5)}, only ${fmtGb(MACHINE.diskFreeGb)} free. Free up space or pick a lighter workflow.`,
+      disabled: true
+    }
+  if (!has && kase === 'gated') {
+    const missing = needsFor(t).length
+    return {
+      ...base,
+      state: 'gated',
+      status: `${missing} model${missing === 1 ? '' : 's'} missing · 1 needs a licence`,
+      cost: fmtGb(gb),
+      action: 'Accept licence and download',
+      note: `Opens Hugging Face to accept the ${GATED_LICENCE} licence, then downloads ${fmtGb(gb)} and starts ${inst.name}.`,
+      fetch: true
+    }
+  }
   const short = versionShort(t, inst)
   const packs = packsFor(t).filter((p) => !hasPack(inst, p))
   if (short || packs.length) {
@@ -378,6 +639,15 @@ export function targetFor(
       fetch: !has
     }
   }
+  if (has && kase === 'media' && inst.id === caseFor(t)?.build)
+    return {
+      ...base,
+      state: 'media',
+      status: `${inst.state === 'running' ? 'Running' : 'Stopped'} · its input image is missing`,
+      cost: '',
+      action: `Open in ${inst.name}`,
+      note: `${MISSING_INPUT} isn't in this build's input folder. Pick an image in Load Image before you run it.`
+    }
   if (has && inst.state === 'running')
     return {
       ...base,
@@ -423,13 +693,20 @@ const RANK: Record<TargetState, number> = {
   memory: 6,
   login: 7,
   offline: 8,
-  blocked: 9
+  blocked: 9,
+  media: 1,
+  repair: 3,
+  credits: 4,
+  plan: 4,
+  gated: 5,
+  disk: 6,
+  platform: 9
 }
 
 /** No local build yet: one row sets up a build with everything the
  *  workflow needs, so the picker never ends on Cloud alone. */
 export function newBuildTarget(t: Template): Target | undefined {
-  if (t.runs === 'cloud') return
+  if (t.runs === 'cloud' || caseIs(t, 'platform')) return
   const vram = t.vram ? parseInt(t.vram) : 0
   if (vram > MACHINE.memGb) return
   const gb = totalGb(t) + 2.4
@@ -460,9 +737,10 @@ export function newBuildTarget(t: Template): Target | undefined {
 const rank = (x: Target): number =>
   x.fetch && (x.state === 'update' || x.state === 'nodes') ? RANK.download + 0.5 : RANK[x.state]
 
-export function rankTargets(list: Target[]): Target[] {
+export function rankTargets(list: Target[], prefer?: string): Target[] {
   return [...list].sort(
     (a, b) =>
+      Number(b.inst.id === prefer) - Number(a.inst.id === prefer) ||
       rank(a) - rank(b) ||
       // A deployment is a workspace build: Comfy Cloud itself comes first.
       Number(Boolean(a.inst.deployment)) - Number(Boolean(b.inst.deployment)) ||
@@ -487,10 +765,19 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
         : 'Has every model; only node packs are missing. Then runs free on this Mac.'
     case 'new':
       return 'No build on this Mac yet. Sets one up with everything this needs.'
+    case 'repair':
+      return 'Has every model; the build needs a repair first. Then runs free on this Mac.'
+    case 'gated':
+      return `Downloads ${fmtGb(totalGb(t))} once, after you accept the model's licence. Then runs free.`
+    case 'credits':
+    case 'plan':
+      return t.runs === 'cloud' ? 'Uses a partner model that only runs on Comfy Cloud.' : ''
     case 'cloud':
       if (all.some((x) => x.state === 'memory'))
         return `Needs ${t.vram} of GPU memory; this Mac has ${MACHINE.memGb} GB. Cloud has every model ready.`
       if (t.runs === 'cloud') return 'Uses a partner model that only runs on Comfy Cloud.'
+      if (all.some((x) => x.state === 'platform'))
+        return `Needs an NVIDIA GPU; this Mac has ${MACHINE.chip}. Cloud runs it.`
       return 'Nothing to download, ready in seconds.'
     case 'download':
       return `Downloads ${fmtGb(totalGb(t))} once, then runs free.`
@@ -498,3 +785,133 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
       return ''
   }
 }
+
+export type NeedKind =
+  'disk' | 'gpu' | 'licence' | 'input' | 'account' | 'credits' | 'plan' | 'repair' | 'network'
+
+export interface CaseNeed {
+  kind: NeedKind
+  label: string
+  size: string
+  mark: 'here' | 'get' | 'warn'
+  title: string
+}
+
+export function caseNeeds(t: Template, on: Target | undefined): CaseNeed[] {
+  const kase = caseFor(t)?.id
+  const s = on?.state
+  const cloud = on?.inst.kind === 'cloud'
+  switch (kase) {
+    case 'disk':
+      return [
+        {
+          kind: 'disk',
+          label: 'Free disk space',
+          size: cloud
+            ? 'Comfy Cloud'
+            : `${fmtGb(MACHINE.diskFreeGb)} of ${fmtGb(totalGb(t) + 0.5)}`,
+          mark: s === 'disk' ? 'warn' : 'here',
+          title: s === 'disk' ? 'Not enough space' : 'Enough space'
+        }
+      ]
+    case 'platform':
+      return [
+        {
+          kind: 'gpu',
+          label: 'NVIDIA GPU (CUDA)',
+          size: cloud ? (on?.inst.gpu ?? 'Comfy Cloud') : MACHINE.chip,
+          mark: cloud ? 'here' : 'warn',
+          title: cloud ? 'Supported' : 'Not supported on this Mac'
+        }
+      ]
+    case 'gated':
+      return [
+        {
+          kind: 'licence',
+          label: 'Hugging Face licence',
+          size: GATED_LICENCE,
+          mark: s === 'gated' ? 'get' : 'here',
+          title: s === 'gated' ? 'Accept it first' : 'Accepted'
+        }
+      ]
+    case 'media':
+      return [
+        {
+          kind: 'input',
+          label: MISSING_INPUT,
+          size: 'Input image',
+          mark: s === 'media' ? 'warn' : 'here',
+          title: s === 'media' ? 'Missing' : 'Ready'
+        }
+      ]
+    case 'signIn':
+      return [
+        {
+          kind: 'account',
+          label: 'Comfy account',
+          size: 'Partner nodes',
+          mark: s === 'login' ? 'get' : 'here',
+          title: s === 'login' ? 'Sign in first' : 'Signed in'
+        }
+      ]
+    case 'credits':
+      return [
+        {
+          kind: 'credits',
+          label: 'Credits',
+          size: `${RUN_CREDITS} a run · 0 left`,
+          mark: 'warn',
+          title: 'Add credits first'
+        }
+      ]
+    case 'plan':
+      return [
+        {
+          kind: 'plan',
+          label: 'Comfy Cloud plan',
+          size: 'Free plan',
+          mark: s === 'plan' ? 'warn' : 'here',
+          title: s === 'plan' ? 'Subscribe first' : 'Not needed here'
+        }
+      ]
+    case 'repair':
+      return s === 'repair'
+        ? [
+            {
+              kind: 'repair',
+              label: 'Python environment',
+              size: 'Needs a repair',
+              mark: 'get',
+              title: 'Repairs first'
+            }
+          ]
+        : []
+    case 'offline':
+      return [
+        {
+          kind: 'network',
+          label: 'Internet connection',
+          size: "You're offline",
+          mark: 'warn',
+          title: 'Needed to download and for Cloud'
+        }
+      ]
+    default:
+      return []
+  }
+}
+
+export const CASE_STATE: Partial<Record<TargetState, { label: string; tone: string }>> = {
+  repair: { label: 'Repairs first', tone: 'get' },
+  disk: { label: 'Not enough space', tone: 'warn' },
+  gated: { label: 'Licence first', tone: 'get' },
+  platform: { label: 'Needs NVIDIA', tone: 'warn' },
+  credits: { label: 'Needs credits', tone: 'warn' },
+  plan: { label: 'Needs a plan', tone: 'warn' },
+  media: { label: 'Input missing', tone: 'warn' },
+  offline: { label: 'Needs a connection', tone: 'warn' },
+  login: { label: 'Sign in first', tone: 'get' },
+  memory: { label: 'May run out of memory', tone: 'warn' }
+}
+
+export const caseBuild = (t: Template): string | undefined => caseFor(t)?.build
