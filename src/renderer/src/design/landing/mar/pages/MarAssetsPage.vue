@@ -58,7 +58,7 @@ import Select from '../../ui/Select.vue'
 import { ComfyAssets } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
 import { go, hostActions, instances, proto, toast } from '../../useProto'
-import { marTabsOn } from '../shell/titleTabs'
+import { titleBarPicksBuild } from '../shell/titleTabs'
 import { graphOpen } from '../graph/graphOpen'
 import { graphLibrary } from '../graph/comfyLook'
 import {
@@ -154,15 +154,13 @@ type Kind = 'all' | MarAsset['type']
 const kind = ref<Kind>('all')
 const where = ref('all')
 const followsTitleBar = computed(
-  () => marTabsOn.value && !fixedProject && !inGraph && assetsEverywhere.id === 'off'
+  () => titleBarPicksBuild.value && !fixedProject && !inGraph && assetsEverywhere.id === 'off'
 )
 const titleBarBuild = (): string =>
   assetBuilds.value.some((b) => b.id === proto.activeInstanceId) ? proto.activeInstanceId : ''
 const linkedBuild = assetLink.at === 'desktop' ? assetLink.build : ''
 if (followsTitleBar.value && linkedBuild) proto.activeInstanceId = linkedBuild
-const build = ref(
-  linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild()
-)
+const build = ref(linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild())
 watch(
   () => [followsTitleBar.value, proto.activeInstanceId] as const,
   ([follows]) => {
@@ -572,7 +570,7 @@ watch(folder, (id) => id && folderPath(id).forEach((p) => unfold(p.id, true)), {
 /** The folders above this one, from the top. */
 function folderPath(id: string): AssetFolder[] {
   const out: AssetFolder[] = []
-  for (let f = folders.find((x) => x.id === id); f?.parent; ) {
+  for (let f = folders.find((x) => x.id === id); f?.parent;) {
     const up = folders.find((x) => x.id === f!.parent)
     if (!up) break
     out.unshift(up)
@@ -1406,8 +1404,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           >
             <section v-for="g in sections" :key="g.key" class="mar-asset-job">
               <p v-if="g.title" class="mar-asset-job-head">
-                <span class="mar-asset-job-name">{{ g.title }}</span
-                ><span class="mar-asset-job-n">{{ g.items.length }}</span>
+                <span class="mar-asset-job-name">{{ g.title }}</span><span
+                  class="mar-asset-job-n"
+                  >{{ g.items.length }}</span
+                >
               </p>
               <div
                 :class="
@@ -1832,8 +1832,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
               :aria-pressed="filter.tags.includes(t.tag)"
               @click="toggleTag(t.tag)"
             >
-              <span class="mar-anav-name">{{ t.tag }}</span
-              ><span class="mar-anav-n">{{ t.count }}</span>
+              <span class="mar-anav-name">{{ t.tag }}</span><span class="mar-anav-n">{{
+                t.count
+              }}</span>
             </button>
             <span class="mar-anav-folder-tools">
               <MarItemMenu

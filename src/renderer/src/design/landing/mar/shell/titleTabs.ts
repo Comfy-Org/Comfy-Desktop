@@ -41,3 +41,5 @@ watch(
 export const marTabsOn = computed(
   () => can.value.breadcrumb && can.value.design && titleTabs.style === 'tabs'
 )
+
+export const titleBarPicksBuild = computed(() => marTabsOn.value && !can.value.onboarding)

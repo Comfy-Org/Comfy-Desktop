@@ -12,7 +12,7 @@ import { buildState, openInNewWindow } from './buildTabs'
 import { can, landingPage } from './milestones'
 import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
-import { marTabsOn } from './mar/shell/titleTabs'
+import { marTabsOn, titleBarPicksBuild } from './mar/shell/titleTabs'
 import { buildTrail } from './mar/build/buildNav'
 import { stateOf } from './mar/build/buildFacts'
 import { onCloud } from './mar/shell/surface'
@@ -143,7 +143,10 @@ function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'
       kind: kindOf(t.instanceId)
     })),
     tabFront: appsProto.front ? null : proto.activeTab === 'home' ? null : proto.activeTab,
-    runsOn: runs ? { name: stateOf(runs).name, kind: kindOf(runs.id) } : undefined,
+    runsOn:
+      runs && titleBarPicksBuild.value
+        ? { name: stateOf(runs).name, kind: kindOf(runs.id) }
+        : undefined,
     agent: can.value.agent ? proto.mode === 'agent' && proto.activeTab === 'home' : undefined
   }
 }
