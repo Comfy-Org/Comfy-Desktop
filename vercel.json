@@ -1,0 +1,7 @@
+{
+  "framework": null,
+  "installCommand": "pnpm install --ignore-scripts",
+  "buildCommand": "pnpm run design:build",
+  "outputDirectory": "dist-design",
+  "rewrites": [{ "source": "/", "destination": "/design-landing.html" }]
+}
