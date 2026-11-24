@@ -22,9 +22,10 @@ import { appsProto } from './appFlow'
  *                   (The value stays 4.5 so every `m >= n` check holds.)
  * 4.7  Explore    - Milestone 3: Explore, the Hub's apps and workflows
  *                   in one place (Apps moves inside it). Shown as "6".
- *   5  Learn      - Learn, and the person's own work: Recently used on
- *                   Home and the Workflows library.
- *   6  Builder    - the Build lens (deploy builds as APIs).
+ *   5  Recents    - the person's own work: Recently used on Home and the
+ *                   Workflows library, beside Assets.
+ *   6  Learn      - Learn and Search arrive, with the Build lens (deploy
+ *                   builds as APIs).
  *   7  One window - the long-term vision: builds open in the same window,
  *                   switched from the breadcrumb, still running.
  *   8  Projects   - future: work organised in projects, each bound to a
@@ -46,8 +47,8 @@ export const MILESTONES = [
   { value: '4', label: '4 · Home' },
   { value: '4.5', label: '5 · Explore apps (Milestone 2)' },
   { value: '4.7', label: '6 · Explore (Milestone 3)' },
-  { value: '5', label: '7 · Learn & Recents' },
-  { value: '6', label: '8 · Builder' },
+  { value: '5', label: '7 · Recents & Assets' },
+  { value: '6', label: '8 · Learn & Builder' },
   { value: '7', label: '9 · One window' },
   { value: '8', label: '10 · Projects (future)' },
   { value: '9', label: '11 · Spaces (future)' },
@@ -83,13 +84,13 @@ export const can = computed(() => {
     exploreApps: m >= 4.5,
     /** The person's own workflows: the library and Recently used. */
     workflows: m >= 5,
-    /** Explore (Milestone 3), with the Hub's apps and workflows; Learn after. */
+    /** Explore (Milestone 3), with the Hub's apps and workflows; Learn two after. */
     explore: m >= 4.7,
     /** A build's page: About and Update as one Overview tab, then Assets & Models. */
     buildOverview: m >= 4.7,
-    learn: m >= 5,
+    learn: m >= 6,
     /** Search (⌘K) comes with Learn, not with Explore. */
-    search: m >= 5,
+    search: m >= 6,
     builder: m >= 6,
     oneWindow: m >= 7,
     projects: m >= 8,

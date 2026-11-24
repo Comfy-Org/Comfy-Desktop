@@ -43,7 +43,7 @@ interface Item {
 }
 const NAV = computed<Record<Mode, Item[]>>(() => ({
   agent: [],
-  // Home from Milestone 4, Explore from 3 (4.7), Learn from 5; the builds follow in
+  // Home from Milestone 4, Explore from 3 (4.7), Learn from 6; the builds follow in
   // the sidebar group. Projects (Milestone 8) add the libraries, and the
   // builds move here (the sidebar group lists projects instead).
   create: [

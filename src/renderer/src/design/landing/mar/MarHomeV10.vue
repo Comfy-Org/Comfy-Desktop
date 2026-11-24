@@ -113,7 +113,7 @@ const recent = computed<Recent[]>(() =>
         open: () => openDetail('workflow', w.id)
       }
     }),
-    // With the own workflows (Learn & Recents), the apps used lately mix in.
+    // With the own workflows (Recents & Assets), the apps used lately mix in.
     ...(can.value.workflows && !firstTime.value
       ? USED_APPS.map(({ x, age, when }): Recent => ({
           id: `app-${x.app}`,
@@ -214,7 +214,7 @@ const recent = computed<Recent[]>(() =>
       </section>
 
       <!-- Milestone 2 is apps only: Recently used comes back with Workflows
-           (Learn & Recents), apps and workflows together. -->
+           (Recents & Assets), apps and workflows together. -->
       <section v-if="recent.length && (can.workflows || !can.exploreApps)" class="mt-10">
         <SectionHeader
           class="mar-sec"

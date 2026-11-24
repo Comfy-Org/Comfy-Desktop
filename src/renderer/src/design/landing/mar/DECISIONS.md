@@ -67,7 +67,7 @@ card looks are gone; UI Playground › Builds view keeps Photos in case the last
 things made on a build can be shown later.
 
 Sidebar build counts (the number beside each build) show only from the
-milestone where a build lists its workflows (7 · Learn & Recents, its
+milestone where a build lists its workflows (7 · Recents & Assets, its
 Workflows tab). Before that a build has no workflows to count. (Design
 crit, 2026-11-12.)
 
