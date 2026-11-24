@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import MediaCard from '../ui/MediaCard.vue'
 import WorkflowCover from './brand/WorkflowCover.vue'
-import { cover, isBranded } from './cover'
+import { cover, isBranded, type RecentsCover } from './cover'
 
 /** A workflow with its image, title, and a meta line with a value on the
  *  right (size, where it ran, when). The image stays still on hover: Mar's
@@ -13,6 +13,7 @@ defineProps<{
   right?: string
   /** An app keeps its own picture, never the workflow cover. */
   app?: boolean
+  coverKind?: RecentsCover
 }>()
 defineEmits<{ open: [] }>()
 </script>
@@ -20,7 +21,10 @@ defineEmits<{ open: [] }>()
 <template>
   <MediaCard @click="$emit('open')" @keydown.enter="$emit('open')">
     <template #media>
-      <WorkflowCover v-if="!app && isBranded(cover.id)" :name="title" />
+      <WorkflowCover
+        v-if="!app && (coverKind ? coverKind === 'generic' : isBranded(cover.id))"
+        :name="title"
+      />
       <img v-else :src alt="" loading="lazy" class="size-full object-cover" />
     </template>
     <p class="truncate text-ui font-medium">{{ title }}</p>

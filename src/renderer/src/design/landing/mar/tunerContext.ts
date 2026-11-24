@@ -8,7 +8,7 @@ import { homeBackground, marNav, marSideOn, marSidebarClosed } from './shell/mar
 import { screen } from './screen'
 // Graphite is applied on load.
 import './palette'
-import { cover } from './cover'
+import { cover, recentsCover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
@@ -101,8 +101,11 @@ export const when = {
   cover: computed(
     () =>
       inShell.value &&
-      (proto.page.startsWith('environment:') || ['workflows', 'overview'].includes(proto.page))
+      (proto.page.startsWith('environment:') ||
+        proto.page === 'workflows' ||
+        (proto.page === 'overview' && !can.value.onboarding))
   ),
+  recentsCover: computed(() => onHome.value && can.value.onboarding),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
@@ -221,6 +224,7 @@ export const TWEAKS = {
     isDefault: () => cover.id === (can.value.projects ? 'output' : 'canvas'),
     reset: () => (cover.id = can.value.projects ? 'output' : 'canvas')
   },
+  recentsCover: one(recentsCover, 'generic'),
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),

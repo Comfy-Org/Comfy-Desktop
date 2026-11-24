@@ -9,7 +9,7 @@ import { homeBackground, type HomeBackground } from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import Switch from '../ui/Switch.vue'
 import Select from '../ui/Select.vue'
-import { COVERS, cover } from './cover'
+import { COVERS, RECENTS_COVERS, cover, recentsCover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
@@ -172,6 +172,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
+  { id: 'recentsCover', show: () => when.recentsCover.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -459,6 +460,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
+          </Row>
+          <Row :show="shows('recentsCover')" label="Recents cover">
+            <Seg v-model="recentsCover.id" label="Recents cover" :options="RECENTS_COVERS" />
           </Row>
           <Row :show="shows('comfyLook')" label="ComfyUI">
             <Seg v-model="comfyLook.id" label="ComfyUI" :options="COMFY_LOOKS" />
