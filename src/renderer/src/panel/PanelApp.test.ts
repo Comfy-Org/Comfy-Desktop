@@ -2251,7 +2251,8 @@ describe('PanelApp', () => {
     useDashboardScopeStore().selectedWorkspaceId = 'another-workspace'
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="workflow-dialog"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workflow-dialog"]').text()).toBe(workflow.title)
+    expect(dialog.props('workspaceId')).toBe('another-workspace')
   })
 
   it('returns to the list of builds from All builds on Home', async () => {

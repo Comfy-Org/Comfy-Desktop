@@ -334,6 +334,27 @@ describe('a workflow that only runs on Comfy Cloud', () => {
     )
   })
 
+  it('stays open after signing in moves Desktop to another workspace, and offers Comfy Cloud there', async () => {
+    useAuthStore().status = { signedIn: false }
+    const dialog = await mountDialog([CLOUD], PARTNER)
+    await dialog.get('[data-testid="catalog-workflow-action"]').trigger('click')
+
+    useAuthStore().status = { signedIn: true }
+    await dialog.setProps({ workspaceId: 'team-workspace' })
+    await flushPromises()
+
+    const action = dialog.get('[data-testid="catalog-workflow-action"]')
+    expect(action.text()).toContain('Run on Comfy Cloud')
+    await action.trigger('click')
+    await flushPromises()
+    expect(launchCatalogWorkflow).toHaveBeenCalledWith(
+      'ltx',
+      { where: 'cloud' },
+      'team-workspace',
+      { downloadMissing: false }
+    )
+  })
+
   it('asks a signed-out person to log in first', async () => {
     useAuthStore().status = { signedIn: false }
     const dialog = await mountDialog([CLOUD], PARTNER)
