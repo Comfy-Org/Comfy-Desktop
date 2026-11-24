@@ -304,6 +304,7 @@
     "partnerOnly": "使用仅在 Comfy Cloud 上运行的合作伙伴模型。",
     "noTarget": "添加一个构建来打开此工作流，或在 Comfy Hub 上查看。",
     "downloadFailed": "部分模型未能下载。请检查下载列表后重试。",
+    "noDiskSpace": "磁盘空间不足，无法下载此工作流所需的模型。请释放空间后重试。",
     "status": {
       "outdated": "需要 ComfyUI {version} 或更高版本",
       "notOnCloud": "暂未上线 Cloud",

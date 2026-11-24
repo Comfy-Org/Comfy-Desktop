@@ -10,14 +10,14 @@ import { getCloudSession } from '../devplatform/session'
 import * as installations from '../installations'
 import { t } from '../lib/i18n'
 import { missingModelFiles } from '../lib/modelDownloadPaths'
-import { isTerminal } from '../sources/standalone/templateDownloadCore'
+import { DISK_SPACE_ERROR, isTerminal } from '../sources/standalone/templateDownloadCore'
 import {
   forgetTemplateDownload,
   startTemplateDownloadTask,
   subscribeTemplateDownload
 } from '../sources/standalone/templateDownloadTask'
 import { fetchEditorGraph } from './editorGraph'
-import { catalogWorkflowModels } from './workflowNeeds'
+import { catalogWorkflowModels, knownDownloadBytes } from './workflowNeeds'
 import { listedWorkflow } from './workflows'
 
 function readTarget(value: unknown): CatalogWorkflowTarget | null {
@@ -74,7 +74,14 @@ async function downloadMissingModels(
   const missing = await missingModelFiles(build, await catalogWorkflowModels(graph))
   if (missing.length === 0) return null
   const taskId = downloadTaskId(id, build)
-  startTemplateDownloadTask(taskId, installation, id, 0, { sendOutput: () => {} }, graph)
+  startTemplateDownloadTask(
+    taskId,
+    installation,
+    id,
+    await knownDownloadBytes(missing),
+    { sendOutput: () => {} },
+    graph
+  )
   return new Promise((resolve) => {
     const stop = subscribeTemplateDownload(taskId, (summary) => {
       if (!page.isDestroyed()) {
@@ -91,7 +98,9 @@ async function downloadMissingModels(
         stop()
         forgetTemplateDownload(taskId)
       })
-      resolve(summary.status === 'done' ? null : t('workflowLaunch.downloadFailed'))
+      if (summary.status === 'done') resolve(null)
+      else if (summary.error === DISK_SPACE_ERROR) resolve(t('workflowLaunch.noDiskSpace'))
+      else resolve(t('workflowLaunch.downloadFailed'))
     })
   })
 }

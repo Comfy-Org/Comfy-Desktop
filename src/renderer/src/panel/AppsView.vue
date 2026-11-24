@@ -104,6 +104,7 @@ const searchShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ /' : 'C
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key !== '/' || !(event.metaKey || event.ctrlKey) || openApp.value) return
+  if ((event.target as Element | null)?.closest?.('[role="dialog"]')) return
   event.preventDefault()
   searchField.value?.querySelector('input')?.focus()
 })

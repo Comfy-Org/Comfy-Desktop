@@ -69,6 +69,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key !== 'Backspace' || !(event.metaKey || event.ctrlKey) || count.value === 0) return
   const target = event.target as HTMLElement | null
   if (target && (target.tagName === 'INPUT' || target.isContentEditable)) return
+  if (target?.closest('[role="dialog"]')) return
   event.preventDefault()
   clear()
 })

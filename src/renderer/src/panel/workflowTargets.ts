@@ -41,6 +41,10 @@ export interface TargetContext {
   online: boolean
 }
 
+export function modelKey(model: Pick<CatalogWorkflowModel, 'directory' | 'filename'>): string {
+  return `${model.directory}/${model.filename}`
+}
+
 function lastUsed(build: Installation): number {
   return typeof build.lastLaunchedAt === 'number' ? build.lastLaunchedAt : 0
 }
@@ -54,8 +58,8 @@ function localChoice(build: Installation, context: TargetContext): TargetChoice 
   }
   if (needs === undefined) return { ...base, state: 'checking', missing: [], disabled: false }
   if (needs === null) return { ...base, state: 'unchecked', missing: [], disabled: false }
-  const missingNames = new Set(needs.missingByBuild[build.id] ?? [])
-  const missing = needs.models.filter((model) => missingNames.has(model.filename))
+  const missingKeys = new Set(needs.missingByBuild[build.id] ?? [])
+  const missing = needs.models.filter((model) => missingKeys.has(modelKey(model)))
   return { ...base, state: missing.length > 0 ? 'missing' : 'ready', missing, disabled: false }
 }
 

@@ -304,6 +304,7 @@
     "partnerOnly": "Uses a partner model that only runs on Comfy Cloud.",
     "noTarget": "Add a build to open this workflow, or view it on Comfy Hub.",
     "downloadFailed": "Some models didn't download. Check Downloads, then try again.",
+    "noDiskSpace": "There is not enough disk space for this workflow's models. Free up space, then try again.",
     "status": {
       "outdated": "Needs ComfyUI {version} or newer",
       "notOnCloud": "Not on Cloud yet",

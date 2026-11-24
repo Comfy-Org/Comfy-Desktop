@@ -11,30 +11,63 @@ import { listedWorkflow } from './workflows'
 
 const SIZE_TIMEOUT_MS = 5000
 const MAX_SIZE_LOOKUPS = 24
+const MAX_SIZE_HOPS = 3
+const LINKED_SIZE = 'x-linked-size'
 
 const sizes = new Map<string, Promise<number | null>>()
 
-function byteCount(value: string | null): number | null {
-  if (value === null || !/^\d{1,15}$/.test(value)) return null
+function byteCount(value: string | undefined): number | null {
+  if (value === undefined || !/^\d{1,15}$/.test(value)) return null
   const count = Number(value)
   return count > 0 ? count : null
 }
 
-async function lookUpSize(url: string): Promise<number | null> {
+function header(headers: Record<string, string | string[]>, wanted: string): string | undefined {
+  const name = Object.keys(headers).find((key) => key.toLowerCase() === wanted)
+  const value = name === undefined ? undefined : headers[name]
+  return Array.isArray(value) ? value[0] : value
+}
+
+function staysOnHost(from: string, to: string): boolean {
   try {
-    const response = await net.fetch(url, {
-      method: 'HEAD',
-      credentials: 'omit',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(SIZE_TIMEOUT_MS)
-    })
-    return (
-      byteCount(response.headers.get('x-linked-size')) ??
-      (response.ok ? byteCount(response.headers.get('content-length')) : null)
-    )
+    return new URL(to).origin === new URL(from).origin
   } catch {
-    return null
+    return false
   }
+}
+
+function lookUpSize(url: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    let request: Electron.ClientRequest | null = null
+    let hopsLeft = MAX_SIZE_HOPS
+    const answer = (bytes: number | null): void => {
+      clearTimeout(timer)
+      resolve(bytes)
+      request?.abort()
+    }
+    const timer = setTimeout(() => answer(null), SIZE_TIMEOUT_MS)
+    try {
+      request = net.request({ url, method: 'HEAD', credentials: 'omit', redirect: 'manual' })
+      const asked = request
+      asked.on('redirect', (_status, _method, redirectUrl, headers) => {
+        const linked = byteCount(header(headers, LINKED_SIZE))
+        hopsLeft -= 1
+        if (linked !== null || hopsLeft < 0 || !staysOnHost(url, redirectUrl)) answer(linked)
+        else asked.followRedirect()
+      })
+      asked.on('response', (response) => {
+        const ok = response.statusCode >= 200 && response.statusCode < 300
+        answer(
+          byteCount(header(response.headers, LINKED_SIZE)) ??
+            (ok ? byteCount(header(response.headers, 'content-length')) : null)
+        )
+      })
+      asked.on('error', () => answer(null))
+      asked.end()
+    } catch {
+      answer(null)
+    }
+  })
 }
 
 function sizeOf(url: string): Promise<number | null> {
@@ -54,6 +87,15 @@ export async function catalogWorkflowModels(
   return resolveTemplateModelsFromJson(graph)
 }
 
+export async function knownDownloadBytes(models: TemplateModelDownload[]): Promise<number> {
+  const known = await Promise.all(models.slice(0, MAX_SIZE_LOOKUPS).map(({ url }) => sizeOf(url)))
+  return known.reduce<number>((total, bytes) => total + (bytes ?? 0), 0)
+}
+
+export function modelKey({ directory, filename }: { directory: string; filename: string }): string {
+  return `${directory}/${filename}`
+}
+
 async function describeModels(models: TemplateModelDownload[]): Promise<CatalogWorkflowModel[]> {
   return Promise.all(
     models.map(async ({ filename, directory, url }, index) => ({
@@ -69,10 +111,7 @@ async function missingByBuild(models: TemplateModelDownload[]): Promise<Record<s
   const entries = await Promise.all(
     builds.map(
       async (build) =>
-        [
-          build.id,
-          (await missingModelFiles(build.id, models)).map(({ filename }) => filename)
-        ] as const
+        [build.id, (await missingModelFiles(build.id, models)).map(modelKey)] as const
     )
   )
   return Object.fromEntries(entries)
