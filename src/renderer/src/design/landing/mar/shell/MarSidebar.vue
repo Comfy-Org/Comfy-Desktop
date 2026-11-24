@@ -133,6 +133,13 @@ const groups = computed(() =>
 // Builds count what this user has (none, one or several local, plus Cloud).
 const countOf = (i: Item): number | undefined =>
   i.page === 'environments' && proto.mode === 'create' ? instances.value.length : i.count
+const TOUR_ANCHORS: Partial<Record<Page, string>> = {
+  environments: 'all-builds',
+  apps: 'apps',
+  assets: 'assets'
+}
+const tourAnchor = (i: Item): string | undefined =>
+  proto.mode === 'create' ? TOUR_ANCHORS[i.page] : undefined
 const isOn = (i: Item): boolean =>
   proto.activeTab === 'home' &&
   (proto.page === i.page || Boolean(i.prefix && proto.page.startsWith(i.prefix)))
@@ -218,8 +225,7 @@ function newChat(): void {
       </button>
       <template v-for="(g, gi) in groups" :key="gi">
         <div v-if="g.title" class="mar-side-label">
-          <span v-if="open">{{ g.title }}</span
-          ><span v-else class="mar-side-sep" />
+          <span v-if="open">{{ g.title }}</span><span v-else class="mar-side-sep" />
         </div>
         <button
           v-for="i in g.items"
@@ -228,6 +234,7 @@ function newChat(): void {
           class="mar-side-row"
           :class="isOn(i) && 'is-on'"
           :aria-current="isOn(i) ? 'page' : undefined"
+          :data-home-tour="tourAnchor(i)"
           :title="open ? undefined : i.label"
           @click="i.href ? toast('Opening docs.comfy.org ↗') : go(i.page)"
         >

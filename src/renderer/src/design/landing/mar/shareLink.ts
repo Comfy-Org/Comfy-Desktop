@@ -32,6 +32,7 @@ import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { LOOKS, marLook } from './looks/looks'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import { PORTS, ports } from './navOptions'
+import { HOME_TOUR_MODES, homeTour } from './homeTour/homeTour'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import {
   LOCAL_SETUPS,
@@ -147,6 +148,7 @@ const PARTS: Part[] = [
   // The cover's default follows the milestone (cover.ts).
   one('cover', cover, () => (can.value.projects ? 'output' : 'canvas'), COVERS),
   one('recentsCover', recentsCover, 'generic', RECENTS_COVERS),
+  one('tour', homeTour, 'auto', HOME_TOUR_MODES),
   one('buildCard', buildCard, 'rows', BUILD_CARDS),
   one('buildPage', buildPage, 'production', BUILD_PAGES),
   one('syncPrevious', syncPrevious, 'off', OFF_ON),

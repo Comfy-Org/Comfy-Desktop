@@ -43,17 +43,23 @@ function openCloud(): void {
         >
       </template>
     </SectionHeader>
-    <ExampleShowcase />
+    <div data-home-tour="apps-carousel"><ExampleShowcase /></div>
   </section>
 
-  <section class="mt-10">
+  <section class="mt-10" data-home-tour="home-builds">
     <SectionHeader v-if="editorEntry.id !== 'banner'" class="mar-sec" title="For ComfyUI users" />
     <EditorEntry v-if="editorEntry.id !== 'rows'" />
     <!-- From Milestone 2, the same cards as a returning Home's Builds
          (MarBuildsRow.vue): the machine drawn, where it stands, its name,
          what it gives you. -->
     <div v-else-if="can.exploreApps" class="grid grid-cols-2 gap-3.5">
-      <button type="button" class="mbr-card" style="--h: 210" @click="openCloud">
+      <button
+        type="button"
+        class="mbr-card"
+        style="--h: 210"
+        data-home-tour="cloud-build"
+        @click="openCloud"
+      >
         <span class="mbr-device"><SetupCloud :hue="210" /></span>
         <span class="grid min-w-0 flex-1">
           <span class="mss-machine-kicker">{{ proto.signedIn ? 'Ready' : 'Sign in' }}</span>
@@ -66,6 +72,7 @@ function openCloud(): void {
         type="button"
         class="mbr-card"
         style="--h: 150"
+        data-home-tour="local-build"
         @click="hostActions.newInstance()"
       >
         <span class="mbr-device"><SetupLaptop :os="localSetup.os" /></span>
@@ -81,7 +88,7 @@ function openCloud(): void {
       </button>
     </div>
     <div v-else class="mar-start-ways">
-      <button type="button" class="mar-start-way" @click="openCloud">
+      <button type="button" class="mar-start-way" data-home-tour="cloud-build" @click="openCloud">
         <span class="mar-start-icon"><Cloud :size="17" /></span>
         <span class="flex min-w-0 flex-1 flex-col text-left">
           <span class="text-ui font-medium text-base-foreground">Comfy Cloud</span>
@@ -94,6 +101,7 @@ function openCloud(): void {
         v-if="!installPending"
         type="button"
         class="mar-start-way"
+        data-home-tour="local-build"
         @click="hostActions.newInstance()"
       >
         <span class="mar-start-icon"><Laptop :size="17" /></span>
