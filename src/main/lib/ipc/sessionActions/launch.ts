@@ -1961,6 +1961,8 @@ async function runLaunch(
     let earlyExit: string | null = null
     let exitCode: number | null = null
     let exitSignal: string | null = null
+    let terminated = false
+    spawned.proc.once('exit', () => (terminated = true))
     const earlyExitPromise = new Promise<void>((_resolve, reject) => {
       spawned.proc.on('error', (err: Error) => {
         const code = (err as NodeJS.ErrnoException).code
@@ -1995,6 +1997,7 @@ async function runLaunch(
       ])
       await waitLaunchReadyHold(abort.signal)
       if (abort.signal.aborted) throw new Error('Launch cancelled')
+      if (terminated) await earlyExitPromise
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
       const exitedDuringStartup = exitCode !== null
