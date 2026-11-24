@@ -1,3 +1,5 @@
+import { formatRelativeFromMs } from './datetime'
+
 export interface DownloadFormatInput {
   filename: string
   directory?: string
@@ -26,53 +28,67 @@ export function formatSpeed(bytesPerSec: number): string {
   return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`
 }
 
-export function formatEta(seconds: number): string {
-  if (seconds < 60) return `${Math.ceil(seconds)}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.ceil(seconds % 60)}s`
-  const h = Math.floor(seconds / 3600)
-  const m = Math.ceil((seconds % 3600) / 60)
-  return `${h}h ${m}m`
+export type Translator = (key: string, params?: Record<string, unknown>) => string
+
+export function formatEta(seconds: number, t: Translator): string {
+  if (seconds < 60) return t('downloadsPopup.etaSeconds', { seconds: Math.ceil(seconds) })
+  if (seconds < 3600) {
+    return t('downloadsPopup.etaMinutes', {
+      minutes: Math.floor(seconds / 60),
+      seconds: Math.ceil(seconds % 60)
+    })
+  }
+  return t('downloadsPopup.etaHours', {
+    hours: Math.floor(seconds / 3600),
+    minutes: Math.ceil((seconds % 3600) / 60)
+  })
 }
 
-export function formatTimeLeft(seconds: number): string {
-  if (seconds < 60) return 'Less than a minute left'
+export function formatTimeLeft(seconds: number, t: Translator): string {
+  if (seconds < 60) return t('downloadsPopup.timeLeftUnderMinute')
   const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes} min left`
+  if (minutes < 60) return t('downloadsPopup.timeLeftMinutes', { minutes })
   const hours = Math.floor(minutes / 60)
   const rest = minutes % 60
-  return rest === 0 ? `${hours} h left` : `${hours} h ${rest} min left`
+  return rest === 0
+    ? t('downloadsPopup.timeLeftHours', { hours })
+    : t('downloadsPopup.timeLeftHoursMinutes', { hours, minutes: rest })
 }
 
-function bytesSoFar(d: DownloadFormatInput): string | null {
+function bytesSoFar(d: DownloadFormatInput, t: Translator): string | null {
   if (!d.totalBytes || d.totalBytes <= 0 || d.receivedBytes == null) return null
-  return `${formatBytes(d.receivedBytes)} of ${formatBytes(d.totalBytes)}`
+  return t('downloadsPopup.bytesOf', {
+    received: formatBytes(d.receivedBytes),
+    total: formatBytes(d.totalBytes)
+  })
 }
 
 export function statusLine(
   d: DownloadFormatInput,
+  t: Translator,
   opts: { completedShowsSize?: boolean } = {}
 ): string {
   const pct = Math.round(d.progress * 100)
   switch (d.status) {
     case 'pending':
-      return 'Waiting…'
+      return t('downloadsPopup.statusWaiting')
     case 'downloading': {
-      const parts = [bytesSoFar(d) ?? `${pct}%`]
+      const parts = [bytesSoFar(d, t) ?? `${pct}%`]
       if (d.etaSeconds != null && d.etaSeconds > 0 && isFinite(d.etaSeconds)) {
-        parts.push(formatTimeLeft(d.etaSeconds))
+        parts.push(formatTimeLeft(d.etaSeconds, t))
       }
       return parts.join(' · ')
     }
     case 'paused':
-      return `Paused · ${bytesSoFar(d) ?? `${pct}%`}`
+      return t('downloadsPopup.statusPaused', { progress: bytesSoFar(d, t) ?? `${pct}%` })
     case 'completed':
       return opts.completedShowsSize && d.totalBytes
-        ? `Downloaded · ${formatBytes(d.totalBytes)}`
-        : 'Downloaded'
+        ? t('downloadsPopup.statusDownloadedSize', { size: formatBytes(d.totalBytes) })
+        : t('downloadsPopup.statusDownloaded')
     case 'error':
-      return d.error || 'Error'
+      return d.error || t('common.error')
     case 'cancelled':
-      return 'Cancelled'
+      return t('downloadsPopup.statusCancelled')
     default:
       return ''
   }
@@ -93,29 +109,16 @@ export function statusKindClass(d: Pick<DownloadFormatInput, 'status'>): string 
   }
 }
 
-export function relativeTime(timestampMs: number | undefined, now = Date.now()): string {
-  if (!timestampMs) return ''
-  const delta = Math.max(0, now - timestampMs)
-  const secs = Math.floor(delta / 1000)
-  if (secs < 60) return 'Just now'
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
-}
-
 export interface ModalFormatInput extends DownloadFormatInput {
   createdAt?: number
   totalBytes?: number
 }
 
-export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
+export function modalSubtitle(d: ModalFormatInput, t: Translator, now = Date.now()): string {
   const pct = Math.round(d.progress * 100)
   switch (d.status) {
     case 'pending':
-      return 'Waiting…'
+      return t('downloadsPopup.statusWaiting')
     case 'downloading': {
       const parts: string[] = [`${pct}%`]
       if (d.totalBytes && d.totalBytes > 0 && d.receivedBytes != null) {
@@ -125,12 +128,12 @@ export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
         parts.push(formatSpeed(d.speedBytesPerSec))
       }
       if (d.etaSeconds != null && d.etaSeconds > 0 && isFinite(d.etaSeconds)) {
-        parts.push(`~${formatEta(d.etaSeconds)} left`)
+        parts.push(t('downloadsPopup.etaLeft', { eta: formatEta(d.etaSeconds, t) }))
       }
       return parts.join(' · ')
     }
     case 'paused': {
-      const parts = [`Paused · ${pct}%`]
+      const parts = [t('downloadsPopup.statusPaused', { progress: `${pct}%` })]
       if (d.totalBytes && d.totalBytes > 0 && d.receivedBytes != null) {
         parts.push(`${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)}`)
       }
@@ -139,14 +142,14 @@ export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
     case 'completed': {
       const parts: string[] = []
       if (d.totalBytes) parts.push(formatBytes(d.totalBytes))
-      const ago = relativeTime(d.createdAt, now)
+      const ago = d.createdAt ? formatRelativeFromMs(d.createdAt, t, now) : ''
       if (ago) parts.push(ago)
-      return parts.join(' · ') || 'Downloaded'
+      return parts.join(' · ') || t('downloadsPopup.statusDownloaded')
     }
     case 'error':
-      return d.error || 'Download failed'
+      return d.error || t('downloadsPopup.statusFailed')
     case 'cancelled':
-      return 'Cancelled'
+      return t('downloadsPopup.statusCancelled')
     default:
       return ''
   }

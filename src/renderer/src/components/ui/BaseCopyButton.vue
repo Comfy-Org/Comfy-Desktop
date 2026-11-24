@@ -2,6 +2,7 @@
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { Copy, Check } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import { useI18n } from 'vue-i18n'
 
 interface Props {
   value?: string
@@ -14,8 +15,11 @@ const props = withDefaults(defineProps<Props>(), {
   value: undefined,
   getValue: undefined,
   size: 14,
-  ariaLabel: 'Copy to clipboard'
+  ariaLabel: undefined
 })
+
+const { t } = useI18n()
+const label = computed(() => props.ariaLabel ?? t('common.copyToClipboard'))
 
 const copied = ref(false)
 const COPIED_RESET_MS = 1600
@@ -54,8 +58,8 @@ const Icon = computed(() => (copied.value ? Check : Copy))
     size="icon-sm"
     class="base-copy-button"
     :class="{ 'is-copied text-success': copied }"
-    :aria-label="ariaLabel"
-    :title="ariaLabel"
+    :aria-label="label"
+    :title="label"
     @click="handleClick"
   >
     <component :is="Icon" :size="size" />

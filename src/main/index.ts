@@ -255,6 +255,14 @@ function focusExternalProcessWindow(pid: number): void {
     )
   }
 }
+function installTranslatedAppMenu(): void {
+  installAppMenu(process.platform, undefined, {
+    onCheckForUpdates: () => {
+      void updater.runCheck('app-menu').catch(() => {})
+    }
+  })
+}
+
 function updateTrayMenu(): void {
   if (!tray) return
   const contextMenu = Menu.buildFromTemplate([
@@ -1054,11 +1062,10 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     migrateXdgPaths()
     persistWinDataRootChoice()
 
-    installAppMenu(process.platform, undefined, {
-      onCheckForUpdates: () => {
-        void updater.runCheck('app-menu').catch(() => {})
-      }
-    })
+    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
+    i18n.init(locale)
+
+    installTranslatedAppMenu()
 
     if (process.platform !== 'darwin') {
       app.on('browser-window-created', (_event, window) => {
@@ -1143,9 +1150,6 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     void initWorkspaceMintSwitchFlag({ distinctId: installationId })
 
     getCloudSession().resumeRevocations()
-
-    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
-    i18n.init(locale)
 
     mainTelemetry.capture('comfy.desktop.app.language_resolved', {
       os_locale: app.getLocale(),
@@ -1583,19 +1587,19 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,
             spec: {
-              title: 'Restart instance?',
-              message: 'Restart this instance?',
+              title: i18n.t('instancePicker.restartConfirmHeading'),
+              message: i18n.t('instancePicker.restartConfirmTitle'),
               details: [
                 {
-                  label: 'Heads up',
+                  label: i18n.t('instancePicker.confirmHeadsUp'),
                   items: [
-                    'Restarting will stop the running session.',
-                    'Any unsaved work in the workflow will be lost.'
+                    i18n.t('instancePicker.restartConfirmItem1'),
+                    i18n.t('instancePicker.restartConfirmItem2')
                   ]
                 }
               ],
-              confirmLabel: 'Restart',
-              cancelLabel: 'Cancel',
+              confirmLabel: i18n.t('instancePicker.restartConfirmAction'),
+              cancelLabel: i18n.t('common.cancel'),
               confirmStyle: 'primary',
               theme: parentEntry.lastTheme
             }
@@ -1640,7 +1644,10 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       },
       onComfyRestarted,
       onModelFolderRelaunch,
-      onLocaleChanged: updateTrayMenu,
+      onLocaleChanged: () => {
+        updateTrayMenu()
+        installTranslatedAppMenu()
+      },
       onThemeChanged: applyChooserHostThemeToAll
     })
     initializeModelDownloads().catch((err) => {

@@ -2,14 +2,23 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import type * as SystemModalModule from '../popups/systemModal'
 import type * as SettingsModule from '../settings'
+import zh from '../../../locales/zh.json'
 
 const mocks = vi.hoisted(() => ({
   confirmBeforeClosing: false,
   appsBuildRunning: false,
   agrees: true,
   asked: [] as {
-    spec: { message: string; confirmStyle?: string; details?: { items: string[] }[] }
+    spec: {
+      title?: string
+      message: string
+      confirmLabel?: string
+      cancelLabel?: string
+      confirmStyle?: string
+      details?: { label?: string; items: string[] }[]
+    }
   }[],
+  locale: 'en' as 'en' | 'zh',
   stopAppsBuilds: vi.fn(async () => {}),
   keepComfyRunning: undefined as boolean | undefined
 }))
@@ -28,6 +37,14 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
+
+vi.mock('../lib/i18n', async () => {
+  const { translateMessage } = await import('../lib/localeTestHelper')
+  return {
+    t: (key: string, params?: Record<string, string | number>) =>
+      translateMessage(mocks.locale, key, params)
+  }
+})
 
 vi.mock('../apps/localComfy', () => ({
   hasBuildsRunningForAppsOnly: () => mocks.appsBuildRunning,
@@ -279,6 +296,23 @@ describe('closing the last Desktop window while an app uses a ComfyUI Desktop st
     expect(mocks.stopAppsBuilds).not.toHaveBeenCalled()
   })
 
+  it('asks in the app language', async () => {
+    mocks.locale = 'zh'
+    onTestFinished(() => {
+      mocks.locale = 'en'
+    })
+    mocks.agrees = false
+
+    await confirmAndCloseHostWindow(openDashboard() as unknown as Electron.BrowserWindow)
+
+    expect(mocks.asked[0]?.spec).toMatchObject({
+      title: zh.fileMenu.exitWindow,
+      message: zh.closeWindow.messageStopsAndQuits,
+      confirmLabel: zh.fileMenu.exitWindow,
+      cancelLabel: zh.common.cancel
+    })
+  })
+
   it('stops that ComfyUI and closes once the person agrees', async () => {
     const win = openDashboard()
 
@@ -465,6 +499,25 @@ describe('quitting while a ComfyUI runs with no window', () => {
         'primary'
       )
       expect(performQuit).toHaveBeenCalledTimes(1)
+    })
+
+    it('asks in the app language', async () => {
+      mocks.locale = 'zh'
+      onTestFinished(() => {
+        mocks.locale = 'en'
+      })
+      const entry = makeEntry(makeWindow())
+      comfyWindows.set(entry.windowKey, entry)
+
+      await confirmAndCloseAllHostWindows(null, vi.fn())
+
+      expect(mocks.asked[0]?.spec).toMatchObject({
+        title: zh.fileMenu.exitAllWindows,
+        message: zh.quitDesktop.messageOne,
+        confirmLabel: zh.settings.closeQuitConfirm,
+        cancelLabel: zh.common.cancel
+      })
+      expect(mocks.asked[0]?.spec.details?.[0]?.label).toBe(zh.quitDesktop.openInstances)
     })
 
     it('does not count it as windowless while its window is open', async () => {

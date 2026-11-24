@@ -618,7 +618,9 @@
     "nothingMatches": "Nothing matches",
     "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
     "clearFilters": "Clear filters",
-    "clearSearch": "Clear search"
+    "clearSearch": "Clear search",
+    "copyToClipboard": "Copy to clipboard",
+    "exportHere": "Export here"
   },
   "comfybuilder": {
     "build": "Build",
@@ -1642,7 +1644,8 @@
     "latestLabel": "Latest:",
     "noneYet": "No snapshots yet",
     "restoreCancelled": "Restore cancelled",
-    "restoreCancelledBody": "The imported snapshot was not applied."
+    "restoreCancelledBody": "The imported snapshot was not applied.",
+    "fileTypeName": "Snapshot"
   },
   "portable": {
     "label": "Portable",
@@ -2023,7 +2026,8 @@
     "medianSummary": "Median run · {count} measured · {failed} failed",
     "runCounts": "{count} measured · {failed} failed",
     "runPhaseWarmup": "warm-up run",
-    "runPhaseMeasured": "measured run {current} of {total}"
+    "runPhaseMeasured": "measured run {current} of {total}",
+    "exportDialogTitle": "Export performance test results"
   },
   "benchmarks": {
     "title": "Benchmarks",
@@ -2105,7 +2109,8 @@
     "exportLimit": "Up to {max} runs",
     "clearSelection": "Clear selection",
     "memory": "{gigabytes} GB RAM",
-    "referenceHidden": "Compared with session {session}, which the filters hide."
+    "referenceHidden": "Compared with session {session}, which the filters hide.",
+    "exportDialogTitle": "Export benchmark comparison"
   },
   "downloadsPopup": {
     "title": "Downloads",
@@ -2119,7 +2124,22 @@
     "viewAll": "View all",
     "viewAllLabel": "View all downloads",
     "completed": "Completed",
-    "thumbnailAlt": "Thumbnail of {name}"
+    "thumbnailAlt": "Thumbnail of {name}",
+    "statusWaiting": "Waiting…",
+    "statusPaused": "Paused · {progress}",
+    "statusDownloaded": "Downloaded",
+    "statusDownloadedSize": "Downloaded · {size}",
+    "statusCancelled": "Cancelled",
+    "statusFailed": "Download failed",
+    "bytesOf": "{received} of {total}",
+    "timeLeftUnderMinute": "Less than a minute left",
+    "timeLeftMinutes": "{minutes} min left",
+    "timeLeftHours": "{hours} h left",
+    "timeLeftHoursMinutes": "{hours} h {minutes} min left",
+    "etaLeft": "~{eta} left",
+    "etaSeconds": "{seconds}s",
+    "etaMinutes": "{minutes}m {seconds}s",
+    "etaHours": "{hours}h {minutes}m"
   },
   "downloadsTab": {
     "title": "Downloads",
@@ -2244,5 +2264,24 @@
     "detailMany": "{count} apps are still making something. Quitting stops them.",
     "quit": "Quit",
     "cancel": "Cancel"
+  },
+  "quitDesktop": {
+    "messageOne": "Quit Desktop? This will close the running ComfyUI instance.",
+    "messageMany": "Quit Desktop? This will close {count} running ComfyUI instances.",
+    "openInstances": "Open instances",
+    "operations": "In-progress operations",
+    "downloads": "Active downloads",
+    "untitled": "Untitled instance"
+  },
+  "closeWindow": {
+    "message": "Close this window?",
+    "messageQuits": "Close this window? This quits Comfy Desktop.",
+    "messageStops": "Close this window? This stops the running ComfyUI instance.",
+    "messageStopsAndQuits": "Close this window? This stops ComfyUI and quits Comfy Desktop."
+  },
+  "appMenu": {
+    "view": "View",
+    "window": "Window",
+    "checkForUpdates": "Check for Updates…"
   }
 }

@@ -149,6 +149,31 @@ describe('DownloadsFullView reveal action', () => {
   })
 })
 
+describe('DownloadsFullView status lines', () => {
+  afterEach(resetAppLocale)
+
+  it('writes a paused download in the app language', async () => {
+    switchAppLocaleToChinese()
+    const view = await mountView({
+      active: [
+        {
+          id: 'paused',
+          url: 'https://example.com/paused.bin',
+          filename: 'paused.bin',
+          progress: 0.25,
+          status: 'paused'
+        }
+      ],
+      recent: []
+    })
+
+    const row = view.findAll('.dlm-row').find((r) => r.text().includes('paused.bin'))!
+    expect(row.get('.dlm-sub').text()).toBe(
+      zh.downloadsPopup.statusPaused.replace('{progress}', '25%')
+    )
+  })
+})
+
 describe('DownloadsFullView close', () => {
   it('puts the round close button outside the card and closes the window', async () => {
     const view = await mountView()

@@ -20,7 +20,7 @@ export function deleteAction(installation: { installPath: string }): ActionDef {
     style: 'danger',
     enabled: true,
     showProgress: true,
-    progressTitle: 'Deleting',
+    progressTitle: t('actions.delete'),
     cancellable: true,
     confirm: {
       title: t('actions.deleteConfirmTitle'),
