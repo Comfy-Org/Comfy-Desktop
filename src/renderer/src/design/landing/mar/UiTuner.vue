@@ -16,6 +16,7 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { ASSET_MODALS, assetModal } from './assets/assetModal'
 import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
+import { RATING_STYLES, ratingStyle } from './assets/ratingStyle'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
@@ -149,6 +150,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'assetModal', show: () => when.assetModal.value },
+  { id: 'rating', show: () => when.rating.value },
   { id: 'folderPicker', show: () => when.folderPicker.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
@@ -411,6 +413,14 @@ const linkSays = computed(() => {
               assetModal.id === 'window'
                 ? 'A frame with the app behind it, as proposed.'
                 : 'The whole window, no tags, Close by the name: the first milestone.'
+            }}</span>
+          </Row>
+          <Row :show="shows('rating')" label="Rating">
+            <Seg v-model="ratingStyle.id" label="Rating" :options="RATING_STYLES" />
+            <span class="text-ui text-subtle-foreground">{{
+              ratingStyle.id === 'favorite'
+                ? 'The star Assets has today: on or off.'
+                : 'Tap the star, pick how many. Keys 1–5 rate the selection.'
             }}</span>
           </Row>
           <Row :show="shows('folderPicker')" label="Folder picker">

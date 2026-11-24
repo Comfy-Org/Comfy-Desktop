@@ -14,6 +14,7 @@ import {
   Palette,
   Puzzle,
   Search,
+  Star,
   Tag,
   Workflow,
   X
@@ -64,6 +65,7 @@ const {
   typesLabel = 'Media type',
   folders,
   kinds,
+  ratings,
   meta
 } = defineProps<{
   types: readonly { value: AssetType; label: string }[]
@@ -82,19 +84,24 @@ const {
    *  the rest of what narrows the wall already lives. None of them
    *  keeps it in the toolbar's own tabs. */
   kinds?: readonly { value: string; label: string }[]
+  /** Rating › Five stars: how many stars a file has to hold. Empty
+   *  keeps every file, rated or not. */
+  ratings?: readonly { value: string; label: string }[]
 }>()
 const f = defineModel<AssetFilter>({ required: true })
 // Desktop's page clears every filter with ⌘⌫ (MarAssetsPage); the menu says so.
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 const folder = defineModel<string>('folder', { default: '' })
 const kind = defineModel<string>('kind', { default: 'all' })
+const rating = defineModel<string>('rating', { default: '' })
 // The folder counts as a filter only while it is picked in here: with
 // its own pill it reads as where you are, not as something switched on.
 const count = computed(
   () =>
     activeFilters(f.value) +
     (folders?.length && folder.value ? 1 : 0) +
-    (kinds?.length && kind.value !== 'all' ? 1 : 0)
+    (kinds?.length && kind.value !== 'all' ? 1 : 0) +
+    (ratings?.length && rating.value ? 1 : 0)
 )
 const pickFolder = (id: string): void => {
   folder.value = folder.value === id ? '' : id
@@ -170,6 +177,7 @@ const found = computed(() => ({
   tags: tags.filter(match),
   folders: (folders ?? []).filter((x) => match(x.name)),
   kinds: (kinds ?? []).filter((x) => match(x.label)),
+  ratings: match('Rating') ? (ratings ?? []) : [],
   labels: LABELS.filter((l) => match(l.label)),
   meta: META.map((m) => ({ ...m, values: metaOptions(m.key).filter(match) })).filter(
     (m) => m.values.length
@@ -228,6 +236,21 @@ const searching = computed(() => !!q.value.trim())
                 :class="item"
                 :value="x.value"
                 @select.prevent="kind = x.value"
+              >
+                <span class="afm-grow">{{ x.label }}</span>
+                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </template>
+          <template v-if="found.ratings.length">
+            <DropdownMenuLabel class="afm-label">Rating</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="rating">
+              <DropdownMenuRadioItem
+                v-for="x in found.ratings"
+                :key="x.value"
+                :class="item"
+                :value="x.value"
+                @select.prevent="rating = x.value"
               >
                 <span class="afm-grow">{{ x.label }}</span>
                 <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
@@ -333,6 +356,7 @@ const searching = computed(() => !!q.value.trim())
           <p
             v-if="
               !found.kinds.length &&
+              !found.ratings.length &&
               !found.sources.length &&
               !found.types.length &&
               !found.dates.length &&
@@ -369,6 +393,36 @@ const searching = computed(() => !!q.value.trim())
                     :class="item"
                     :value="x.value"
                     @select.prevent="kind = x.value"
+                  >
+                    <span class="afm-grow">{{ x.label }}</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+          <DropdownMenuSub
+            v-if="ratings?.length"
+            :open="sub === 'rating'"
+            @update:open="only('rating', $event)"
+          >
+            <DropdownMenuSubTrigger :class="item">
+              <Star :size="16" class="afm-icon" /><span class="afm-grow">Rating</span
+              ><ChevronRight :size="16" class="afm-icon" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal :to="PORTAL_TO">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
+                <DropdownMenuRadioGroup :model-value="rating">
+                  <DropdownMenuRadioItem :class="item" value="" @select.prevent="rating = ''">
+                    <span class="afm-grow">Any rating</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem
+                    v-for="x in ratings"
+                    :key="x.value"
+                    :class="item"
+                    :value="x.value"
+                    @select.prevent="rating = x.value"
                   >
                     <span class="afm-grow">{{ x.label }}</span>
                     <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
