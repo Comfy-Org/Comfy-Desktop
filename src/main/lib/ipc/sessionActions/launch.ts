@@ -2383,8 +2383,8 @@ async function runLaunch(
       execTap.flushSummary()
       hwTap.flushSummary()
       assetsTap.flushSummary()
-      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       _removeSession(sessionId, crashed)
+      const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
       const exitedPayload = {
         installationId: sessionId,
         crashed,

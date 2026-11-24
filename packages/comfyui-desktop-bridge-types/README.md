@@ -95,8 +95,10 @@ works already, and `startLocal()` waits for the install, then starts the
 build.
 
 `machine()` gives the operating system, and the memory of the graphics card or
-that there is no GPU when Desktop can read it. It is absent on Desktop builds
-that predate it.
+that there is no GPU when Desktop can read it. Desktop waits at most 5 seconds
+for the asynchronous part of that read; a driver tool that it waits for
+synchronously, such as `nvidia-smi`, can make the answer later. It is absent on
+Desktop builds that predate it.
 
 `openInComfy({ prompt, where, name, build })` opens a run's API-format
 workflow in a ComfyUI window in Desktop: the build the page runs on (or the

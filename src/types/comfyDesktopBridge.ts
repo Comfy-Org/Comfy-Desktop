@@ -373,9 +373,11 @@ export interface ComfyDesktopHostedLocalBridge {
   onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
   /**
    * Facts about this computer. Desktop reads the GPU once per session and
-   * waits at most 5 seconds for it; after that the answer has the platform
-   * alone. Rejects when the page is not in the Apps view. Absent on Desktop
-   * builds that predate it.
+   * waits at most 5 seconds for the asynchronous part of that read; after that
+   * the answer has the platform alone. A driver tool that the read waits for
+   * synchronously, such as `nvidia-smi`, can make the answer later. Rejects
+   * when the page is not in the Apps view. Absent on Desktop builds that
+   * predate it.
    */
   machine?(): Promise<ComfyDesktopMachine>
 }
