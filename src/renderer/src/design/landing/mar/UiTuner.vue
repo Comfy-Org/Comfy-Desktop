@@ -57,6 +57,7 @@ import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext
 import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
 import { HOME_TOUR_MODES, homeTour, replayHomeTour } from './homeTour/homeTour'
+import { replayOnboarding } from './setup/replayOnboarding'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
 import GroupHead from './tuner/TunerGroupHead.vue'
@@ -234,7 +235,7 @@ const linkSays = computed(() => {
       v-if="tuner.open"
       aria-label="UI tuner"
       :class="can.design && 'bottom-4'"
-      class="proto-ui fixed top-14 right-4 z-[80] max-h-[calc(100vh-4.5rem)] flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
+      class="proto-ui pointer-events-auto fixed top-14 right-4 z-[80] max-h-[calc(100vh-4.5rem)] flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
     >
       <header class="flex shrink-0 items-center justify-between px-4 pt-4 pb-2">
         <h2 class="text-ui font-semibold">
@@ -366,6 +367,15 @@ const linkSays = computed(() => {
               :model-value="marUser.user"
               @update:model-value="setUser"
             />
+            <Button
+              v-if="can.onboarding && marUser.user === 'first'"
+              size="sm"
+              class="self-start"
+              data-testid="replay-onboarding"
+              @click="replayOnboarding"
+            >
+              Replay onboarding
+            </Button>
           </Row>
           <Row :show="shows('appsStage')" label="Apps stage">
             <Seg v-model="appsStage.id" label="Apps stage" :options="APPS_STAGES" />

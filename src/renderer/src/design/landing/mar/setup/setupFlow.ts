@@ -51,12 +51,7 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  open: the first-run Home stays around the card. Off by default, and
  *  only where there is a Home. */
 export type Onboarding =
-  | 'install'
-  | 'home-running'
-  | 'home-direct'
-  | 'oneclick'
-  | 'home'
-  | 'home-open'
+  'install' | 'home-running' | 'home-direct' | 'oneclick' | 'home' | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'oneclick', label: 'One-click install (proposed)' },
   { value: 'install', label: 'Install first (today)' },
@@ -235,6 +230,7 @@ export const homeOneClick = computed(() => homeFirst.value && localSetup.onboard
 const M1_MILESTONE = 2
 const M2_MILESTONE = 4.5
 function showScope(): void {
+  if (can.value.onboarding) return
   const m = localSetup.scope === 'm1' ? M1_MILESTONE : M2_MILESTONE
   if (proto.milestone !== m) proto.milestone = m
 }
