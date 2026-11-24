@@ -2732,7 +2732,7 @@ describe('AssetsView folders', () => {
     return shown
   }
 
-  it('keeps the files of a sub-folder out of the view until the folder is chosen', async () => {
+  it('shows every file until a folder narrows the view to its own', async () => {
     const wrapper = await mountAssets([
       dated(`${ROOT}/forest.png`, 'forest.png', '03'),
       dated(`${ROOT}/2026-11/harbor.png`, 'harbor.png', '02'),
@@ -2740,7 +2740,10 @@ describe('AssetsView folders', () => {
       dated(`${ROOT}/2026-11/final/hero.png`, 'hero.png', '04')
     ])
 
-    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(
+      assetNames(wrapper),
+      'All files holds every file, whichever folder it was saved in'
+    ).toEqual(['hero.png', 'forest.png', 'harbor.png', 'crane.png'])
     expect(
       await folderChoices(),
       'every folder is one click away, counting every file under it'
@@ -2748,7 +2751,10 @@ describe('AssetsView folders', () => {
 
     await pickFolder('2026-11')
 
-    expect(assetNames(wrapper)).toEqual(['harbor.png', 'crane.png'])
+    expect(
+      assetNames(wrapper),
+      'a folder holds its own files and those of its sub-folders'
+    ).toEqual(['hero.png', 'harbor.png', 'crane.png'])
     expect(
       document.querySelector('[data-testid="assets-pagination"]'),
       'paging the whole listing says nothing about a folder'
@@ -2764,7 +2770,7 @@ describe('AssetsView folders', () => {
     document.querySelector<HTMLElement>('[data-testid="assets-breadcrumb-root"]')!.click()
     await flushPromises()
 
-    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(assetNames(wrapper)).toEqual(['hero.png', 'forest.png', 'harbor.png', 'crane.png'])
   })
 
   it('lays every match out flat while a search is on', async () => {

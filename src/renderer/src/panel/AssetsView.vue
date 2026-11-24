@@ -342,7 +342,9 @@ function folderUnder(asset: GalleryAsset): string | null {
 }
 
 function inCurrentFolder(asset: GalleryAsset): boolean {
-  return browsingFlat.value || (folderUnder(asset) ?? '') === folder.value
+  if (browsingFlat.value || !folder.value) return true
+  const dir = folderUnder(asset)
+  return dir === folder.value || dir?.startsWith(`${folder.value}/`) === true
 }
 
 const folderOptions = computed<FolderEntry[]>(() => {
