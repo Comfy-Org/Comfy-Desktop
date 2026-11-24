@@ -1416,6 +1416,12 @@ function extensionOf(name: string): string {
             </MenuRadioItem>
           </DropdownMenuRadioGroup>
         </Menu>
+        <span
+          v-if="selectedBuild"
+          class="h-5 w-px shrink-0 bg-[rgb(240_240_240/0.14)]"
+          aria-hidden="true"
+          data-testid="assets-toolbar-divider"
+        />
         <SegmentedControl
           v-if="toolbarCompactness < KINDS_AS_MENU"
           v-model="kindFilter"

@@ -2732,6 +2732,29 @@ describe('AssetsView folders', () => {
     return shown
   }
 
+  it('sets the place and folder apart from the filters with a line', async () => {
+    const wrapper = await mountAssets([
+      dated(`${ROOT}/forest.png`, 'forest.png', '03'),
+      dated(`${ROOT}/2026-11/crane.png`, 'crane.png', '01')
+    ])
+
+    const row = wrapper.get('[data-testid="assets-toolbar"] > div').element
+    const after = (one: string, two: string): boolean =>
+      !!(
+        row.querySelector(one)!.compareDocumentPosition(row.querySelector(two)!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+
+    expect(
+      after('[data-testid="assets-folder-picker"]', '[data-testid="assets-toolbar-divider"]'),
+      'the line follows where you are looking'
+    ).toBe(true)
+    expect(
+      after('[data-testid="assets-toolbar-divider"]', '[data-testid="assets-kind-all"]'),
+      'and comes before what you filter'
+    ).toBe(true)
+  })
+
   it('shows every file until a folder narrows the view to its own', async () => {
     const wrapper = await mountAssets([
       dated(`${ROOT}/forest.png`, 'forest.png', '03'),
