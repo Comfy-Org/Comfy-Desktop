@@ -283,6 +283,10 @@ function copyText(text: string, what: string): void {
 /** Show in Finder: only a file on this computer, never a Comfy Cloud one. */
 const onDisk = computed(() => asset.source !== 'cloud')
 const savedIn = computed(() => `${build} / ${facts.value.imported ? 'input' : 'output'}`)
+const savedFolder = computed(() => ({
+  name: facts.value.imported ? 'input' : 'output',
+  parent: build
+}))
 const subtitle = computed(() => `${KIND[asset.type] ?? 'File'} · Created ${added.value}`)
 function reveal(): void {
   toast(`Revealed ${asset.name}`)
@@ -723,6 +727,15 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
+            <section v-if="full" class="mad-sec" aria-label="Saved in">
+              <h3 class="mad-label">Saved in</h3>
+              <p v-if="!onDisk" class="mad-saved">Comfy Cloud assets</p>
+              <div v-else class="mad-saved-in" :title="savedIn">
+                <span class="mad-saved">{{ savedFolder.name }}</span>
+                <span class="mad-saved is-parent">{{ savedFolder.parent }}</span>
+              </div>
+            </section>
+
             <section class="mad-sec">
               <h3 class="mad-label">Asset details</h3>
               <dl class="mad-rows">
@@ -843,7 +856,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section class="mad-sec">
+            <section v-if="!full" class="mad-sec">
               <h3 class="mad-label">
                 Generation details
                 <span
@@ -857,12 +870,7 @@ onBeforeUnmount(() => {
                   ></span
                 >
               </h3>
-              <GenerationInfo :facts="facts" :loading="loading" :summarized="full" />
-            </section>
-
-            <section v-if="full && onDisk" class="mad-sec">
-              <h3 class="mad-label">Saved in</h3>
-              <p class="mad-saved" :title="savedIn">{{ savedIn }}</p>
+              <GenerationInfo :facts="facts" :loading="loading" />
             </section>
           </div>
           <!-- At the bottom, labeled: only the actions this file has. Download
@@ -879,16 +887,17 @@ onBeforeUnmount(() => {
                 editable ? 'Open as workflow' : 'Open workflow'
               }}</span>
             </button>
-            <button v-if="full && onDisk" type="button" class="mad-btn" @click="reveal">
-              <FolderSearch :size="14" /><span>Show in Finder</span>
-            </button>
             <button v-if="onTab && !tab" type="button" class="mad-btn" @click="onTab(asset)">
               <AppWindow :size="14" /><span>Open in new tab</span>
             </button>
             <button v-if="saveable" type="button" class="mad-btn" @click="emit('save')">
               <Plus :size="14" /><span>Save to Assets</span>
             </button>
+            <button v-if="full && onDisk" type="button" class="mad-btn is-primary" @click="reveal">
+              <FolderSearch :size="14" /><span>Show in Finder</span>
+            </button>
             <button
+              v-else
               type="button"
               class="mad-btn is-primary"
               @click="saveFile(picOf(asset), asset.name)"
@@ -1780,6 +1789,15 @@ onBeforeUnmount(() => {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mad-saved-in {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.mad-saved.is-parent {
+  color: var(--color-muted-foreground);
 }
 
 /* Smaller windows: the frame takes more of them. */

@@ -11,11 +11,7 @@ import { modelRole, type AssetFacts } from './assetFacts'
  * and run history, each available or not. Shared by Desktop's asset view and
  * ComfyUI's Asset details panel, so both read the same.
  */
-const {
-  facts,
-  loading = false,
-  summarized = false
-} = defineProps<{ facts: AssetFacts; loading?: boolean; summarized?: boolean }>()
+const { facts, loading = false } = defineProps<{ facts: AssetFacts; loading?: boolean }>()
 
 const more = ref(false)
 const json = ref(false)
@@ -42,7 +38,7 @@ const rows = computed(() =>
   (
     [
       ['Workflow', facts.workflowName],
-      ['Model', !summarized && main.value ? name(main.value) : undefined],
+      ['Model', main.value && name(main.value)],
       ['Steps', facts.params && String(facts.params.steps)],
       ['Seed', facts.params && String(facts.params.seed)]
     ] as [string, string | undefined][]
@@ -95,11 +91,7 @@ const unnamed = computed(
         </div>
       </dl>
 
-      <div
-        v-if="facts.prompt && !summarized"
-        class="gi-block"
-        :title="`From ${facts.promptNode} #6`"
-      >
+      <div v-if="facts.prompt" class="gi-block" :title="`From ${facts.promptNode} #6`">
         <div class="gi-head">
           <span class="gi-title">Prompt</span>
           <button
@@ -123,7 +115,7 @@ const unnamed = computed(
       </div>
 
       <!-- One model reads in the row above; several get their roles. -->
-      <div v-if="facts.models.length > 1 && !summarized" class="gi-block">
+      <div v-if="facts.models.length > 1" class="gi-block">
         <span class="gi-title">Models</span>
         <ul class="gi-models">
           <li v-for="m in facts.models" :key="m" :title="m">

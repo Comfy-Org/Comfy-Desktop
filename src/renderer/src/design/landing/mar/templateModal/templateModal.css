@@ -122,6 +122,13 @@
 .mar-tpl .mad-view {
   bottom: 72px;
 }
+.mad.mar-tpl.is-full .mad-view {
+  bottom: 80px;
+}
+:root .proto-ui.proto-ui.proto-ui.mar-tpl .mad-head-close:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
 
 /* ── Stage: the output, or its graph ─────────────────────────────── */
 /* The graph has the whole stage (the stage clips at its rounded edges);
