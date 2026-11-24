@@ -83,6 +83,7 @@ import {
   within
 } from '../assets/assetFolders'
 import type { AssetFolder } from '../assets/assetFolders'
+import { folderPicker } from '../assets/folderPicker'
 import {
   addTag,
   allTagged,
@@ -107,6 +108,7 @@ import { assetsEverywhere } from '../assets/assetsEverywhere'
 import { assetLink, dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
+import AssetFolderPicker from '../assets/AssetFolderPicker.vue'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, metaIn, noFilter, passes, tagsIn } from '../assets/assetFilters'
 import {
@@ -541,6 +543,25 @@ const FOLDER_ROWS = computed(() =>
         count: done.value.filter((a) => inside.has(folderOf(a.id) ?? '')).length
       }
     })
+)
+/** UI Playground › Folder picker › Its own pill (Better Asset
+ *  Management): the folders as one flat list, each with its full path
+ *  and what it holds, for the picker beside the build. */
+const folderPill = computed(() => folderPicker.id === 'pill' && !inGraph && !fixedProject)
+const FOLDER_PATHS = computed(() =>
+  tree().map(({ folder: f }) => {
+    const inside = within(f.id)
+    const up = folderPath(f.id)
+    return {
+      id: f.id,
+      name: f.name,
+      // Where it sits: the indent says it while the list is the tree,
+      // and the path says it once a search has broken the tree up.
+      above: up.map((x) => x.name).join(' / '),
+      depth: up.length,
+      count: done.value.filter((a) => inside.has(folderOf(a.id) ?? '')).length
+    }
+  })
 )
 /** The tree folds: top-level folders show, a chevron opens one, and the
  *  way down to the folder you're in always stays open. */
@@ -1285,10 +1306,17 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     </template>
 
     <template #toolbar>
-      <div class="mar-asset-tools">
+      <div :class="['mar-asset-tools', folderPill && 'has-folder-pill']">
         <AssetBuildPicker v-if="!fixedProject && !inGraph" v-model="build" />
+        <!-- Folder picker › Its own pill: where you are, beside the build
+             it is read from, then a divider before what narrows it. -->
+        <AssetFolderPicker
+          v-if="folderPill && browsable && FOLDER_PATHS.length"
+          v-model="folder"
+          :folders="FOLDER_PATHS"
+        />
         <MarSeg
-          v-if="!fixedProject && browsable"
+          v-if="!fixedProject && browsable && !folderPill"
           v-model="kind"
           class="mar-asset-seg"
           :options="KINDS"
@@ -1296,6 +1324,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         />
         <div v-if="browsable" class="mar-asset-tools-end">
           <Select
+            v-if="!folderPill"
             v-model="kind"
             :class="['w-32', !fixedProject && 'mar-asset-kind']"
             :options="
@@ -1320,6 +1349,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           <AssetFilterMenu
             v-model="filter"
             v-model:folder="folder"
+            v-model:kind="kind"
             field
             source
             range
@@ -1327,7 +1357,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :types="MORE_TYPES"
             :tags="TAGS"
             :meta="metaIn(base)"
-            :folders="FOLDER_LIST"
+            :folders="folderPill ? undefined : FOLDER_LIST"
+            :kinds="folderPill ? KINDS : undefined"
           />
           <AssetSearch v-model:query="query" />
           <AssetLayoutMenu
@@ -1923,6 +1954,14 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   gap: 8px;
   container-type: inline-size;
 }
+/* Folder picker › Its own pill: a hairline between where you are and
+   what narrows it. */
+.mar-asset-tools-div {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+}
 .mar-asset-tools-end {
   display: flex;
   min-width: 0;
@@ -1934,6 +1973,24 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   display: none;
 }
 /* Narrower windows: the toolbar sheds words, never controls. */
+/* Folder picker › Its own pill: the build and the folder give a little
+   of their width before any name is cut. */
+@container (max-width: 1000px) {
+  .mar-asset-tools.has-folder-pill .mar-asset-folder {
+    max-width: 180px;
+  }
+  .has-folder-pill > :first-child {
+    max-width: 160px;
+  }
+}
+@container (max-width: 820px) {
+  .mar-asset-tools.has-folder-pill .mar-asset-folder {
+    max-width: 130px;
+  }
+  .has-folder-pill > :first-child {
+    max-width: 120px;
+  }
+}
 @container (max-width: 1000px) {
   :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .mar-pfind {
     width: 150px;

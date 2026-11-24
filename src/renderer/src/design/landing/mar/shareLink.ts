@@ -24,6 +24,7 @@ import { assetsEverywhere } from './assets/assetsEverywhere'
 import { assetLink, holdAssetLink } from './assets/assetLink'
 import { ASSET_MODALS, assetModal } from './assets/assetModal'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
+import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -151,6 +152,7 @@ const PARTS: Part[] = [
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
   one('assetModal', assetModal, 'window', ASSET_MODALS),
+  one('folderPicker', folderPicker, 'filters', FOLDER_PICKERS),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),

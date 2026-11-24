@@ -9,6 +9,7 @@ import {
   Folder,
   FolderInput,
   Image,
+  Layers,
   ListFilter,
   Palette,
   Puzzle,
@@ -62,6 +63,7 @@ const {
   range = false,
   typesLabel = 'Media type',
   folders,
+  kinds,
   meta
 } = defineProps<{
   types: readonly { value: AssetType; label: string }[]
@@ -76,12 +78,24 @@ const {
   /** Desktop: the build's folders, in tree order (ComfyUI's tab keeps
    *  them in its sidebar). One folder at a time, its subfolders in it. */
   folders?: { id: string; name: string; depth: number }[]
+  /** Folder picker › Its own pill: the asset type moves in here, where
+   *  the rest of what narrows the wall already lives. None of them
+   *  keeps it in the toolbar's own tabs. */
+  kinds?: readonly { value: string; label: string }[]
 }>()
 const f = defineModel<AssetFilter>({ required: true })
 // Desktop's page clears every filter with ⌘⌫ (MarAssetsPage); the menu says so.
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 const folder = defineModel<string>('folder', { default: '' })
-const count = computed(() => activeFilters(f.value) + (folder.value ? 1 : 0))
+const kind = defineModel<string>('kind', { default: 'all' })
+// The folder counts as a filter only while it is picked in here: with
+// its own pill it reads as where you are, not as something switched on.
+const count = computed(
+  () =>
+    activeFilters(f.value) +
+    (folders?.length && folder.value ? 1 : 0) +
+    (kinds?.length && kind.value !== 'all' ? 1 : 0)
+)
 const pickFolder = (id: string): void => {
   folder.value = folder.value === id ? '' : id
 }
@@ -155,6 +169,7 @@ const found = computed(() => ({
   dates: DATES.filter((d) => match(d.label)),
   tags: tags.filter(match),
   folders: (folders ?? []).filter((x) => match(x.name)),
+  kinds: (kinds ?? []).filter((x) => match(x.label)),
   labels: LABELS.filter((l) => match(l.label)),
   meta: META.map((m) => ({ ...m, values: metaOptions(m.key).filter(match) })).filter(
     (m) => m.values.length
@@ -204,6 +219,21 @@ const searching = computed(() => !!q.value.trim())
         <DropdownMenuSeparator class="afm-sep" />
 
         <template v-if="searching">
+          <template v-if="found.kinds.length">
+            <DropdownMenuLabel class="afm-label">Type</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="kind">
+              <DropdownMenuRadioItem
+                v-for="x in found.kinds"
+                :key="x.value"
+                :class="item"
+                :value="x.value"
+                @select.prevent="kind = x.value"
+              >
+                <span class="afm-grow">{{ x.label }}</span>
+                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </template>
           <template v-if="found.sources.length">
             <DropdownMenuLabel class="afm-label">Source</DropdownMenuLabel>
             <DropdownMenuRadioGroup :model-value="f.source">
@@ -302,6 +332,7 @@ const searching = computed(() => !!q.value.trim())
           </template>
           <p
             v-if="
+              !found.kinds.length &&
               !found.sources.length &&
               !found.types.length &&
               !found.dates.length &&
@@ -318,6 +349,34 @@ const searching = computed(() => !!q.value.trim())
 
         <template v-else>
           <DropdownMenuLabel class="afm-label">Attribute</DropdownMenuLabel>
+          <!-- Folder picker › Its own pill: the toolbar says where you
+               are, and what narrows it starts here, with the type. -->
+          <DropdownMenuSub
+            v-if="kinds?.length"
+            :open="sub === 'kind'"
+            @update:open="only('kind', $event)"
+          >
+            <DropdownMenuSubTrigger :class="item">
+              <Layers :size="16" class="afm-icon" /><span class="afm-grow">Type</span
+              ><ChevronRight :size="16" class="afm-icon" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal :to="PORTAL_TO">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
+                <DropdownMenuRadioGroup :model-value="kind">
+                  <DropdownMenuRadioItem
+                    v-for="x in kinds"
+                    :key="x.value"
+                    :class="item"
+                    :value="x.value"
+                    @select.prevent="kind = x.value"
+                  >
+                    <span class="afm-grow">{{ x.label }}</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
           <DropdownMenuSub
             v-if="source"
             :open="sub === 'source'"

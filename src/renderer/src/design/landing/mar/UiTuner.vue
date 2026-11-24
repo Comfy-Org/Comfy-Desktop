@@ -15,6 +15,7 @@ import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { ASSET_MODALS, assetModal } from './assets/assetModal'
+import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
@@ -148,6 +149,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'assetModal', show: () => when.assetModal.value },
+  { id: 'folderPicker', show: () => when.folderPicker.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
@@ -409,6 +411,14 @@ const linkSays = computed(() => {
               assetModal.id === 'window'
                 ? 'A frame with the app behind it, as proposed.'
                 : 'The whole window, no tags, Close by the name: the first milestone.'
+            }}</span>
+          </Row>
+          <Row :show="shows('folderPicker')" label="Folder picker">
+            <Seg v-model="folderPicker.id" label="Folder picker" :options="FOLDER_PICKERS" />
+            <span class="text-ui text-subtle-foreground">{{
+              folderPicker.id === 'filters'
+                ? 'The folder sits with the other filters, as proposed.'
+                : 'Its own pill beside the build, out of Filters: the first milestone.'
             }}</span>
           </Row>
           <Row :show="shows('folderDepth')" label="Folders">

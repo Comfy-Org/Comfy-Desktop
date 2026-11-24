@@ -15,6 +15,7 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { assetModal } from './assets/assetModal'
 import { folderDepth } from './assets/folderDepth'
+import { folderPicker } from './assets/folderPicker'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
@@ -109,6 +110,8 @@ export const when = {
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
   // The asset modal: Desktop's Assets page and ComfyUI's Assets tab open it.
   assetModal: computed(() => (inShell.value && proto.page === 'assets') || assetsTab.open),
+  // Where the folder is picked: Desktop's Assets page.
+  folderPicker: computed(() => inShell.value && proto.page === 'assets'),
   // ComfyUI's Assets tab, where folders live.
   folderDepth: computed(() => assetsTab.open && assetsTab.on),
   // ComfyUI (Proposal): where the Assets panel's expand button goes.
@@ -229,6 +232,7 @@ export const TWEAKS = {
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
   assetModal: one(assetModal, 'window'),
+  folderPicker: one(folderPicker, 'filters'),
   folderDepth: one(folderDepth, 'few'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
