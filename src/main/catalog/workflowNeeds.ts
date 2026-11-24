@@ -78,15 +78,11 @@ async function missingByBuild(models: TemplateModelDownload[]): Promise<Record<s
   return Object.fromEntries(entries)
 }
 
-export async function catalogWorkflowGraph(id: string): Promise<Record<string, unknown> | null> {
-  const url = listedWorkflow(id)?.editorGraphUrl
-  return url ? fetchEditorGraph(url).catch(() => null) : null
-}
-
 export async function catalogWorkflowNeeds(id: unknown): Promise<CatalogWorkflowNeeds | null> {
-  if (typeof id !== 'string' || !listedWorkflow(id)) return null
-  const graph = await catalogWorkflowGraph(id)
-  if (!graph) return { graph: null, models: [], missingByBuild: {} }
+  const workflow = typeof id === 'string' ? listedWorkflow(id) : undefined
+  if (!workflow) return null
+  if (!workflow.editorGraphUrl) return { graph: null, models: [], missingByBuild: {} }
+  const graph = await fetchEditorGraph(workflow.editorGraphUrl)
   const models = await catalogWorkflowModels(graph)
   const [described, missing] = await Promise.all([describeModels(models), missingByBuild(models)])
   return { graph, models: described, missingByBuild: missing }

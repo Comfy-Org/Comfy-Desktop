@@ -92,14 +92,21 @@ describe('what a catalog workflow needs', () => {
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
-  it('needs nothing when the graph cannot be downloaded', async () => {
+  it('fails, rather than needing nothing, when the graph cannot be downloaded', async () => {
     mocks.fetch.mockRejectedValue(new Error('offline'))
 
-    expect(await catalogWorkflowNeeds('ltx')).toEqual({
+    await expect(catalogWorkflowNeeds('ltx')).rejects.toThrow('offline')
+  })
+
+  it('needs nothing for a workflow that has no graph to open locally', async () => {
+    mocks.listed.mockReturnValue({ card: { id: 'partner' }, editorGraphUrl: null })
+
+    expect(await catalogWorkflowNeeds('partner')).toEqual({
       graph: null,
       models: [],
       missingByBuild: {}
     })
+    expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
   it('keeps every model the graph needs even past the size lookups it makes', async () => {
