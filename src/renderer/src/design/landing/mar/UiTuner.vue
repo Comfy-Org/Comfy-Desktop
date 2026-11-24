@@ -58,6 +58,7 @@ import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
 import { HOME_TOUR_MODES, homeTour, replayHomeTour } from './homeTour/homeTour'
 import { replayOnboarding } from './setup/replayOnboarding'
+import TplCasesNote from './templateModal/TplCasesNote.vue'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
 import GroupHead from './tuner/TunerGroupHead.vue'
@@ -353,6 +354,9 @@ const linkSays = computed(() => {
           <!-- The Deploy as API modal's states, first while it's open. -->
           <Row :show="shows('wfCase')" label="Workflow case">
             <Select v-model="tplCase.id" :options="WF_CASES" class="w-full" />
+          </Row>
+          <Row :show="when.tplCases.value" label="Can't-run cases" stack>
+            <TplCasesNote />
           </Row>
           <Row :show="shows('deployState')" label="Deploy state">
             <Select v-model="deployState" :options="DEPLOY_STATES" class="w-full" />

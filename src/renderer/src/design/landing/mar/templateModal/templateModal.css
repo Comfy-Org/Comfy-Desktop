@@ -717,3 +717,7 @@
     animation: none;
   }
 }
+.mar-tpl-state[data-m='warn'],
+.mar-tpl-cost[data-s='disk'] {
+  color: var(--tpl-warn);
+}

@@ -7,12 +7,21 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  Coins,
+  Cpu,
+  CreditCard,
+  HardDrive,
+  ImageOff,
+  KeyRound,
   Link2,
   Plug,
   Puzzle,
   RefreshCw,
   Star,
   TriangleAlert,
+  UserRound,
+  WifiOff,
+  Wrench,
   X
 } from 'lucide-vue-next'
 import {
@@ -28,6 +37,7 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, instanceById, instances, proto, toast } from '../../useProto'
+import { can } from '../../milestones'
 import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
 import { runBlock } from '../runCredits'
@@ -36,9 +46,12 @@ import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
 import { ComfyModel } from '../icons/comfyIcons'
 import {
+  CASE_STATE,
   MACHINE,
   SAVED_MISSING_MODELS,
   aboutFor,
+  caseBuild,
+  caseNeeds,
   fmtGb,
   hasPack,
   infoFor,
@@ -53,6 +66,7 @@ import {
   tplById,
   totalGb,
   versionShort,
+  type NeedKind,
   type Target
 } from './templateData'
 import { graphFor } from './graphSpec'
@@ -122,7 +136,7 @@ const targets = computed<Target[]>(() => {
   const list = instances.value.map((i) => targetFor(t, i, proto.signedIn, gone(i)))
   const fresh = !instances.value.some((i) => i.kind === 'local' && !i.deployment)
   const add = fresh ? newBuildTarget(t) : undefined
-  return rankTargets(add ? [...list, add] : list)
+  return rankTargets(add ? [...list, add] : list, saved.value ? undefined : caseBuild(t))
 })
 const best = computed(() => targets.value.find((x) => !x.disabled && x.state !== 'login'))
 const reason = computed(() =>
@@ -161,14 +175,15 @@ const fit = computed(() =>
 const line = computed(() => {
   const s = shown.value
   if (!s) return ''
-  if (s.state === 'blocked') return `${s.status}. Pick another build to open it.`
+  if (s.state === 'blocked' || s.state === 'platform')
+    return `${s.status}. Pick another build to open it.`
   // The plain cases need no line: the button says it.
   return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
 /** The cost's colour: a warning only for what may fail; a download stays
  *  quiet, even on a build short of memory. */
 const tone = (x: Target): string =>
-  x.state === 'memory' && x.cost !== 'May fail' ? 'download' : x.state
+  (x.state === 'memory' && x.cost !== 'May fail') || x.state === 'gated' ? 'download' : x.state
 const buildMenu = ref(false)
 const buildBox = ref<HTMLElement>()
 onClickOutside(buildBox, () => (buildMenu.value = false))
@@ -194,7 +209,11 @@ watch(
   () => proto.detail,
   () => {
     const home = targets.value.find((x) => x.inst.id === savedIn.value?.id && !x.disabled)
-    selectedId.value = (home ?? best.value ?? targets.value.find((x) => !x.disabled))?.inst.id
+    const t = template.value
+    const kase =
+      t && !saved.value ? targets.value.find((x) => x.inst.id === caseBuild(t)) : undefined
+    selectedId.value = (kase ?? home ?? best.value ?? targets.value.find((x) => !x.disabled))?.inst
+      .id
     view.value = 'result'
     buildMenu.value = false
     ratio.value = 16 / 9
@@ -213,8 +232,10 @@ function stop(): void {
 /** Per model, what the chosen build means for it. */
 const modelState = computed<'here' | 'get' | 'cloud' | undefined>(() => {
   const s = selected.value?.state
-  if (s === 'running' || s === 'ready') return 'here'
-  if (s === 'download') return 'get'
+  if (s === 'running' || s === 'ready' || s === 'repair' || s === 'media') return 'here'
+  if (s === 'download' || s === 'disk' || s === 'gated') return 'get'
+  if (s === 'credits' || s === 'plan') return 'cloud'
+  if (s === 'offline') return selected.value!.inst.kind === 'cloud' ? undefined : 'get'
   if (s === 'update' || s === 'nodes' || s === 'new') return selected.value!.fetch ? 'get' : 'here'
   if (s === 'cloud') return 'cloud'
   if (s === 'memory') return selected.value!.cost === 'May fail' ? 'here' : 'get'
@@ -233,6 +254,8 @@ const steps = computed<{ label: string; share: number }[]>(() => {
   if (!s || !t) return []
   const out: { label: string; share: number }[] = []
   if (s.state === 'new') out.push({ label: 'Installing ComfyUI', share: 2 })
+  if (s.state === 'repair') out.push({ label: `Repairing ${s.inst.name}`, share: 2 })
+  if (s.state === 'gated') out.push({ label: 'Waiting for the licence', share: 1 })
   if (versionShort(t, s.inst)) out.push({ label: `Updating ${s.inst.name}`, share: 2 })
   const p = packs.value.filter((x) => !hasPack(s.inst, x)).length
   if (p) out.push({ label: `Installing ${p} node ${p === 1 ? 'pack' : 'packs'}`, share: 1 })
@@ -280,6 +303,12 @@ function confirm(): void {
   }
   if (s.inst.kind === 'cloud' && runBlock.value) {
     creditsSheet.value = true
+    return
+  }
+  if (s.state === 'credits' || s.state === 'plan') {
+    toast(
+      s.state === 'credits' ? 'Add credits opens in your browser' : 'Plans open in your browser'
+    )
     return
   }
   phase.value = 'busy'
@@ -360,31 +389,59 @@ const needsLine = computed(() => {
 const packs = computed(() => (template.value ? packsFor(template.value) : []))
 const minComfy = computed(() => (template.value ? minComfyFor(template.value) : ''))
 /** Per pack or version line, what the chosen build means for it. */
-const packMark = (pack: string): 'here' | 'get' =>
-  !selected.value || hasPack(selected.value.inst, pack) ? 'here' : 'get'
+const packMark = (pack: string): 'here' | 'get' | 'warn' =>
+  !selected.value || hasPack(selected.value.inst, pack)
+    ? 'here'
+    : selected.value.inst.kind === 'cloud'
+      ? 'warn'
+      : 'get'
+const PACK_TITLE = { here: 'Installed', get: 'Installs first', warn: 'Not on Cloud yet' }
+const caseRows = computed(() => (template.value ? caseNeeds(template.value, shown.value) : []))
+const caseState = computed(() => {
+  const s = shown.value
+  if (!s || !can.value.onboarding) return undefined
+  if (s.state === 'blocked' && packs.value.some((p) => packMark(p) === 'warn'))
+    return { label: 'Not on Cloud yet', tone: 'warn' }
+  return s.state === 'memory' && s.cost !== 'May fail' ? undefined : CASE_STATE[s.state]
+})
+const NEED_ICONS: Record<NeedKind, typeof Coins> = {
+  disk: HardDrive,
+  gpu: Cpu,
+  licence: KeyRound,
+  input: ImageOff,
+  account: UserRound,
+  credits: Coins,
+  plan: CreditCard,
+  repair: Wrench,
+  network: WifiOff
+}
 const comfyMark = computed<'here' | 'get'>(() =>
   selected.value && template.value && versionShort(template.value, selected.value.inst)
     ? 'get'
     : 'here'
 )
 const needsState = computed(() =>
-  comfyMark.value === 'get'
-    ? 'Updates first'
-    : packs.value.some((p) => packMark(p) === 'get')
-      ? 'Installs first'
-      : !needs.value.length
-        ? ''
-        : modelState.value === 'cloud'
-          ? 'Ready on Cloud'
-          : modelState.value === 'here'
-            ? 'Installed'
-            : 'Downloads first'
+  caseState.value
+    ? caseState.value.label
+    : comfyMark.value === 'get'
+      ? 'Updates first'
+      : packs.value.some((p) => packMark(p) === 'get')
+        ? 'Installs first'
+        : !needs.value.length
+          ? ''
+          : modelState.value === 'cloud'
+            ? 'Ready on Cloud'
+            : modelState.value === 'here'
+              ? 'Installed'
+              : 'Downloads first'
 )
 
 const needsTone = computed(() =>
-  needsState.value === 'Updates first' || needsState.value === 'Installs first'
-    ? 'get'
-    : modelState.value
+  caseState.value
+    ? caseState.value.tone
+    : needsState.value === 'Updates first' || needsState.value === 'Installs first'
+      ? 'get'
+      : modelState.value
 )
 
 const aboutEl = ref<HTMLElement>()
@@ -638,9 +695,10 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                     <span
                       class="mar-tpl-mark"
                       :data-m="packMark(p)"
-                      :title="packMark(p) === 'here' ? 'Installed' : 'Installs first'"
+                      :title="PACK_TITLE[packMark(p)]"
                     >
                       <Check v-if="packMark(p) === 'here'" :size="12" />
+                      <TriangleAlert v-else-if="packMark(p) === 'warn'" :size="11" />
                       <ArrowDownToLine v-else :size="12" />
                     </span>
                   </li>
@@ -656,6 +714,16 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                       :title="comfyMark === 'here' ? 'Up to date' : 'Updates first'"
                     >
                       <Check v-if="comfyMark === 'here'" :size="12" />
+                      <ArrowDownToLine v-else :size="12" />
+                    </span>
+                  </li>
+                  <li v-for="r in caseRows" :key="r.kind" :data-need="r.kind">
+                    <component :is="NEED_ICONS[r.kind]" :size="14" />
+                    <span class="mar-tpl-file is-ui">{{ r.label }}</span>
+                    <span class="mar-tpl-size">{{ r.size }}</span>
+                    <span class="mar-tpl-mark" :data-m="r.mark" :title="r.title">
+                      <Check v-if="r.mark === 'here'" :size="12" />
+                      <TriangleAlert v-else-if="r.mark === 'warn'" :size="11" />
                       <ArrowDownToLine v-else :size="12" />
                     </span>
                   </li>
