@@ -112,20 +112,20 @@ describe('recent workflows on this computer', () => {
     ])
   })
 
-  it('keeps only the eight most recent', async () => {
+  it('keeps only the ten most recent', async () => {
     const lab = await localBuild('inst-lab', 'Lab')
-    for (let i = 0; i < 10; i++) await saved(lab, `flow ${i}.json`, i)
+    for (let i = 0; i < 12; i++) await saved(lab, `flow ${i}.json`, i)
 
     const recents = await list()
 
-    expect(recents).toHaveLength(8)
+    expect(recents).toHaveLength(10)
     expect(recents[0]!.title).toBe('flow 0')
   })
 
-  it('counts the eight only among the builds asked for', async () => {
+  it('counts the ten only among the builds asked for', async () => {
     const lab = await localBuild('inst-lab', 'Lab')
     const other = await localBuild('inst-other', 'Other workspace')
-    for (let i = 0; i < 10; i++) await saved(other, `newer ${i}.json`, i)
+    for (let i = 0; i < 12; i++) await saved(other, `newer ${i}.json`, i)
     await saved(lab, 'portrait.json', 60)
 
     const recents = await list(['inst-lab'])

@@ -22,7 +22,7 @@ export const RECENT_WORKFLOW_CHANNELS = {
   open: 'workflows:open-recent'
 } as const
 
-export const RECENT_WORKFLOW_LIMIT = 8
+export const RECENT_WORKFLOW_LIMIT = 10
 const WORKFLOW_DIR = 'workflows'
 const WORKFLOW_EXT = '.json'
 const MAX_FILES_PER_BUILD = 2_000

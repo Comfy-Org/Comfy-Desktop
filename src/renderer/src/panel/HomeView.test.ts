@@ -1293,6 +1293,22 @@ describe('Home recent workflows', () => {
     expect(first.text()).toContain('5m ago')
   })
 
+  it('keeps up to ten workflows in one scrolling row', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    listRecentWorkflows.mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) =>
+        recent({ title: `Flow ${index}`, modifiedAt: NOW - index * MINUTE_MS })
+      )
+    )
+
+    const wrapper = await openHome()
+
+    expect(recentTitles(wrapper)).toEqual(Array.from({ length: 10 }, (_, index) => `Flow ${index}`))
+    expect(wrapper.get('[data-testid="home-recent-workflows-row"]').classes()).toContain(
+      'overflow-x-auto'
+    )
+  })
+
   it('hides the section when there are no saved workflows', async () => {
     getInstallations.mockResolvedValue([NEWEST])
 

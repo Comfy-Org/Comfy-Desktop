@@ -343,7 +343,12 @@ export function homeRecentWorkflows(): RecentWorkflow[] {
     savedWorkflow('Wan 2.2 loop', 'inst-video-experiments', 'Video experiments', 95, 'video/'),
     savedWorkflow('Upscale for print', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 26),
     savedWorkflow('Product on marble', 'inst-comfyui', 'ComfyUI', 60 * 24 * 3),
-    savedWorkflow('Storyboard frames', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 24 * 6)
+    savedWorkflow('Storyboard frames', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 24 * 6),
+    savedWorkflow('Logo to 3D', 'inst-comfyui', 'ComfyUI', 60 * 24 * 8),
+    savedWorkflow('Sketch to render', 'inst-video-experiments', 'Video experiments', 60 * 24 * 9),
+    savedWorkflow('Old photo restore', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 24 * 12),
+    savedWorkflow('Character turnaround', 'inst-comfyui', 'ComfyUI', 60 * 24 * 15),
+    savedWorkflow('Lip sync test', 'inst-video-experiments', 'Video experiments', 60 * 24 * 20)
   ]
 }
 
