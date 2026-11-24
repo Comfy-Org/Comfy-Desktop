@@ -13,6 +13,8 @@ import {
 } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
+import Tooltip from '../../ui/Tooltip.vue'
+import { openCreate } from '../create/createScreen'
 import { ComfyWorkflow } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
 import { go, openDetail, toast } from '../../useProto'
@@ -199,7 +201,12 @@ function lines(w: MarWorkflow): MenuLine[] {
         <Button variant="ghost" @click="toast('Pick a workflow file to import')"
           ><FileUp :size="15" />Import</Button
         >
-        <Button variant="primary" @click="newWorkflow"><Plus :size="15" />Workflow</Button>
+        <Tooltip v-if="can.onboarding" content="New workflow">
+          <Button variant="secondary" size="icon" aria-label="New workflow" @click="openCreate()"
+            ><Plus :size="16" aria-hidden="true"
+          /></Button>
+        </Tooltip>
+        <Button v-else variant="primary" @click="newWorkflow"><Plus :size="15" />Workflow</Button>
       </template>
     </template>
 

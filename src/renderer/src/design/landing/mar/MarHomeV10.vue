@@ -48,6 +48,9 @@ import { TEMPLATES, thumb } from '../mock'
 import { mock } from './assets/mock'
 import { recentsCover } from './cover'
 import MarHomeTour from './homeTour/MarHomeTour.vue'
+import HomeSectionHeader from './HomeSectionHeader.vue'
+import NewWorkflowTile from './NewWorkflowTile.vue'
+import { openCreate } from './create/createScreen'
 import { onHome } from './tunerContext'
 import { search } from './search/search'
 
@@ -166,6 +169,8 @@ const recent = computed<Recent[]>(() =>
     .sort((a, b) => a.age - b.age)
     .slice(0, 8)
 )
+const RECENT_COLUMNS = 5
+const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
 </script>
 
 <template>
@@ -205,13 +210,13 @@ const recent = computed<Recent[]>(() =>
     <HomeInstall v-if="(installPending || flow.ready) && !cardInBuilds" />
     <template v-if="gated"></template>
     <MarStart v-else-if="firstRun && !cardInBuilds" />
-    <div v-else :class="can.onboarding ? 'flex flex-col' : ''">
+    <div v-else>
       <!-- The Apps stage: the apps arc leads for everyone from Milestone 2
            on; from Milestone 3 Apps | Workflows tabs sit over it (layout in
            UI Playground › Apps and templates). -->
       <HomeArcMix v-if="can.explore" class="mt-6" />
       <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
-      <MarBuildsRow v-if="!onCloud" :class="can.onboarding ? 'order-1' : ''" />
+      <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). Not once the apps arc leads the Home (Milestone 2):
@@ -251,8 +256,18 @@ const recent = computed<Recent[]>(() =>
 
       <!-- Milestone 2 is apps only: Recently used comes back with Workflows
            (Recents & Assets), apps and workflows together. -->
-      <section v-if="recent.length && (can.workflows || !can.exploreApps)" :class="'mt-10'">
+      <section v-if="recent.length && (can.workflows || !can.exploreApps)" class="mt-10">
+        <HomeSectionHeader
+          v-if="can.onboarding"
+          title="Recently used"
+          link-tip="All workflows"
+          add-label="New workflow"
+          :add="recentHasRoom ? 'never' : 'always'"
+          @open="go('workflows')"
+          @add="openCreate()"
+        />
         <SectionHeader
+          v-else
           class="mar-sec"
           title="Recently used"
           :link="can.workflows ? 'All workflows' : undefined"
@@ -260,7 +275,7 @@ const recent = computed<Recent[]>(() =>
         />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
         <TableRow v-else-if="p20.recent === 'table'" />
-        <ScrollRow v-else :columns="5" class="mar-recent-row">
+        <ScrollRow v-else :columns="RECENT_COLUMNS" class="mar-recent-row">
           <WorkflowCard
             v-for="r in recent"
             :key="r.id"
@@ -272,6 +287,7 @@ const recent = computed<Recent[]>(() =>
             :cover-kind="recentsCoverKind"
             @open="r.open()"
           />
+          <NewWorkflowTile v-if="can.onboarding && recentHasRoom" @open="openCreate()" />
         </ScrollRow>
       </section>
 
