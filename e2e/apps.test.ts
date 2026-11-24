@@ -443,10 +443,21 @@ test("Home shows the website's apps, and the one in front opens inside Desktop, 
   }).toPass(LONG_WAIT)
 })
 
-test('See all workflows on Home opens the full catalog and a workflow loads into Comfy Cloud @macos @windows @linux', async () => {
+test('Signed out, See all workflows on Home opens the full catalog, and a workflow logs in and loads into Comfy Cloud @macos @windows @linux', async () => {
   expect(await cutoutPage().click('#back')).toBe(true)
   await ctx.panel.waitForVisible(SIDEBAR_HOME)
   expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
+  await ctx.panel.waitForVisible(HOME_VIEW)
+  await ctx.panel.evaluate<unknown>('window.api.comfybuilder.signOut()')
+  await expect
+    .poll(
+      () =>
+        ctx.panel.evaluate<boolean>(
+          'window.api.comfybuilder.getAuthStatus().then((status) => status.signedIn)'
+        ),
+      LONG_WAIT
+    )
+    .toBe(false)
   await ctx.panel.waitForVisible('[data-testid="home-workflows-tab"]')
   expect(await ctx.panel.click('[data-testid="home-workflows-tab"]')).toBe(true)
   await expect

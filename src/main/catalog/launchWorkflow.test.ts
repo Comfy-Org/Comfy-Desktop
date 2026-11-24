@@ -1,30 +1,28 @@
+import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type { WebContents } from 'electron'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
+  request: vi.fn(),
   open: vi.fn(),
   listed: vi.fn(),
   subject: null as string | null,
   workspaceId: null as string | null,
   listWorkspaces: vi.fn(),
-  missing: vi.fn(),
-  startDownload: vi.fn(),
-  forget: vi.fn(),
-  downloadBytes: vi.fn(),
-  downloadListener: null as
-    | ((summary: {
-        status: string
-        receivedBytes: number
-        totalBytes: number
-        error?: string
-      }) => void)
-    | null,
   installation: vi.fn(),
-  localBuilds: vi.fn()
+  localBuilds: vi.fn(),
+  transfer: vi.fn(),
+  diskSpace: vi.fn()
 }))
 
-vi.mock('electron', () => ({ net: { fetch: mocks.fetch } }))
+vi.mock('electron', () => ({
+  app: { getPath: () => '/nonexistent' },
+  net: { fetch: mocks.fetch, request: mocks.request }
+}))
 vi.mock('../apps/openInComfy', () => ({ openCatalogInComfy: mocks.open }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({
@@ -35,30 +33,27 @@ vi.mock('../devplatform/session', () => ({
 }))
 vi.mock('../lib/i18n', () => ({ t: (key: string) => key }))
 vi.mock('./workflows', () => ({ listedWorkflow: mocks.listed }))
-vi.mock('./workflowNeeds', () => ({
-  knownDownloadBytes: mocks.downloadBytes,
-  catalogWorkflowModels: async () => [
-    { filename: 'model.safetensors', directory: 'checkpoints', url: 'https://huggingface.co/m' }
-  ]
-}))
 vi.mock('../installations', () => ({ get: mocks.installation }))
 vi.mock('../apps/localBuild', () => ({ usableLocalBuilds: mocks.localBuilds }))
-vi.mock('../lib/modelDownloadPaths', () => ({ missingModelFiles: mocks.missing }))
-vi.mock('../sources/standalone/templateDownloadCore', () => ({
-  DISK_SPACE_ERROR: 'insufficient-disk',
-  isTerminal: (status: string) => ['done', 'error', 'cancelled'].includes(status)
+vi.mock('../settings', () => ({ get: () => undefined, defaults: { modelsDirs: [] } }))
+vi.mock('../lib/comfyDownloadManager', () => ({ startManagedModelJob: mocks.transfer }))
+vi.mock('../lib/disk', () => ({ getDiskSpace: mocks.diskSpace }))
+vi.mock('../lib/pythonEnv', () => ({ getActiveVenvDir: () => null }))
+vi.mock('../sources/standalone/envPaths', () => ({ findSitePackages: () => null }))
+vi.mock('../sources/standalone/curatedTemplates', () => ({
+  RAW_TEMPLATES_BASE: '',
+  TEMPLATE_INPUT_BASE: ''
 }))
-vi.mock('../sources/standalone/templateDownloadTask', () => ({
-  startTemplateDownloadTask: mocks.startDownload,
-  subscribeTemplateDownload: (_taskId: string, listener: typeof mocks.downloadListener) => {
-    mocks.downloadListener = listener
-    return () => {}
-  },
-  forgetTemplateDownload: mocks.forget
-}))
+vi.mock('../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
 import { _forgetEditorGraphsForTest } from './editorGraph'
 import { cancelCatalogWorkflowDownload, launchCatalogWorkflow } from './launchWorkflow'
+import { _forgetModelSizesForTest } from './workflowNeeds'
+import { missingModelFiles, resolveDownloadContextById } from '../lib/modelDownloadPaths'
+import {
+  forgetTemplateDownload,
+  hasActiveTemplateDownloads
+} from '../sources/standalone/templateDownloadTask'
 
 const sent: unknown[] = []
 const PAGE = {
@@ -67,18 +62,101 @@ const PAGE = {
 } as unknown as WebContents
 const URL = 'https://cloud.comfy.org/api/v1/catalog/media/graph/version'
 const PROMPT = { '1': { class_type: 'SaveImage', inputs: {} } }
-const GRAPH = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+const MODEL_URL = 'https://huggingface.co/Comfy-Org/repo/resolve/main/model.safetensors'
+const MODEL = { filename: 'model.safetensors', directory: 'checkpoints' }
+const MODEL_BYTES = Buffer.alloc(2048, 7)
+const GRAPH = {
+  nodes: [
+    {
+      id: 1,
+      type: 'CheckpointLoaderSimple',
+      properties: {
+        models: [{ name: MODEL.filename, url: MODEL_URL, directory: MODEL.directory }]
+      }
+    },
+    { id: 2, type: 'SaveImage' }
+  ],
+  links: []
+}
 const LOCAL = { where: 'local', build: 'inst-local' }
+
+let buildDir = ''
+
+type Transfer = 'completes' | 'fails' | 'hangs'
+
+interface TransferRequest {
+  url: string
+  filename: string
+  directory: string
+  installationId: string
+  onProgress: (received: number, total: number) => void
+}
+
+const transferStopped = vi.fn()
+
+function transfersModels(how: Transfer): void {
+  mocks.transfer.mockImplementation(async (job: TransferRequest) => {
+    const context = await resolveDownloadContextById(job.installationId)
+    const savePath = path.join(context!.downloadBaseDir, job.directory, job.filename)
+    const handle = { id: job.url, url: job.url, savePath, release: transferStopped }
+    if (how === 'hangs') {
+      job.onProgress(MODEL_BYTES.length / 4, MODEL_BYTES.length)
+      return { ...handle, completion: new Promise(() => {}) }
+    }
+    if (how === 'fails') {
+      return { ...handle, completion: Promise.resolve({ status: 'error', error: 'HTTP 503' }) }
+    }
+    await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
+    await fs.promises.writeFile(savePath, MODEL_BYTES)
+    job.onProgress(MODEL_BYTES.length, MODEL_BYTES.length)
+    return { ...handle, completion: Promise.resolve({ status: 'completed', savePath }) }
+  })
+}
+
+function answersModelSizes(): void {
+  mocks.request.mockImplementation(() => {
+    const request = Object.assign(new EventEmitter(), {
+      end: () =>
+        queueMicrotask(() =>
+          request.emit('response', {
+            statusCode: 200,
+            headers: { 'content-length': [String(MODEL_BYTES.length)] }
+          })
+        ),
+      abort: vi.fn(),
+      followRedirect: vi.fn()
+    })
+    return request
+  })
+}
+
+async function buildIsMissing(): Promise<string[]> {
+  const missing = await missingModelFiles('inst-local', [{ ...MODEL, url: MODEL_URL }])
+  return missing.map(({ filename }) => filename)
+}
+
+async function putModelInBuild(): Promise<void> {
+  const context = await resolveDownloadContextById('inst-local')
+  const savePath = path.join(context!.downloadBaseDir, MODEL.directory, MODEL.filename)
+  await fs.promises.mkdir(path.dirname(savePath), { recursive: true })
+  await fs.promises.writeFile(savePath, MODEL_BYTES)
+}
 
 beforeEach(() => {
   vi.resetAllMocks()
   _forgetEditorGraphsForTest()
+  _forgetModelSizesForTest()
   sent.length = 0
-  mocks.downloadListener = null
-  mocks.installation.mockResolvedValue({ id: 'inst-local' })
+  buildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-launch-build-'))
+  mocks.installation.mockResolvedValue({
+    id: 'inst-local',
+    installPath: buildDir,
+    useSharedModels: false
+  })
   mocks.localBuilds.mockResolvedValue([{ id: 'inst-local', version: '0.3.66' }])
-  mocks.missing.mockResolvedValue([])
-  mocks.downloadBytes.mockResolvedValue(0)
+  mocks.diskSpace.mockResolvedValue({ free: 1e15, total: 1e15 })
+  answersModelSizes()
+  transfersModels('completes')
   mocks.subject = null
   mocks.workspaceId = null
   mocks.listWorkspaces.mockResolvedValue([])
@@ -99,6 +177,11 @@ beforeEach(() => {
   )
   mocks.fetch.mockImplementation(async () => Response.json(GRAPH))
   mocks.open.mockResolvedValue({ opened: true })
+})
+
+afterEach(() => {
+  forgetTemplateDownload('catalog-workflow:catalog-id:inst-local')
+  fs.rmSync(buildDir, { recursive: true, force: true })
 })
 
 describe('launching workflows from the published catalog', () => {
@@ -201,94 +284,86 @@ describe('launching workflows from the published catalog', () => {
     expect(mocks.open).not.toHaveBeenCalled()
   })
 
-  it('downloads the models a local build is missing, reports progress, then opens the graph', async () => {
-    const missing = [{ filename: 'model.safetensors', directory: 'checkpoints' }]
-    mocks.missing.mockResolvedValue(missing)
-    mocks.downloadBytes.mockResolvedValue(6_500_000_000)
+  it('downloads the models a local build is missing into it, reports progress, then opens the graph', async () => {
+    expect(await buildIsMissing()).toEqual([MODEL.filename])
 
-    const launching = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', {
-      downloadMissing: true
+    expect(
+      await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
+    ).toEqual({ opened: true })
+
+    expect(await buildIsMissing()).toEqual([])
+    expect(sent.at(-1)).toEqual({
+      id: 'catalog-id',
+      build: 'inst-local',
+      receivedBytes: MODEL_BYTES.length,
+      totalBytes: MODEL_BYTES.length
     })
-    await vi.waitFor(() => expect(mocks.downloadListener).not.toBeNull())
-    expect(mocks.downloadBytes).toHaveBeenCalledWith(missing)
-    expect(mocks.startDownload).toHaveBeenCalledWith(
-      'catalog-workflow:catalog-id:inst-local',
-      { id: 'inst-local' },
-      'catalog-id',
-      6_500_000_000,
-      expect.anything(),
-      GRAPH
+    expect(mocks.open).toHaveBeenCalledWith(
+      PAGE,
+      { ...LOCAL, name: 'Example', graph: GRAPH },
+      expect.anything()
     )
-    expect(mocks.open).not.toHaveBeenCalled()
-
-    mocks.downloadListener!({ status: 'downloading', receivedBytes: 5, totalBytes: 10 })
-    mocks.downloadListener!({ status: 'done', receivedBytes: 10, totalBytes: 10 })
-
-    expect(await launching).toEqual({ opened: true })
-    expect(sent).toEqual([
-      { id: 'catalog-id', build: 'inst-local', receivedBytes: 5, totalBytes: 10 },
-      { id: 'catalog-id', build: 'inst-local', receivedBytes: 10, totalBytes: 10 }
-    ])
-    expect(mocks.open).toHaveBeenCalledOnce()
+    expect(hasActiveTemplateDownloads()).toBe(false)
   })
 
   it('does not open the graph when the model download fails', async () => {
-    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
+    transfersModels('fails')
 
-    const launching = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', {
-      downloadMissing: true
-    })
-    await vi.waitFor(() => expect(mocks.downloadListener).not.toBeNull())
-    mocks.downloadListener!({ status: 'error', receivedBytes: 1, totalBytes: 10 })
+    expect(
+      await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
+    ).toEqual({ opened: false, error: 'workflowLaunch.downloadFailed' })
 
-    expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.downloadFailed' })
+    expect(await buildIsMissing()).toEqual([MODEL.filename])
     expect(mocks.open).not.toHaveBeenCalled()
+    expect(hasActiveTemplateDownloads()).toBe(false)
   })
 
-  it('stops the download when asked, and does not open the graph', async () => {
-    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
+  it('stops the transfer when the download is cancelled, and does not open the graph', async () => {
+    transfersModels('hangs')
     expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(false)
 
     const launching = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', {
       downloadMissing: true
     })
-    await vi.waitFor(() => expect(mocks.downloadListener).not.toBeNull())
+    await vi.waitFor(() => expect(mocks.transfer).toHaveBeenCalledOnce())
+    expect(hasActiveTemplateDownloads()).toBe(true)
 
     expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(true)
+
     expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.downloadCancelled' })
-    expect(mocks.forget).toHaveBeenCalledWith('catalog-workflow:catalog-id:inst-local')
+    await vi.waitFor(() => expect(transferStopped).toHaveBeenCalled())
+    expect(hasActiveTemplateDownloads()).toBe(false)
+    expect(await buildIsMissing()).toEqual([MODEL.filename])
     expect(mocks.open).not.toHaveBeenCalled()
     expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(false)
   })
 
-  it('says the disk is full when the models do not fit', async () => {
-    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
+  it('says the disk is full when the models do not fit, before transferring anything', async () => {
+    mocks.diskSpace.mockResolvedValue({ free: MODEL_BYTES.length, total: 1e15 })
 
-    const launching = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', {
-      downloadMissing: true
-    })
-    await vi.waitFor(() => expect(mocks.downloadListener).not.toBeNull())
-    mocks.downloadListener!({
-      status: 'error',
-      receivedBytes: 0,
-      totalBytes: 10,
-      error: 'insufficient-disk'
-    })
+    expect(
+      await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
+    ).toEqual({ opened: false, error: 'workflowLaunch.noDiskSpace' })
 
-    expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.noDiskSpace' })
+    expect(mocks.transfer).not.toHaveBeenCalled()
     expect(mocks.open).not.toHaveBeenCalled()
   })
 
   it('skips the download when the build already has every model', async () => {
+    await putModelInBuild()
+
     expect(
       await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
     ).toEqual({ opened: true })
-    expect(mocks.startDownload).not.toHaveBeenCalled()
+    expect(mocks.transfer).not.toHaveBeenCalled()
   })
 
   it('downloads nothing into a build from another workspace or one below the workflow’s minimum', async () => {
-    mocks.missing.mockResolvedValue([{ filename: 'model.safetensors', directory: 'checkpoints' }])
-    mocks.installation.mockResolvedValueOnce({ id: 'inst-local', workspaceId: 'team-b' })
+    mocks.installation.mockResolvedValueOnce({
+      id: 'inst-local',
+      installPath: buildDir,
+      workspaceId: 'team-b'
+    })
     expect(
       await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
     ).toEqual({ opened: false, error: 'apps.local.openUnknownBuild' })
@@ -298,7 +373,7 @@ describe('launching workflows from the published catalog', () => {
       await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
     ).toEqual({ opened: false, error: 'workflowLaunch.updateBuild' })
 
-    expect(mocks.startDownload).not.toHaveBeenCalled()
+    expect(mocks.transfer).not.toHaveBeenCalled()
     expect(mocks.open).not.toHaveBeenCalled()
   })
 })
