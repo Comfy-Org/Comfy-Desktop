@@ -985,6 +985,27 @@ describe('Explore Workflows', () => {
     wrapper.unmount()
   })
 
+  it('keeps the toolbar above the cards when the list is longer than the window', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue(
+      Array.from({ length: 40 }, (_, index) =>
+        catalogWorkflow({ id: `workflow-${index}`, title: `Workflow ${index}` })
+      )
+    )
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await flushPromises()
+
+    const toolbarBottom = wrapper
+      .get('[data-testid="explore-filters"]')
+      .element.getBoundingClientRect().bottom
+    const firstCardTop = wrapper
+      .get('[data-testid="workflow-card-workflow-0"]')
+      .element.getBoundingClientRect().top
+    expect(toolbarBottom).toBeLessThanOrEqual(firstCardTop)
+    wrapper.unmount()
+  })
+
   it('sorts newest first and keeps the chosen card size for next time', async () => {
     window.localStorage.clear()
     listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])

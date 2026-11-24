@@ -362,7 +362,7 @@ onBeforeUnmount(() => {
       :class="PAGE_SPOTLIGHT_CLASS"
       :data-testid="`${activeTab}-view`"
     >
-      <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
+      <header class="mx-auto w-full max-w-300 shrink-0 px-10 pt-9 pb-3">
         <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
           {{ t('sidebar.explore') }}
         </h1>
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
 
       <div
         v-if="appsEnabled || showsSearch"
-        class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3"
+        class="mx-auto flex min-h-8 w-full max-w-300 shrink-0 flex-wrap items-center gap-2 px-10 py-3"
       >
         <SegmentedControl
           v-if="appsEnabled"
@@ -412,7 +412,7 @@ onBeforeUnmount(() => {
       <div
         v-if="workflowsVisited"
         v-show="activeTab === 'workflows'"
-        class="mx-auto w-full max-w-300 px-10 pb-10"
+        class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10"
       >
         <CatalogWorkflowsGallery
           :query="queries.workflows"
@@ -429,7 +429,7 @@ onBeforeUnmount(() => {
       <div
         v-if="appsEnabled"
         v-show="activeTab === 'apps'"
-        class="mx-auto w-full max-w-300 px-10 pb-10"
+        class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10"
       >
         <ul
           v-if="state === 'loading'"

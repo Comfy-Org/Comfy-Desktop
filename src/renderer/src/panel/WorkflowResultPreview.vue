@@ -19,6 +19,7 @@ const frame = ref<HTMLElement | null>(null)
 const { width: frameWidth, height: frameHeight } = useElementSize(frame)
 const natural = ref<{ width: number; height: number } | null>(null)
 const broken = ref(false)
+const loaded = ref(false)
 
 watch(
   () => media?.url,
@@ -26,6 +27,7 @@ watch(
     natural.value =
       media?.width && media.height ? { width: media.width, height: media.height } : null
     broken.value = false
+    loaded.value = false
   },
   { immediate: true }
 )
@@ -35,14 +37,19 @@ const fitScale = computed(() => {
   return Math.min(frameWidth.value / natural.value.width, frameHeight.value / natural.value.height)
 })
 const scale = computed(() => (zoom === 'fit' ? fitScale.value : zoom / 100))
-const shownSize = computed(() =>
-  natural.value
-    ? {
-        width: `${natural.value.width * scale.value}px`,
-        height: `${natural.value.height * scale.value}px`
-      }
-    : { maxWidth: '100%', maxHeight: '100%' }
-)
+const placeholderSide = computed(() => Math.min(frameWidth.value, frameHeight.value))
+const boxSize = computed(() => {
+  if (natural.value) {
+    return {
+      width: `${natural.value.width * scale.value}px`,
+      height: `${natural.value.height * scale.value}px`
+    }
+  }
+  if (poster && placeholderSide.value > 0) {
+    return { width: `${placeholderSide.value}px`, height: `${placeholderSide.value}px` }
+  }
+  return { maxWidth: '100%', maxHeight: '100%' }
+})
 
 const showing = computed(() => Boolean(media && !broken.value && natural.value))
 
@@ -53,6 +60,11 @@ watch(
   },
   { immediate: true }
 )
+
+function arrive(event: Event): void {
+  measure(event)
+  loaded.value = true
+}
 
 function measure(event: Event): void {
   const element = event.target as HTMLImageElement | HTMLVideoElement
@@ -70,30 +82,50 @@ function measure(event: Event): void {
     data-testid="workflow-result"
   >
     <div class="flex min-h-full min-w-full">
-      <template v-if="media && !broken">
+      <div
+        v-if="media && !broken"
+        class="relative m-auto shrink-0 overflow-hidden rounded-[10px]"
+        :style="boxSize"
+      >
+        <img
+          v-if="poster && !loaded"
+          :src="poster"
+          alt=""
+          class="absolute inset-0 size-full object-cover"
+          data-testid="workflow-result-placeholder"
+        />
         <video
           v-if="media.kind === 'video'"
           :src="media.url"
           :poster="poster ?? undefined"
-          class="m-auto block shrink-0 rounded-[10px] object-contain"
-          :style="shownSize"
+          class="relative block size-full object-contain transition-opacity duration-300 motion-reduce:transition-none"
+          :class="loaded ? 'opacity-100' : 'opacity-0'"
           autoplay
           muted
           loop
           playsinline
           @loadedmetadata="measure"
+          @loadeddata="arrive"
           @error="broken = true"
         />
         <img
           v-else
           :src="media.url"
           alt=""
-          class="m-auto block shrink-0 rounded-[10px] object-contain"
-          :style="shownSize"
-          @load="measure"
+          class="relative block size-full object-contain transition-opacity duration-300 motion-reduce:transition-none"
+          :class="loaded ? 'opacity-100' : 'opacity-0'"
+          data-testid="workflow-result-media"
+          @load="arrive"
           @error="broken = true"
         />
-      </template>
+      </div>
+      <img
+        v-else-if="poster"
+        :src="poster"
+        alt=""
+        class="m-auto block max-h-full max-w-full rounded-[10px] object-contain"
+        data-testid="workflow-result-placeholder"
+      />
       <div v-else class="m-auto"><slot /></div>
     </div>
   </div>
