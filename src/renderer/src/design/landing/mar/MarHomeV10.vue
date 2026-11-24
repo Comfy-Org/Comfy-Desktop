@@ -172,7 +172,7 @@ const recent = computed<Recent[]>(() =>
   <div class="mar-top-actions absolute top-3.5 right-4 z-10 flex items-center gap-2">
     <!-- Open ComfyUI comes back with the build; the top card carries it
          while it is there, the Builds card does not. -->
-    <CreateMenu v-if="!installPending && (!flow.ready || cardInBuilds)" />
+    <CreateMenu v-if="!can.onboarding && !installPending && (!flow.ready || cardInBuilds)" />
   </div>
   <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt

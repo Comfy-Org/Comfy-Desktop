@@ -290,7 +290,7 @@ onBeforeUnmount(() => {
       <button type="button" class="p08-search" aria-label="Search" @click="search.open = true">
         <Search :size="14" /><span class="p08-search-text">Search</span><kbd>⌘K</kbd>
       </button>
-      <CreateMenu v-if="proto.mode === 'create'" />
+      <CreateMenu v-if="proto.mode === 'create' && !can.onboarding" />
       <TabsAccount v-if="ports.navAccount" />
     </div>
   </header>
