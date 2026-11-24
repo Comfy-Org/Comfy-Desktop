@@ -306,7 +306,7 @@ function newChat(): void {
         </button>
       </template>
 
-      <template v-if="proto.mode === 'create' && can.projects">
+      <template v-if="proto.mode === 'create' && can.projects && !can.onboarding">
         <div class="mar-side-label">
           <template v-if="open"
             ><span class="flex-1">Projects</span

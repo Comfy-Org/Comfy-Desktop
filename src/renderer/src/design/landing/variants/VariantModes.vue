@@ -97,7 +97,7 @@ const MODES = computed(() => [
              show even with no local install. -->
         <!-- Before Home: Builds and Tools, as Desktop has them today. -->
         <MarBuildsNav v-if="proto.mode === 'create' && !can.home" />
-        <SidebarGroup v-else-if="proto.mode === 'create'" />
+        <SidebarGroup v-else-if="proto.mode === 'create' && !can.onboarding" />
         <SpacesGroup v-if="proto.mode === 'create' && can.spaces" />
 
         <div class="mt-auto flex flex-col gap-2 pt-3"><WorkspaceMenu /></div>
