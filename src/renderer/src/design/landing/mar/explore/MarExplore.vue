@@ -94,7 +94,7 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
       { value: 'templates', label: 'Workflows', count: HUB_WORKFLOWS.length },
       // Models and Tutorials come with Learn (Milestone 3 is the Hub's apps
       // and templates only).
-      ...(can.value.learn
+      ...(can.value.learn && !can.value.onboarding
         ? [
             {
               value: 'models' as const,
