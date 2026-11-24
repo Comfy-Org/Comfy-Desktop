@@ -221,6 +221,9 @@ const showLabel = computed(() => {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.alm {
+  --alm-row-height: 34px;
+}
 /* A long Show value stays on one line. */
 .alm-val {
   max-width: 110px;
@@ -235,7 +238,8 @@ const showLabel = computed(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 4px 4px 0;
+  height: var(--alm-row-height);
+  padding: 0 4px 0 0;
 }
 :root .alm.alm.proto-ui.proto-ui .alm-head .alm-label {
   padding-block: 0;
@@ -271,7 +275,8 @@ const showLabel = computed(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px 6px;
+  height: var(--alm-row-height);
+  padding: 0 10px;
   font-size: 13px;
 }
 .alm-size > span {
@@ -315,6 +320,7 @@ const showLabel = computed(() => {
   background: color-mix(in oklch, var(--color-base-foreground) 38%, transparent);
 }
 :root .alm.alm.proto-ui.proto-ui .alm-row {
+  height: var(--alm-row-height);
   background: transparent;
   box-shadow: none;
   font-size: 13px;
