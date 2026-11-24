@@ -217,6 +217,21 @@ describe('StatusFactPanel — location', () => {
 
     delete (window as unknown as { api?: unknown }).api
   })
+
+  it('keeps the folder button when the location label is not in English', async () => {
+    const wrapper = mountPanel({
+      installation: makeInstall('Maanil'),
+      sections: [
+        {
+          tab: 'status',
+          fields: [{ key: 'location', label: '位置', value: '/tmp/inst-1' }]
+        } as unknown as DetailSection
+      ]
+    })
+    await nextTick()
+
+    expect(wrapper.find('.status-fact-value-open').exists()).toBe(true)
+  })
 })
 
 describe('StatusFactPanel — remote URL', () => {
