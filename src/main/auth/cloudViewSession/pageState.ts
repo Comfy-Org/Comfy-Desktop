@@ -1,4 +1,7 @@
+import { webSessionUidReaderSource } from '../firebaseBridge/injectScript'
+
 export const DESKTOP_SESSION_MARKER_KEY = '__comfyDesktopCloudViewSession'
+export const WEB_SESSION_DELETE_TIMEOUT_MS = 8000
 
 export interface DesktopSessionMarker {
   v: 1
@@ -45,9 +48,12 @@ export function buildReadStateScript(apiKey: string, expectedOrigin: string): st
   const storageKey = ${JSON.stringify(storageKeyFor(apiKey))};
   let marker = null;
   try { marker = localStorage.getItem(${JSON.stringify(DESKTOP_SESSION_MARKER_KEY)}); } catch (_) {}
+  ${webSessionUidReaderSource()}
+  const sessionUid = await readSessionUid();
+  if (sessionUid === undefined || location.origin !== expectedOrigin) return null;
   const names = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : null;
   if (!names) return null;
-  if (!names.some((d) => d && d.name === 'firebaseLocalStorageDb')) return { uid: null, marker };
+  if (!names.some((d) => d && d.name === 'firebaseLocalStorageDb')) return { uid: sessionUid, marker };
   const uid = await new Promise((resolve) => {
     const req = indexedDB.open('firebaseLocalStorageDb');
     req.onerror = () => resolve(undefined);
@@ -65,7 +71,7 @@ export function buildReadStateScript(apiKey: string, expectedOrigin: string): st
     };
   });
   if (uid === undefined || location.origin !== expectedOrigin) return null;
-  return { uid, marker };
+  return { uid: uid || sessionUid, marker };
 })()`
 }
 
@@ -101,9 +107,26 @@ export function buildRemoveDesktopSessionScript(
       };
     };
   });
-  try { localStorage.removeItem(${JSON.stringify(DESKTOP_SESSION_MARKER_KEY)}); } catch (_) {}
-  if (removed) location.reload();
-  return removed;
+  ${webSessionUidReaderSource()}
+  const sessionUid = location.origin === expectedOrigin ? await readSessionUid() : undefined;
+  let sessionEnded = false;
+  if (sessionUid === expectedUid && location.origin === expectedOrigin) {
+    try {
+      const response = await fetch('/api/auth/session', {
+        method: 'DELETE',
+        credentials: 'include',
+        signal: AbortSignal.timeout(${WEB_SESSION_DELETE_TIMEOUT_MS})
+      });
+      sessionEnded = response.ok;
+    } catch (_) {}
+  }
+  const sessionLeft = sessionUid === undefined || (sessionUid === expectedUid && !sessionEnded);
+  if (!sessionLeft) {
+    try { localStorage.removeItem(${JSON.stringify(DESKTOP_SESSION_MARKER_KEY)}); } catch (_) {}
+  }
+  const signedOut = removed || sessionEnded;
+  if (signedOut) location.reload();
+  return signedOut;
 })()`
 }
 

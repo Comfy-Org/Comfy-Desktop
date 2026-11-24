@@ -1,6 +1,34 @@
 export const INJECTION_OWNER_KEY = '__comfyDesktopFirebaseSessionInjectionOwner'
 export const FIREBASE_SESSION_INJECTION_OWNER_FIELD = '__comfyDesktopInjectionOwner'
 export const WEB_SESSION_CREATE_TIMEOUT_MS = 8000
+export const WEB_SESSION_READ_TIMEOUT_MS = 8000
+
+export function webSessionUidReaderSource(): string {
+  return `const readSessionUid = async () => {
+    try {
+      const response = await fetch('/api/auth/session', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(${WEB_SESSION_READ_TIMEOUT_MS})
+      });
+      if (response.status === 429 || response.status >= 500) return undefined;
+      if (!response.ok) return null;
+      const body = await response.json().catch(() => undefined);
+      if (body === undefined) return undefined;
+      const id = body && body.user && body.user.id;
+      return typeof id === 'string' && id ? id : null;
+    } catch (_) {
+      return undefined;
+    }
+  };`
+}
+
+function signedInSessionGuardSource(): string {
+  return `${webSessionUidReaderSource()}
+  if ((await readSessionUid()) !== null) return false;
+  if (!isCurrent()) return false;`
+}
 
 export interface InjectWriteOptions {
   onlyIfSignedOut?: boolean
@@ -32,6 +60,7 @@ export function buildIndexedDbInjectScript(
   const isCurrent = () =>
     location.origin === expectedOrigin && globalThis[ownerKey] === ownerToken;
   if (!isCurrent()) return false;
+  ${options.onlyIfSignedOut === true ? signedInSessionGuardSource() : ''}
   const userValue = ${userJson};
   const apiKey = ${apiKeyJson};
   const storageKey = 'firebase:authUser:' + apiKey + ':[DEFAULT]';
