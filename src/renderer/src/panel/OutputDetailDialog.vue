@@ -306,12 +306,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <div class="flex flex-col gap-3">
         <div class="flex items-start gap-2">
           <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 class="m-0 truncate text-heading font-semibold text-foreground">{{ item.name }}</h2>
+            <h2 class="m-0 line-clamp-2 text-heading font-semibold break-words text-foreground">
+              {{ item.name }}
+            </h2>
             <p class="m-0 text-ui text-subtle-foreground">{{ subtitle }}</p>
           </div>
           <Button
             type="button"
-            variant="secondary"
+            variant="muted-textonly"
             size="icon"
             class="-mt-1 -mr-1 shrink-0 rounded-full"
             :aria-label="t('common.close')"
