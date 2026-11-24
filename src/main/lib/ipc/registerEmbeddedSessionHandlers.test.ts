@@ -191,6 +191,26 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
       failure: new SignInFailure('Loopback OAuth callback timed out', 'timeout'),
       error: true
     },
+    {
+      name: 'a sign-in with no network',
+      failure: new SignInFailure('fetch failed', 'network'),
+      error: true
+    },
+    {
+      name: 'a sign-in with no browser to open',
+      failure: new SignInFailure('no browser', 'browser_unavailable'),
+      error: true
+    },
+    {
+      name: 'a sign-in the identity provider refused',
+      failure: new SignInFailure('missing authorization code', 'idp_error'),
+      error: true
+    },
+    {
+      name: 'a sign-in the server refused',
+      failure: new SignInFailure('OAuth token request failed: 503', 'server_error'),
+      error: true
+    },
     { name: 'an unclassified error', failure: new Error('boom'), error: true }
   ])('logs $name as an error only when it is one ($error)', async ({ failure, error }) => {
     mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
