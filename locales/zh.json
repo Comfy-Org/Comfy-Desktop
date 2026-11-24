@@ -2266,17 +2266,18 @@
     "cancel": "取消"
   },
   "quitDesktop": {
-    "messageOne": "要退出桌面端吗？这将关闭正在运行的 ComfyUI 实例。",
-    "messageMany": "要退出桌面端吗？这将关闭 {count} 个正在运行的 ComfyUI 实例。",
-    "openInstances": "已打开的实例",
+    "title": "退出 Comfy Desktop",
+    "messageOne": "要退出 Comfy Desktop 吗？这将关闭正在运行的 ComfyUI 构建。",
+    "messageMany": "要退出 Comfy Desktop 吗？这将关闭 {count} 个正在运行的 ComfyUI 构建。",
+    "openBuilds": "已打开的构建",
     "operations": "进行中的操作",
     "downloads": "进行中的下载",
-    "untitled": "未命名实例"
+    "untitled": "未命名构建"
   },
   "closeWindow": {
     "message": "要关闭此窗口吗？",
     "messageQuits": "要关闭此窗口吗？这将退出 Comfy Desktop。",
-    "messageStops": "要关闭此窗口吗？这将停止正在运行的 ComfyUI 实例。",
+    "messageStops": "要关闭此窗口吗？这将停止正在运行的 ComfyUI 构建。",
     "messageStopsAndQuits": "要关闭此窗口吗？这将停止 ComfyUI 并退出 Comfy Desktop。"
   },
   "appMenu": {

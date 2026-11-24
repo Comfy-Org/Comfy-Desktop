@@ -2266,17 +2266,18 @@
     "cancel": "Cancel"
   },
   "quitDesktop": {
-    "messageOne": "Quit Desktop? This will close the running ComfyUI instance.",
-    "messageMany": "Quit Desktop? This will close {count} running ComfyUI instances.",
-    "openInstances": "Open instances",
+    "title": "Quit Comfy Desktop",
+    "messageOne": "Quit Comfy Desktop? This will close the running ComfyUI build.",
+    "messageMany": "Quit Comfy Desktop? This will close {count} running ComfyUI builds.",
+    "openBuilds": "Open builds",
     "operations": "In-progress operations",
     "downloads": "Active downloads",
-    "untitled": "Untitled instance"
+    "untitled": "Untitled build"
   },
   "closeWindow": {
     "message": "Close this window?",
     "messageQuits": "Close this window? This quits Comfy Desktop.",
-    "messageStops": "Close this window? This stops the running ComfyUI instance.",
+    "messageStops": "Close this window? This stops the running ComfyUI build.",
     "messageStopsAndQuits": "Close this window? This stops ComfyUI and quits Comfy Desktop."
   },
   "appMenu": {

@@ -370,7 +370,7 @@ describe('closing a window while ComfyUI runs on this computer', () => {
     await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
 
     expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
-      'Close this window? This stops the running ComfyUI instance.'
+      'Close this window? This stops the running ComfyUI build.'
     ])
     expect(win.closed).toBe(false)
   })
@@ -492,8 +492,10 @@ describe('quitting while a ComfyUI runs with no window', () => {
       await confirmAndCloseAllHostWindows(null, performQuit)
 
       expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
-        'Quit Desktop? This will close the running ComfyUI instance.'
+        'Quit Comfy Desktop? This will close the running ComfyUI build.'
       ])
+      expect(mocks.asked[0]?.spec.title).toBe('Quit Comfy Desktop')
+      expect(mocks.asked[0]?.spec.details?.[0]?.label).toBe('Open builds')
       expect(mocks.asked[0]?.spec.details?.[0]?.items).toEqual(['Studio'])
       expect(mocks.asked[0]?.spec.confirmStyle, 'Quit deletes nothing, so it is white').toBe(
         'primary'
@@ -512,12 +514,12 @@ describe('quitting while a ComfyUI runs with no window', () => {
       await confirmAndCloseAllHostWindows(null, vi.fn())
 
       expect(mocks.asked[0]?.spec).toMatchObject({
-        title: zh.fileMenu.exitAllWindows,
+        title: zh.quitDesktop.title,
         message: zh.quitDesktop.messageOne,
         confirmLabel: zh.settings.closeQuitConfirm,
         cancelLabel: zh.common.cancel
       })
-      expect(mocks.asked[0]?.spec.details?.[0]?.label).toBe(zh.quitDesktop.openInstances)
+      expect(mocks.asked[0]?.spec.details?.[0]?.label).toBe(zh.quitDesktop.openBuilds)
     })
 
     it('does not count it as windowless while its window is open', async () => {

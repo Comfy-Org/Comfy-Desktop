@@ -178,7 +178,7 @@ export async function confirmAndCloseAllHostWindows(
     return
   }
   const details: SystemModalDetailGroup[] = [
-    { label: i18n.t('quitDesktop.openInstances'), items: titles }
+    { label: i18n.t('quitDesktop.openBuilds'), items: titles }
   ]
   if (ipc.hasActiveOperations()) {
     try {
@@ -203,7 +203,7 @@ export async function confirmAndCloseAllHostWindows(
   const confirmed = await openSystemModalAsync({
     parent: overlayParentEntry.window,
     spec: {
-      title: i18n.t('fileMenu.exitAllWindows'),
+      title: i18n.t('quitDesktop.title'),
       message:
         count === 1
           ? i18n.t('quitDesktop.messageOne')
