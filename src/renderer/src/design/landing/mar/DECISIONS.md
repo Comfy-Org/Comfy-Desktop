@@ -111,3 +111,30 @@ until they merge.
 Pending, not in main (open drafts, not in the prototype): #2181 build picker, #2210 page titles at display size, #2213 live logs window, #2214 sidebar fold (already matched), #2215 Open and Export snapshot on the build page, #2216 update progress on the build, #2217 Folders tab top-down, and the downloads popup proposal.
 
 The prototype has no blue: Run and Resume are white, value fills and status chips grey (see UI-RULES › Buttons and actions).
+
+## No Create / Build switch: the developer portal lives with builds (2026-11-24)
+
+The developer platform (API keys, builds and their releases, deployments,
+usage) comes into Desktop without a mode of its own. The team decided against
+the switch at the top of the sidebar (Platform UX meeting, 2026-11-23), and
+Pablo picked where each part goes. Linear DESK-661.
+
+- **No switch.** The sidebar keeps Home, Search, Explore, Learn, Libraries
+  (Workflows, Apps, Assets, Builds), Projects and Spaces. The Build lens and
+  its sidebar are gone (sidebar, dock and paper tabs). Agent keeps its switch
+  only where it had one (no title bar tabs).
+- **Builds and Projects are both libraries.** A project picks the build it
+  runs on; many projects can share one build.
+- **A build's page holds its deployments.** Tabs: Overview, Versions,
+  Deployments, Logs, Workflows, Assets, Models & nodes. Logs lists the
+  requests to that build's deployments. A deployment's page goes back to its
+  build. No Deployments or Logs page in the sidebar.
+- **Used by N projects.** A build's meta line says how many projects run on
+  it (the names on hover), so you see who depends on it before you deploy.
+- **A project shows its build.** "Runs on <build>" in the meta line opens the
+  build's page; ⋯ › Change build picks another one, with Undo.
+- **Account things go in the workspace menu.** Usage, API keys, Billing &
+  credits, Limits, People, Provider keys.
+
+Open: the Logs tab (API requests) and a build's View logs (ComfyUI's own log)
+share the word "logs".

@@ -13,6 +13,7 @@ export type BuildTab =
   | 'about'
   | 'settings'
   | 'deployments'
+  | 'logs'
 
 /** Desktop's tabs (ComfyUISettingsContent.vue): Overview (the facts as
  *  cards, Comfy-Desktop#2062, in place of Update and About), Folders

@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import {
-  BookOpen,
   ChevronsUpDown,
   Circle,
-  Code,
   Coins,
   Compass,
   GraduationCap,
   Home,
-  KeyRound,
-  LayoutDashboard,
   LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
@@ -18,13 +14,11 @@ import {
   MessageSquare,
   Palette,
   Plus,
-  Rocket,
-  ScrollText,
   Search,
   Server
 } from 'lucide-vue-next'
 import { AgentChat } from '../icons/agentChat'
-import { ComfyAssets, ComfyModel, ComfyWorkflow } from '../icons/comfyIcons'
+import { ComfyAssets, ComfyWorkflow } from '../icons/comfyIcons'
 import {
   go,
   goIn,
@@ -97,31 +91,8 @@ const CREATE: { title?: string; items: Item[] }[] = [
     ]
   }
 ]
-const BUILD: { title?: string; items: Item[] }[] = [
-  {
-    items: [
-      { page: 'build-overview', label: 'Overview', icon: LayoutDashboard },
-      { page: 'deployments', label: 'Deployments', icon: Rocket, prefix: 'deployment:' },
-      { page: 'environments', label: 'Builds', icon: Server, prefix: 'environment:' }
-    ]
-  },
-  {
-    title: 'API',
-    items: [
-      { page: 'router', label: 'Models', icon: ComfyModel },
-      { page: 'logs', label: 'Logs', icon: ScrollText },
-      { page: 'keys', label: 'API keys', icon: KeyRound }
-    ]
-  }
-]
-// Nav options › Docs: his Build nav ends with Docs (docs.comfy.org).
-const DOCS: Item = { page: 'docs' as Page, label: 'Docs', icon: BookOpen, href: 'docs' }
-const withDocs = (gs: typeof BUILD): typeof BUILD =>
-  ports.navDocs
-    ? gs.map((g, i) => (i === gs.length - 1 ? { ...g, items: [...g.items, DOCS] } : g))
-    : gs
 const groups = computed(() =>
-  (proto.mode === 'build' ? withDocs(BUILD) : proto.mode === 'create' ? CREATE : [])
+  (proto.mode === 'create' ? CREATE : [])
     .map((g) => ({
       ...g,
       items: g.items
@@ -146,14 +117,13 @@ const projects = computed(() => PROJECTS.map((p, i) => ({ ...p, art: ART[i % ART
 
 const LENSES: { value: Mode; label: string; icon: Component }[] = [
   { value: 'create', label: 'Create', icon: Palette },
-  { value: 'build', label: 'Build', icon: Code },
   { value: 'agent', label: 'Agent', icon: AgentChat }
 ]
 const lenses = computed(() =>
   LENSES.filter((l) => l.value !== 'agent' || (can.value.agent && !marTabsOn.value))
 )
 function lens(m: Mode): void {
-  goIn(m, m === 'build' ? 'build-overview' : m === 'agent' ? 'agent' : landingPage())
+  goIn(m, m === 'agent' ? 'agent' : landingPage())
 }
 const open = computed(() => !marNav.collapsed)
 
@@ -178,7 +148,7 @@ function newChat(): void {
     <!-- Lens switch and collapse, on one line (stacked on the rail). -->
     <div class="mar-side-head" :class="!open && 'is-rail'">
       <MarModeSeg
-        v-if="can.builder"
+        v-if="lenses.length > 1"
         :model-value="proto.mode"
         :options="lenses"
         :show="open ? 'picked' : 'icon'"
@@ -203,10 +173,8 @@ function newChat(): void {
 
     <RailFlyout v-if="!open && p20.rail === 'flyout'" />
     <nav class="mar-side-scroll">
-      <!-- Search finds media and workflows: a Create thing, not in Build, and
-           not before Learn (Milestones 2 and 3 ship without it). -->
       <button
-        v-if="proto.mode !== 'build' && can.search"
+        v-if="can.search"
         type="button"
         class="mar-side-row"
         :title="open ? undefined : 'Search · ⌘K'"

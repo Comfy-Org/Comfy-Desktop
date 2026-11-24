@@ -1,22 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
 import {
-  Code,
   Compass,
   Folder,
   GraduationCap,
   Home,
-  KeyRound,
-  LayoutDashboard,
   LayoutGrid,
   PanelsTopLeft,
   Palette,
-  Rocket,
-  ScrollText,
   Server
 } from 'lucide-vue-next'
 import { AgentChat } from '../icons/agentChat'
-import { ComfyAssets, ComfyModel, ComfyWorkflow } from '../icons/comfyIcons'
+import { ComfyAssets, ComfyWorkflow } from '../icons/comfyIcons'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import {
   go,
@@ -63,21 +58,7 @@ const CREATE: Item[][] = [
     { page: 'environments', label: 'Builds', icon: Server, prefix: 'environment:' }
   ]
 ]
-const BUILD: Item[][] = [
-  [
-    { page: 'build-overview', label: 'Overview', icon: LayoutDashboard },
-    { page: 'deployments', label: 'Deployments', icon: Rocket, prefix: 'deployment:' },
-    { page: 'environments', label: 'Builds', icon: Server, prefix: 'environment:' }
-  ],
-  [
-    { page: 'router', label: 'Models', icon: ComfyModel },
-    { page: 'logs', label: 'Logs', icon: ScrollText },
-    { page: 'keys', label: 'API keys', icon: KeyRound }
-  ]
-]
-const groups = computed(() =>
-  proto.mode === 'build' ? BUILD : proto.mode === 'create' ? CREATE : []
-)
+const groups = computed(() => (proto.mode === 'create' ? CREATE : []))
 const isOn = (i: Item): boolean =>
   proto.activeTab === 'home' &&
   (proto.page === i.page || Boolean(i.prefix && proto.page.startsWith(i.prefix)))
@@ -99,12 +80,14 @@ const flyout = ref(false)
 
 const LENSES: { value: Mode; label: string; icon: Component }[] = [
   { value: 'create', label: 'Create', icon: Palette },
-  { value: 'build', label: 'Build', icon: Code },
   { value: 'agent', label: 'Agent', icon: AgentChat }
 ]
+const lenses = computed(() =>
+  LENSES.filter((x) => x.value !== 'agent' || (can.value.agent && !marTabsOn.value))
+)
 function lens(m: Mode): void {
   flyout.value = false
-  goIn(m, m === 'build' ? 'build-overview' : m === 'agent' ? 'agent' : landingPage())
+  goIn(m, m === 'agent' ? 'agent' : landingPage())
 }
 </script>
 
@@ -220,9 +203,9 @@ function lens(m: Mode): void {
 
       <!-- Lens switch, like Figma's mode switch. -->
       <MarModeSeg
-        v-if="can.builder"
+        v-if="lenses.length > 1"
         :model-value="proto.mode"
-        :options="LENSES.filter((x) => x.value !== 'agent' || (can.agent && !marTabsOn))"
+        :options="lenses"
         :show="marTabsOn ? 'both' : 'icon'"
         size="lg"
         class="ml-1"

@@ -4,6 +4,7 @@ import {
   Check,
   CreditCard,
   Gauge,
+  Key,
   KeyRound,
   LogOut,
   Plus,
@@ -40,6 +41,7 @@ const { side = 'top' } = defineProps<{ side?: 'top' | 'right' | 'bottom' }>()
 
 const ADMIN: { page: Page; label: string; icon: unknown }[] = [
   { page: 'usage', label: 'Usage', icon: Gauge },
+  { page: 'keys', label: 'API keys', icon: Key },
   { page: 'billing', label: 'Billing & credits', icon: CreditCard },
   { page: 'limits', label: 'Limits', icon: ShieldAlert },
   { page: 'people', label: 'People', icon: Users },

@@ -8,6 +8,7 @@ import InstanceGlyph from '../../parts/InstanceGlyph.vue'
 import { envById, fmt, fmtCompact, versionsOf } from '../../parts/env/env'
 import { spaceById } from '../../spaces'
 import { go, goIn, hostActions, toast } from '../../useProto'
+import { openBuild } from '../build/buildTab'
 import type { Deployment } from '../../mock'
 import MarEntityHeader from '../pages/MarEntityHeader.vue'
 
@@ -66,11 +67,11 @@ function copy(text: string, what: string): void {
 <template>
   <div class="mx-auto w-full max-w-440 px-11 pb-16">
     <MarEntityHeader
-      back="Deployments"
+      :back="env?.name ?? 'Builds'"
       :title="dep.name"
       :status="running ? 'running' : 'stopped'"
       :status-label="running ? 'Running' : 'Scaled to zero'"
-      @back="go('deployments')"
+      @back="openBuild(dep.envId, 'deployments')"
     >
       <template #cover>
         <span class="mar-dd-glyph"><Rocket :size="24" /></span>

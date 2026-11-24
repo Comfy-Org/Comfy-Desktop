@@ -376,7 +376,7 @@ export const WORKFLOWS: Workflow[] = [
  *  Reactive: a first-time user (Mar's proposal) has none. */
 export const PROJECTS: { id: string; name: string; envId: string }[] = reactive([
   { id: 'hero', name: 'Hero shots', envId: 'local-1' },
-  { id: 'first', name: 'My first project', envId: 'local-video' },
+  { id: 'first', name: 'My first project', envId: 'local-1' },
   { id: 'flux', name: 'Flux tests', envId: 'local-flux' },
   { id: 'campaign', name: 'Product campaign', envId: 'dep-product' },
   { id: 'explore', name: 'Explorations', envId: 'cloud' }

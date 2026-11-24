@@ -1,8 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Archive, Copy, FolderX, Pencil, Plus, Trash2, UserPlus, Users, X } from 'lucide-vue-next'
+import {
+  Archive,
+  Copy,
+  FolderX,
+  Pencil,
+  Plus,
+  Server,
+  Trash2,
+  UserPlus,
+  Users,
+  X
+} from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
+import InstanceGlyph from '../../parts/InstanceGlyph.vue'
 import MemberAvatar from '../../parts/MemberAvatar.vue'
 import { thumb } from '../../mock'
 import { go, instances, type Page } from '../../useProto'
@@ -16,6 +28,7 @@ import { EMPTY_PICS } from './emptyArt'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAssetsPage from './MarAssetsPage.vue'
 import { projects } from './projectsStore'
+import { openBuild } from '../build/buildTab'
 import { workflows } from './workflowsStore'
 import { assets } from './assetsStore'
 import { notify } from './undo'
@@ -47,18 +60,13 @@ const TABS = computed(() => [
   { value: 'people' as const, label: 'People', count: p.value?.members.length ?? 0 }
 ])
 
-// "Runs on" is a quiet picker in the meta line, not a chip.
-const BUILDS = computed(() => instances.value.map((i) => ({ value: i.id, label: i.name })))
-const envId = computed({
-  get: () => p.value?.envId ?? '',
-  set: (next: string) => {
-    if (!p.value || next === p.value.envId) return
-    const project = p.value
-    const before = project.envId
-    project.envId = next
-    notify(`Now runs on ${build.value?.name ?? 'another build'}`, () => (project.envId = before))
-  }
-})
+function changeBuild(next: string): void {
+  if (!p.value || next === p.value.envId) return
+  const project = p.value
+  const before = project.envId
+  project.envId = next
+  notify(`Now runs on ${build.value?.name ?? 'another build'}`, () => (project.envId = before))
+}
 
 const people = computed(() => {
   const m = p.value?.members ?? []
@@ -159,6 +167,15 @@ const lines = computed<MenuLine[]>(() =>
     ? [
         { label: 'Rename', icon: Pencil, run: startRename },
         { label: 'Duplicate', icon: Copy, run: () => projects.duplicate(p.value!.id) },
+        {
+          label: 'Change build',
+          icon: Server,
+          sub: instances.value.map((i) => ({
+            label: i.name,
+            checked: i.id === p.value!.envId,
+            run: () => changeBuild(i.id)
+          }))
+        },
         'sep',
         {
           label: 'Archive',
@@ -268,14 +285,9 @@ function removePerson(m: string): void {
           {{ people }}
         </button>
         <span class="mar-eh-dot" />
-        <Select
-          v-model="envId"
-          :options="BUILDS"
-          label="Runs on"
-          variant="ghost"
-          size="sm"
-          class="mar-proj-build"
-        />
+        <button v-if="build" type="button" class="mar-eh-link" @click="openBuild(build.id)">
+          <InstanceGlyph :inst="build" size="xs" />Runs on {{ build.name }}
+        </button>
         <span class="mar-eh-dot" />
         <span>Updated {{ p.updated.toLowerCase() }}</span>
       </template>
@@ -470,22 +482,6 @@ function removePerson(m: string): void {
   letter-spacing: -0.02em;
   outline: none;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build[data-state='open'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-base-foreground);
-}
-/* Beats the shell's filled selects: this one reads as text until hovered. */
-:root .proto-ui.proto-ui.proto-ui .mar-eh-meta .mar-proj-build {
-  height: 26px;
-  margin: 0 -4px;
-  backdrop-filter: none;
-  border-color: transparent;
-  background: transparent;
-  padding: 0 6px;
-  font-size: 13px;
-}
-
 /* Latest output and recent activity */
 .mar-proj-over {
   display: grid;

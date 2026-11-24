@@ -36,7 +36,7 @@ import { exploreStart } from './exploreStart'
 import { HUB_USE_CASES, HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from './hubWorkflows'
 import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
-import { goIn, openDetail, toast } from '../../useProto'
+import { go, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
@@ -671,7 +671,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         :key="m.model"
         type="button"
         class="mar-ex-model"
-        @click="goIn('build', 'router')"
+        @click="go('router')"
       >
         <span class="mar-ex-mark">{{ m.provider.charAt(0) }}</span>
         <span class="flex min-w-0 flex-1 flex-col text-left">

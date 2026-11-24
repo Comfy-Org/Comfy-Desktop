@@ -32,7 +32,8 @@ import InstanceGlyph from '../../parts/InstanceGlyph.vue'
 import { envById, isPublished, versionsOf } from '../../parts/env/env'
 import type { EnvVersion } from '../../mock'
 import { PORTAL_TO } from '../../ui/portal'
-import { goIn, hostActions, proto, toast } from '../../useProto'
+import { hostActions, proto, toast } from '../../useProto'
+import { openBuild } from '../build/buildTab'
 import { ComfyModel, ComfyNode } from '../icons/comfyIcons'
 import sample from '../templateModal/angles-output.jpg'
 import {
@@ -347,7 +348,7 @@ function topUp(): void {
 // No toast: Deployments opens, and a toast after a redirect is noise.
 function goDeployments(): void {
   open.value = false
-  goIn('build', 'deployments')
+  if (dep.draft) openBuild(dep.draft.envId, 'deployments')
 }
 
 const title = computed(() => {
@@ -735,7 +736,10 @@ watch(
                       <button type="button" @click="retryRelease(build)">
                         <RotateCw :size="12" />Retry release
                       </button>
-                      <button type="button" @click="((open = false), goIn('build', 'overview'))">
+                      <button
+                        type="button"
+                        @click="((open = false), dep.draft && openBuild(dep.draft.envId))"
+                      >
                         Open build
                       </button>
                     </span>

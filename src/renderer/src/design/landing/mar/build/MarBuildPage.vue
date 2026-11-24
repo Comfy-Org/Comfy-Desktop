@@ -33,6 +33,7 @@ import Card from '../../ui/Card.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import Sparkline from '../../ui/Sparkline.vue'
 import StatusDot from '../../ui/StatusDot.vue'
+import Tooltip from '../../ui/Tooltip.vue'
 import AssetsPage from '../../pages/AssetsPage.vue'
 import ProjectWorkflows from '../../pages/project/ProjectWorkflows.vue'
 import InstanceGlyph from '../../parts/InstanceGlyph.vue'
@@ -52,10 +53,12 @@ import {
   versionsOf
 } from '../../parts/env/env'
 import { allWorkflows } from '../../gallery'
-import { deployEnv, go, goIn, hostActions, proto, toast, type Page } from '../../useProto'
+import { deployEnv, go, hostActions, proto, toast, type Page } from '../../useProto'
 import { can } from '../../milestones'
 import { buildsAsM1 } from './buildsAsM1'
-import { PROJECTS, type ProtoInstance } from '../../mock'
+import type { ProtoInstance } from '../../mock'
+import { projects } from '../pages/projectsStore'
+import DeploymentRequests from '../deploy/DeploymentRequests.vue'
 import MarEntityHeader from '../pages/MarEntityHeader.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import MarItemMenu from '../pages/MarItemMenu.vue'
@@ -116,6 +119,7 @@ const { env } = defineProps<{ env: ProtoInstance }>()
 type Tab =
   | 'overview'
   | 'versions'
+  | 'logs'
   | 'deployments'
   | 'workflows'
   | 'assets'
@@ -142,7 +146,9 @@ const versions = computed(() => versionsOf(env))
 const deps = computed(() => (can.value.builder ? deploymentsOf(env.id) : []))
 const wfs = computed(() => allWorkflows.value.filter((w) => w.envId === env.id))
 const recent = computed(() => [...wfs.value].sort((a, b) => a.age - b.age).slice(0, 4))
-const usedBy = computed(() => (proto.projects ? PROJECTS.filter((p) => p.envId === env.id) : []))
+const usedBy = computed(() =>
+  proto.projects ? projects.items.filter((p) => p.envId === env.id && !p.archived) : []
+)
 
 // Versions and deployments are a build's own (not a managed one's);
 // a build that already serves deployments always lists them.
@@ -186,7 +192,10 @@ const LATER_TABS = computed(() => [
     ? [{ value: 'versions' as Tab, label: 'Versions', count: versions.value.length }]
     : []),
   ...(hasDeployments.value
-    ? [{ value: 'deployments' as Tab, label: 'Deployments', count: deps.value.length }]
+    ? [
+        { value: 'deployments' as Tab, label: 'Deployments', count: deps.value.length },
+        { value: 'logs' as Tab, label: 'Logs' }
+      ]
     : []),
   { value: 'workflows' as Tab, label: 'Workflows', count: wfs.value.length },
   { value: 'assets' as Tab, label: 'Assets' },
@@ -412,11 +421,18 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
             }}<StatusDot v-if="r.live" status="running" />
           </span>
         </template>
-        <template v-for="p in usedBy" :key="p.id">
+        <template v-if="usedBy.length">
           <span class="mar-eh-dot" />
-          <button type="button" class="mar-eh-link" @click="go(`project:${p.id}` as Page)">
-            <Folder :size="13" />Used by {{ p.name }}
-          </button>
+          <Tooltip :content="usedBy.map((p) => p.name).join(', ')">
+            <button
+              type="button"
+              class="mar-eh-link"
+              @click="go(usedBy.length === 1 ? (`project:${usedBy[0]!.id}` as Page) : 'projects')"
+            >
+              <Folder :size="13" />Used by {{ usedBy.length }}
+              {{ usedBy.length === 1 ? 'project' : 'projects' }}
+            </button>
+          </Tooltip>
         </template>
       </template>
       <template v-if="mvp && buildPage.id === 'production'" #actions>
@@ -635,8 +651,8 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
           role="row"
           tabindex="0"
           class="mar-table-row"
-          @click="goIn('build', `deployment:${d.id}`)"
-          @keydown.enter="goIn('build', `deployment:${d.id}`)"
+          @click="go(`deployment:${d.id}`)"
+          @keydown.enter="go(`deployment:${d.id}`)"
         >
           <span class="mar-table-name" role="cell">
             <span class="mar-table-title font-mono">{{ d.name }}</span>
@@ -659,6 +675,19 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         :icon="Rocket"
         title="Not deployed"
         text="Run a version behind an API endpoint that scales with traffic."
+        action="Deploy as API"
+        @action="deployEnv(env.id)"
+      />
+    </template>
+
+    <template v-else-if="tab === 'logs'">
+      <DeploymentRequests v-if="deps.length" :deps />
+      <MarEmpty
+        v-else
+        compact
+        :icon="ScrollText"
+        title="No requests yet"
+        text="Every call to this build's deployments shows up here, newest first."
         action="Deploy as API"
         @action="deployEnv(env.id)"
       />

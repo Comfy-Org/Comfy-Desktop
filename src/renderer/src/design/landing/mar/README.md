@@ -23,8 +23,10 @@ It lists only what changes the screen you're on (`tunerContext.ts`).
 Prototype menu › **Title bar**: **Breadcrumb** or **Tabs**
 (`shell/titleTabs.ts`), from Milestone 3. Tabs: Home as a fixed icon tab, one tab
 per open workflow and app, then where things run (it opens the build switcher)
-and the agent on the right. The sidebar's lens switch keeps Create and Build,
-both named (`modes/MarModeSeg.vue`, the one mode switch); the agent leaves it.
+and the agent on the right. There is no Create / Build switch: what developers
+need lives on a build's page and in the workspace menu (DECISIONS.md, 2026-11-24).
+The switch (`modes/MarModeSeg.vue`) shows only for Agent, when the title bar has
+no tabs.
 
 ## Where it lives
 

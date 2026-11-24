@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { AppWindow, ChevronDown, Images, Plus, Search, Server, Workflow } from 'lucide-vue-next'
 import CreateMenu from '../CreateMenu.vue'
 import TabsAccount from './TabsAccount.vue'
-import { firstRunKeeps, firstRunLabel, ports } from '../navOptions'
+import { firstRunKeeps, ports } from '../navOptions'
 import { go, goIn, proto, toast, type Mode, type Page } from '../../useProto'
 import { can, landingPage } from '../../milestones'
 import { PROJECTS } from '../../mock'
@@ -47,22 +47,9 @@ const LIBRARY = [
   { id: 'assets', name: 'Assets', page: 'assets' as Page, icon: Images },
   { id: 'environments', name: 'Builds', page: 'environments' as Page, icon: Server }
 ]
-const BUILD: Tab[] = [
-  { key: 'build-overview', label: 'Overview', page: 'build-overview' },
-  { key: 'deployments', label: 'Deployments', page: 'deployments', prefix: 'deployment:' },
-  { key: 'environments', label: 'Builds', page: 'environments', prefix: 'environment:' },
-  { key: 'router', label: 'Models', page: 'router' },
-  { key: 'logs', label: 'Logs', page: 'logs' },
-  { key: 'keys', label: 'API keys', page: 'keys' }
-]
 const AGENT: Tab[] = [{ key: 'agent', label: 'Chat', page: 'agent' }]
 
 const tabs = computed<Tab[]>(() => {
-  // Nav options › Docs: his Build nav ends with Docs (docs.comfy.org).
-  if (proto.mode === 'build')
-    return [...BUILD, ...(ports.navDocs ? [{ key: 'docs', label: 'Docs', href: 'docs' }] : [])]
-      .filter((t) => firstRunKeeps(t.page))
-      .map((t) => ({ ...t, label: firstRunLabel(t.page, t.label) }))
   if (proto.mode === 'agent') return AGENT
   return [
     ...CREATE,
@@ -75,7 +62,6 @@ const tabs = computed<Tab[]>(() => {
 
 const MODES: { value: Mode; label: string }[] = [
   { value: 'create', label: 'Create' },
-  { value: 'build', label: 'Build' },
   { value: 'agent', label: 'Agent' }
 ]
 const modes = computed(() =>
@@ -83,7 +69,7 @@ const modes = computed(() =>
 )
 function pickMode(m: Mode): void {
   menu.value = null
-  goIn(m, m === 'build' ? 'build-overview' : m === 'agent' ? 'agent' : landingPage())
+  goIn(m, m === 'agent' ? 'agent' : landingPage())
 }
 
 function isOn(t: Tab): boolean {
@@ -210,7 +196,7 @@ onBeforeUnmount(() => {
 <template>
   <header ref="root" class="p08-bar" aria-label="Navigation">
     <MarModeSeg
-      v-if="can.builder"
+      v-if="modes.length > 1"
       :model-value="proto.mode"
       :options="modes"
       show="label"

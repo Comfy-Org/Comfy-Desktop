@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Code, Palette } from 'lucide-vue-next'
+import { Palette } from 'lucide-vue-next'
 import DetailSheet from '../parts/DetailSheet.vue'
 import MarTemplateModal from '../mar/templateModal/MarTemplateModal.vue'
 import MarDeployModal from '../mar/deploy/MarDeployModal.vue'
@@ -51,7 +51,6 @@ const mode = computed({
 const sidebarHidden = computed(() => building.value || marSidebarClosed.value)
 const MODES = computed(() => [
   { value: 'create' as Mode, label: 'Create', icon: Palette },
-  { value: 'build' as Mode, label: 'Build', icon: Code },
   ...(can.value.agent && !marTabsOn.value
     ? [{ value: 'agent' as Mode, label: 'Agent', icon: AgentChat }]
     : [])
@@ -80,8 +79,7 @@ const MODES = computed(() => [
       <div class="flex min-h-full w-55 shrink-0 flex-col">
         <!-- Floating panels: the Comfy mark and the collapse toggle. -->
         <MarPanelsHead />
-        <!-- Create / Build (Milestone 6: the Builder) -->
-        <div v-if="can.builder" class="mb-3 flex h-8.5 shrink-0 items-center">
+        <div v-if="MODES.length > 1" class="mb-3 flex h-8.5 shrink-0 items-center">
           <MarModeSeg v-if="marTabsOn" v-model="mode" :options="MODES" show="label" fill />
           <MarModeSwitch v-else v-model="mode" :options="MODES" />
         </div>

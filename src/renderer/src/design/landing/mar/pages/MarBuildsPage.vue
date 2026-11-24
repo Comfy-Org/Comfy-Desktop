@@ -37,7 +37,6 @@ import { buildsAsM1 } from '../build/buildsAsM1'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
 import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
-import { go } from '../../useProto'
 import { leaving } from '../build/buildFacts'
 import { openBuild, openBuildSettings } from '../build/buildTab'
 import { syncing } from '../build/syncPrevious'
@@ -496,7 +495,9 @@ function lines(b: Build): MenuLine[] {
         ]
       : []),
     // Logs come with the Builder.
-    ...(can.value.builder ? [{ label: 'Logs', icon: ScrollText, run: () => go('logs') }] : []),
+    ...(can.value.builder
+      ? [{ label: 'Logs', icon: ScrollText, run: () => openBuild(b.id, 'logs') }]
+      : []),
     ...(b.id === 'cloud'
       ? []
       : [
