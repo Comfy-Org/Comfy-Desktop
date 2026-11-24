@@ -13,6 +13,7 @@ import {
   quarantineOrphanStagedBytes,
   readStagedMeta,
   removeStagedArtifacts,
+  revalidateStagedPair,
   scanForStagedDownloads,
   sha256File,
   stagingMetaPathFor,
@@ -96,6 +97,48 @@ describe('readStagedMeta / writeStagedMeta', () => {
     expect(readStagedMeta(metaPath)).toBeNull()
   })
 
+  it('round-trips a v3 sidecar whose segments cover the file exactly', () => {
+    const metaPath = path.join(tmpDir, 'seg' + STAGING_META_SUFFIX)
+    const meta = validMeta({
+      version: 3,
+      expectedSize: 10,
+      segments: [
+        { start: 0, end: 4, done: 5 },
+        { start: 5, end: 9, done: 2 }
+      ]
+    })
+    writeStagedMeta(metaPath, meta)
+    expect(readStagedMeta(metaPath)).toEqual(meta)
+  })
+
+  const seg = (start: unknown, end: unknown, done: unknown) => ({ start, end, done })
+
+  it.each([
+    ['no segments', undefined],
+    ['a gap', [seg(0, 3, 0), seg(5, 9, 0)]],
+    ['a short last segment', [seg(0, 4, 0), seg(5, 8, 0)]],
+    ['more done than the segment holds', [seg(0, 4, 6), seg(5, 9, 0)]],
+    ['a negative count', [seg(0, 4, -1), seg(5, 9, 0)]],
+    ['a non-number field', [seg(0, '4', 0), seg(5, 9, 0)]]
+  ])('returns null for a v3 sidecar with %s', (_label, segments) => {
+    const metaPath = path.join(tmpDir, 'badseg' + STAGING_META_SUFFIX)
+    const raw = { ...validMeta({ expectedSize: 10 }), version: 3, segments }
+    fs.writeFileSync(metaPath, JSON.stringify(raw))
+    expect(readStagedMeta(metaPath)).toBeNull()
+  })
+
+  it('returns null for a v2 sidecar that carries segments', () => {
+    const metaPath = path.join(tmpDir, 'v2seg' + STAGING_META_SUFFIX)
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({
+        ...validMeta({ expectedSize: 10 }),
+        segments: [{ start: 0, end: 9, done: 0 }]
+      })
+    )
+    expect(readStagedMeta(metaPath)).toBeNull()
+  })
+
   it('returns null for a wrong version', () => {
     const metaPath = path.join(tmpDir, 'v1' + STAGING_META_SUFFIX)
     fs.writeFileSync(metaPath, JSON.stringify({ ...validMeta(), version: 1 }))
@@ -172,6 +215,48 @@ describe('scanForStagedDownloads', () => {
     expect(found[0]!.finalPath).toBe(finalPath)
     expect(found[0]!.stagedBytes).toBe(123)
     expect(found[0]!.meta).toEqual(meta)
+  })
+
+  it('reports the bytes the segments hold, not the preallocated file size', async () => {
+    const dir = path.join(tmpDir, 'checkpoints')
+    fs.mkdirSync(dir, { recursive: true })
+    const finalPath = path.join(dir, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), Buffer.alloc(1000))
+    const meta = validMeta({
+      version: 3,
+      segments: [
+        { start: 0, end: 499, done: 120 },
+        { start: 500, end: 999, done: 30 }
+      ]
+    })
+    writeStagedMeta(stagingMetaPathFor(finalPath), meta)
+
+    const { downloads: found } = await scanForStagedDownloads([tmpDir])
+    expect(found).toHaveLength(1)
+    expect(found[0]!.stagedBytes).toBe(150)
+    expect(found[0]!.meta).toEqual(meta)
+  })
+
+  it('reports no saved bytes when the .part file no longer has the size the segments need', async () => {
+    const dir = path.join(tmpDir, 'checkpoints')
+    fs.mkdirSync(dir, { recursive: true })
+    const finalPath = path.join(dir, 'model.safetensors')
+    fs.writeFileSync(stagingPathFor(finalPath), Buffer.alloc(100))
+    writeStagedMeta(
+      stagingMetaPathFor(finalPath),
+      validMeta({
+        version: 3,
+        segments: [
+          { start: 0, end: 499, done: 500 },
+          { start: 500, end: 999, done: 250 }
+        ]
+      })
+    )
+
+    const { downloads: found } = await scanForStagedDownloads([tmpDir])
+    expect(found).toHaveLength(1)
+    expect(found[0]!.stagedBytes).toBe(0)
+    expect(revalidateStagedPair(finalPath)?.stagedBytes).toBe(0)
   })
 
   it('deletes a sidecar whose .part file is missing and does not report it', async () => {

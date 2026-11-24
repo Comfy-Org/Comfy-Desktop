@@ -79,6 +79,12 @@ type RunAction = (
 
 const BUILD_ID = 'inst-being-checked'
 
+function cancelLaunch(): Promise<unknown> {
+  const registered = h.handle.mock.calls.find(([channel]) => channel === 'cancel-launch')
+  expect(registered, 'cancel-launch is registered').toBeDefined()
+  return Promise.resolve((registered![1] as () => unknown)())
+}
+
 function runAction(actionId: string, actionData?: Record<string, unknown>): Promise<ActionResult> {
   const registered = h.handle.mock.calls.find(([channel]) => channel === 'run-action')
   expect(registered, 'run-action is registered').toBeDefined()
@@ -152,5 +158,35 @@ describe('acting on a build while one of its own actions is still running', () =
     expect(installationsStore.has(BUILD_ID), 'the build is kept').toBe(true)
     finishSourceAction({ ok: true })
     expect(await update).toEqual({ ok: true })
+  })
+
+  it('refuses to forget the build while an update is being applied to it', async () => {
+    const update = runAction('update-comfyui')
+    await sourceActionStarted()
+
+    const refused = await runAction('remove')
+
+    expect(refused.ok).toBe(false)
+    expect(refused.message).toContain('errors.operationInProgress')
+    expect(installationsStore.has(BUILD_ID), 'the build is kept').toBe(true)
+    finishSourceAction({ ok: true })
+    expect(await update).toEqual({ ok: true })
+  })
+
+  it('still refuses to delete the build after a cancel, until the cancelled update has stopped', async () => {
+    const update = runAction('update-comfyui')
+    await sourceActionStarted()
+    await cancelLaunch()
+
+    const refused = await runAction('delete')
+
+    expect(refused.ok).toBe(false)
+    expect(refused.message).toContain('errors.operationInProgress')
+    expect(installationsStore.has(BUILD_ID), 'the build is kept').toBe(true)
+
+    finishSourceAction({ ok: true })
+    await update
+    const deleted = await runAction('delete')
+    expect(deleted).toEqual({ ok: true, navigate: 'list' })
   })
 })

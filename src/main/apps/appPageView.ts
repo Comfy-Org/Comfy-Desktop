@@ -11,6 +11,7 @@ import type {
   AppPageStatus,
   AppRun,
   AppSwitchStop,
+  DraftClosingStop,
   RunningApp,
   TitleBarApps
 } from '../../types/ipc'
@@ -25,10 +26,15 @@ import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { areAppsEnabled, currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
+import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
+import type { DraftApp } from './draftApps'
+import { isDraftStillAllowed } from './draftLinks'
 
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
 export const APP_PAGE_CLOSED_CHANNEL = 'apps:page-closed'
+export const APP_BACK_TO_LIST_ASKED_CHANNEL = 'apps:back-to-list-asked'
+export const APPS_LIST_CHANGED_CHANNEL = 'apps:list-changed'
 export const APP_OUTPUTS_CHANNEL = 'apps:outputs'
 export const APP_OUTPUT_ACTION_CHANNEL = 'apps-outputs:action'
 export const APP_RUNS_CHANNEL = 'apps:runs-changed'
@@ -57,10 +63,12 @@ interface ShownOutputs {
 interface HostedPage {
   windowKey: number
   view: WebContentsView
+  session: Session
   appId: string | null
   loaded: LoadedAppPage | null
   loadStarted: boolean
   loadingUrl: string | null
+  startUrl: string | null
   routeBase: string | null
   documents: number
   status: AppPageStatus
@@ -247,9 +255,18 @@ function isInAppRoute(base: string, url: string): boolean {
   return at === route || at.startsWith(`${route}/`)
 }
 
+function pageUrlForApp(appId: string): string | null {
+  return draftPageUrl(appId) ?? pageUrlForListedApp(appId)
+}
+
+function sessionForApp(appId: string): Session {
+  const draft = draftOf(appId)
+  return draft ? draftSession(draft.origin, draft.mount) : session.fromPartition(APPS_PARTITION)
+}
+
 function routeBaseOf(hosted: HostedPage): string | null {
   if (hosted.routeBase !== null) return hosted.routeBase
-  return hosted.appId === null ? null : pageUrlForListedApp(hosted.appId)
+  return hosted.appId === null ? null : pageUrlForApp(hosted.appId)
 }
 
 function isInLoadedRoute(hosted: HostedPage, url: string): boolean {
@@ -295,13 +312,76 @@ function load(windowKey: number, hosted: HostedPage, url: string): void {
   hosted.loaded = null
   hosted.loadStarted = true
   hosted.loadingUrl = url
+  hosted.startUrl = url
   hosted.routeBase = null
   setStatus(windowKey, hosted, 'loading')
   void hosted.view.webContents.loadURL(url).catch(() => {})
 }
 
+function isDraft(appId: string | null): appId is string {
+  return appId !== null && draftOf(appId) !== null
+}
+
+function tellPanelsTheListChanged(): void {
+  for (const windowKey of comfyWindows.keys()) panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
+}
+
+function isHeld(hosted: HostedPage): boolean {
+  if (hostedByWindow.get(hosted.windowKey) === hosted) return true
+  return (
+    hosted.appId !== null && backgroundByWindow.get(hosted.windowKey)?.get(hosted.appId) === hosted
+  )
+}
+
+function disposePage(hosted: HostedPage): void {
+  if (hostedByWindow.get(hosted.windowKey) === hosted) hostedByWindow.delete(hosted.windowKey)
+  const background = backgroundByWindow.get(hosted.windowKey)
+  if (hosted.appId !== null && background?.get(hosted.appId) === hosted) {
+    background.delete(hosted.appId)
+  }
+  closePage(hosted)
+  forgetRun(hosted)
+}
+
+function dropDraft(droppedIn: number, appId: string | null): boolean {
+  if (!isDraft(appId)) return false
+  revokeDraft(appId)
+  for (const hosted of everyPage()) {
+    if (hosted.appId !== appId) continue
+    conceal(hosted)
+    disposePage(hosted)
+    if (hosted.windowKey !== droppedIn) panelOf(hosted.windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
+  }
+  tellPanelsTheListChanged()
+  return true
+}
+
+function isDraftRunning(appId: string): boolean {
+  return everyPage().some((page) => page.appId === appId && page.running)
+}
+
+function titleForApp(appId: string): string {
+  return draftOf(appId)?.card.title ?? titleForListedApp(appId) ?? appId
+}
+
+function draftClosingStop(appId: string): DraftClosingStop {
+  return { appTitle: titleForApp(appId), closesDraft: true }
+}
+
+function askedBeforeClosingDraft(windowKey: number, hosted: HostedPage): boolean {
+  const appId = hosted.appId
+  if (!isDraft(appId) || !isDraftRunning(appId)) return false
+  panelOf(windowKey)?.send(APP_BACK_TO_LIST_ASKED_CHANNEL, appId, draftClosingStop(appId))
+  return true
+}
+
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
-  if (hostedByWindow.get(windowKey) !== hosted) {
+  const shown = hostedByWindow.get(windowKey) === hosted
+  if (dropDraft(windowKey, hosted.appId)) {
+    if (shown) panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
+    return
+  }
+  if (!shown) {
     dropBackgroundPage(hosted)
     return
   }
@@ -332,8 +412,20 @@ function disposeWindowPages(windowKey: number): void {
   }
 }
 
-function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation): HostedPage {
-  const appsSession = session.fromPartition(APPS_PARTITION)
+function showsDraftSession(hosted: HostedPage): boolean {
+  return hosted.session !== session.fromPartition(APPS_PARTITION)
+}
+
+async function admitsBridge(hosted: HostedPage): Promise<boolean> {
+  if (!showsDraftSession(hosted)) return true
+  return hosted.appId !== null && (await isDraftStillAllowed(hosted.appId))
+}
+
+function createHostedPage(
+  { windowKey, entry }: PageHost,
+  location: AppsLocation,
+  appsSession: Session
+): HostedPage {
   secureSession(appsSession, location)
   const view = createWebContentsView({
     webPreferences: {
@@ -353,10 +445,12 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   const hosted: HostedPage = {
     windowKey,
     view,
+    session: appsSession,
     appId: null,
     loaded: null,
     loadStarted: false,
     loadingUrl: null,
+    startUrl: null,
     routeBase: null,
     documents: 0,
     status: 'loading',
@@ -365,12 +459,14 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     outputs: null,
     running: false,
     finished: false,
-    forget: registerAppsPage(contents)
+    forget: registerAppsPage(contents, () => admitsBridge(hosted))
   }
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
     if (isAppsListUrl(location, url)) {
       event.preventDefault()
-      closeForList(windowKey, hosted, pageStillShowsApp)
+      if (!askedBeforeClosingDraft(windowKey, hosted)) {
+        closeForList(windowKey, hosted, pageStillShowsApp)
+      }
       return
     }
     if (isInAppsScope(location, url)) return
@@ -454,24 +550,44 @@ function runningAppToKeep(current: HostedPage): string | null {
   return makeRoomInBackground(backgroundOf(current.windowKey)) ? current.appId : null
 }
 
-function pageForApp(host: PageHost, appId: string, location: AppsLocation): HostedPage {
-  const current = hostedFor(host)
-  if (current?.appId === appId) return current
-  const background = backgroundOf(host.windowKey)
+function keptPageFor(
+  background: Map<string, HostedPage>,
+  appId: string,
+  appsSession: Session
+): HostedPage | null {
   const kept = background.get(appId)
-  if (kept) background.delete(appId)
+  if (!kept) return null
+  background.delete(appId)
+  if (kept.session === appsSession) return kept
+  closePage(kept)
+  forgetRun(kept)
+  return null
+}
+
+function pageForApp(
+  host: PageHost,
+  appId: string,
+  location: AppsLocation,
+  appsSession: Session
+): HostedPage {
+  const current = hostedFor(host)
+  if (current?.appId === appId && current.session === appsSession) return current
+  const background = backgroundOf(host.windowKey)
+  const kept = keptPageFor(background, appId, appsSession)
   if (current) {
     const keptRunning = runningAppToKeep(current)
     if (keptRunning !== null) {
       conceal(current)
       background.set(keptRunning, current)
-    } else if (kept) {
+    } else if (kept || current.session !== appsSession) {
+      hostedByWindow.delete(host.windowKey)
       closePage(current)
+      forgetRun(current)
     } else {
       return current
     }
   }
-  const page = kept ?? createHostedPage(host, location)
+  const page = kept ?? createHostedPage(host, location, appsSession)
   hostedByWindow.set(host.windowKey, page)
   return page
 }
@@ -551,14 +667,18 @@ export async function showAppPage(
 ): Promise<AppPageStatus> {
   const placement = parsePlacement(rawPlacement)
   if (typeof appId !== 'string' || !placement || !(await areAppsEnabled())) return 'failed'
-  const pageUrl = pageUrlForListedApp(appId)
+  const pageUrl = pageUrlForApp(appId)
   const host = hostOf(panel)
   if (!pageUrl || !host) return 'failed'
-  const hosted = pageForApp(host, appId, currentAppsLocation())
+  const appsSession = sessionForApp(appId)
+  const shown = hostedFor(host)?.appId ?? null
+  if (shown !== appId) dropDraft(host.windowKey, shown)
+  const hosted = pageForApp(host, appId, currentAppsLocation(), appsSession)
   concealWhenPanelGoes(host.windowKey, panel)
   const askedFresh = placement.justOpened === true || placement.retry === true
   const retriesFailedPage = askedFresh && hosted.status === 'failed'
-  if (hosted.appId !== appId || retriesFailedPage) {
+  const draftMoved = isDraft(appId) && hosted.startUrl !== pageUrl
+  if (hosted.appId !== appId || retriesFailedPage || draftMoved) {
     hosted.appId = appId
     load(host.windowKey, hosted, pageUrl)
   }
@@ -569,6 +689,25 @@ export async function showAppPage(
   raiseAbovePanel(host.entry, hosted.view)
   applyVisibility(hosted)
   return hosted.status
+}
+
+export function closeDraftPages(only?: readonly DraftApp[]): void {
+  for (const hosted of everyPage()) {
+    if (!showsDraftSession(hosted) || !isHeld(hosted)) continue
+    const draft = hosted.appId === null ? null : draftOf(hosted.appId)
+    if (only && draft && !only.includes(draft)) continue
+    if (hosted.appId !== null) closeForList(hosted.windowKey, hosted, false)
+    if (isHeld(hosted)) disposePage(hosted)
+  }
+  forgetDrafts(only)
+  tellPanelsTheListChanged()
+}
+
+export function closeAppPage(panel: WebContents, appId: unknown): void {
+  const host = hostOf(panel)
+  const hosted = host && hostedFor(host)
+  if (!hosted || hosted.appId === null || hosted.appId !== appId) return
+  closeForList(host.windowKey, hosted, true)
 }
 
 export function hideAppPage(panel: WebContents): void {
@@ -602,11 +741,14 @@ export function noteAppPageRunning(contents: WebContents, running: unknown): voi
 export function appSwitchStopsRun(panel: WebContents, appId: unknown): AppSwitchStop | null {
   const host = hostOf(panel)
   const current = host && hostedFor(host)
-  if (!current?.running || current.appId === null || current.appId === appId) return null
+  const shown = current?.appId ?? null
+  if (!current || shown === null || shown === appId) return null
+  if (isDraft(shown)) return isDraftRunning(shown) ? draftClosingStop(shown) : null
+  if (!current.running) return null
   const background = [...backgroundOf(current.windowKey).values()]
   const otherRuns = background.filter((page) => page.running && page.appId !== appId).length
   if (otherRuns < MAX_BACKGROUND_RUNS) return null
-  return { appTitle: titleForListedApp(current.appId) ?? current.appId, otherRuns }
+  return { appTitle: titleForApp(shown), otherRuns }
 }
 
 export function appRuns(panel: WebContents): AppRun[] {

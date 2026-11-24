@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, toRef, useTemplateRef, watch } from 'vue'
 import { I18nT, useI18n } from 'vue-i18n'
-import { CircleAlert, FolderOpen, ImageDown, Play, Square, X } from '@lucide/vue'
+import { CircleAlert, FolderSearch, ImageDown, Play, Square, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
@@ -396,7 +396,7 @@ async function exportResultsImage(): Promise<void> {
                   :title="t(revealFolderKey)"
                   @click="openResultsFolder"
                 >
-                  <FolderOpen :size="15" aria-hidden="true" />
+                  <FolderSearch :size="15" aria-hidden="true" />
                   <span class="@max-[640px]:sr-only">{{ t(revealFolderKey) }}</span>
                 </Button>
                 <Button

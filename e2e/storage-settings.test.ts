@@ -129,12 +129,16 @@ test('Remove shared directory removes the row and persists the change @windows @
 test('Shared Output browse persists the selected output directory @windows @macos @linux', async () => {
   await popup.waitFor(
     async () =>
-      (await popup.count('.shared-folder-row[data-kind="output"] .shared-folder-action')) === 1,
-    { timeout: 5_000, message: 'shared output browse control did not render' }
+      (await popup.count('.shared-folder-row[data-kind="output"] .shared-folder-more')) === 1,
+    { timeout: 5_000, message: 'shared output folder menu did not render' }
   )
   expect(
-    await popup.clickNth('.shared-folder-row[data-kind="output"] .shared-folder-action', 0)
+    await popup.clickNth('.shared-folder-row[data-kind="output"] .shared-folder-more', 0)
   ).toBe(true)
+  await popup.waitForVisible('.shared-folder-menu [role="menuitem"]', { timeout: 5_000 })
+  expect(await popup.clickByText('.shared-folder-menu [role="menuitem"]', 'Change folder')).toBe(
+    true
+  )
   await popup.waitFor(
     async () =>
       (await popup.allText('.shared-folder-row[data-kind="output"] .shared-folder-path')).includes(

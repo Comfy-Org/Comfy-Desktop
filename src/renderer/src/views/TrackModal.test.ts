@@ -73,7 +73,7 @@ describe('TrackModal — browse-only install directory', () => {
 
     const location = wrapper.get('.track-location')
     expect(location.find('input').exists()).toBe(false)
-    expect(location.find('button.config-path-open').exists()).toBe(false)
+    expect(location.find('.config-path-open').exists()).toBe(false)
     expect(location.get('.config-path-placeholder').text()).toBe('Select a directory…')
     expect(wrapper.findAll('.config-label').map((label) => label.text())).toEqual([
       'Install location',
@@ -93,9 +93,10 @@ describe('TrackModal — browse-only install directory', () => {
     await browseButton(wrapper).trigger('click')
     await flushPromises()
 
-    const pathBtn = wrapper.get('.track-location button.config-path-open')
-    expect(pathBtn.text()).toBe('/Users/jo/ComfyUI')
-    await pathBtn.trigger('click')
+    const pathText = wrapper.get('.track-location .config-path-open')
+    expect(pathText.text()).toBe('/Users/jo/ComfyUI')
+    expect(pathText.element.tagName).not.toBe('BUTTON')
+    await wrapper.get('.track-location .config-path-reveal').trigger('click')
     expect(api.openPath).toHaveBeenCalledWith('/Users/jo/ComfyUI')
   })
 
@@ -190,9 +191,8 @@ describe('TrackModal — virtual environment', () => {
 
     const venv = wrapper.get('[data-testid="track-venv-field"]')
     expect(wrapper.findAll('[data-testid="install-location-field"]')).toHaveLength(1)
-    const pathBtn = venv.get('button.config-path-open')
-    expect(pathBtn.text()).toBe('/Users/jo/ComfyUI/.venv')
-    await pathBtn.trigger('click')
+    expect(venv.get('.config-path-open').text()).toBe('/Users/jo/ComfyUI/.venv')
+    await venv.get('.config-path-reveal').trigger('click')
     expect(api.openPath).toHaveBeenCalledWith('/Users/jo/ComfyUI/.venv')
   })
 
@@ -200,7 +200,7 @@ describe('TrackModal — virtual environment', () => {
     const { wrapper } = await browseGitInstall(gitProbe)
 
     const venv = wrapper.get('[data-testid="track-venv-field"]')
-    expect(venv.find('button.config-path-open').exists()).toBe(false)
+    expect(venv.find('.config-path-open').exists()).toBe(false)
     expect(venv.get('.config-path-placeholder').text()).toBe('No virtual environment found.')
   })
 
@@ -219,8 +219,7 @@ describe('TrackModal — virtual environment', () => {
     const wrapper = mountTrack()
     ;(wrapper.vm as unknown as { open: () => void }).open()
     await flushPromises()
-    const venvPath = () =>
-      wrapper.get('[data-testid="track-venv-field"] button.config-path-open').text()
+    const venvPath = () => wrapper.get('[data-testid="track-venv-field"] .config-path-open').text()
 
     await browseButton(wrapper).trigger('click')
     await flushPromises()

@@ -3,11 +3,20 @@
   lang="ts"
   generic="Card extends Pick<AppCard, 'id' | 'title' | 'description' | 'badges'>"
 >
-import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  reactive,
+  ref,
+  useId,
+  useTemplateRef,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
 import AppBadges from '../AppBadges.vue'
-import { badgeDescriptionIds } from '../appCardBadges'
+import { badgeDescriptionIds, glassPictureOf } from '../appCardBadges'
 import CoverRotation from '../../components/CoverRotation.vue'
 import type { AppCard, AppCover } from '../../types/ipc'
 
@@ -62,6 +71,7 @@ const { t } = useI18n()
 const frontPosition = ref(0)
 const jumpedAcross = ref(new Set<string>())
 const brokenPictures = ref(new Set<string>())
+const pictureShowing = reactive(new Map<string, number | null>())
 const keyboardFocusedId = ref<string | null>(null)
 const badgeIdPrefix = useId()
 
@@ -301,6 +311,7 @@ function activate(placed: { card: Card; offset: number }): void {
             :pictures="picturesOf(placed.card)"
             :paused="placed.offset !== 0"
             @broken="markPictureBroken(placed.card)"
+            @showing="pictureShowing.set(placed.card.id, $event)"
           />
           <span
             v-else
@@ -321,6 +332,11 @@ function activate(placed: { card: Card; offset: number }): void {
             :badges="placed.card.badges"
             :description-id-prefix="badgeIdPrefixFor(placed.card)"
             :revealed="keyboardFocusedId === placed.card.id"
+            :glass-picture="
+              showsPicture(placed.card)
+                ? glassPictureOf(picturesOf(placed.card), pictureShowing.get(placed.card.id))
+                : null
+            "
             class="absolute top-3 left-3 max-w-[calc(100%-4.25rem)]"
           />
           <span

@@ -3,6 +3,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { comfyWindows } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
+import { cloudAuthEvents } from '../cloudAuthEvents'
 import { creditBalanceAuthChanged } from './registerCreditBalanceHandlers'
 import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
 import { openExternalUrl } from '../openExternal'
@@ -96,6 +97,7 @@ export function broadcastAuthChanged(status: AuthStatus): void {
   }
   void broadcastEmbeddedSessionChanged()
   creditBalanceAuthChanged()
+  cloudAuthEvents.emit('changed')
 }
 
 export async function signInToCloud(): Promise<AuthStatus> {

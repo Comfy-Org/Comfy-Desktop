@@ -904,7 +904,7 @@ describe('InstallWizardModal heading', () => {
 })
 
 describe('InstallWizardModal install-location field', () => {
-  it('renders the default install location as a clickable path that opens the folder', async () => {
+  it('renders the default install location as plain path text with a reveal button that opens the folder', async () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
@@ -913,11 +913,14 @@ describe('InstallWizardModal install-location field', () => {
     expect(wrapper.get('[data-testid="install-location-field"] .config-label').text()).toBe(
       'Location'
     )
-    const pathBtn = wrapper.find('button.config-path-open')
-    expect(pathBtn.exists()).toBe(true)
-    expect(pathBtn.text()).toBe('/home/user/ComfyUI')
+    const pathText = wrapper.find('[data-testid="install-location-field"] .config-path-open')
+    expect(pathText.exists()).toBe(true)
+    expect(pathText.text()).toBe('/home/user/ComfyUI')
+    expect(pathText.element.tagName).not.toBe('BUTTON')
 
-    await pathBtn.trigger('click')
+    await pathText.trigger('click')
+    expect(window.api.openPath).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="install-location-field"] .config-path-reveal').trigger('click')
     expect(window.api.openPath).toHaveBeenCalledWith('/home/user/ComfyUI')
   })
 
@@ -928,7 +931,7 @@ describe('InstallWizardModal install-location field', () => {
     await flushPromises()
     await showChangeSetup(wrapper)
 
-    expect(wrapper.find('button.config-path-open').exists()).toBe(false)
+    expect(wrapper.find('.config-path-open').exists()).toBe(false)
     expect(window.api.openPath).not.toHaveBeenCalled()
   })
 
@@ -1119,7 +1122,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await startFrom(wrapper, NEW_INSTALL)
 
     expect(workspaceBuildSelect(wrapper).props('modelValue')).toBe('second')
-    expect(wrapper.get('button.config-path-open').text()).toBe('/home/user/Picked')
+    expect(wrapper.get('.config-path-open').text()).toBe('/home/user/Picked')
   })
 
   it('holds Start from in first use while a workspace switch waits on authorization', async () => {
@@ -2562,7 +2565,7 @@ describe('InstallWizardModal Change setup', () => {
 
     await input.get('.config-path-browse').trigger('click')
     await flushPromises()
-    expect(wrapper.get('button.config-path-open').text()).toBe('/home/user/Picked')
+    expect(wrapper.get('.config-path-open').text()).toBe('/home/user/Picked')
   })
 
   it('keeps the setup as it was when Discard is pressed', async () => {
@@ -2772,7 +2775,7 @@ describe('InstallWizardModal Change setup', () => {
     await startFrom(wrapper, NEW_INSTALL)
     await startFrom(wrapper, ALREADY_HAVE)
 
-    expect(wrapper.get('.track-location button.config-path-open').text()).toBe('/home/user/Picked')
+    expect(wrapper.get('.track-location .config-path-open').text()).toBe('/home/user/Picked')
     await wrapper.get('[data-testid="config-use-existing"]').trigger('click')
     await flushPromises()
     expect(api.browseFolder).toHaveBeenCalledOnce()
@@ -2815,7 +2818,7 @@ describe('InstallWizardModal Change setup', () => {
     await showChangeSetup(wrapper)
     await startFrom(wrapper, ALREADY_HAVE)
 
-    expect(wrapper.find('.track-location button.config-path-open').exists()).toBe(false)
+    expect(wrapper.find('.track-location .config-path-open').exists()).toBe(false)
     expect(wrapper.get('[data-testid="config-use-existing"]').attributes('disabled')).toBeDefined()
   })
 

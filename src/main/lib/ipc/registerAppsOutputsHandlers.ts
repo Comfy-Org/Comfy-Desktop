@@ -8,7 +8,7 @@ import {
   shownOutputFile
 } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
-import { isAppsPageSender } from '../../apps/appsPages'
+import { appsPageAdmits, isAppsPageSender } from '../../apps/appsPages'
 import { findInPageBuild, locateOutputFiles } from '../../apps/outputFiles'
 import { readOutputAction, readOutputRequest } from '../../apps/outputRequest'
 import { revealOutputFile } from '../outputFolders'
@@ -19,7 +19,11 @@ export const APPS_OUTPUT_ACTION_CHANNEL = 'apps:output-action'
 const latestRequest = new WeakMap<WebContents, number>()
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
-  return isAppsPageSender(event.sender, event.senderFrame) && (await areAppsEnabled())
+  return (
+    isAppsPageSender(event.sender, event.senderFrame) &&
+    (await areAppsEnabled()) &&
+    (await appsPageAdmits(event.sender))
+  )
 }
 
 function takeTurn(page: WebContents): () => boolean {

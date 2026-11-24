@@ -6,8 +6,10 @@ import {
   CloudUpload,
   Copy,
   Download,
-  FolderOpen,
+  EyeOff,
+  FolderSearch,
   History,
+  Pencil,
   Power,
   PowerOff,
   Settings2,
@@ -38,7 +40,9 @@ export type InstallMenuActionId =
   | 'share'
   | 'promote-to-workspace'
   | 'copy-install'
+  | 'rename'
   | 'auto-start'
+  | 'untrack'
   | 'delete'
 
 export interface ManageOpenOptions {
@@ -87,6 +91,14 @@ export function useInstallContextMenu(
 
   function isLocalLikeInstall(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
+  }
+
+  function hasTaskRunning(inst: Installation): boolean {
+    return progressStore.getProgressInfo(inst.id) !== null
+  }
+
+  function isAdopted(inst: Installation): boolean {
+    return inst.adopted === true
   }
 
   function isInstalled(inst: Installation): boolean {
@@ -159,6 +171,10 @@ export function useInstallContextMenu(
       }
     }
 
+    if (opts.onManage && isInstalled(inst) && isLocalLikeInstall(inst)) {
+      items.push({ id: 'rename', label: t('actions.rename'), icon: Pencil })
+    }
+
     if (isInstalled(inst) && (inst.sourceId === 'standalone' || isBuildInstall(inst))) {
       items.push({
         id: 'copy-install',
@@ -173,7 +189,7 @@ export function useInstallContextMenu(
       items.push({
         id: 'reveal-in-folder',
         label: revealInFolderLabel(window.api?.platform),
-        icon: FolderOpen
+        icon: FolderSearch
       })
     }
 
@@ -223,6 +239,16 @@ export function useInstallContextMenu(
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
       cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop })
+    }
+    if (opts.onManage && isLocalLikeInstall(inst) && !isAdopted(inst)) {
+      const taskRunning = hasTaskRunning(inst)
+      cluster.push({
+        id: 'untrack',
+        label: t('actions.untrack'),
+        icon: EyeOff,
+        disabled: taskRunning,
+        title: taskRunning ? t('chooser.busyActionGatedReason') : undefined
+      })
     }
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
@@ -325,7 +351,7 @@ export function useInstallContextMenu(
             title: label,
             message:
               result.reason === 'none'
-                ? t('snapshots.noSnapshotsToShare')
+                ? t('snapshots.noSnapshotsToExport')
                 : (result.message ?? t('snapshots.shareFailed'))
           })
         }
@@ -352,6 +378,11 @@ export function useInstallContextMenu(
       await opts.autoStart?.setStartsOnOpen(inst.id, !opts.autoStart.startsOnOpen(inst.id))
     } else if (id === 'copy-install') {
       opts.onManage?.(inst, { autoAction: 'copy' })
+    } else if (id === 'rename') {
+      opts.onManage?.(inst, { autoAction: 'rename' })
+    } else if (id === 'untrack') {
+      if (hasTaskRunning(inst)) return
+      opts.onManage?.(inst, { autoAction: 'remove' })
     } else if (id === 'delete') {
       if (opts.onShowProgress) {
         const deleteLabel = t('actions.delete')

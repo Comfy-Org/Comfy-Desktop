@@ -112,7 +112,7 @@ describe('LoadSnapshotModal preview', () => {
     await flushPromises()
 
     const fileRow = wrapper.get('.load-snapshot-file')
-    await fileRow.get('button.config-path-open').trigger('click')
+    await fileRow.get('.config-path-reveal').trigger('click')
     expect(api.revealPath).toHaveBeenCalledWith('/tmp/snap.json')
 
     await fileRow.get('.config-path-browse').trigger('click')

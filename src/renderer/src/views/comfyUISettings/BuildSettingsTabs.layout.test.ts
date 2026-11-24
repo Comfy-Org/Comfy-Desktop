@@ -171,17 +171,26 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     )
   })
 
-  it('gives every row the same trailing shape: badges, then one 28px more slot', async () => {
+  it('gives every row the same trailing shape: badges, then one 58px reveal and more slot', async () => {
     const root = await mountStorage(width)
     const rows = [...root.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
     expect(rows.length).toBeGreaterThanOrEqual(4)
     for (const row of rows) {
       const slot = row.querySelector('.models-dir-actions, .storage-dir-actions')!
-      expect(Math.round(slot.getBoundingClientRect().width), 'one fixed action slot').toBe(28)
-      const buttons = slot.querySelectorAll('button')
-      expect(buttons.length, 'at most the more button').toBeLessThanOrEqual(1)
-      for (const button of buttons) {
-        expect(button.getAttribute('aria-label'), 'the slot holds only more').toBe('More actions')
+      expect(Math.round(slot.getBoundingClientRect().width), 'one fixed action slot').toBe(58)
+      const buttons = [...slot.querySelectorAll('button')]
+      expect(buttons.length, 'at most reveal and more').toBeLessThanOrEqual(2)
+      const reveal = slot.querySelector('.reveal-folder-button')
+      if (reveal) {
+        expect(buttons[0], 'reveal comes first').toBe(reveal)
+        expect(reveal.getAttribute('title'), 'reveal names the file manager').toBe(
+          'Show in Explorer'
+        )
+      }
+      for (const button of buttons.filter((b) => b !== reveal)) {
+        expect(button.getAttribute('aria-label'), 'the rest of the slot is more').toBe(
+          'More actions'
+        )
       }
       const tags = row.querySelector('.models-dir-tags, .storage-dir-tags')
       if (!tags) continue

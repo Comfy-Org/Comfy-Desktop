@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { computed, ref, nextTick } from 'vue'
@@ -26,14 +26,15 @@ const useComfyUISettingsState = {
   diskUsageItem: ref(null),
   diskSpace: ref(null),
   runActionStub: vi.fn(),
-  renameStub: vi.fn().mockResolvedValue(true)
+  renameStub: vi.fn().mockResolvedValue(true),
+  clearPendingRestartStub: vi.fn()
 }
 vi.mock('../../composables/useComfyUISettings', () => ({
   useComfyUISettings: () => ({
     ...useComfyUISettingsState,
     updateField: vi.fn(),
     renameInstallation: useComfyUISettingsState.renameStub,
-    clearPendingRestart: vi.fn(),
+    clearPendingRestart: useComfyUISettingsState.clearPendingRestartStub,
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
       computed(() =>
@@ -115,7 +116,13 @@ describe('ComfyUISettingsContent', () => {
     ;(window as unknown as { api: Record<string, unknown> }).api = {
       onErrorDetail: vi.fn(() => () => {}),
       onInstanceProgress: vi.fn(() => () => {}),
-      getDiskSpace: vi.fn().mockResolvedValue(null)
+      getDiskSpace: vi.fn().mockResolvedValue(null),
+      getSetting: vi.fn().mockResolvedValue(undefined),
+      onSettingsChanged: vi.fn(() => () => {}),
+      comfybuilder: {
+        getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+        onAuthChanged: vi.fn(() => () => {})
+      }
     }
     useComfyUISettingsState.pinBottomActions.value = [{ id: 'untrack', label: 'Forget' }]
   })
@@ -673,6 +680,89 @@ describe('ComfyUISettingsContent', () => {
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
 
+    it('on the build page, offers Restart to apply for a build running in another window, with Open beside it', async () => {
+      markRunning('inst-1')
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      const target = document.createElement('div')
+      target.id = 'restart-page-actions'
+      document.body.append(target)
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null,
+          pageActionsTarget: '#restart-page-actions'
+        })
+        await flushPromises()
+        const primary = target.querySelector<HTMLButtonElement>('.settings-v2-relaunch')!
+        const open = target.querySelector<HTMLButtonElement>(
+          '[data-testid="picker-open-beside-restart"]'
+        )!
+
+        expect(primary.textContent?.trim()).toBe('Restart to apply')
+        expect(open.textContent?.trim()).toBe('Open')
+
+        primary.click()
+        open.click()
+        const decisions = (w.emitted('primary-action') as unknown[][]).map((call) => call[0])
+        expect(decisions).toEqual([
+          expect.objectContaining({ verb: 'restart' }),
+          expect.objectContaining({ verb: 'focus' })
+        ])
+        w.unmount()
+      } finally {
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+        target.remove()
+      }
+    })
+
+    it('keeps Restart to apply after switching to another build and back', async () => {
+      markRunning('inst-1')
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      useComfyUISettingsState.clearPendingRestartStub.mockClear()
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null
+        })
+        await w.setProps({ installation: { ...SAMPLE_INSTALL, id: 'stopped-build' } })
+        await flushPromises()
+        await w.setProps({ installation: SAMPLE_INSTALL })
+        await flushPromises()
+
+        expect(useComfyUISettingsState.clearPendingRestartStub).not.toHaveBeenCalled()
+      } finally {
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+      }
+    })
+
+    it('keeps Open on the build page while the build is still starting in another window', async () => {
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'X' })
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      const target = document.createElement('div')
+      target.id = 'starting-page-actions'
+      document.body.append(target)
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null,
+          pageActionsTarget: '#starting-page-actions'
+        })
+        await flushPromises()
+
+        const primary = target.querySelector<HTMLButtonElement>('.settings-v2-relaunch')!
+        expect(primary.textContent?.trim()).toBe('Open')
+        expect(target.querySelector('[data-testid="picker-open-beside-restart"]')).toBeNull()
+        w.unmount()
+      } finally {
+        useSessionStore().launchingInstances.delete('inst-1')
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+        target.remove()
+      }
+    })
+
     it('treats a running install as "Open" on an install-less (dashboard) host', async () => {
       markRunning('inst-1')
       const w = await mountContent({
@@ -685,7 +775,7 @@ describe('ComfyUISettingsContent', () => {
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
 
-    it('labels "Restart to apply changes" on the dashboard when a build starting with no window has edited args', async () => {
+    it('labels "Restart to apply" on the dashboard when a build starting with no window has edited args', async () => {
       useSessionStore().launchingInstances.set('inst-1', { installationName: 'X' })
       useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
       try {
@@ -695,7 +785,7 @@ describe('ComfyUISettingsContent', () => {
           activeInstallationId: null,
           startingWithoutWindow: true
         })
-        expect(w.find('.settings-v2-relaunch').text()).toBe('Restart to apply changes')
+        expect(w.find('.settings-v2-relaunch').text()).toBe('Restart to apply')
         await w.find('.settings-v2-relaunch').trigger('click')
         expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
       } finally {
@@ -1278,7 +1368,7 @@ describe('ComfyUISettingsContent', () => {
     it('edits the name in the page title and points the Rename item at it', async () => {
       useComfyUISettingsState.pinBottomActions.value = [
         { id: 'rename', label: 'Rename' },
-        { id: 'untrack', label: 'Forget' }
+        { id: 'remove', label: 'Forget' }
       ]
       useComfyUISettingsState.runActionStub.mockClear()
       const target = mountTitleTarget()
@@ -1295,9 +1385,9 @@ describe('ComfyUISettingsContent', () => {
       expect(document.activeElement).toBe(name)
       expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
 
-      moreMenu(w).vm.$emit('pick', { id: 'untrack', label: 'Forget' })
+      moreMenu(w).vm.$emit('pick', { id: 'remove', label: 'Forget' })
       expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
-        id: 'untrack',
+        id: 'remove',
         label: 'Forget'
       })
     })
@@ -1365,6 +1455,178 @@ describe('ComfyUISettingsContent', () => {
         id: 'rename',
         label: 'Rename'
       })
+    })
+  })
+  describe('one build menu on the build page', () => {
+    const RUNNING_INSTALL = {
+      ...SAMPLE_INSTALL,
+      installPath: '/builds/my-install'
+    } as unknown as Installation
+
+    function pageMenu(w: VueWrapper) {
+      return w.findAllComponents({ name: 'MoreMenu' })[0]!
+    }
+
+    async function mountRunningPage(props: Record<string, unknown> = {}) {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'copy', label: 'Duplicate' },
+        { id: 'open-folder', label: 'Show in folder' },
+        { id: 'share', label: 'Export snapshot' },
+        { id: 'git-pull', label: 'Pull latest' },
+        { id: 'remove', label: 'Forget' },
+        { id: 'delete', label: 'Uninstall' }
+      ]
+      useSessionStore().runningInstances.set(RUNNING_INSTALL.id, {
+        installationId: RUNNING_INSTALL.id,
+        installationName: RUNNING_INSTALL.name,
+        mode: 'window'
+      } as never)
+      const target = document.createElement('div')
+      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(target)
+      const w = await mountContent({
+        installation: RUNNING_INSTALL,
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status',
+        ...props
+      })
+      await flushPromises()
+      return { w, target }
+    }
+
+    it('lists the same actions in the same order as the sidebar, without Manage and Launch', async () => {
+      const { w, target } = await mountRunningPage()
+      const actions = pageMenu(w).props('actions') as {
+        id: string
+        separator?: boolean
+        enabled?: boolean
+      }[]
+
+      expect(actions.map(({ id, separator }) => (separator ? `| ${id}` : id))).toEqual([
+        'view-logs',
+        'restart',
+        'stop',
+        '| auto-start',
+        '| rename',
+        'copy-install',
+        'reveal-in-folder',
+        'git-pull',
+        '| share',
+        'restore-snapshot',
+        '| remove',
+        'delete'
+      ])
+      const off = actions.filter((action) => action.enabled === false).map(({ id }) => id)
+      expect(off, 'actions that change the build files wait while it runs').toEqual([
+        'copy-install',
+        'restore-snapshot',
+        'delete'
+      ])
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('runs the build page action behind a shared item', async () => {
+      const { w, target } = await mountRunningPage()
+      useComfyUISettingsState.runActionStub.mockClear()
+
+      pageMenu(w).vm.$emit('pick', { id: 'reveal-in-folder', label: 'Show in Explorer' })
+
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'open-folder',
+        label: 'Show in folder'
+      })
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('puts the name in edit mode when Rename was picked from the sidebar', async () => {
+      const { w, target } = await mountRunningPage({ autoAction: 'rename', autoActionNonce: 1 })
+      await flushPromises()
+
+      expect(document.activeElement).toBe(target.querySelector('.build-details-title-name'))
+
+      w.unmount()
+      target.remove()
+    })
+    it('keeps the source Uninstall for a build whose install failed', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'remove', label: 'Forget' },
+        { id: 'delete', label: 'Uninstall' }
+      ]
+      const target = document.createElement('div')
+      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(target)
+      const w = await mountContent({
+        installation: { ...SAMPLE_INSTALL, status: 'failed', installPath: '/builds/failed' },
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
+      await flushPromises()
+
+      const actions = pageMenu(w).props('actions') as { id: string; style?: string }[]
+      expect(actions.at(-1)).toMatchObject({ id: 'delete', style: 'danger' })
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('forgets a build when Forget was picked from the sidebar', async () => {
+      useComfyUISettingsState.runActionStub.mockClear()
+      const sectionsBefore = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        ...sectionsBefore,
+        { pinBottom: true, actions: [{ id: 'remove', label: 'Forget' }] }
+      ]
+      onTestFinished(() => {
+        useComfyUISettingsState.sections.value = sectionsBefore
+      })
+      const { w, target } = await mountRunningPage({ autoAction: 'remove', autoActionNonce: 1 })
+      await flushPromises()
+
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'remove' })
+      )
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('does not forget a build from the sidebar while an operation runs on it', async () => {
+      useComfyUISettingsState.runActionStub.mockClear()
+      const sectionsBefore = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        ...sectionsBefore,
+        { pinBottom: true, actions: [{ id: 'remove', label: 'Forget' }] }
+      ]
+      onTestFinished(() => {
+        useComfyUISettingsState.sections.value = sectionsBefore
+      })
+      const { w, target } = await mountRunningPage({
+        autoAction: 'remove',
+        autoActionNonce: 1,
+        activeOperation: {
+          percent: 10,
+          status: 'Updating',
+          done: false,
+          ok: null,
+          error: null,
+          cancellable: true,
+          title: 'Updating',
+          actionId: 'update-comfyui'
+        }
+      })
+      await flushPromises()
+
+      expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
+
+      w.unmount()
+      target.remove()
     })
   })
 })

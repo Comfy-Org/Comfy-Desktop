@@ -4,7 +4,7 @@ import type { IpcMainInvokeEvent } from 'electron'
 import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
-import { isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
+import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
 import { onRunsChanged } from '../../apps/localAppEvents'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
 import { localBuilds, localBuildsForEach, openInComfy } from '../../apps/openInComfy'
@@ -37,16 +37,22 @@ async function announceBuilds(): Promise<void> {
     () => null
   )
   if (!lists || announcement !== latestAnnouncement) return
+  const admitted = await Promise.all(pages.map((page) => appsPageAdmits(page)))
+  if (announcement !== latestAnnouncement) return
   pages.forEach((page, index) => {
     const builds = lists[index]
-    if (!builds || page.isDestroyed()) return
+    if (!builds || !admitted[index] || page.isDestroyed()) return
     if (!isSamePage(loadedAppPage(page), asked[index] ?? null)) return
     page.send(APPS_LOCAL_CHANNELS.buildsChanged, builds)
   })
 }
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
-  return isAppsPageSender(event.sender, event.senderFrame) && (await areAppsEnabled())
+  return (
+    isAppsPageSender(event.sender, event.senderFrame) &&
+    (await areAppsEnabled()) &&
+    (await appsPageAdmits(event.sender))
+  )
 }
 
 interface Caller {

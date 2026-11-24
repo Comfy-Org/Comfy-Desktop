@@ -23,6 +23,8 @@ const NEW_CHIP: AppBadge = {
 }
 const VIDEO_LABEL: AppBadge = { id: 'video', style: 'label', text: { en: 'Video' } }
 const PLAIN_CROWN: AppBadge = { id: 'pro', style: 'crown', text: { en: 'Pro' } }
+const PICTURE =
+  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="%23c96"/></svg>'
 
 const mounted: VueWrapper[] = []
 
@@ -48,7 +50,7 @@ function tooltipText(): string {
 }
 
 describe('AppBadges', () => {
-  it('draws the crown alone in a square of glass, with no words beside it, when a card has a crown', () => {
+  it('draws the crown alone in a square of frosted glass, with no words beside it, when a card has a crown', () => {
     const wrapper = mountBadges({ badges: [NEW_CHIP, CROWN, VIDEO_LABEL] })
 
     expect(
@@ -58,10 +60,88 @@ describe('AppBadges', () => {
     const box = square.element.getBoundingClientRect()
     expect(box.width).toBe(28)
     expect(box.height).toBe(28)
-    expect(getComputedStyle(square.element).backdropFilter).toContain('blur(14px)')
     expect(
       (wrapper.get('[data-testid="app-badges"]').element as HTMLElement).innerText.trim()
     ).toBe('')
+  })
+
+  it.each([
+    ['crown', [CROWN], 'app-badge-square'],
+    ['chip', [NEW_CHIP], 'app-badge-new']
+  ] as const)(
+    'keeps the picture behind the %s out of sight, with an almost opaque frosted fill from top to bottom',
+    (_style, badges, testId) => {
+      const wrapper = mountBadges({ badges: [...badges] })
+      const glass =
+        testId === 'app-badge-square'
+          ? wrapper.get(`[data-testid="${testId}"]`).element
+          : wrapper.get(`[data-testid="${testId}"] > span`).element
+      const alphas = [
+        ...getComputedStyle(glass).backgroundImage.matchAll(/rgba?\([^)]*?([\d.]+)\)/g)
+      ].map((match) => Number(match[1]))
+
+      expect(alphas.length, 'gradient stops').toBeGreaterThanOrEqual(2)
+      for (const alpha of alphas) expect(alpha).toBeGreaterThanOrEqual(0.94)
+    }
+  )
+
+  it('gives the chip the same corners and height as the crown square', () => {
+    const crown = mountBadges({ badges: [CROWN] }).get('[data-testid="app-badge-square"]').element
+    const chip = mountBadges({ badges: [NEW_CHIP] }).get(
+      '[data-testid="app-badge-new"] > span'
+    ).element
+
+    expect(getComputedStyle(chip).borderRadius).toBe(getComputedStyle(crown).borderRadius)
+    expect(chip.getBoundingClientRect().height).toBe(crown.getBoundingClientRect().height)
+  })
+
+  it('writes the chip in uppercase', () => {
+    const chip = mountBadges({ badges: [NEW_CHIP] }).get('[data-testid="app-badge-new"] > span')
+      .element as HTMLElement
+
+    expect(chip.innerText).toBe('NEW')
+  })
+
+  it.each([
+    ['crown', CROWN],
+    ['chip', NEW_CHIP]
+  ] as const)(
+    "shows the card's picture blurred through the %s, lined up with the picture under it",
+    async (_style, badge) => {
+      const card = document.createElement('div')
+      card.style.cssText = 'position: relative; width: 300px; height: 300px'
+      document.body.append(card)
+      const wrapper = mount(AppBadges, {
+        attachTo: card,
+        props: {
+          badges: [badge],
+          descriptionIdPrefix: 'card',
+          glassPicture: PICTURE
+        },
+        attrs: { style: 'position: absolute; top: 8px; left: 8px' }
+      })
+      mounted.push(wrapper)
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+      const picture = wrapper.get('[data-testid="app-badge-glass-picture"]').element as HTMLElement
+      const glass = picture.parentElement!
+      const cardBox = card.getBoundingClientRect()
+      const pictureBox = picture.getBoundingClientRect()
+
+      expect(pictureBox.left).toBeCloseTo(cardBox.left, 0)
+      expect(pictureBox.top).toBeCloseTo(cardBox.top, 0)
+      expect(pictureBox.width).toBeCloseTo(300, 0)
+      expect(pictureBox.height).toBeCloseTo(300, 0)
+      expect(getComputedStyle(picture).filter).toContain('blur(10px)')
+      expect(getComputedStyle(glass).overflow).toBe('hidden')
+      card.remove()
+    }
+  )
+
+  it('keeps the frosted fill and no picture when the card has no picture to show', () => {
+    const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP] })
+
+    expect(wrapper.find('[data-testid="app-badge-glass-picture"]').exists()).toBe(false)
   })
 
   it("puts the other badges' words in the crown's one-line tooltip", async () => {
