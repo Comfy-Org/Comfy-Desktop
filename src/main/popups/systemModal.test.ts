@@ -223,4 +223,38 @@ describe('system modal when its page cannot show the dialog', () => {
     await expect(askToCloseWindow(parent)).resolves.toBe(true)
     expect(showMessageBox).toHaveBeenCalledTimes(2)
   })
+
+  it('dismisses the native dialog of a replaced request and answers it only once', async () => {
+    const signals: AbortSignal[] = []
+    showMessageBox.mockImplementation(
+      (_parent: unknown, options: { signal: AbortSignal; cancelId: number }) =>
+        new Promise((resolve) => {
+          signals.push(options.signal)
+          options.signal.addEventListener('abort', () => resolve({ response: options.cancelId }))
+        })
+    )
+    const parent = makeParent()
+    const replaced = vi.fn()
+    void openSystemModalAsync({
+      parent,
+      spec: {
+        title: 'Close window',
+        message: '',
+        confirmLabel: 'Close window',
+        cancelLabel: 'Cancel',
+        theme: { bg: '#000000', text: '#ffffff' }
+      },
+      callback: replaced
+    })
+    const view = latestView()
+    sendFromModalPage(view, 'comfy-systemmodal:ready')
+    sendFromModalPage(view, 'comfy-systemmodal:render-failed')
+
+    void askToCloseWindow(parent)
+    sendFromModalPage(view, 'comfy-systemmodal:render-failed')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, false])
+    expect(replaced.mock.calls).toEqual([['cancel']])
+  })
 })

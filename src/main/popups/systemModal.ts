@@ -33,7 +33,7 @@ export interface SystemModalEntry {
   currentSpec: SystemModalSpec | null
   currentCallback: SystemModalCallback | null
   pendingSpec: { spec: SystemModalSpec; callback: SystemModalCallback } | null
-  nativeRequest: { callback: SystemModalCallback } | null
+  nativeRequest: { callback: SystemModalCallback; abort: AbortController } | null
 }
 
 const systemModalsByParent = new Map<number, SystemModalEntry>()
@@ -42,11 +42,12 @@ const systemModalsByWebContents = new Map<number, SystemModalEntry>()
 function cancelEntry(entry: SystemModalEntry): void {
   const current = entry.currentCallback
   const pending = entry.pendingSpec?.callback
-  const native = entry.nativeRequest?.callback
+  const native = entry.nativeRequest
   entry.currentSpec = null
   entry.currentCallback = null
   entry.pendingSpec = null
   entry.nativeRequest = null
+  native?.abort.abort()
   try {
     current?.('cancel')
   } catch {}
@@ -54,7 +55,7 @@ function cancelEntry(entry: SystemModalEntry): void {
     pending?.('cancel')
   } catch {}
   try {
-    native?.('cancel')
+    native?.callback('cancel')
   } catch {}
 }
 
@@ -71,7 +72,8 @@ function nativeDialogDetail(spec: SystemModalSpec): string {
 
 async function askWithNativeDialog(
   parent: BrowserWindow,
-  spec: SystemModalSpec
+  spec: SystemModalSpec,
+  signal: AbortSignal
 ): Promise<SystemModalAction> {
   const actions = nativeDialogActions(spec)
   const labels: Record<SystemModalAction, string> = {
@@ -88,7 +90,8 @@ async function askWithNativeDialog(
       buttons: actions.map((action) => labels[action]),
       defaultId: 0,
       cancelId: actions.length - 1,
-      noLink: true
+      noLink: true,
+      signal
     })
     return actions[response] ?? 'cancel'
   } catch {
@@ -106,11 +109,11 @@ function answerWithNativeDialog(entry: SystemModalEntry): void {
   entry.view.hide()
   if (!spec || !callback) return
   const parent = entry.view.parentWindow
-  const request = { callback }
+  const request = { callback, abort: new AbortController() }
   entry.nativeRequest = request
   const answer: Promise<SystemModalAction> = parent.isDestroyed()
     ? Promise.resolve('cancel')
-    : askWithNativeDialog(parent, spec)
+    : askWithNativeDialog(parent, spec, request.abort.signal)
   void answer.then((action) => {
     if (entry.nativeRequest !== request) return
     entry.nativeRequest = null
