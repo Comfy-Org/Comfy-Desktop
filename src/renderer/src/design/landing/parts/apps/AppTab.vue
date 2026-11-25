@@ -369,7 +369,6 @@ function done(): void {
         <template v-if="staged" #place><AppRunPlace :id /></template>
         <template v-if="waitingToRun" #runNote>
           <MarSignInWaiting
-            class="mt-2"
             :title="WAITING_COPY.runNote"
             :body="WAITING_COPY.runBody"
             @cancel="signInToRun = false"
