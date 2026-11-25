@@ -41,6 +41,7 @@ import { can } from '../../milestones'
 import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
 import { runBlock } from '../runCredits'
+import { autoRuns, runAction, runNote, runTemplate } from '../autorun/autorun'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
@@ -179,9 +180,30 @@ const line = computed(() => {
     return `${s.status}. Pick another build to open it.`
   if (s.state === 'download' && keptGb.value)
     return `${fmtGb(keptGb.value)} of ${fmtGb(total.value)} is already here. Downloading picks up where it stopped.`
+  if (autorunOn.value && template.value && autoRuns(s)) return runNote(s, template.value)
   // The plain cases need no line: the button says it.
   return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
+const autorunOn = computed(() => can.value.onboarding && !saved.value)
+const primaryLabel = computed(() => {
+  const s = shown.value
+  if (!s) return 'Open'
+  return (autorunOn.value ? runAction(s) : s.action) || 'Open'
+})
+const cloudTarget = computed(() =>
+  targets.value.find((x) => x.inst.kind === 'cloud' && !x.inst.deployment)
+)
+const cloudOffer = computed(() => {
+  const s = selected.value
+  const c = cloudTarget.value
+  if (!autorunOn.value || !s || !c || c.disabled || c.state === 'blocked') return false
+  return s.inst.kind === 'local' && (s.state === 'download' || Boolean(s.fetch))
+})
+const cloudLeaveNote = computed(() =>
+  cloudOffer.value && selected.value
+    ? `It keeps downloading if you leave, and ${selected.value.inst.name} has it next time. Or try it on Comfy Cloud now.`
+    : undefined
+)
 /** The cost's colour: a warning only for what may fail; a download stays
  *  quiet, even on a build short of memory. */
 const tone = (x: Target): string =>
@@ -307,6 +329,7 @@ const busyLabel = computed(() => {
 })
 
 const creditsSheet = ref(false)
+const afterCredits = ref<'confirm' | 'cloud'>('confirm')
 function confirm(): void {
   const s = selected.value
   const t = template.value
@@ -320,6 +343,7 @@ function confirm(): void {
     return
   }
   if (s.inst.kind === 'cloud' && runBlock.value) {
+    afterCredits.value = 'confirm'
     creditsSheet.value = true
     return
   }
@@ -348,8 +372,36 @@ function confirm(): void {
     progress.value = Math.min(1, (Date.now() - t0) / ms)
     if (progress.value < 1) return
     stop()
-    hostActions.launch(s.inst, t.title)
+    if (autorunOn.value && autoRuns(s)) runTemplate(t, s.inst)
+    else hostActions.launch(s.inst, t.title)
   }, 40)
+}
+
+function tryCloud(): void {
+  const c = cloudTarget.value
+  const t = template.value
+  if (!c || !t) return
+  if (c.state === 'login') {
+    hostActions.signIn(tryCloud)
+    return
+  }
+  if (c.state === 'credits' || c.state === 'plan') {
+    toast(
+      c.state === 'credits' ? 'Add credits opens in your browser' : 'Plans open in your browser'
+    )
+    return
+  }
+  if (runBlock.value) {
+    afterCredits.value = 'cloud'
+    creditsSheet.value = true
+    return
+  }
+  stop()
+  runTemplate(t, c.inst)
+}
+function creditsResolved(): void {
+  if (afterCredits.value === 'cloud') tryCloud()
+  else confirm()
 }
 
 function favorite(): void {
@@ -862,10 +914,44 @@ const full = computed(() => can.value.onboarding)
 
           <!-- At the bottom: what happens, then the one action. -->
           <footer v-if="bgDownload" class="mad-actions">
-            <TplDownloadActions :download="bgDownload" @close="open = false" />
+            <TplDownloadActions
+              :download="bgDownload"
+              :leave-note="cloudLeaveNote"
+              @close="open = false"
+            />
+            <button
+              v-if="cloudOffer && bgDownload.status !== 'done'"
+              type="button"
+              class="mad-btn"
+              data-tpl-cloud
+              :disabled="browserSignIn.pending"
+              @click="tryCloud"
+            >
+              <LocationIcon kind="cloud" :size="15" />
+              <span>{{
+                browserSignIn.pending && cloudTarget?.state === 'login'
+                  ? SIGN_IN_COPY.waiting
+                  : 'Try it now on Cloud'
+              }}</span>
+            </button>
           </footer>
           <footer v-else class="mad-actions">
             <p v-if="line" class="mar-tpl-note">{{ line }}</p>
+            <button
+              v-if="cloudOffer"
+              type="button"
+              class="mad-btn"
+              data-tpl-cloud
+              :disabled="browserSignIn.pending"
+              @click="tryCloud"
+            >
+              <LocationIcon kind="cloud" :size="15" />
+              <span>{{
+                browserSignIn.pending && cloudTarget?.state === 'login'
+                  ? SIGN_IN_COPY.waiting
+                  : 'Try it now on Cloud'
+              }}</span>
+            </button>
             <button
               type="button"
               class="mad-btn is-primary mar-tpl-go"
@@ -880,7 +966,7 @@ const full = computed(() => can.value.onboarding)
                   ? busyLabel
                   : browserSignIn.pending && shown?.state === 'login'
                     ? SIGN_IN_COPY.waiting
-                    : shown?.action || 'Open'
+                    : primaryLabel
               }}</span>
               <kbd v-if="phase === 'idle' && selected && !selected.disabled">↵</kbd>
             </button>
@@ -888,7 +974,7 @@ const full = computed(() => can.value.onboarding)
         </aside>
 
         <DialogClose v-if="!full" class="mad-x" aria-label="Close"><X :size="18" /></DialogClose>
-        <MarRunCreditsSheet v-model:open="creditsSheet" @resolved="confirm" />
+        <MarRunCreditsSheet v-model:open="creditsSheet" @resolved="creditsResolved" />
       </DialogContent>
     </DialogPortal>
   </DialogRoot>

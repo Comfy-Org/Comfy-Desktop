@@ -57,7 +57,9 @@ import AssetDetail from '../assets/AssetDetail.vue'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
-import { graphOpen } from './graphOpen'
+import { graphOpen, type GraphAutorun } from './graphOpen'
+import { addOwnImage, autorunCanvas } from '../autorun/templateCanvas'
+import FirstResult from '../autorun/FirstResult.vue'
 import AssetsPanel from './AssetsPanel.vue'
 import JobsPanel from './panels/JobsPanel.vue'
 import NodesPanel from './panels/NodesPanel.vue'
@@ -92,7 +94,13 @@ import {
   type SNode,
   type SocketType
 } from './canvasData'
-import { createMockEngine, type RunEngine, type RunGraph, type RunJob } from './runEngine'
+import {
+  createMockEngine,
+  type RunEngine,
+  type RunGraph,
+  type RunJob,
+  type RunValue
+} from './runEngine'
 import { savedAssets } from './savedAssets'
 
 /**
@@ -1125,6 +1133,8 @@ const offEngine = engine.on((e) => {
     if (i < 0) jobs.value.push(e.job)
     else jobs.value[i] = e.job
     if (e.job.status === 'done') results.value++
+    if (e.job.id === autorunJob.value && e.job.status !== 'running' && e.job.status !== 'queued')
+      autorunEnded(e.job.status === 'done')
     clearTimeout(settle)
   } else if (e.type === 'removed') {
     jobs.value = jobs.value.filter((j) => j.id !== e.jobId)
@@ -1143,7 +1153,7 @@ const offEngine = engine.on((e) => {
   } else {
     const n = sById.value[e.nodeId]
     if (!n || INPUTS.has(n.kind)) return
-    const v = e.value
+    const v = autorunValue(e.jobId, n, e.value)
     n.stale = false
     if (n.kind === 'compare') {
       if (v.pair) n.pair = v.pair
@@ -1163,6 +1173,66 @@ watch(
   () => jobs.value.length,
   (len) => !len && (jobsOpen.value = false)
 )
+
+const autorunJob = ref<string>()
+const autorunSpec = ref<GraphAutorun>()
+const firstResult = ref<{ src: string; name: string }>()
+let autorunTimer: ReturnType<typeof setTimeout> | undefined
+const MAKES_RESULT = new Set<NodeKind>(['generate', 'generateVideo', 'output'])
+function autorunValue(jobId: string, n: SNode, v: RunValue): RunValue {
+  const a = autorunSpec.value
+  return a && jobId === autorunJob.value && MAKES_RESULT.has(n.kind) ? { ...v, src: a.output } : v
+}
+function autorunEnded(done: boolean): void {
+  const a = autorunSpec.value
+  autorunJob.value = undefined
+  if (!done || !a) return
+  firstResult.value = { src: a.output, name: a.title.split(':')[0]!.trim() }
+  selection.value = ['out']
+}
+function takeAutorun(): void {
+  const a = graphOpen.autorun
+  if (!a) return
+  graphOpen.autorun = null
+  engine.cancelAll()
+  scratch.value = false
+  const fresh = autorunCanvas(a)
+  sNodes.splice(0, sNodes.length, ...fresh.nodes)
+  links.splice(0, links.length, ...fresh.links)
+  groups.splice(0, groups.length, ...fresh.groups)
+  past.length = 0
+  future.length = 0
+  last = freeze()
+  canUndo.value = canRedo.value = false
+  selection.value = []
+  firstResult.value = undefined
+  autorunSpec.value = a
+  jobsOpen.value = true
+  nextTick(fit)
+  clearTimeout(autorunTimer)
+  autorunTimer = setTimeout(() => (autorunJob.value = engine.queue(snapshot(), 1)[0]), 900)
+}
+takeAutorun()
+watch(
+  () => graphOpen.autorun,
+  (a) => a && takeAutorun(),
+  { flush: 'post' }
+)
+function changePrompt(): void {
+  firstResult.value = undefined
+  selection.value = ['prompt']
+  nextTick(() =>
+    host.value?.querySelector<HTMLTextAreaElement>('[data-node="prompt"] textarea')?.focus()
+  )
+}
+function tryOwnImage(): void {
+  firstResult.value = undefined
+  const ref = addOwnImage(sNodes, links)
+  if (!ref) return
+  commit()
+  selection.value = [ref.id]
+  nextTick(fit)
+}
 
 // ── Editing. Values are the graph's own; changing one makes the results
 // that depend on it out of date until the next run. ──
@@ -1274,6 +1344,7 @@ watch(shownWorkflow, () => {
 onBeforeUnmount(() => {
   offEngine()
   engine.dispose()
+  clearTimeout(autorunTimer)
   clearTimeout(settle)
   clearTimeout(toastTimer)
   clearTimeout(textTimer)
@@ -1849,6 +1920,16 @@ function addFromPanel(kind: NodeKind): void {
       <Search :size="14" />
     </button>
 
+    <Transition name="mg-toast">
+      <FirstResult
+        v-if="firstResult && !toast"
+        :src="firstResult.src"
+        :name="firstResult.name"
+        @prompt="changePrompt"
+        @image="tryOwnImage"
+        @close="firstResult = undefined"
+      />
+    </Transition>
     <!-- What Save to Assets says. -->
     <Transition name="mg-toast">
       <div v-if="toast" class="mg-toast" role="status">
@@ -1993,7 +2074,7 @@ function addFromPanel(kind: NodeKind): void {
       @save="save(sById[viewing!]!)"
     />
     <!-- Milestone 2 on: a local build offers to connect an agent. -->
-    <McpNudge />
+    <McpNudge v-if="!firstResult" />
     <McpSetupModal />
   </div>
 </template>

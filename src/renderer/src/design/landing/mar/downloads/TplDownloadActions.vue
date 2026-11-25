@@ -10,11 +10,10 @@ import {
   progressOf,
   resume,
   retry,
-  runOnCloud,
   type TemplateDownload
 } from './templateDownloads'
 
-const props = defineProps<{ download: TemplateDownload }>()
+const props = defineProps<{ download: TemplateDownload; leaveNote?: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const copy = computed(() => copyFor(props.download))
@@ -112,7 +111,9 @@ const primary = computed(() =>
     v-if="download.status === 'downloading'"
     class="m-0 px-0.5 text-[12px] leading-[18px] text-muted-foreground [order:-3]"
   >
-    It keeps downloading if you leave. Follow it under Downloads in the title bar.
+    {{
+      leaveNote ?? 'It keeps downloading if you leave. Follow it under Downloads in the title bar.'
+    }}
   </p>
   <button
     v-if="primary"
@@ -123,14 +124,5 @@ const primary = computed(() =>
     @click="primary.run(download.id)"
   >
     <span>{{ primary.label }}</span>
-  </button>
-  <button
-    v-if="download.status === 'disk'"
-    type="button"
-    class="mad-btn"
-    data-download-action="cloud"
-    @click="runOnCloud(download.id)"
-  >
-    <span>Run on Cloud instead</span>
   </button>
 </template>

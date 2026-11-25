@@ -6,6 +6,7 @@ import { can } from '../../milestones'
 import heroAngles from './angles-hero.jpg'
 import inputAngles from './angles-input.jpg'
 import outputAngles from './angles-output.jpg'
+import { isDownloaded } from '../autorun/installed'
 
 /**
  * Mock data behind Mar's template modal. The fields mirror ComfyUI's
@@ -389,11 +390,8 @@ export const hasPack = (inst: ProtoInstance, pack: string): boolean =>
     ? !(can.value.onboarding && NOT_ON_CLOUD.has(pack))
     : Boolean(INSTALLED_PACKS[inst.id]?.includes(pack))
 
-export const downloadedModels = reactive(new Set<string>())
-export const downloadedKey = (tplId: string, instId: string): string => `${instId}:${tplId}`
-
 function hasModels(t: Template, inst: ProtoInstance): boolean {
-  if (downloadedModels.has(downloadedKey(t.id, inst.id))) return true
+  if (isDownloaded(t.id, inst.id)) return true
   if (caseIs(t, 'gated')) return false
   const c = caseFor(t)
   return Boolean(INSTALLED[inst.id]?.includes(t.id) || c?.installedOn?.includes(inst.id))

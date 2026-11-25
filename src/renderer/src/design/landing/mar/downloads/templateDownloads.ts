@@ -1,8 +1,9 @@
 import { computed, reactive } from 'vue'
 import type { ProtoInstance, Template } from '../../mock'
-import { goIn, hostActions, instanceById, instances, proto } from '../../useProto'
+import { goIn, instanceById, proto } from '../../useProto'
 import { notify } from '../pages/undo'
-import { downloadedKey, downloadedModels, fmtGb, totalGb } from '../templateModal/templateData'
+import { fmtGb, totalGb, tplById } from '../templateModal/templateData'
+import { downloadFinished, runTemplate } from '../autorun/autorun'
 
 export type DownloadScenario = 'normal' | 'fail' | 'disk' | 'slow'
 
@@ -206,8 +207,7 @@ function finish(d: TemplateDownload): void {
   d.status = 'done'
   d.doneGb = d.totalGb
   d.seen = false
-  downloadedModels.add(downloadedKey(d.id, d.instId))
-  if (!watching(d)) notify(`${d.title} is ready`, () => openAndRun(d.id), 'success', 'Open and run')
+  downloadFinished(d.id, d.instId)
 }
 
 export function startDownload(t: Template, inst: ProtoInstance): void {
@@ -275,18 +275,11 @@ export function freeUpSpace(id: string): void {
   goIn('build', 'router')
 }
 
-export function runOnCloud(id: string): void {
-  const d = downloadFor(id)
-  const cloud = instances.value.find((i) => i.kind === 'cloud' && !i.deployment)
-  if (!d || !cloud) return
-  d.status = 'cancelled'
-  hostActions.launch(cloud, d.title)
-}
-
 export function openAndRun(id: string): void {
   const d = downloadFor(id)
   const inst = d && instanceById(d.instId)
-  if (!d || !inst) return
+  const t = tplById(id)
+  if (!d || !inst || !t) return
   remove(id)
-  hostActions.launch(inst, d.title)
+  runTemplate(t, inst)
 }

@@ -38,6 +38,7 @@ import { dep, scenarioPick } from './deploy/deployData'
 import { localSetup } from './setup/setupFlow'
 import { tplCase } from './templateModal/templateData'
 import { homeTour } from './homeTour/homeTour'
+import { returningReady } from './autorun/installed'
 import { createLook } from './create/createLook'
 import { createScreen } from './create/createScreen'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
@@ -113,6 +114,7 @@ export const when = {
   ),
   recentsCover: computed(() => onHome.value && can.value.onboarding),
   homeTour: computed(() => onHome.value && can.value.onboarding),
+  readyTemplate: computed(() => onHome.value && can.value.onboarding),
   createLook: computed(() => can.value.onboarding && createScreen.open),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
@@ -260,6 +262,7 @@ export const TWEAKS = {
   },
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),
+  readyTemplate: one(returningReady, 'off'),
   createLook: one(createLook, 'current'),
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
