@@ -1,5 +1,5 @@
 import { createNode, type Group, type Link, type SNode } from '../graph/canvasData'
-import type { GraphAutorun } from '../graph/graphOpen'
+import type { GraphTemplate } from '../graph/graphOpen'
 
 const link = (from: string, to: string, inp = 0): Link => ({
   id: `${from}>${to}:${inp}`,
@@ -9,7 +9,11 @@ const link = (from: string, to: string, inp = 0): Link => ({
   in: inp
 })
 
-export function autorunCanvas(a: GraphAutorun): { nodes: SNode[]; links: Link[]; groups: Group[] } {
+export function exampleCanvas(a: GraphTemplate): {
+  nodes: SNode[]
+  links: Link[]
+  groups: Group[]
+} {
   const prompt = createNode('prompt', 40, 60, 'prompt')
   prompt.text = a.prompt
   const gen = createNode(a.video ? 'generateVideo' : 'generate', 420, 60, 'gen')

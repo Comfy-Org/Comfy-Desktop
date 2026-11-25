@@ -4,7 +4,7 @@ import type { ProtoInstance, Template } from '../../mock'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import { graphOpen } from '../graph/graphOpen'
 import { startDownload } from '../downloads/templateDownloads'
-import { openPrepTab } from '../autorun/prepTabs'
+import { openPrepTab } from '../templateOpen/prepTabs'
 import { needsDownload } from '../templateModal/runReadiness'
 import {
   addAppTemplate,

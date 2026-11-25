@@ -27,9 +27,9 @@ import {
   totalGb,
   tplById
 } from '../templateModal/templateData'
-import { runTemplate, shortName } from './autorun'
+import { openWithExample, shortName } from './openTemplate'
 import type { PrepTab } from './prepTabs'
-import { BUILD_INSTALLING, cancelInstall, installPhase } from './installThenRun'
+import { BUILD_INSTALLING, cancelInstall, installPhase } from './installThenOpen'
 
 const { prep } = defineProps<{ prep: PrepTab }>()
 
@@ -90,7 +90,7 @@ function tryCloud(): void {
     creditsSheet.value = true
     return
   }
-  runTemplate(t.value, c.inst)
+  openWithExample(t.value, c.inst)
 }
 </script>
 

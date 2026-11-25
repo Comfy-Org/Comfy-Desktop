@@ -39,24 +39,24 @@ function examplePrompt(t: Template): string {
   return takesImage(t) ? FALLBACK_PROMPTS.edit : FALLBACK_PROMPTS.image
 }
 
-export function runAction(s: Target): string {
-  if (s.action === 'Download and start') return 'Download and run'
-  if (s.inst.kind === 'local' && (s.state === 'running' || s.state === 'ready')) return 'Run'
+export function openAction(s: Target): string {
+  if (s.action === 'Download and start') return 'Download and open'
+  if (s.inst.kind === 'local' && (s.state === 'running' || s.state === 'ready')) return 'Open'
   return s.action
 }
 
-export function runNote(s: Target, t: Template): string {
+export function openNote(s: Target, t: Template): string {
   if (s.state === 'download')
     return s.note.replace(
       /then starts (.+)\.$/,
-      `then runs ${shortName(t)} on $1 with its example inputs.`
+      `then opens ${shortName(t)} on $1 with its example inputs.`
     )
   if (s.inst.kind === 'local' && (s.state === 'running' || s.state === 'ready'))
-    return `Opens in ${s.inst.name} with its example inputs and runs it. Free on this Mac.`
+    return `Opens in ${s.inst.name} with its example inputs. Runs free on this Mac.`
   return s.note
 }
 
-export const autoRuns = (s: Target | undefined): boolean =>
+export const opensTemplate = (s: Target | undefined): boolean =>
   Boolean(
     s &&
     !s.disabled &&
@@ -69,14 +69,14 @@ export const autoRuns = (s: Target | undefined): boolean =>
 const readyMessage = (t: Template, inst: ProtoInstance): string =>
   `${shortName(t)} is ready on ${inst.name}`
 
-export function runTemplate(t: Template, inst: ProtoInstance): void {
+export function openWithExample(t: Template, inst: ProtoInstance): void {
   const media = mediaFor(t)
   const prep = prepOfTemplate(t.id)
   const inTab = prep && prep.instId === inst.id ? prep : undefined
   const app = takeHeld(t.id)
   if (app) graphOpen.app = app
   else
-    graphOpen.autorun = {
+    graphOpen.template = {
       title: t.title,
       model: infoFor(t).model ?? shortName(t),
       prompt: examplePrompt(t),
@@ -107,12 +107,12 @@ export function downloadFinished(templateId: string, instId: string): void {
   const inst = instanceById(instId)
   if (!t || !inst) return
   if (watching(templateId)) {
-    runTemplate(t, inst)
+    openWithExample(t, inst)
     return
   }
   const prep = prepOfTemplate(templateId)
   if (prep) prep.ready = true
-  notify(readyMessage(t, inst), () => runTemplate(t, inst), 'success', 'Open and run')
+  notify(readyMessage(t, inst), () => openWithExample(t, inst), 'success', 'Open')
 }
 
 watch(
@@ -121,6 +121,6 @@ watch(
     const prep = prepOfTab(tabId)
     const t = prep?.ready ? tplById(prep.templateId) : undefined
     const inst = prep ? instanceById(prep.instId) : undefined
-    if (t && inst) runTemplate(t, inst)
+    if (t && inst) openWithExample(t, inst)
   }
 )

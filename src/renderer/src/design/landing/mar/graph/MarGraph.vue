@@ -57,11 +57,11 @@ import AssetDetail from '../assets/AssetDetail.vue'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
-import { graphOpen, type AgentStart, type GraphAutorun } from './graphOpen'
-import { addOwnImage, autorunCanvas } from '../autorun/templateCanvas'
+import { graphOpen, type AgentStart, type GraphTemplate } from './graphOpen'
+import { addOwnImage, exampleCanvas } from '../templateOpen/templateCanvas'
 import { appCanvas } from '../apps/appCanvas'
 import { copiedTabs, copyName, extrasOn } from '../apps/appToComfy'
-import FirstResult from '../autorun/FirstResult.vue'
+import FirstResult from '../templateOpen/FirstResult.vue'
 import AssetsPanel from './AssetsPanel.vue'
 import JobsPanel from './panels/JobsPanel.vue'
 import NodesPanel from './panels/NodesPanel.vue'
@@ -614,8 +614,11 @@ function build(recipe: Recipe): void {
     links.push({ id: uid('link'), from: ids[a]!, out: ai, to: ids[b2]!, in: bi })
   selection.value = Object.values(ids)
   commit()
+  runHint.value = hintFor(recipe)
   nextTick(() => frame(selection.value))
 }
+const hintFor = (recipe: Recipe): 'image' | 'video' =>
+  recipe.nodes.some((n) => n.kind === 'generateVideo') ? 'video' : 'image'
 
 /** Brings some nodes into view. */
 function frame(ids: string[]): void {
@@ -952,6 +955,7 @@ function placeStep(recipe: Recipe, k: number): void {
   }
   selection.value = [n.id]
   commit()
+  if (k === recipe.nodes.length - 1) runHint.value = hintFor(recipe)
   nextTick(() => frame(Object.values(stepIds)))
 }
 function addMenuInView(): void {
@@ -1167,7 +1171,13 @@ function jobSub(job: RunJob): string {
 
 function run(): void {
   runMenu.value = false
-  if (sNodes.length) engine.queue(snapshot(), batch.value)
+  runHint.value = undefined
+  if (!sNodes.length) return
+  const [first] = engine.queue(snapshot(), batch.value)
+  if (exampleSpec.value && !exampleJob.value && !exampleRan.value) {
+    exampleJob.value = first
+    exampleRan.value = true
+  }
 }
 /** Runs some nodes and what they need. */
 function runOnly(ids: string[]): void {
@@ -1215,8 +1225,8 @@ const offEngine = engine.on((e) => {
     if (i < 0) jobs.value.push(e.job)
     else jobs.value[i] = e.job
     if (e.job.status === 'done') results.value++
-    if (e.job.id === autorunJob.value && e.job.status !== 'running' && e.job.status !== 'queued')
-      autorunEnded(e.job.status === 'done')
+    if (e.job.id === exampleJob.value && e.job.status !== 'running' && e.job.status !== 'queued')
+      exampleEnded(e.job.status === 'done')
     clearTimeout(settle)
   } else if (e.type === 'removed') {
     jobs.value = jobs.value.filter((j) => j.id !== e.jobId)
@@ -1235,7 +1245,7 @@ const offEngine = engine.on((e) => {
   } else {
     const n = sById.value[e.nodeId]
     if (!n || INPUTS.has(n.kind)) return
-    const v = autorunValue(e.jobId, n, e.value)
+    const v = exampleValue(e.jobId, n, e.value)
     n.stale = false
     if (n.kind === 'compare') {
       if (v.pair) n.pair = v.pair
@@ -1256,29 +1266,30 @@ watch(
   (len) => !len && (jobsOpen.value = false)
 )
 
-const autorunJob = ref<string>()
-const autorunSpec = ref<GraphAutorun>()
+const exampleJob = ref<string>()
+const exampleSpec = ref<GraphTemplate>()
+const exampleRan = ref(false)
 const firstResult = ref<{ src: string; name: string }>()
-let autorunTimer: ReturnType<typeof setTimeout> | undefined
+const runHint = ref<'image' | 'video'>()
 const MAKES_RESULT = new Set<NodeKind>(['generate', 'generateVideo', 'output'])
-function autorunValue(jobId: string, n: SNode, v: RunValue): RunValue {
-  const a = autorunSpec.value
-  return a && jobId === autorunJob.value && MAKES_RESULT.has(n.kind) ? { ...v, src: a.output } : v
+function exampleValue(jobId: string, n: SNode, v: RunValue): RunValue {
+  const a = exampleSpec.value
+  return a && jobId === exampleJob.value && MAKES_RESULT.has(n.kind) ? { ...v, src: a.output } : v
 }
-function autorunEnded(done: boolean): void {
-  const a = autorunSpec.value
-  autorunJob.value = undefined
+function exampleEnded(done: boolean): void {
+  const a = exampleSpec.value
+  exampleJob.value = undefined
   if (!done || !a) return
   firstResult.value = { src: a.output, name: a.title.split(':')[0]!.trim() }
   selection.value = ['out']
 }
-function takeAutorun(): void {
-  const a = graphOpen.autorun
+function takeTemplate(): void {
+  const a = graphOpen.template
   if (!a || (a.tabId && a.tabId !== proto.activeTab)) return
-  graphOpen.autorun = null
+  graphOpen.template = null
   engine.cancelAll()
   scratch.value = false
-  const fresh = autorunCanvas(a)
+  const fresh = exampleCanvas(a)
   sNodes.splice(0, sNodes.length, ...fresh.nodes)
   links.splice(0, links.length, ...fresh.links)
   groups.splice(0, groups.length, ...fresh.groups)
@@ -1288,22 +1299,24 @@ function takeAutorun(): void {
   canUndo.value = canRedo.value = false
   selection.value = []
   firstResult.value = undefined
-  autorunSpec.value = a
-  jobsOpen.value = true
+  exampleSpec.value = a
+  exampleJob.value = undefined
+  exampleRan.value = false
+  runHint.value = a.video ? 'video' : 'image'
   nextTick(fit)
-  clearTimeout(autorunTimer)
-  autorunTimer = setTimeout(() => (autorunJob.value = engine.queue(snapshot(), 1)[0]), 900)
 }
-takeAutorun()
+takeTemplate()
 watch(
-  () => [graphOpen.autorun, proto.activeTab] as const,
-  ([a]) => a && takeAutorun(),
+  () => [graphOpen.template, proto.activeTab] as const,
+  ([a]) => a && takeTemplate(),
   { flush: 'post' }
 )
 function takeAppGraph(): void {
   const g = graphOpen.app
   if (!g) return
   graphOpen.app = null
+  runHint.value = undefined
+  exampleSpec.value = undefined
   engine.cancelAll()
   scratch.value = false
   const fresh = appCanvas(g)
@@ -1439,6 +1452,8 @@ watch(
   (w) => (shownWorkflow.value = w)
 )
 watch(shownWorkflow, () => {
+  runHint.value = undefined
+  exampleSpec.value = undefined
   appCopy.value = false
   appEdited.value = false
   delete copiedTabs[proto.activeTab]
@@ -1456,7 +1471,6 @@ watch(shownWorkflow, () => {
 onBeforeUnmount(() => {
   offEngine()
   engine.dispose()
-  clearTimeout(autorunTimer)
   clearTimeout(settle)
   clearTimeout(toastTimer)
   clearTimeout(textTimer)
@@ -1940,7 +1954,7 @@ function addFromPanel(kind: NodeKind): void {
             </button>
           </span>
         </span>
-        <span class="mg-run-group">
+        <span class="mg-run-group" :class="runHint && 'is-hinted'">
           <button type="button" class="mg-run" @click="run"><Play :size="15" />Run</button>
           <button
             type="button"
@@ -1954,6 +1968,17 @@ function addFromPanel(kind: NodeKind): void {
         </span>
         <button type="button" class="mg-panel-btn" aria-label="Toggle the right panel">
           <PanelRight :size="17" />
+        </button>
+      </div>
+      <div v-if="runHint && !runMenu" class="mg-run-hint" role="status" data-run-hint>
+        <span>Press Run to make your first {{ runHint }}</span>
+        <button
+          type="button"
+          class="mg-run-hint-x"
+          aria-label="Dismiss"
+          @click="runHint = undefined"
+        >
+          <X :size="13" />
         </button>
       </div>
       <div v-if="runMenu" class="mg-runmenu" role="menu">
@@ -2690,6 +2715,60 @@ function addFromPanel(kind: NodeKind): void {
 }
 :root .proto-ui.proto-ui.proto-ui .mg-batch-step button:disabled {
   opacity: 0.35;
+}
+.mg-run-group.is-hinted {
+  overflow: visible;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--mg-text) 28%, transparent);
+  animation: mg-run-pulse 1.4s ease-out 2;
+}
+@keyframes mg-run-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--mg-text) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px color-mix(in oklch, var(--mg-text) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mg-run-group.is-hinted {
+    animation: none;
+  }
+}
+.mg-run-hint {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--mar-tab-item-radius);
+  background: var(--mg-float);
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
+  color: var(--mg-text);
+  font-size: 13px;
+}
+.mg-run-hint::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 92px;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+:root .proto-ui.proto-ui.proto-ui .mg-run-hint-x {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--mar-tab-item-radius);
+  color: var(--mg-muted);
+}
+:root .proto-ui.proto-ui.proto-ui .mg-run-hint-x:hover {
+  background: var(--mg-hover);
+  color: var(--mg-text);
 }
 .mg-run-group {
   display: inline-flex;

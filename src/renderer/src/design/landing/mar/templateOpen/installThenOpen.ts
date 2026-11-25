@@ -5,7 +5,7 @@ import { marUser } from '../userStates/userState'
 import { DETECTED } from '../setup/setupFlow'
 import { startDownload } from '../downloads/templateDownloads'
 import { needsFor } from '../templateModal/templateData'
-import { runTemplate } from './autorun'
+import { openWithExample } from './openTemplate'
 import { dropPrepTab, openPrepTab, prepOfTab, type PrepTab } from './prepTabs'
 
 export const BUILD_INSTALLING = 'Installing ComfyUI'
@@ -53,11 +53,11 @@ function installed(prep: PrepTab, t: Template): void {
     return
   }
   prep.ready = true
-  if (watching) runTemplate(t, inst)
-  else notify(`${inst.name} is installed`, () => runTemplate(t, inst), 'success', OPEN_BUILD)
+  if (watching) openWithExample(t, inst)
+  else notify(`${inst.name} is installed`, () => openWithExample(t, inst), 'success', OPEN_BUILD)
 }
 
-export function installThenRun(t: Template): void {
+export function installThenOpen(t: Template): void {
   const inst = INSTANCES.find((i) => i.kind === 'local')
   if (!inst) return
   const prep = openPrepTab(t, inst)

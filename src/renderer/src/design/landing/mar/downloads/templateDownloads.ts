@@ -3,9 +3,9 @@ import type { ProtoInstance, Template } from '../../mock'
 import { instanceById, proto } from '../../useProto'
 import { notify } from '../pages/undo'
 import { isOffline, needsFor, totalGb, tplById } from '../templateModal/templateData'
-import { downloadFinished, runTemplate } from '../autorun/autorun'
-import { prepOfTemplate } from '../autorun/prepTabs'
-import { markDownloaded } from '../autorun/installed'
+import { downloadFinished, openWithExample } from '../templateOpen/openTemplate'
+import { prepOfTemplate } from '../templateOpen/prepTabs'
+import { markDownloaded } from '../templateOpen/installed'
 import { offline } from '../offline/connection'
 
 export type DownloadScenario = 'normal' | 'fail' | 'disk' | 'slow'
@@ -34,7 +34,7 @@ export interface TemplateDownload {
   diskCleared: boolean
   stalledAt?: number
   seen: boolean
-  autorun: boolean
+  opens: boolean
 }
 
 export const DOWNLOAD_COPY = {
@@ -52,7 +52,7 @@ export const DOWNLOAD_COPY = {
   downloaded: 'Downloaded',
   cancelled: 'Cancelled',
   failed: 'Download failed',
-  openAndRun: 'Open and run'
+  open: 'Open'
 } as const
 
 const RUN_MS: Record<DownloadScenario, number> = {
@@ -312,7 +312,7 @@ function finish(d: TemplateDownload): void {
   d.status = 'done'
   d.doneGb = d.totalGb
   d.seen = false
-  if (d.autorun) downloadFinished(d.id, d.instId)
+  if (d.opens) downloadFinished(d.id, d.instId)
   else markDownloaded(d.id, d.instId)
 }
 
@@ -332,7 +332,7 @@ function run(d: TemplateDownload): void {
 export function startDownload(
   t: Template,
   inst: ProtoInstance,
-  { autorun = true }: { autorun?: boolean } = {}
+  { opens = true }: { opens?: boolean } = {}
 ): void {
   const was = downloadFor(t.id)
   if (was && was.status !== 'cancelled' && was.status !== 'done') return
@@ -347,7 +347,7 @@ export function startDownload(
     failedOnce: false,
     diskCleared: false,
     seen: true,
-    autorun
+    opens
   }
   templateDownloads.list = [next, ...templateDownloads.list.filter((d) => d.id !== t.id)]
   run(downloadFor(t.id)!)
@@ -393,11 +393,11 @@ export function remove(id: string): void {
   templateDownloads.list = templateDownloads.list.filter((d) => d.id !== id)
 }
 
-export function openAndRun(id: string): void {
+export function openDownloaded(id: string): void {
   const d = downloadFor(id)
   const inst = d && instanceById(d.instId)
   const t = tplById(id)
   if (!d || !inst || !t) return
   remove(id)
-  runTemplate(t, inst)
+  openWithExample(t, inst)
 }

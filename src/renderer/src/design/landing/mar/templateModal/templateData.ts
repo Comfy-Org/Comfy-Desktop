@@ -6,7 +6,7 @@ import { can } from '../../milestones'
 import heroAngles from './angles-hero.jpg'
 import inputAngles from './angles-input.jpg'
 import outputAngles from './angles-output.jpg'
-import { isDownloaded } from '../autorun/installed'
+import { isDownloaded } from '../templateOpen/installed'
 
 /**
  * Mock data behind Mar's template modal. The fields mirror ComfyUI's

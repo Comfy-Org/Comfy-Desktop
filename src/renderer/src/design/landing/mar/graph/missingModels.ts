@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import type { Template } from '../../mock'
 import type { ModelReq } from '../../fit'
 import { instanceById } from '../../useProto'
-import { isDownloaded } from '../autorun/installed'
+import { isDownloaded } from '../templateOpen/installed'
 import { downloadFor, startDownload } from '../downloads/templateDownloads'
 import { SAVED_MISSING_FROM, needsFor, tplById } from '../templateModal/templateData'
 
@@ -51,7 +51,7 @@ export function downloadMissingModels(
 ): void {
   const inst = instanceById(instId)
   closeMissingModels(tabId, workflow)
-  if (inst) startDownload(template, inst, { autorun: false })
+  if (inst) startDownload(template, inst, { opens: false })
 }
 
 export function modelFolder(name: string): string {

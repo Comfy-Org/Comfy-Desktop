@@ -27,7 +27,7 @@ import {
   newTabIndex,
   openCreate
 } from './mar/create/createScreen'
-import { prepOfTab } from './mar/autorun/prepTabs'
+import { prepOfTab } from './mar/templateOpen/prepTabs'
 import { downloadFor, progressOf } from './mar/downloads/templateDownloads'
 import { runs } from './mar/build/homeRun'
 import { startFailures } from './mar/build/comfyStart'

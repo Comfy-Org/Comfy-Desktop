@@ -46,10 +46,10 @@ import { can } from '../../milestones'
 import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
 import { runBlock } from '../runCredits'
-import { autoRuns, runAction, runNote, runTemplate } from '../autorun/autorun'
-import { openPrepTab } from '../autorun/prepTabs'
-import { installThenRun } from '../autorun/installThenRun'
-import { isDownloaded, markDownloaded } from '../autorun/installed'
+import { opensTemplate, openAction, openNote, openWithExample } from '../templateOpen/openTemplate'
+import { openPrepTab } from '../templateOpen/prepTabs'
+import { installThenOpen } from '../templateOpen/installThenOpen'
+import { isDownloaded, markDownloaded } from '../templateOpen/installed'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
@@ -224,15 +224,15 @@ const line = computed(() => {
     return `${s.status}. Pick another build to open it.`
   if (s.state === 'download' && keptGb.value)
     return `${fmtGb(keptGb.value)} of ${fmtGb(total.value)} is already here. Downloading picks up where it stopped.`
-  if (autorunOn.value && template.value && autoRuns(s)) return runNote(s, template.value)
+  if (exampleOn.value && template.value && opensTemplate(s)) return openNote(s, template.value)
   // The plain cases need no line: the button says it.
   return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
-const autorunOn = computed(() => can.value.onboarding && !saved.value)
+const exampleOn = computed(() => can.value.onboarding && !saved.value)
 const primaryLabel = computed(() => {
   const s = shown.value
   if (!s) return 'Open'
-  return (autorunOn.value ? runAction(s) : s.action) || 'Open'
+  return (exampleOn.value ? openAction(s) : s.action) || 'Open'
 })
 const cloudTarget = computed(() =>
   targets.value.find((x) => x.inst.kind === 'cloud' && !x.inst.deployment)
@@ -240,7 +240,7 @@ const cloudTarget = computed(() =>
 const cloudOffer = computed(() => {
   const s = selected.value
   const c = cloudTarget.value
-  if (!autorunOn.value || !s || !c || c.disabled || c.state === 'blocked') return false
+  if (!exampleOn.value || !s || !c || c.disabled || c.state === 'blocked') return false
   return s.inst.kind === 'local' && (s.state === 'download' || Boolean(s.fetch))
 })
 /** The cost's colour: a warning only for what may fail; a download stays
@@ -374,7 +374,7 @@ function confirm(): void {
     return
   }
   if (s.state === 'new') {
-    if (autorunOn.value) installThenRun(t)
+    if (exampleOn.value) installThenOpen(t)
     else hostActions.newInstance()
     return
   }
@@ -391,11 +391,11 @@ function confirm(): void {
   }
   if (s.state === 'download' && s.inst.kind === 'local' && !saved.value) {
     startDownload(t, s.inst)
-    if (autorunOn.value) openPrepTab(t, s.inst)
+    if (exampleOn.value) openPrepTab(t, s.inst)
     return
   }
   if (s.inst.kind === 'local' && !steps.value.length && s.state !== 'download') {
-    if (autorunOn.value && autoRuns(s)) runTemplate(t, s.inst)
+    if (exampleOn.value && opensTemplate(s)) openWithExample(t, s.inst)
     else hostActions.launch(s.inst, t.title)
     return
   }
@@ -415,7 +415,7 @@ function confirm(): void {
     if (progress.value < 1) return
     stop()
     if (saved.value && s.state === 'download') markDownloaded(t.id, s.inst.id)
-    if (autorunOn.value && autoRuns(s)) runTemplate(t, s.inst)
+    if (exampleOn.value && opensTemplate(s)) openWithExample(t, s.inst)
     else hostActions.launch(s.inst, t.title)
   }, 40)
 }
@@ -440,7 +440,7 @@ function tryCloud(): void {
     return
   }
   stop()
-  runTemplate(t, c.inst)
+  openWithExample(t, c.inst)
 }
 function creditsResolved(): void {
   if (afterCredits.value === 'cloud') tryCloud()

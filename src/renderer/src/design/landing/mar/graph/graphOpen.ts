@@ -10,7 +10,7 @@ export interface AgentStart {
   result: string
 }
 
-export interface GraphAutorun {
+export interface GraphTemplate {
   title: string
   model: string
   prompt: string
@@ -33,7 +33,7 @@ export const graphOpen = reactive({
   agent: false,
   agentAsk: null as null | AgentStart,
   nodeSearch: false,
-  autorun: null as null | GraphAutorun,
+  template: null as null | GraphTemplate,
   app: null as null | AppGraph,
   /** Assets › Open workflow: ComfyUI opens with this one on the canvas,
    *  on the workflow's output (MarGraph's landAsset). */

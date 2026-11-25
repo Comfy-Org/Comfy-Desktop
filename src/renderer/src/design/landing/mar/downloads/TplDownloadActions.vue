@@ -8,7 +8,7 @@ import {
   detailLine,
   formatEta,
   formatGb,
-  openAndRun,
+  openDownloaded,
   pause,
   percentOf,
   progressOf,
@@ -32,10 +32,10 @@ const PRIMARY: Partial<
   paused: { label: DOWNLOAD_COPY.resume, run: resume },
   failed: { label: DOWNLOAD_COPY.retry, run: retry },
   cancelled: { label: DOWNLOAD_COPY.retry, run: retry },
-  done: { label: DOWNLOAD_COPY.openAndRun, run: openAndRun }
+  done: { label: DOWNLOAD_COPY.open, run: openDownloaded }
 }
 const primary = computed(() =>
-  props.download.status === 'done' && !props.download.autorun
+  props.download.status === 'done' && !props.download.opens
     ? undefined
     : PRIMARY[props.download.status]
 )
