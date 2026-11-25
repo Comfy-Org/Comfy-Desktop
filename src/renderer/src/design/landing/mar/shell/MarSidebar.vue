@@ -213,7 +213,7 @@ function newChat(): void {
       <!-- Search finds media and workflows: a Create thing, not in Build, and
            not before Learn (Milestones 2 and 3 ship without it). -->
       <button
-        v-if="proto.mode !== 'build' && can.search"
+        v-if="proto.mode !== 'build' && can.search && !can.onboarding"
         type="button"
         class="mar-side-row"
         :title="open ? undefined : 'Search · ⌘K'"

@@ -170,7 +170,7 @@ function open(i: Item): void {
            default. Search finds Create things: not in Build, and not before
            Learn (Milestones 2 and 3 ship without it). -->
       <Button
-        v-if="idx === 1 && mode !== 'build' && can.search"
+        v-if="idx === 1 && mode !== 'build' && can.search && !can.onboarding"
         variant="ghost"
         class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
         @click="search.open = true"
