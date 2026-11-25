@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Play, Plus, X } from 'lucide-vue-next'
+import { Play, Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance } from '../../../useProto'
@@ -95,9 +95,6 @@ useEscapeCloses(() => composer.value?.field)
         @key="key"
         @build="(s) => openTemplate(s.template)"
       />
-      <button type="button" class="v10-icon v10-close" aria-label="Close" @click="closeCreate">
-        <X :size="16" />
-      </button>
     </header>
 
     <ResultsB v-if="query.trim()" ref="results" :query class="v10-results" />
@@ -269,13 +266,6 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v10-icon:hover {
   background: var(--color-secondary-background-hover);
   color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-close {
-  position: absolute;
-  right: 0;
-  bottom: 2px;
-  width: 36px;
-  height: 36px;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-results {
   max-width: 1000px;

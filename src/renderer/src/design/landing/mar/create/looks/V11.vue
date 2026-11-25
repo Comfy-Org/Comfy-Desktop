@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Plus, X } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { AgentChat } from '../../icons/agentChat'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
@@ -136,10 +136,6 @@ useEscapeCloses(() => composer.value?.field)
 
 <template>
   <section class="v11 relative min-h-full px-10 pb-12" aria-label="Create">
-    <button type="button" class="v11-close" aria-label="Close" @click="closeCreate">
-      <X :size="16" />
-    </button>
-
     <div class="v11-col">
       <h1 class="v11-ask">What do you want to make?</h1>
       <CreateComposer
@@ -267,22 +263,6 @@ useEscapeCloses(() => composer.value?.field)
 <style>
 :root .proto-ui.proto-ui.proto-ui .v11 {
   isolation: isolate;
-}
-:root .proto-ui.proto-ui.proto-ui .v11-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 3;
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: var(--radius-control);
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v11-close:hover {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v11-col {
   display: flex;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Plus, X } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { AgentChat } from '../../icons/agentChat'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
@@ -135,10 +135,6 @@ useEscapeCloses(() => composer.value?.field)
     <div class="v12-canvas" aria-hidden="true" />
 
     <div class="v12-main">
-      <button type="button" class="v12-close" aria-label="Close" @click="closeCreate">
-        <X :size="16" />
-      </button>
-
       <div
         v-if="flow.build.value"
         class="v12-built"
@@ -306,22 +302,6 @@ useEscapeCloses(() => composer.value?.field)
   align-items: center;
   justify-content: center;
   padding: 48px 32px;
-}
-:root .proto-ui.proto-ui.proto-ui .v12-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 3;
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: var(--radius-control);
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v12-close:hover {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v12-built {
   position: absolute;
