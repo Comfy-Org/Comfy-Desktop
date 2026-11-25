@@ -13,6 +13,8 @@ import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
+import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
+import { RATING_STYLES, ratingStyle } from './assets/ratingStyle'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { createLook } from './create/createLook'
@@ -184,6 +186,8 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'assetFolders', show: () => when.assetFolders.value },
   { id: 'assetFolderLayout', show: () => when.assetFolderLayout.value },
+  { id: 'rating', show: () => when.rating.value },
+  { id: 'folderPicker', show: () => when.folderPicker.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
@@ -546,6 +550,22 @@ const linkSays = computed(() => {
               assetFolderLayout.id === 'tree'
                 ? 'Tree sidebar: on Assets the sidebar folds to its rail, the folder tree beside it.'
                 : 'Folders stay in Filters, as today.'
+            }}</span>
+          </Row>
+          <Row :show="shows('rating')" label="Rating">
+            <Seg v-model="ratingStyle.id" label="Rating" :options="RATING_STYLES" />
+            <span class="text-ui text-subtle-foreground">{{
+              ratingStyle.id === 'favorite'
+                ? 'The star Assets has today: on or off.'
+                : 'Tap the star, pick how many. Keys 1–5 rate the selection.'
+            }}</span>
+          </Row>
+          <Row :show="shows('folderPicker')" label="Folder picker">
+            <Seg v-model="folderPicker.id" label="Folder picker" :options="FOLDER_PICKERS" />
+            <span class="text-ui text-subtle-foreground">{{
+              folderPicker.id === 'filters'
+                ? 'The folder sits with the other filters, as proposed.'
+                : 'Its own pill beside the build, out of Filters: the first milestone.'
             }}</span>
           </Row>
           <Row :show="shows('folderDepth')" label="Folder depth">

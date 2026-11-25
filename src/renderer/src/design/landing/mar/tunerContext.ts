@@ -18,6 +18,8 @@ import { assetsEverywhere } from './assets/assetsEverywhere'
 import { folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { assetFolderLayout } from './assets/assetFolderLayout'
+import { folderPicker } from './assets/folderPicker'
+import { ratingStyle } from './assets/ratingStyle'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
@@ -127,6 +129,10 @@ export const when = {
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
+  // The star on a card: Desktop's Assets page and ComfyUI's tab.
+  rating: computed(() => (inShell.value && proto.page === 'assets') || assetsTab.open),
+  // Where the folder is picked: Desktop's Assets page.
+  folderPicker: computed(() => inShell.value && proto.page === 'assets'),
   // ComfyUI's Assets tab, where folders live.
   assetFolders: computed(
     () => (inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on)
@@ -285,6 +291,8 @@ export const TWEAKS = {
   assetsEverywhere: one(assetsEverywhere, 'off'),
   assetFolders: one(assetFoldersShown, 'off'),
   assetFolderLayout: one(assetFolderLayout, 'off'),
+  rating: one(ratingStyle, 'favorite'),
+  folderPicker: one(folderPicker, 'filters'),
   folderDepth: one(folderDepth, 'few'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),

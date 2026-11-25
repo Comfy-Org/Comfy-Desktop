@@ -31,6 +31,8 @@ import { CREATE_INPUTS, createInput } from './create/createInput'
 import { AGENT_OPENS, agentOpens } from './create/agentOpens'
 import { COMPOSER_POSITIONS, composerPos } from './create/composerPos'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
+import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
+import { RATING_STYLES, ratingStyle } from './assets/ratingStyle'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -170,6 +172,8 @@ const PARTS: Part[] = [
   one('agentOpens', agentOpens, 'create', AGENT_OPENS),
   one('composer', composerPos, 'bottom', COMPOSER_POSITIONS),
   one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
+  one('folderPicker', folderPicker, 'filters', FOLDER_PICKERS),
+  one('rating', ratingStyle, 'favorite', RATING_STYLES),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),

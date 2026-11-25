@@ -84,6 +84,7 @@ import {
   within
 } from '../assets/assetFolders'
 import type { AssetFolder } from '../assets/assetFolders'
+import { folderPicker } from '../assets/folderPicker'
 import {
   addTag,
   allTagged,
@@ -95,6 +96,9 @@ import {
   tagsOf
 } from '../assets/assetTags'
 import { isStarred, toggleStar } from '../assets/assetFavorites'
+import { MAX_STARS, ratingOf, setRating } from '../assets/assetRating'
+import { ratingStyle } from '../assets/ratingStyle'
+import StarRating from '../assets/StarRating.vue'
 // Favorites in Assets (the star and its sidebar row) arrive with Milestone 3.
 import { can } from '../../milestones'
 import { GROUPS, groupAssets } from '../assets/assetGroups'
@@ -112,6 +116,7 @@ import { marNav } from '../shell/marShell'
 import { assetLink, dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
+import AssetFolderPicker from '../assets/AssetFolderPicker.vue'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, metaIn, noFilter, passes, tagsIn } from '../assets/assetFilters'
 import {
@@ -210,6 +215,15 @@ const treeSource = computed({
 watch(foldersOn, (on) => !on && (folder.value = ''))
 /** And only the starred ones (the sidebar's Favorites). */
 const favOnly = ref(false)
+// Rating › Five stars: the star a file is kept by becomes its rating,
+// so Favorites holds whatever has stars at all.
+const stars = computed(() => ratingStyle.id === 'stars')
+const kept = (id: string): boolean => (stars.value ? ratingOf(id) > 0 : isStarred(id))
+const minStars = ref('')
+const RATINGS = Array.from({ length: MAX_STARS }, (_, i) => ({
+  value: String(i + 1),
+  label: `${'★'.repeat(i + 1)}${i + 1 < MAX_STARS ? ' and up' : ''}`
+}))
 // In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
 const store = inGraph ? graphLibrary : assets
 
@@ -300,7 +314,8 @@ const scoped = computed(() => {
       passes(a, filter.value) &&
       (!label.value || labelOf(a.id) === label.value) &&
       (!folder.value || within(folder.value).has(folderOf(a.id) ?? '')) &&
-      (!favOnly.value || isStarred(a.id)) &&
+      (!favOnly.value || kept(a.id)) &&
+      (!minStars.value || ratingOf(a.id) >= Number(minStars.value)) &&
       (fixedProject ||
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
@@ -374,8 +389,10 @@ const scopeEmpty = computed(() => {
   if (favOnly.value)
     return {
       icon: Star,
-      title: 'No favorites yet',
-      text: 'Star an asset from its corner to keep it here.'
+      title: stars.value ? 'Nothing rated yet' : 'No favorites yet',
+      text: stars.value
+        ? 'Tap the star in an asset’s corner and pick how many.'
+        : 'Star an asset from its corner to keep it here.'
     }
   if (filter.value.source !== 'all')
     return {
@@ -394,6 +411,7 @@ function clear(): void {
   label.value = ''
   folder.value = ''
   favOnly.value = false
+  minStars.value = ''
   filter.value = noFilter()
   project.value = 'all'
   query.value = ''
@@ -403,8 +421,15 @@ function clear(): void {
 function copyAssets(ids: string[]): void {
   if (ids.length) toast('Copied to the clipboard')
 }
-/** Label keys on the selection: 1 to 6 the first six colors, 0 none. */
+/** Number keys on the selection. Labels take them as Finder does: 1 to
+ *  6 the first six colors, 0 none. With Five stars on, the stars take 1
+ *  to 5 instead — rating a run is what the keys are for — and 0 clears
+ *  them; the labels keep their own menu. */
 function labelKey(n: number, ids: string[]): void {
+  if (stars.value) {
+    if (n <= MAX_STARS) setRating(ids, n)
+    return
+  }
   if (n === 0) clearLabel(ids)
   else if (n <= 6 && LABELS[n - 1]) setLabel(ids, LABELS[n - 1]!.value)
 }
@@ -471,7 +496,7 @@ const SOURCES = computed(() =>
         : done.value.filter((a) => factsFor(a).imported === (value === 'imported')).length
   }))
 )
-const FAV_COUNT = computed(() => done.value.filter((a) => isStarred(a.id)).length)
+const FAV_COUNT = computed(() => done.value.filter((a) => kept(a.id)).length)
 /** TAGS and LABELS in the order picked from their ⋯: tags A to Z or by
  *  how many hold them, labels as made or around the color wheel. */
 const TAG_ROWS = computed(() => {
@@ -601,6 +626,25 @@ const FOLDER_ROWS = computed(() =>
       }
     })
 )
+/** UI Playground › Folder picker › Its own pill (Better Asset
+ *  Management): the folders as one flat list, each with its full path
+ *  and what it holds, for the picker beside the build. */
+const folderPill = computed(() => folderPicker.id === 'pill' && !inGraph && !fixedProject)
+const FOLDER_PATHS = computed(() =>
+  tree().map(({ folder: f }) => {
+    const inside = within(f.id)
+    const up = folderPath(f.id)
+    return {
+      id: f.id,
+      name: f.name,
+      // Where it sits: the indent says it while the list is the tree,
+      // and the path says it once a search has broken the tree up.
+      above: up.map((x) => x.name).join(' / '),
+      depth: up.length,
+      count: done.value.filter((a) => inside.has(folderOf(a.id) ?? '')).length
+    }
+  })
+)
 /** The tree folds: top-level folders show, a chevron opens one, and the
  *  way down to the folder you're in always stays open. */
 const unfolded = ref(new Set<string>())
@@ -616,7 +660,7 @@ watch(folder, (id) => id && folderPath(id).forEach((p) => unfold(p.id, true)), {
 /** The folders above this one, from the top. */
 function folderPath(id: string): AssetFolder[] {
   const out: AssetFolder[] = []
-  for (let f = folders.find((x) => x.id === id); f?.parent;) {
+  for (let f = folders.find((x) => x.id === id); f?.parent; ) {
     const up = folders.find((x) => x.id === f!.parent)
     if (!up) break
     out.unshift(up)
@@ -1352,13 +1396,20 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     </template>
 
     <template #toolbar>
-      <div class="mar-asset-tools">
+      <div :class="['mar-asset-tools', folderPill && 'has-folder-pill']">
         <AssetBuildPicker
           v-if="!fixedProject && !inGraph && !followsTitleBar && !treeOn"
           v-model="build"
         />
+        <!-- Folder picker › Its own pill: where you are, beside the build
+             it is read from, then what narrows it. -->
+        <AssetFolderPicker
+          v-if="folderPill && browsable && FOLDER_PATHS.length"
+          v-model="folder"
+          :folders="FOLDER_PATHS"
+        />
         <MarSeg
-          v-if="!fixedProject && browsable"
+          v-if="!fixedProject && browsable && !folderPill"
           v-model="kind"
           class="mar-asset-seg"
           :options="KINDS"
@@ -1366,6 +1417,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         />
         <div v-if="browsable" class="mar-asset-tools-end">
           <Select
+            v-if="!folderPill"
             v-model="kind"
             :class="['w-32', !fixedProject && 'mar-asset-kind']"
             :options="
@@ -1390,6 +1442,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           <AssetFilterMenu
             v-model="filter"
             v-model:build="build"
+            v-model:kind="kind"
+            v-model:rating="minStars"
+            v-model:fav="favOnly"
             :folder="treeOn ? '' : folder"
             field
             source
@@ -1398,8 +1453,11 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :types="MORE_TYPES"
             :tags="TAGS"
             :meta="metaIn(base)"
-            :folders="FOLDER_LIST"
+            :folders="folderPill ? undefined : FOLDER_LIST"
             :builds="treeOn ? assetBuildRows : undefined"
+            :kinds="folderPill ? KINDS : undefined"
+            :ratings="stars ? RATINGS : undefined"
+            :favorite="!stars && !inGraph"
             @update:folder="folder = $event"
           />
           <AssetSearch v-model:query="query" />
@@ -1473,10 +1531,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           >
             <section v-for="g in sections" :key="g.key" class="mar-asset-job">
               <p v-if="g.title" class="mar-asset-job-head">
-                <span class="mar-asset-job-name">{{ g.title }}</span><span
-                  class="mar-asset-job-n"
-                  >{{ g.items.length }}</span
-                >
+                <span class="mar-asset-job-name">{{ g.title }}</span
+                ><span class="mar-asset-job-n">{{ g.items.length }}</span>
               </p>
               <div
                 :class="
@@ -1534,8 +1590,13 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                     @cancel-rename="lib.renaming.value = ''"
                   >
                     <template v-if="!a.status" #tools>
+                      <StarRating
+                        v-if="can.explore && stars"
+                        :value="ratingOf(a.id)"
+                        @set="setRating([a.id], $event)"
+                      />
                       <button
-                        v-if="can.explore"
+                        v-else-if="can.explore"
                         type="button"
                         class="mar-star"
                         :class="isStarred(a.id) && 'is-on'"
@@ -1914,9 +1975,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
               :aria-pressed="filter.tags.includes(t.tag)"
               @click="toggleTag(t.tag)"
             >
-              <span class="mar-anav-name">{{ t.tag }}</span><span class="mar-anav-n">{{
-                t.count
-              }}</span>
+              <span class="mar-anav-name">{{ t.tag }}</span
+              ><span class="mar-anav-n">{{ t.count }}</span>
             </button>
             <span class="mar-anav-folder-tools">
               <MarItemMenu
@@ -2021,6 +2081,14 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   gap: 8px;
   container-type: inline-size;
 }
+/* Folder picker › Its own pill: a hairline between where you are and
+   what narrows it. */
+.mar-asset-tools-div {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+}
 .mar-asset-tools-end {
   display: flex;
   min-width: 0;
@@ -2032,6 +2100,24 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   display: none;
 }
 /* Narrower windows: the toolbar sheds words, never controls. */
+/* Folder picker › Its own pill: the build and the folder give a little
+   of their width before any name is cut. */
+@container (max-width: 1000px) {
+  .mar-asset-tools.has-folder-pill .mar-asset-folder {
+    max-width: 180px;
+  }
+  .has-folder-pill > :first-child {
+    max-width: 160px;
+  }
+}
+@container (max-width: 820px) {
+  .mar-asset-tools.has-folder-pill .mar-asset-folder {
+    max-width: 130px;
+  }
+  .has-folder-pill > :first-child {
+    max-width: 120px;
+  }
+}
 @container (max-width: 1000px) {
   :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .mar-pfind {
     width: 150px;

@@ -14,6 +14,7 @@ import {
   Palette,
   Puzzle,
   Search,
+  Star,
   Tag,
   Workflow,
   X
@@ -65,6 +66,9 @@ const {
   range = false,
   typesLabel = 'Media type',
   folders,
+  kinds,
+  ratings,
+  favorite = false,
   meta,
   builds
 } = defineProps<{
@@ -80,6 +84,15 @@ const {
   /** Desktop: the build's folders, in tree order (ComfyUI's tab keeps
    *  them in its sidebar). One folder at a time, its subfolders in it. */
   folders?: { id: string; name: string; depth: number }[]
+  /** Folder picker › Its own pill: the asset type moves in here, where
+   *  the rest of what narrows the wall already lives. None of them
+   *  keeps it in the toolbar's own tabs. */
+  kinds?: readonly { value: string; label: string }[]
+  /** Rating › Five stars: how many stars a file has to hold. Empty
+   *  keeps every file, rated or not. */
+  ratings?: readonly { value: string; label: string }[]
+  /** Desktop: Favorites, which ComfyUI's tab keeps in its sidebar. */
+  favorite?: boolean
   builds?: AssetBuildRow[]
 }>()
 const f = defineModel<AssetFilter>({ required: true })
@@ -87,9 +100,20 @@ const f = defineModel<AssetFilter>({ required: true })
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 const folder = defineModel<string>('folder', { default: '' })
 const build = defineModel<string>('build', { default: 'all' })
+const kind = defineModel<string>('kind', { default: 'all' })
+const rating = defineModel<string>('rating', { default: '' })
+const favOnly = defineModel<boolean>('fav', { default: false })
 const buildOn = computed(() => !!builds?.length && build.value !== 'all')
+// The folder counts as a filter only while it is picked in here: with
+// its own pill it reads as where you are, not as something switched on.
 const count = computed(
-  () => activeFilters(f.value) + (folder.value ? 1 : 0) + (buildOn.value ? 1 : 0)
+  () =>
+    activeFilters(f.value) +
+    (folders?.length && folder.value ? 1 : 0) +
+    (kinds?.length && kind.value !== 'all' ? 1 : 0) +
+    (ratings?.length && rating.value ? 1 : 0) +
+    (favorite && favOnly.value ? 1 : 0) +
+    (buildOn.value ? 1 : 0)
 )
 const BUILD_ALL: AssetBuildRow = {
   id: 'all',
@@ -177,6 +201,9 @@ const found = computed(() => ({
   dates: DATES.filter((d) => match(d.label)),
   tags: tags.filter(match),
   folders: (folders ?? []).filter((x) => match(x.name)),
+  kinds: (kinds ?? []).filter((x) => match(x.label)),
+  ratings: match('Rating') ? (ratings ?? []) : [],
+  favorite: favorite && match('Favorites'),
   labels: LABELS.filter((l) => match(l.label)),
   meta: META.map((m) => ({ ...m, values: metaOptions(m.key).filter(match) })).filter(
     (m) => m.values.length
@@ -226,6 +253,47 @@ const searching = computed(() => !!q.value.trim())
         <DropdownMenuSeparator class="afm-sep" />
 
         <template v-if="searching">
+          <template v-if="found.kinds.length">
+            <DropdownMenuLabel class="afm-label">Type</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="kind">
+              <DropdownMenuRadioItem
+                v-for="x in found.kinds"
+                :key="x.value"
+                :class="item"
+                :value="x.value"
+                @select.prevent="kind = x.value"
+              >
+                <span class="afm-grow">{{ x.label }}</span>
+                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </template>
+          <template v-if="found.favorite">
+            <DropdownMenuLabel class="afm-label">Attribute</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem
+              :class="item"
+              :model-value="favOnly"
+              @select.prevent="favOnly = !favOnly"
+            >
+              <Star :size="16" class="afm-icon" /><span class="afm-grow">Favorites</span>
+              <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+            </DropdownMenuCheckboxItem>
+          </template>
+          <template v-if="found.ratings.length">
+            <DropdownMenuLabel class="afm-label">Rating</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="rating">
+              <DropdownMenuRadioItem
+                v-for="x in found.ratings"
+                :key="x.value"
+                :class="item"
+                :value="x.value"
+                @select.prevent="rating = x.value"
+              >
+                <span class="afm-grow">{{ x.label }}</span>
+                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </template>
           <template v-if="found.sources.length">
             <DropdownMenuLabel class="afm-label">Source</DropdownMenuLabel>
             <DropdownMenuRadioGroup :model-value="f.source">
@@ -343,6 +411,9 @@ const searching = computed(() => !!q.value.trim())
           </template>
           <p
             v-if="
+              !found.kinds.length &&
+              !found.ratings.length &&
+              !found.favorite &&
               !found.sources.length &&
               !found.builds.length &&
               !found.types.length &&
@@ -360,6 +431,73 @@ const searching = computed(() => !!q.value.trim())
 
         <template v-else>
           <DropdownMenuLabel class="afm-label">Attribute</DropdownMenuLabel>
+          <!-- Folder picker › Its own pill: the toolbar says where you
+               are, and what narrows it starts here, with the type. -->
+          <DropdownMenuSub
+            v-if="kinds?.length"
+            :open="sub === 'kind'"
+            @update:open="only('kind', $event)"
+          >
+            <DropdownMenuSubTrigger :class="item">
+              <Layers :size="16" class="afm-icon" /><span class="afm-grow">Type</span
+              ><ChevronRight :size="16" class="afm-icon" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal :to="PORTAL_TO">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
+                <DropdownMenuRadioGroup :model-value="kind">
+                  <DropdownMenuRadioItem
+                    v-for="x in kinds"
+                    :key="x.value"
+                    :class="item"
+                    :value="x.value"
+                    @select.prevent="kind = x.value"
+                  >
+                    <span class="afm-grow">{{ x.label }}</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+          <DropdownMenuCheckboxItem
+            v-if="favorite"
+            :class="item"
+            :model-value="favOnly"
+            @select.prevent="favOnly = !favOnly"
+          >
+            <Star :size="16" class="afm-icon" /><span class="afm-grow">Favorites</span>
+            <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSub
+            v-if="ratings?.length"
+            :open="sub === 'rating'"
+            @update:open="only('rating', $event)"
+          >
+            <DropdownMenuSubTrigger :class="item">
+              <Star :size="16" class="afm-icon" /><span class="afm-grow">Rating</span
+              ><ChevronRight :size="16" class="afm-icon" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal :to="PORTAL_TO">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
+                <DropdownMenuRadioGroup :model-value="rating">
+                  <DropdownMenuRadioItem :class="item" value="" @select.prevent="rating = ''">
+                    <span class="afm-grow">Any rating</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem
+                    v-for="x in ratings"
+                    :key="x.value"
+                    :class="item"
+                    :value="x.value"
+                    @select.prevent="rating = x.value"
+                  >
+                    <span class="afm-grow">{{ x.label }}</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
           <DropdownMenuSub
             v-if="source"
             :open="sub === 'source'"

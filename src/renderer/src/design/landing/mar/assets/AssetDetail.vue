@@ -36,6 +36,9 @@ import AssetCover from './AssetCover.vue'
 import GenerationInfo from './GenerationInfo.vue'
 import { addTag, removeTag, tagsOf } from './assetTags'
 import { LABELS, labelColor, labelOf, setLabel } from './assetLabels'
+import { ratingOf, setRating } from './assetRating'
+import { ratingStyle } from './ratingStyle'
+import StarRating from './StarRating.vue'
 
 /**
  * One asset, large (Better Asset Management PRD). One view for both
@@ -663,6 +666,16 @@ onBeforeUnmount(() => {
                   <span v-for="c in chips" :key="c" class="mad-tag mad-model">{{ c }}</span>
                 </div>
               </div>
+              <button
+                v-if="full"
+                type="button"
+                class="mad-icon mad-head-x"
+                aria-label="Close"
+                title="Close"
+                @click="emit('close')"
+              >
+                <X :size="16" />
+              </button>
               <!-- More, at the name's right: everything past the actions below. -->
               <div ref="moreBox" class="mad-pick">
                 <button
@@ -781,6 +794,16 @@ onBeforeUnmount(() => {
                   <dd :title="v">{{ v }}</dd>
                 </div>
               </dl>
+            </section>
+
+            <section v-if="ratingStyle.id === 'stars'" class="mad-sec">
+              <h3 class="mad-label">Rating</h3>
+              <StarRating
+                open
+                class="mad-stars"
+                :value="ratingOf(asset.id)"
+                @set="setRating([asset.id], $event)"
+              />
             </section>
 
             <section class="mad-sec">
@@ -1498,6 +1521,11 @@ onBeforeUnmount(() => {
   font-weight: 600;
   line-height: var(--text-heading--line-height);
 }
+/* The details panel has room, so the five stars read a size up. */
+.mad-stars button svg {
+  width: 17px;
+  height: 17px;
+}
 .mad-sec {
   display: flex;
   min-width: 0;
@@ -1857,6 +1885,9 @@ onBeforeUnmount(() => {
   .mad:not(.is-tab):not(.is-full) {
     inset: 24px 64px;
   }
+  .mad.is-full:not(.is-tab) {
+    inset: 8px;
+  }
   :root .proto-ui.proto-ui.proto-ui .mad-x {
     top: 24px;
     right: 16px;
@@ -1868,6 +1899,9 @@ onBeforeUnmount(() => {
     inset: 60px 8px 8px;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 46vh);
+  }
+  .mad.is-full:not(.is-tab) {
+    inset: 8px;
   }
   .mad.is-tab {
     inset: 0;
