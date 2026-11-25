@@ -736,7 +736,7 @@ export const LOCAL_WORKFLOW_FOLDERS: LocalFolder[] = [
       {
         name: 'krea-street.json',
         size: '22 KB',
-        modified: '2 weeks ago',
+        modified: '3 days ago',
         kind: 'workflow',
         thumbId: 'image_krea2_turbo_t2i~krea-street'
       }

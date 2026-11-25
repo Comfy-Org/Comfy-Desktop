@@ -484,6 +484,14 @@
   flex: none;
   color: var(--tpl-ok);
 }
+.mar-tpl-fit[data-tpl-packs] {
+  align-items: flex-start;
+  margin-top: 8px;
+}
+.mar-tpl-fit[data-tpl-packs] > svg {
+  margin-top: 3px;
+  color: var(--tpl-ink);
+}
 /* The other builds: one row each, the pick filled (one choice marks its
    row), what blocks one in its own line, greyed. */
 /* Open in sits at the panel's foot, right over the button it sets. */
