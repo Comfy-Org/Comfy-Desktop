@@ -11,6 +11,7 @@ import { appRuns } from './appRuns'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
 import { __resetHomeTourForTest } from './home/useHomeTour'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 import type { AppCard, CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
@@ -1092,22 +1093,26 @@ describe('AppSidebar', () => {
       expect([live('new'), live('cloud'), live('old')]).toEqual([true, true, false])
     })
 
-    it('rings the icon with a spinner while a build starts, and turns it into the green dot once it runs', async () => {
+    it('keeps the icon and shows a trailing spinner with "Starting…" on a starting row, then the green dot once it runs', async () => {
       useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
       const wrapper = await mountSidebar('home', [OLD, NEW])
       const row = () => wrapper.get(`[data-testid="app-sidebar-build-${NEW.id}"]`)
-      const starting = () => row().find('[data-testid="app-sidebar-dot-starting"]')
+      const starting = () => row().find('[data-testid="app-sidebar-build-starting"]')
       const liveDot = () => row().find('[data-testid="app-sidebar-dot-live"]')
 
       expect(starting().exists()).toBe(true)
+      expect(starting().text()).toBe('Starting…')
+      expect(starting().classes()).toContain('text-foreground')
+      expect(starting().attributes('role')).toBe('status')
+      expect(starting().find('svg.animate-spin').classes()).toContain('motion-reduce:animate-none')
+      expect(row().element.lastElementChild).toBe(starting().element)
+      expect(row().findAll('svg').length).toBe(2)
+      expect(row().find('[data-testid="app-sidebar-build-installing"]').exists()).toBe(false)
       expect(liveDot().exists()).toBe(false)
-      expect(starting().classes()).toEqual(
-        expect.arrayContaining(['absolute', '-right-0.5', '-bottom-0.5', 'size-2', 'animate-spin'])
-      )
       expect(
         wrapper
           .get(`[data-testid="app-sidebar-build-${OLD.id}"]`)
-          .find('[data-testid="app-sidebar-dot-starting"]')
+          .find('[data-testid="app-sidebar-build-starting"]')
           .exists()
       ).toBe(false)
 
@@ -1121,6 +1126,44 @@ describe('AppSidebar', () => {
 
       expect(starting().exists()).toBe(false)
       expect(liveDot().exists()).toBe(true)
+    })
+
+    it('shows a build started from Desktop the same way, not as a big spinner in place of its icon', async () => {
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+      useProgressStore().operations.set(NEW.id, {
+        opKind: 'launch',
+        flatPercent: -1,
+        finished: false,
+        cancelRequested: false,
+        _globalFloor: 0
+      } as Operation)
+      await flushPromises()
+      const row = wrapper.get(`[data-testid="app-sidebar-build-${NEW.id}"]`)
+
+      expect(row.find('[data-testid="app-sidebar-build-starting"]').text()).toBe('Starting…')
+      expect(row.find('[data-testid="app-sidebar-build-installing"]').exists()).toBe(false)
+    })
+
+    it('turns the Builds icon into a spinner in the collapsed sidebar while a build starts', async () => {
+      window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+      const rail = () => wrapper.get('[data-testid="app-sidebar-chooser"]')
+
+      expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+      expect(rail().find('[data-testid="app-sidebar-rail-starting"]').exists()).toBe(true)
+      expect(rail().findAll('svg').length).toBe(1)
+
+      useSessionStore().launchingInstances.delete(NEW.id)
+      useSessionStore().runningInstances.set(NEW.id, {
+        installationId: NEW.id,
+        installationName: NEW.name,
+        mode: 'console'
+      })
+      await flushPromises()
+
+      expect(rail().find('[data-testid="app-sidebar-rail-starting"]').exists()).toBe(false)
+      expect(rail().findAll('svg').length).toBe(1)
     })
 
     it('marks a build that failed to start and says why on hover', async () => {
