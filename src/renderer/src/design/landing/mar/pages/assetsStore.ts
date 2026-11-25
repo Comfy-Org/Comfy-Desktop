@@ -25,6 +25,7 @@ export interface MarAsset {
   envId?: string
   status?: ItemStatus
   statusLabel?: string
+  noWorkflow?: boolean
 }
 
 // Runs in flight, like the queue's results in the product: they land

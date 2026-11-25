@@ -13,6 +13,7 @@ import { can, landingPage } from './milestones'
 import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
 import { marTabsOn, titleBarPicksBuild } from './mar/shell/titleTabs'
+import { copiedTabs, copyName } from './mar/apps/appToComfy'
 import { buildTrail } from './mar/build/buildNav'
 import { stateOf } from './mar/build/buildFacts'
 import { onCloud } from './mar/shell/surface'
@@ -162,7 +163,9 @@ function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'
         ? ++untitled > 1
           ? `Untitled workflow ${untitled}`
           : t.workflow
-        : t.workflow,
+        : copiedTabs[t.id]
+          ? copyName(t.workflow)
+          : t.workflow,
     build: t.title,
     kind: kindOf(t.instanceId),
     ...prepMarks(t.id)

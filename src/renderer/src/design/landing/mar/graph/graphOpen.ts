@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import type { NodeKind, Recipe } from './canvasData'
+import type { AppGraph } from '../apps/appToComfy'
 
 export interface AgentStart {
   ask: string
@@ -33,6 +34,7 @@ export const graphOpen = reactive({
   agentAsk: null as null | AgentStart,
   nodeSearch: false,
   autorun: null as null | GraphAutorun,
+  app: null as null | AppGraph,
   /** Assets › Open workflow: ComfyUI opens with this one on the canvas,
    *  on the workflow's output (MarGraph's landAsset). */
   select: null as null | {
