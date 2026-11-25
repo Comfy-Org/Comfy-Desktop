@@ -13,7 +13,8 @@ import {
   _getLaunchingInstances,
   _getStoppingInstallationIds,
   hasRunningSessionForInstallation,
-  stopRunning
+  stopRunning,
+  stopRunningOnPort
 } from './shared'
 import { dispatchSessionAction, _getActiveOperations } from './sessionActions'
 import { recordIpcInvocation } from '../e2eOverrides'
@@ -59,6 +60,7 @@ export function registerSessionHandlers(): void {
       `[launch] stopping what holds port ${port} at the user's request: ` +
         (holders.length > 0 ? `pids ${holders.join(', ')}` : 'no listener could be listed')
     )
+    await stopRunningOnPort(port)
     await killByPort(port)
     await new Promise((r) => setTimeout(r, 500))
     const remaining = await findPidsByPort(port)

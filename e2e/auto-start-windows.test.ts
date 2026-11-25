@@ -137,3 +137,22 @@ test('Auto start waits for onboarding to finish @macos @linux', async () => {
   expect(await getIpcInvocations(ctx.app, 'run-action')).toEqual([])
   await expect.poll(windowState).toEqual({ total: 1, visibleBuilds: 0, visibleDashboards: 1 })
 })
+
+test('Open ComfyUI pressed while Auto start is still starting the build opens its window once it is ready @macos @linux', async () => {
+  await writeFile(path.join(build.installPath!, 'startup-delay-ms'), '6000')
+  ctx = await launchApp(
+    {
+      settings: { firstUseCompleted: true, telemetryEnabled: false, autoLaunchOnStartup: BUILD_ID },
+      installations: [build]
+    },
+    { stayOnHome: true }
+  )
+  await expect.poll(() => ctx!.panel.textOf(CARD), { timeout: 30_000 }).toContain('Starting')
+  expect(await ctx.panel.click('[data-testid="home-open-comfyui"]')).toBe(true)
+
+  await expect
+    .poll(windowState, { timeout: 60_000 })
+    .toEqual({ total: 2, visibleBuilds: 1, visibleDashboards: 1 })
+  expect(await ctx.panel.textOf(CARD)).not.toContain("Didn't start")
+  expect(await getIpcInvocations(ctx.app, 'run-action')).toEqual([])
+})

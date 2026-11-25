@@ -168,7 +168,7 @@ describe('buildTitlePopupMenuItems', () => {
       'Desktop settings',
       'Reset zoom (144%)',
       'Close window',
-      'Quit Desktop'
+      'Quit Comfy Desktop'
     ])
   })
 
@@ -261,7 +261,7 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
 
-  it('places Performance Tests first and Quit Desktop last in a build window', () => {
+  it('places Performance Tests first and Quit Comfy Desktop last in a build window', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
     const ids = items.map((i) => i.id ?? null)
     expect(ids[0]).toBe('performance-test')
@@ -1031,6 +1031,14 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
 
   it('does not grant on an explicit opt-out', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
+  })
+})
+
+describe('buildGlobalSettingsSnapshot general rows', () => {
+  it('puts the start page beside the language, not in app behavior', () => {
+    const snapshot = _test_buildGlobalSettingsSnapshot()
+    expect(snapshot.languageFields.map((field) => field['id'])).toEqual(['language', 'startPage'])
+    expect(snapshot.generalFields.map((field) => field['id'])).not.toContain('startPage')
   })
 })
 

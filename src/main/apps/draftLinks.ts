@@ -72,7 +72,7 @@ export interface DraftLinkDeps {
   sendToPanel: (window: BrowserWindow, request: DraftAppRequest) => void
 }
 
-async function signedInAccount(): Promise<SignedInAccount | null> {
+export async function signedInAccount(): Promise<SignedInAccount | null> {
   const grant = await getCloudSession().getGrantAccessToken()
   if (!grant) return null
   const email = identityOf(grant)?.email

@@ -20,12 +20,19 @@ const mocks = vi.hoisted(() => ({
   session: null as unknown,
   openExternal: vi.fn((_url: string) => Promise.resolve()),
   attachDownloads: vi.fn(),
+  online: true,
+  answering: new Set<unknown>(),
+  startAnswering: vi.fn(),
+  stopAnswering: vi.fn(),
   capture: vi.fn(),
   pages: new Map<string, string>(),
   titles: new Map<string, string>(),
   drafts: new Map<string, { url: string; accepted: boolean; card?: { title: string } }>(),
   draftSession: null as unknown,
-  draftAccountAllowed: true
+  draftAccountAllowed: true,
+  hiddenPages: new Map<string, string>(),
+  hiddenTitles: new Map<string, string>(),
+  identity: null as string | null
 }))
 
 vi.mock('electron', () => ({
@@ -35,6 +42,7 @@ vi.mock('electron', () => ({
     }
   },
   app: { isPackaged: false },
+  net: { isOnline: () => mocks.online },
   session: { fromPartition: () => mocks.session },
   shell: { openExternal: mocks.openExternal }
 }))
@@ -75,7 +83,22 @@ vi.mock('./draftApps', () => ({
     }
   }
 }))
+vi.mock('./appsOffline', () => ({
+  startAnsweringFromKeptCopies: (appsSession: unknown, location: unknown) => {
+    mocks.answering.add(appsSession)
+    mocks.startAnswering(appsSession, location)
+  },
+  stopAnsweringFromKeptCopies: (appsSession: unknown) => {
+    mocks.answering.delete(appsSession)
+    mocks.stopAnswering(appsSession)
+  }
+}))
+vi.mock('./hiddenApps', () => ({
+  pageUrlForHiddenApp: (id: string) => mocks.hiddenPages.get(id) ?? null,
+  titleForHiddenApp: (id: string) => mocks.hiddenTitles.get(id) ?? null
+}))
 vi.mock('./draftLinks', () => ({
+  cloudIdentity: () => mocks.identity,
   isDraftStillAllowed: async (id: string) =>
     mocks.draftAccountAllowed && mocks.drafts.get(id)?.accepted === true
 }))
@@ -110,6 +133,7 @@ import {
   captureAppPage,
   closeAppPage,
   closeDraftPages,
+  closeStaffPagesOfOtherAccounts,
   hideAppPage,
   loadedAppPage,
   noteAppPageRunning,
@@ -130,6 +154,7 @@ const UPSCALE = 'upscale'
 const UPSCALE_URL = `${APPS_URL}#/upscale`
 const DRAFT = 'draft-pr683-depth-swap'
 const DRAFT_URL = `${APPS_URL}depth-swap/desktop.html`
+const STAFF_IDENTITY = '["staff-subject","ws-1"]'
 const WINDOW_KEY = 7
 const PANEL_FRAME = { x: 0, y: 41, width: 1200, height: 760 }
 const PLACEMENT = { x: 256, y: 8, width: 936, height: 744, cornerRadius: 14 }
@@ -286,9 +311,14 @@ beforeEach(() => {
   hostWindow.contentView.addChildView(panel)
   appsSession = fakeSession()
   mocks.session = appsSession
+  mocks.online = true
+  mocks.answering = new Set()
   mocks.drafts = new Map()
   mocks.draftSession = fakeSession()
   mocks.draftAccountAllowed = true
+  mocks.hiddenPages = new Map()
+  mocks.hiddenTitles = new Map()
+  mocks.identity = STAFF_IDENTITY
   mocks.createView = () => {
     const view = new FakeView()
     created.push(view)
@@ -421,6 +451,110 @@ describe('opening an app', () => {
   })
 })
 
+describe('a hidden app from the staff list', () => {
+  const WORLDS = 'explore-worlds'
+  const WORLDS_URL = `${APPS_URL}explore-worlds/desktop.html`
+
+  beforeEach(() => {
+    mocks.hiddenPages = new Map([[WORLDS, WORLDS_URL]])
+    mocks.hiddenTitles = new Map([[WORLDS, 'Explore Worlds']])
+  })
+
+  it('opens its page in the same apps session as a published app', async () => {
+    expect(await showAppPage(panelContents(), WORLDS, PLACEMENT)).toBe('loading')
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(WORLDS_URL)
+    expect(appsSession.check).not.toBeNull()
+    expect((mocks.draftSession as FakeSession).check).toBeNull()
+  })
+
+  it('opens nothing once the staff list no longer holds it', async () => {
+    mocks.hiddenPages.clear()
+
+    expect(await showAppPage(panelContents(), WORLDS, PLACEMENT)).toBe('failed')
+    expect(created).toHaveLength(0)
+  })
+
+  it('opens the published page when the app is on both lists', async () => {
+    mocks.hiddenPages.set(CUTOUT, `${APPS_URL}somewhere-else/desktop.html`)
+
+    await openCutout()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
+  })
+
+  it('names a running hidden app in the title bar by its title on the staff list', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+    noteAppPageRunning(hostedPage().webContents as unknown as WebContents, true)
+
+    expect(runningApps(WINDOW_KEY)).toEqual([{ id: WORLDS, title: 'Explore Worlds' }])
+  })
+
+  it('keeps naming an open hidden app by its title once the staff list forgets it', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+    noteAppPageRunning(hostedPage().webContents as unknown as WebContents, true)
+
+    mocks.hiddenTitles.clear()
+
+    expect(runningApps(WINDOW_KEY)).toEqual([{ id: WORLDS, title: 'Explore Worlds' }])
+  })
+
+  it.each([
+    ['signs out', null],
+    ['switches to another account', '["other-subject","ws-2"]']
+  ])('closes an open hidden app when the person %s', async (_change, identity) => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+
+    mocks.identity = identity
+    closeStaffPagesOfOtherAccounts()
+
+    expect(hostedPage().webContents.close).toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(false)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(1)
+    expect(liveAppsPages()).toEqual([])
+  })
+
+  it('closes a hidden app kept running in the background when the person signs out', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+    const worlds = hostedPage()
+    noteAppPageRunning(worlds.webContents as unknown as WebContents, true)
+    await openCutout()
+
+    mocks.identity = null
+    closeStaffPagesOfOtherAccounts()
+
+    expect(worlds.webContents.close).toHaveBeenCalled()
+    expect(runningApps(WINDOW_KEY)).toEqual([])
+    expect(created.at(-1)!.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('keeps an open hidden app when the same account signs in again', async () => {
+    await showAppPage(panelContents(), WORLDS, PLACEMENT)
+    finishLoading(WORLDS_URL)
+
+    closeStaffPagesOfOtherAccounts()
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+
+  it('leaves an open app from the Apps page open when the person signs out', async () => {
+    await openCutout()
+    finishLoading()
+
+    mocks.identity = null
+    closeStaffPagesOfOtherAccounts()
+
+    expect(hostedPage().webContents.close).not.toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(true)
+    expect(sentToPanel(APP_PAGE_CLOSED_CHANNEL)).toHaveLength(0)
+  })
+})
+
 describe('going back to all apps', () => {
   beforeEach(async () => {
     await openCutout()
@@ -484,6 +618,14 @@ describe('a draft app', () => {
     expect(mocks.draftSession).not.toBe(appsSession)
     expect((mocks.draftSession as FakeSession).check).not.toBeNull()
     expect(appsSession.check).toBeNull()
+  })
+
+  it('never answers from kept copies, even after a dropped connection', () => {
+    hostedPage().webContents.emit('did-fail-load', {}, -106, 'ERR_INTERNET_DISCONNECTED', '', true)
+
+    expect(mocks.startAnswering).not.toHaveBeenCalled()
+    expect(mocks.stopAnswering).not.toHaveBeenCalled()
+    expect(lastStatusSentToPanel()).toBe('failed')
   })
 
   function draftPage(): WebContents {
@@ -831,6 +973,74 @@ describe('leaving the apps site', () => {
   )
 })
 
+function dropConnection(): void {
+  hostedPage().webContents.emit('did-fail-load', {}, -106, 'ERR_INTERNET_DISCONNECTED', '', true)
+}
+
+describe('an app page with no internet', () => {
+  it('loads from the network while this computer is online, without kept copies in the way', async () => {
+    mocks.answering.add(appsSession)
+
+    await openCutout()
+
+    expect(mocks.stopAnswering).toHaveBeenCalledWith(appsSession)
+    expect(mocks.startAnswering).not.toHaveBeenCalled()
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
+  })
+
+  it('loads from the kept copies when this computer is offline', async () => {
+    mocks.online = false
+
+    await openCutout()
+
+    expect(mocks.startAnswering).toHaveBeenCalledWith(appsSession, {
+      url: 'https://comfy.org/apps/',
+      origin: 'https://comfy.org',
+      scopePath: '/apps/'
+    })
+    expect(mocks.stopAnswering).not.toHaveBeenCalled()
+  })
+
+  it('loads the page again from the kept copies when the network fails, without reporting it', async () => {
+    await openCutout()
+
+    dropConnection()
+
+    expect(mocks.startAnswering).toHaveBeenCalledTimes(1)
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
+    expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(CUTOUT_URL)
+    expect(lastStatusSentToPanel()).not.toBe('failed')
+    expect(mocks.capture).not.toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, expect.anything())
+
+    finishLoading()
+    expect(lastStatusSentToPanel()).toBe('ready')
+  })
+
+  it('still gets its own retry from the kept copies when another page already turned them on', async () => {
+    await openCutout()
+    mocks.answering.add(appsSession)
+
+    dropConnection()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
+    expect(lastStatusSentToPanel()).not.toBe('failed')
+  })
+
+  it("says the page didn't load when the kept copies fail too", async () => {
+    await openCutout()
+
+    dropConnection()
+    dropConnection()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
+    expect(lastStatusSentToPanel()).toBe('failed')
+    expect(mocks.capture).toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, {
+      app_id: CUTOUT,
+      reason: 'network'
+    })
+  })
+})
+
 describe('an app page that cannot load', () => {
   it('hides the page and tells the panel when the site answers 404', async () => {
     await openCutout()
@@ -846,7 +1056,8 @@ describe('an app page that cannot load', () => {
 
   it('reports a dropped connection, and loads the same app again when the person retries', async () => {
     await openCutout()
-    hostedPage().webContents.emit('did-fail-load', {}, -106, 'ERR_INTERNET_DISCONNECTED', '', true)
+    dropConnection()
+    dropConnection()
     expect(lastStatusSentToPanel()).toBe('failed')
     expect(mocks.capture).toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, {
       app_id: CUTOUT,
@@ -855,7 +1066,7 @@ describe('an app page that cannot load', () => {
 
     expect(await openCutout({ ...PLACEMENT, retry: true })).toBe('loading')
     expect(lastStatusSentToPanel()).toBe('loading')
-    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(3)
     expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(CUTOUT_URL)
 
     finishLoading()

@@ -7,10 +7,6 @@ export const runningAppIds = computed(
   () => new Set(appRuns.value.filter((run) => run.running).map((run) => run.appId))
 )
 
-export const finishedAppIds = computed(
-  () => new Set(appRuns.value.filter((run) => run.finished).map((run) => run.appId))
-)
-
 export function watchAppRuns(): () => void {
   let heardChange = false
   const stop = window.api.onAppRunsChanged((runs) => {

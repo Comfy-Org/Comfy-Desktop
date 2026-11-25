@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { userEvent } from 'vitest/browser'
+import { cdp, userEvent } from 'vitest/browser'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
-import { appRuns } from './appRuns'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
 import { __resetHomeTourForTest } from './home/useHomeTour'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 import type { AppCard, CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
@@ -35,31 +35,6 @@ const CHARACTER_SWAP: AppCard = {
   id: 'character-swap',
   title: 'Character Swap',
   description: 'Put another character in a video.',
-  covers: []
-}
-
-const PRODUCT_SWAP_STILL =
-  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-
-const PRODUCT_SWAP_MOVING =
-  'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
-
-const PRODUCT_SWAP: AppCard = {
-  id: 'product-swap',
-  title: 'Product Swap',
-  description: 'Swap the product in a photo.',
-  covers: [
-    {
-      url: PRODUCT_SWAP_MOVING,
-      stillUrl: PRODUCT_SWAP_STILL
-    }
-  ]
-}
-
-const SDR_TO_HDR: AppCard = {
-  id: 'sdr-to-hdr',
-  title: 'SDR to HDR',
-  description: 'Turn a video into HDR.',
   covers: []
 }
 
@@ -124,16 +99,21 @@ function tooltipOf(
   wrapper: Awaited<ReturnType<typeof mountSidebar>>,
   testId: string
 ): string | undefined {
-  return wrapper.get(`[data-testid="${testId}"]`).findComponent(Tooltip).props('text')
+  const inner = wrapper.get(`[data-testid="${testId}"]`).findComponent(Tooltip)
+  if (inner.exists()) return inner.props('text')
+  return wrapper
+    .findAllComponents(Tooltip)
+    .find((tooltip) => tooltip.find(`[data-testid="${testId}"]`).exists())
+    ?.props('text')
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Apps, Assets, then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Explore, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Explore',
       'Assets',
       'Builds',
       ''
@@ -146,19 +126,41 @@ describe('AppSidebar', () => {
   it('marks Apps as the current page and opens it from its row', async () => {
     const wrapper = await mountSidebar('apps')
 
-    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
-      'Home',
-      'Apps',
-      'Assets',
-      'Builds',
-      ''
-    ])
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Explore'])
 
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
     expect(wrapper.emitted('navigate')).toEqual([['apps']])
+  })
+
+  it('shows no Development row unless the staff list is shown', async () => {
+    const wrapper = await mountSidebar('home')
+
+    expect(wrapper.find('[data-testid="app-sidebar-staff-apps"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Development')
+  })
+
+  it('lists Development after Assets for staff, marks it current and opens it from its row', async () => {
+    const wrapper = mount(AppSidebar, { props: { activePage: 'staff-apps', showStaffApps: true } })
+    await flushPromises()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Explore',
+      'Assets',
+      'Development',
+      'Builds',
+      ''
+    ])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual([
+      'Development'
+    ])
+
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('staff-apps')
+    expect(wrapper.emitted('navigate')).toEqual([['staff-apps']])
   })
 
   it('names the app left open under Apps, and opens Apps on it', async () => {
@@ -169,7 +171,7 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Explore',
       'Character Swap',
       'Assets',
       'Builds',
@@ -184,6 +186,63 @@ describe('AppSidebar', () => {
     expect(wrapper.emitted('open-app')).toEqual([[CHARACTER_SWAP]])
     expect(wrapper.emitted('navigate')).toBeUndefined()
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
+  })
+
+  it('names an app left open from Development under Development, not Explore', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'home',
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Explore',
+      'Assets',
+      'Development',
+      'Character Swap',
+      'Builds',
+      ''
+    ])
+  })
+
+  it('leaves out the row for an app left open from Development while Development is shown', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'staff-apps',
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
+  it('marks Development on the rail while an app opened from Development is open', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'staff-apps',
+        makeRoom: true,
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.get('[data-testid="app-sidebar-staff-apps"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(
+      wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')
+    ).toBeUndefined()
   })
 
   it('leaves out the row for the app left open while Apps itself is shown', async () => {
@@ -210,299 +269,64 @@ describe('AppSidebar', () => {
   })
 
   it('shows no app row with no app left open', async () => {
-    const wrapper = await mountSidebar('home')
-
-    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+    const none = await mountSidebar('home')
+    expect(none.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
-  it('folds to the app rail while an app is open, with no toggle, and keeps the saved choice', async () => {
+  it('folds to the rail while an app is open, lets the toggle reopen it, and keeps the saved choice', async () => {
     const wrapper = await mountSidebar('apps')
     const sidebar = wrapper.get('[data-testid="app-sidebar"]')
     expect(sidebar.attributes('data-collapsed')).toBe('false')
 
     await wrapper.setProps({ makeRoom: true, appInProgress: CHARACTER_SWAP })
-    await flushPromises()
     expect(sidebar.attributes('data-collapsed')).toBe('true')
-    expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="app-sidebar-header"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    expect(sidebar.attributes('data-collapsed')).toBe('false')
 
     await wrapper.setProps({ makeRoom: false, appInProgress: null })
     expect(sidebar.attributes('data-collapsed')).toBe('false')
-    expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(true)
     expect(window.localStorage.getItem('comfy.desktop.sidebar.collapsed')).not.toBe('true')
+
+    await wrapper.setProps({ makeRoom: true, appInProgress: CHARACTER_SWAP })
+    expect(sidebar.attributes('data-collapsed')).toBe('true')
   })
 
-  describe('while an app is open', () => {
-    async function mountWithAppOpen(appInProgress: AppCard | null = SDR_TO_HDR) {
-      const wrapper = mount(AppSidebar, {
-        props: {
-          activePage: 'apps',
-          makeRoom: true,
-          appInProgress,
-          apps: [CHARACTER_SWAP, PRODUCT_SWAP, SDR_TO_HDR]
-        },
-        attachTo: document.body
-      })
-      await flushPromises()
-      return wrapper
+  it('keeps the Desktop menu on the rail while an app is open', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', makeRoom: true, appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.find('[data-testid="app-sidebar-header"]').exists()).toBe(true)
+    for (const page of ['home', 'apps', 'assets', 'chooser']) {
+      expect(wrapper.find(`nav [data-testid="app-sidebar-${page}"]`).exists()).toBe(true)
     }
+    expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="app-sidebar-app-character-swap"]').exists()).toBe(false)
+  })
 
-    function thumbnails(wrapper: Awaited<ReturnType<typeof mountWithAppOpen>>) {
-      return wrapper.findAll('[data-testid="app-sidebar-app-rail"] button')
-    }
-
-    it('shows only one picture per app in the list order, with nothing above them', async () => {
-      const wrapper = await mountWithAppOpen()
-
-      expect(wrapper.find('[data-testid="app-sidebar-all-apps"]').exists()).toBe(false)
-      expect(wrapper.get('[data-testid="app-sidebar"]').element.firstElementChild).toBe(
-        wrapper.get('[data-testid="app-sidebar-app-rail"]').element
-      )
-      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
-        'Character Swap',
-        'Product Swap',
-        'SDR to HDR'
-      ])
-      expect(
-        wrapper.get('[data-testid="app-sidebar-app-product-swap"] img').attributes('src')
-      ).toBe(PRODUCT_SWAP_STILL)
-      expect(wrapper.find('[data-testid="app-sidebar-home"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="app-sidebar-assets"]').exists()).toBe(false)
-      wrapper.unmount()
+  it('marks the sidebar as in use while the keyboard is in it, but not for a mouse click', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', makeRoom: true, appInProgress: CHARACTER_SWAP },
+      attachTo: document.body
     })
+    await flushPromises()
 
-    it('shows a spinner on each running app, the open one too, and says so to screen readers', async () => {
-      appRuns.value = [
-        { appId: 'sdr-to-hdr', running: true, finished: false },
-        { appId: 'product-swap', running: true, finished: false }
-      ]
-      const wrapper = await mountWithAppOpen()
+    await userEvent.click(wrapper.get('[data-testid="app-sidebar-home"]').element)
+    expect(sidebarFocused.value).toBe(false)
 
-      expect(wrapper.find('[data-testid="app-sidebar-app-running-sdr-to-hdr"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="app-sidebar-app-running-product-swap"]').exists()).toBe(
-        true
-      )
-      expect(wrapper.find('[data-testid="app-sidebar-app-running-character-swap"]').exists()).toBe(
-        false
-      )
-      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
-        'Character Swap',
-        'Product Swap, making something',
-        'SDR to HDR, making something'
-      ])
-      appRuns.value = []
-      wrapper.unmount()
-    })
+    await userEvent.keyboard('{Tab}')
+    expect(
+      wrapper.get('[data-testid="app-sidebar"]').element.contains(document.activeElement)
+    ).toBe(true)
+    expect(sidebarFocused.value).toBe(true)
 
-    it('puts a dot and a short bounce on an app whose run finished in the background', async () => {
-      appRuns.value = [{ appId: 'product-swap', running: false, finished: true }]
-      const wrapper = await mountWithAppOpen()
-      const finished = wrapper.get('[data-testid="app-sidebar-app-finished-product-swap"]')
-
-      expect(getComputedStyle(finished.element).animationName).toBe('rail-thumb-bounce')
-      expect(finished.find('span.rounded-full').exists()).toBe(true)
-      expect(
-        wrapper.get('[data-testid="app-sidebar-app-product-swap"]').attributes('aria-label')
-      ).toBe('Product Swap, ready')
-      expect(wrapper.find('[data-testid="app-sidebar-app-running-product-swap"]').exists()).toBe(
-        false
-      )
-
-      appRuns.value = []
-      await flushPromises()
-      expect(wrapper.find('[data-testid="app-sidebar-app-finished-product-swap"]').exists()).toBe(
-        false
-      )
-      wrapper.unmount()
-    })
-
-    it('leaves room above the first picture, so its dot and bounce are not cut off', async () => {
-      appRuns.value = [{ appId: 'character-swap', running: false, finished: true }]
-      const wrapper = await mountWithAppOpen()
-      const rail = wrapper.get('[data-testid="app-sidebar-app-rail"]').element
-      const first = wrapper.get('[data-testid="app-sidebar-app-finished-character-swap"]').element
-
-      const room = first.getBoundingClientRect().top - rail.getBoundingClientRect().top
-      expect(room).toBeGreaterThanOrEqual(6)
-      appRuns.value = []
-      wrapper.unmount()
-    })
-
-    it('marks only the open app as the current one and keeps it in its place', async () => {
-      const wrapper = await mountWithAppOpen(PRODUCT_SWAP)
-
-      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-current') ?? null)).toEqual([
-        null,
-        'page',
-        null
-      ])
-      wrapper.unmount()
-    })
-
-    it('waits for the list, so the open app never jumps to its place', async () => {
-      const wrapper = mount(AppSidebar, {
-        props: { activePage: 'apps', makeRoom: true, appInProgress: SDR_TO_HDR, apps: null }
-      })
-      await flushPromises()
-      expect(thumbnails(wrapper)).toEqual([])
-
-      await wrapper.setProps({ apps: [CHARACTER_SWAP, SDR_TO_HDR] })
-
-      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
-        'Character Swap',
-        'SDR to HDR'
-      ])
-    })
-
-    it('still shows the open app when the list could not be read', async () => {
-      const wrapper = mount(AppSidebar, {
-        props: { activePage: 'apps', makeRoom: true, appInProgress: SDR_TO_HDR, apps: [] }
-      })
-      await flushPromises()
-
-      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
-        'SDR to HDR'
-      ])
-    })
-
-    it('switches to another app in one click, and does nothing for the open one', async () => {
-      const wrapper = await mountWithAppOpen()
-
-      await wrapper.get('[data-testid="app-sidebar-app-sdr-to-hdr"]').trigger('click')
-      expect(wrapper.emitted('switch-app')).toBeUndefined()
-
-      await wrapper.get('[data-testid="app-sidebar-app-character-swap"]').trigger('click')
-      expect(wrapper.emitted('switch-app')).toEqual([[CHARACTER_SWAP]])
-      wrapper.unmount()
-    })
-
-    it('keeps Credits and the account at the bottom, and leaves Desktop Settings out', async () => {
-      refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
-      const wrapper = await mountWithAppOpen()
-
-      expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(false)
-      const rail = wrapper.get('[data-testid="app-sidebar-app-rail"]').element
-      const credits = wrapper.get('[data-testid="app-sidebar-credits"]').element
-      const account = wrapper.get('[data-testid="devplatform-account-signin"]').element
-      expect(rail.compareDocumentPosition(credits) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(
-        credits.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING
-      ).toBeTruthy()
-
-      await wrapper.setProps({ makeRoom: false })
-      expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(true)
-      wrapper.unmount()
-    })
-
-    it('opens the tooltip of every app at once, with no delay', async () => {
-      const wrapper = await mountWithAppOpen()
-
-      const delays = wrapper
-        .findAll('[data-testid="app-sidebar-app-rail"] li')
-        .map((row) => row.findComponent(Tooltip).props('delayMs'))
-      expect(delays).toEqual([0, 0, 0])
-      wrapper.unmount()
-    })
-
-    function preview(): HTMLElement | null {
-      return document.querySelector<HTMLElement>('[data-testid="app-sidebar-app-preview"]')
-    }
-
-    function previewSources(kind: 'still' | 'cover'): string[] {
-      return [...(preview()?.querySelectorAll(`img[data-kind="${kind}"]`) ?? [])].map(
-        (img) => img.getAttribute('src') ?? ''
-      )
-    }
-
-    it("previews the app's name and its covers with the cover player the gallery uses", async () => {
-      const wrapper = await mountWithAppOpen()
-
-      await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
-      await vi.waitFor(() => expect(previewSources('cover')).toEqual([PRODUCT_SWAP_MOVING]))
-
-      expect(preview()?.querySelector('[data-testid="cover-rotation"]')).not.toBeNull()
-      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Product Swap')
-      wrapper.unmount()
-    })
-
-    it('previews only the still when reduced motion is preferred', async () => {
-      vi.stubGlobal('matchMedia', (query: string) => ({
-        matches: query === '(prefers-reduced-motion: reduce)',
-        media: query,
-        addEventListener: () => {},
-        removeEventListener: () => {}
-      }))
-      const wrapper = await mountWithAppOpen()
-
-      await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
-      await vi.waitFor(() => expect(previewSources('still')).toEqual([PRODUCT_SWAP_STILL]))
-      await flushPromises()
-
-      expect(previewSources('cover')).toEqual([])
-      wrapper.unmount()
-    })
-
-    function tooltipTexts(): string[] {
-      return [...document.querySelectorAll('.tooltip-bubble')].map(
-        (bubble) => bubble.textContent ?? ''
-      )
-    }
-
-    it('opens the tooltip of a picture reached with the keyboard, and marks the sidebar as in use', async () => {
-      appPageShown.value = true
-      const wrapper = await mountWithAppOpen()
-      await userEvent.unhover(wrapper.get('[data-testid="app-sidebar"]').element)
-
-      await userEvent.keyboard('{Tab}')
-      const first = wrapper.get('[data-testid="app-sidebar-app-character-swap"]').element
-      expect(document.activeElement).toBe(first)
-      expect(sidebarFocused.value).toBe(true)
-      expect(tooltipTexts()).toEqual([])
-
-      appPageShown.value = false
-      await vi.waitFor(() => expect(tooltipTexts().join()).toContain('Character Swap'))
-
-      ;(document.activeElement as HTMLElement).blur()
-      await flushPromises()
-      expect(sidebarFocused.value).toBe(false)
-      wrapper.unmount()
-    })
-
-    it('does not mark the sidebar as in use for a mouse click, and lets go once an app is picked', async () => {
-      const wrapper = await mountWithAppOpen()
-
-      await userEvent.click(wrapper.get('[data-testid="app-sidebar-app-sdr-to-hdr"]').element)
-      expect(sidebarFocused.value).toBe(false)
-
-      await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
-      expect(document.activeElement).toBe(
-        wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element
-      )
-      expect(sidebarFocused.value).toBe(true)
-      await userEvent.keyboard('{Enter}')
-
-      expect(wrapper.emitted('switch-app')).toEqual([[PRODUCT_SWAP]])
-      expect(sidebarFocused.value).toBe(false)
-      wrapper.unmount()
-    })
-
-    it('scrolls the open app into view, and the next one it switches to', async () => {
-      const scrolled: Array<string | null> = []
-      vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
-        scrolled.push(this.querySelector('button')?.getAttribute('aria-label') ?? null)
-      })
-      const wrapper = await mountWithAppOpen(SDR_TO_HDR)
-      expect(scrolled.at(-1)).toBe('SDR to HDR')
-
-      await wrapper.setProps({ appInProgress: CHARACTER_SWAP })
-      await flushPromises()
-
-      expect(scrolled.at(-1)).toBe('Character Swap')
-      expect(Element.prototype.scrollIntoView).toHaveBeenLastCalledWith(
-        expect.objectContaining({ block: 'nearest' })
-      )
-      wrapper.unmount()
-    })
+    ;(document.activeElement as HTMLElement).blur()
+    await flushPromises()
+    expect(sidebarFocused.value).toBe(false)
+    wrapper.unmount()
   })
 
   it('marks only the current page', async () => {
@@ -547,7 +371,11 @@ describe('AppSidebar', () => {
     expect(settings.text()).toBe('Desktop settings')
     expect(settings.attributes('aria-haspopup')).toBe('dialog')
     expect(settings.element.closest('nav')).toBeNull()
-    expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
+    expect(
+      settings.element
+        .closest('.tooltip-wrap')
+        ?.nextElementSibling?.classList.contains('sidebar-account')
+    ).toBe(true)
 
     const events: TelemetryActionEventDetail[] = []
     const record: EventListener = (event) => {
@@ -736,8 +564,8 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
-    const apps = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
-    expect(apps.top - home.bottom).toBe(4)
+    const explore = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
+    expect(explore.top - home.bottom).toBe(4)
     wrapper.unmount()
   })
 
@@ -774,10 +602,34 @@ describe('AppSidebar', () => {
     for (const testId of ['app-sidebar-home', 'app-sidebar-settings']) {
       const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
       const trigger = wrapper
-        .get(`[data-testid="${testId}"] .tooltip-wrap`)
-        .element.getBoundingClientRect()
+        .get(`[data-testid="${testId}"]`)
+        .element.closest('.tooltip-wrap')!
+        .getBoundingClientRect()
       expect([trigger.width, trigger.height], testId).toEqual([row.width, row.height])
     }
+    wrapper.unmount()
+  })
+
+  it('shows the tooltip of a folded row when Tab moves onto it while an app is open', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', makeRoom: true, appInProgress: CHARACTER_SWAP },
+      attachTo: document.body
+    })
+    await flushPromises()
+    const shownTooltips = (): string[] =>
+      Array.from(document.querySelectorAll('[role="tooltip"]'), (el) => el.textContent ?? '')
+
+    wrapper.get<HTMLElement>('[data-testid="app-sidebar-toggle"]').element.focus()
+    const tooltipsOnTheWay: string[][] = []
+    for (const testId of ['app-sidebar-home', 'app-sidebar-apps']) {
+      await userEvent.keyboard('{Tab}')
+      await vi.waitFor(() =>
+        expect(document.activeElement).toBe(wrapper.get(`[data-testid="${testId}"]`).element)
+      )
+      await vi.waitFor(() => expect(shownTooltips()).not.toHaveLength(0))
+      tooltipsOnTheWay.push(shownTooltips())
+    }
+    expect(tooltipsOnTheWay).toEqual([['Home'], ['Explore']])
     wrapper.unmount()
   })
 
@@ -801,10 +653,9 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     wrapper
-      .get('[data-testid="app-sidebar-home"] .tooltip-wrap')
-      .element.dispatchEvent(
-        new PointerEvent('pointermove', { pointerType: 'mouse', bubbles: true })
-      )
+      .get('[data-testid="app-sidebar-home"]')
+      .element.closest('.tooltip-wrap')!
+      .dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', bubbles: true }))
     await vi.advanceTimersByTimeAsync(200)
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
@@ -822,7 +673,9 @@ describe('AppSidebar', () => {
 
     const credits = wrapper.get('[data-testid="app-sidebar-credits"]')
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
-    expect(settings.element.nextElementSibling?.contains(credits.element)).toBe(true)
+    expect(
+      settings.element.closest('.tooltip-wrap')?.nextElementSibling?.contains(credits.element)
+    ).toBe(true)
     expect(credits.element.parentElement?.nextElementSibling?.classList).toContain(
       'sidebar-account'
     )
@@ -1009,6 +862,123 @@ describe('AppSidebar', () => {
       expect([live('new'), live('cloud'), live('old')]).toEqual([true, true, false])
     })
 
+    it('marks a starting build with a pulsing amber dot the size and place of the green dot, which turns green once it runs', async () => {
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      useInstallationStore().installations = [OLD, NEW]
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      await flushPromises()
+      const row = () => wrapper.get(`[data-testid="app-sidebar-build-${NEW.id}"]`)
+      const startingDot = () => row().find('[data-testid="app-sidebar-dot-starting"]')
+      const liveDot = () => row().find('[data-testid="app-sidebar-dot-live"]')
+
+      expect(startingDot().exists()).toBe(true)
+      const startingElement = startingDot().element as HTMLElement
+      const startingBox = startingElement.getBoundingClientRect()
+      const startingStyle = getComputedStyle(startingElement)
+      const startingCutOut = startingStyle.boxShadow
+      expect(startingStyle.backgroundColor).toBe('rgb(245, 158, 11)')
+      expect(startingStyle.animationName).toBe('status-starting')
+      expect(startingStyle.animationDuration).toBe('1.2s')
+      expect(row().findAll('svg').length).toBe(1)
+      expect(row().find('.animate-spin').exists()).toBe(false)
+      expect(row().text()).toBe(`${NEW.name}· Starting…`)
+      expect(row().get('[role="status"]').classes()).toContain('sr-only')
+      expect(liveDot().exists()).toBe(false)
+      expect(
+        wrapper
+          .get(`[data-testid="app-sidebar-build-${OLD.id}"]`)
+          .find('[data-testid="app-sidebar-dot-starting"]')
+          .exists()
+      ).toBe(false)
+
+      await cdp().send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+      })
+      expect(getComputedStyle(startingElement).animationName).toBe('none')
+      expect(getComputedStyle(startingElement).opacity).toBe('1')
+      await cdp().send('Emulation.setEmulatedMedia', { features: [] })
+
+      useSessionStore().launchingInstances.delete(NEW.id)
+      useSessionStore().runningInstances.set(NEW.id, {
+        installationId: NEW.id,
+        installationName: NEW.name,
+        mode: 'console'
+      })
+      await flushPromises()
+
+      expect(startingDot().exists()).toBe(false)
+      expect(liveDot().exists()).toBe(true)
+      const liveBox = liveDot().element.getBoundingClientRect()
+      expect([startingBox.left, startingBox.top, startingBox.width, startingBox.height]).toEqual([
+        liveBox.left,
+        liveBox.top,
+        liveBox.width,
+        liveBox.height
+      ])
+      expect(getComputedStyle(liveDot().element).boxShadow).toBe(startingCutOut)
+      expect(getComputedStyle(liveDot().element).animationName).toBe('none')
+      expect(row().text()).toBe(NEW.name)
+      wrapper.unmount()
+    })
+
+    it('shows a build started from Desktop the same way, not as a big spinner in place of its icon', async () => {
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+      useProgressStore().operations.set(NEW.id, {
+        opKind: 'launch',
+        flatPercent: -1,
+        finished: false,
+        cancelRequested: false,
+        _globalFloor: 0
+      } as Operation)
+      await flushPromises()
+      const row = wrapper.get(`[data-testid="app-sidebar-build-${NEW.id}"]`)
+
+      expect(row.find('[data-testid="app-sidebar-dot-starting"]').exists()).toBe(true)
+      expect(row.find('[data-testid="app-sidebar-build-installing"]').exists()).toBe(false)
+      expect(row.findAll('svg').length).toBe(1)
+      expect(row.find('.animate-spin').exists()).toBe(false)
+    })
+
+    it('puts the same pulsing amber dot on the Builds icon in the collapsed sidebar while a build starts', async () => {
+      window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+      const rail = () => wrapper.get('[data-testid="app-sidebar-chooser"]')
+      const railDot = () => rail().find('[data-testid="app-sidebar-rail-starting"]')
+
+      expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+      expect(railDot().exists()).toBe(true)
+      expect(railDot().classes()).toEqual(
+        expect.arrayContaining([
+          'absolute',
+          '-right-0.5',
+          '-bottom-0.5',
+          'size-2',
+          'rounded-full',
+          'ring-2',
+          'bg-status-starting',
+          'animate-status-starting',
+          'motion-reduce:animate-none'
+        ])
+      )
+      expect(rail().findAll('svg').length).toBe(1)
+      expect(wrapper.find('.animate-spin').exists()).toBe(false)
+
+      useSessionStore().launchingInstances.delete(NEW.id)
+      useSessionStore().runningInstances.set(NEW.id, {
+        installationId: NEW.id,
+        installationName: NEW.name,
+        mode: 'console'
+      })
+      await flushPromises()
+
+      expect(railDot().exists()).toBe(false)
+      expect(rail().findAll('svg').length).toBe(1)
+    })
+
     it('marks a build that failed to start and says why on hover', async () => {
       useSessionStore().errorInstances.set(OLD.id, {
         installationName: OLD.name,
@@ -1189,6 +1159,21 @@ describe('AppSidebar', () => {
       expect(
         [...menu.querySelectorAll('[role="menuitem"]')].map((row) => row.textContent?.trim())
       ).toEqual(['Open in new window'])
+      expect(navigatePanel).not.toHaveBeenCalled()
+    })
+
+    it('offers no new window for Development', async () => {
+      useInstallationStore().installations = []
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home', showStaffApps: true },
+        attachTo: document.body
+      })
+      mounted.push(wrapper)
+      await flushPromises()
+
+      await rightClick(wrapper.get('[data-testid="app-sidebar-staff-apps"]').element)
+
+      expect(pageMenu()).toBeNull()
       expect(navigatePanel).not.toHaveBeenCalled()
     })
 

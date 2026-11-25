@@ -102,6 +102,33 @@ describe('buildSettingsSections', () => {
     expect(fields.map((f) => f.id)).not.toContain('managerSecurityLevel')
   })
 
+  it('offers the page Desktop opens on, Home until another page is picked', () => {
+    const field = (): unknown =>
+      buildSettingsSections()
+        .flatMap((s) => (s.fields as { id?: string }[] | undefined) ?? [])
+        .find((f) => f.id === 'startPage')
+
+    expect(field()).toEqual({
+      id: 'startPage',
+      label: 'Open Desktop on',
+      type: 'select',
+      value: 'home',
+      options: [
+        { value: 'home', label: 'Home' },
+        { value: 'chooser', label: 'Builds' },
+        { value: 'apps', label: 'Apps' },
+        { value: 'assets', label: 'Assets' }
+      ],
+      tooltip: 'The page a new Desktop window opens on.'
+    })
+
+    mockSettings.startPage = 'chooser'
+    expect(field()).toMatchObject({ value: 'chooser' })
+
+    mockSettings.startPage = 'library'
+    expect(field()).toMatchObject({ value: 'home' })
+  })
+
   it('offers a default-on preference for the multiple-build warning', () => {
     const fields = buildSettingsSections().flatMap(
       (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
@@ -125,14 +152,15 @@ describe('buildSettingsSections', () => {
     ).toBe(false)
   })
 
-  it('offers hardware acceleration under Advanced with a restart notice', () => {
+  it('offers hardware acceleration under Advanced with its restart notice in the tooltip only', () => {
     const sections = buildSettingsSections()
     const generalFields =
       (sections.find((section) => section.title === 'General')?.fields as
         { id?: string }[] | undefined) ?? []
     const advancedFields =
       (sections.find((section) => section.title === 'Advanced')?.fields as
-        { id?: string; value?: unknown; description?: string }[] | undefined) ?? []
+        { id?: string; value?: unknown; description?: string; tooltip?: string }[] | undefined) ??
+      []
 
     expect(generalFields.map((field) => field.id)).not.toContain('hardwareAcceleration')
     expect(advancedFields).toContainEqual(
@@ -141,11 +169,12 @@ describe('buildSettingsSections', () => {
         label: 'Use hardware acceleration',
         type: 'boolean',
         value: true,
-        description:
+        tooltip:
           'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
       })
     )
     expect(advancedFields.at(-1)?.id).toBe('hardwareAcceleration')
+    expect(advancedFields.at(-1)?.description).toBeUndefined()
 
     mockSettings.hardwareAcceleration = false
     const updatedFields = buildSettingsSections().find((section) => section.title === 'Advanced')

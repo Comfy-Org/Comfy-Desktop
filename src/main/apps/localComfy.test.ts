@@ -1489,6 +1489,25 @@ describe('the Auto start build, started when Desktop opens', () => {
     expect(getAllCrashes()).toEqual([])
   })
 
+  it('reports whether it is ready, so Home is told only about a build that came up', async () => {
+    startsWhenLaunched()
+    expect(await startWithDesktop()).toBe(true)
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+    expect(await startWithDesktop()).toBe(false)
+
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+    expect(await startWithDesktop()).toBe(false)
+
+    expect(
+      await local.startWithDesktop(
+        build({ sourceId: 'remote', installPath: '' }) as unknown as InstallationRecord
+      )
+    ).toBe(false)
+  })
+
   it('says nothing when its start was cancelled', async () => {
     mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
 
@@ -1496,6 +1515,45 @@ describe('the Auto start build, started when Desktop opens', () => {
 
     expect(mocks.broadcasts).toEqual([])
     expect(getAllCrashes()).toEqual([])
+  })
+
+  it('is not reported ready when it is a Legacy Desktop build, whose start never waits for ComfyUI to answer', async () => {
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      mocks.sessions.set(STUDIO, { port: 0 })
+      return { ok: true, mode: 'console' }
+    }
+
+    expect(await startWithDesktop()).toBe(false)
+    expect(launches).toHaveLength(1)
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
+  })
+
+  it('opens in a Desktop window only once its start is through, also when it restarts for new model folders after it came up', async () => {
+    let finishRestart: () => void = () => {}
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      running(STUDIO)
+      await new Promise<void>((resolve) => {
+        finishRestart = resolve
+      })
+      return { ok: true, mode: 'console', port: PORT }
+    }
+    const started = startWithDesktop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    let answer: boolean | undefined
+    void local.opensInDesktopWindow(STUDIO).then((opens) => {
+      answer = opens
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(answer).toBeUndefined()
+
+    finishRestart()
+    expect(await started).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(answer).toBe(true)
   })
 })
 
@@ -1707,6 +1765,43 @@ describe('run_finished, for an app run on this computer', () => {
 
     expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
     expect(comfy.calls(`/history/${RUN}`)).toEqual([])
+  })
+
+  it.each([
+    ['crashed', 'comfyui_crashed', STUDIO],
+    ['was stopped', 'comfyui_stopped', undefined],
+    ['was stopped as another build crashed', 'comfyui_stopped', LAB]
+  ])('tells the page why its run was lost when the ComfyUI %s', async (_case, reason, crashed) => {
+    await runFromApp()
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed', crashed)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sentToPage()).toEqual([{ type: 'run_failed', data: { prompt_id: RUN, reason } }])
+  })
+
+  it('tells the page that its run was stopped when the ComfyUI restarts', async () => {
+    await runFromApp()
+
+    sessionLifecycleEvents.emit('restarting', STUDIO)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sentToPage()).toEqual([
+      { type: 'run_failed', data: { prompt_id: RUN, reason: 'comfyui_stopped' } }
+    ])
+  })
+
+  it('tells the page that it does not know why, when the ComfyUI that runs lost the run', async () => {
+    comfy.historyEntry = null
+    await runFromApp()
+
+    mocks.socketOpened()
+    await vi.waitFor(() => expect(sentToPage()).toHaveLength(1))
+
+    expect(sentToPage()).toEqual([
+      { type: 'run_failed', data: { prompt_id: RUN, reason: 'unknown' } }
+    ])
   })
 
   it('reports a run ComfyUI no longer knows after the socket opens again as failed', async () => {

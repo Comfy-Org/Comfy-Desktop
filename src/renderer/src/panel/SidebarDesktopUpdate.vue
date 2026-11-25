@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CloudDownload, LoaderCircle, RefreshCw } from '@lucide/vue'
+import { CloudDownload, RefreshCw } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import type { AppUpdateState } from '../types/ipc'
@@ -32,10 +32,15 @@ onMounted(() => {
 
 onUnmounted(() => unsubscribe?.())
 
+const needsAction = computed(
+  () =>
+    state.value.kind === 'ready' || (state.value.kind === 'available' && !state.value.autoUpdate)
+)
+
 const label = computed(() => {
-  if (state.value.kind === 'ready') return t('titleBar.desktopUpdateReady')
-  if (state.value.kind === 'downloading') return t('titleBar.desktopUpdateDownloading')
-  return t('titleBar.desktopUpdateAvailable')
+  return state.value.kind === 'ready'
+    ? t('titleBar.desktopUpdateReady')
+    : t('titleBar.desktopUpdateAvailable')
 })
 
 const tooltip = computed(() =>
@@ -44,11 +49,7 @@ const tooltip = computed(() =>
     : label.value
 )
 
-const icon = computed(() => {
-  if (state.value.kind === 'ready') return RefreshCw
-  if (state.value.kind === 'downloading') return LoaderCircle
-  return CloudDownload
-})
+const icon = computed(() => (state.value.kind === 'ready' ? RefreshCw : CloudDownload))
 
 function reportActionFailure(err: unknown): void {
   console.error('SidebarDesktopUpdate: update action failed', err)
@@ -56,15 +57,14 @@ function reportActionFailure(err: unknown): void {
 
 function onClick(): void {
   const { kind, version } = state.value
-  if (kind === 'available') showAppUpdateDownloadPrompt(version).catch(reportActionFailure)
-  else if (kind === 'ready') showAppUpdateRestartPrompt(version).catch(reportActionFailure)
-  else if (kind === 'downloading') window.api.openGlobalSettings('updates')
+  if (kind === 'ready') showAppUpdateRestartPrompt(version).catch(reportActionFailure)
+  else showAppUpdateDownloadPrompt(version).catch(reportActionFailure)
 }
 </script>
 
 <template>
   <Button
-    v-if="state.kind"
+    v-if="needsAction"
     variant="textonly"
     size="unset"
     class="h-8 shrink-0 justify-start gap-2.5 rounded-lg text-[13px]/5 font-normal text-azure-600 hover:bg-secondary transition-[width,margin,padding,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
@@ -75,16 +75,7 @@ function onClick(): void {
     data-testid="app-sidebar-desktop-update"
     @click="onClick"
   >
-    <component
-      :is="icon"
-      :size="15"
-      class="shrink-0"
-      :class="
-        state.kind === 'downloading' &&
-        'animate-spin [animation-duration:900ms] motion-reduce:animate-none'
-      "
-      aria-hidden="true"
-    />
+    <component :is="icon" :size="15" class="shrink-0" aria-hidden="true" />
     <Transition
       enter-active-class="transition-opacity duration-180 delay-30 ease-out"
       enter-from-class="opacity-0"

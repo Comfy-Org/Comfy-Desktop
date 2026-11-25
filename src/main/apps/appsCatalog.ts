@@ -1,4 +1,4 @@
-import { app as electronApp } from 'electron'
+import { app as electronApp, net, session } from 'electron'
 import path from 'path'
 
 import { stillsOf } from '../../shared/appStills'
@@ -8,6 +8,7 @@ import type { AppBadge, AppBadgeStyle, AppBadgeWords, AppCard, AppCover } from '
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
+import { inTurns, readStill, stillDataUrl } from './stillPictures'
 
 const LIST_FILE = 'apps.json'
 const FETCH_TIMEOUT_MS = 8000
@@ -15,6 +16,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000
 const EMPTY_LIST_TTL_MS = 30 * 1000
 const RETRY_DELAYS_MS = [1000, 3000]
 const SAVED_LIST_FILE = 'apps-catalog.json'
+const SAVED_STILL_TIMEOUT_MS = 2000
+const SAVED_STILLS_BUDGET_MS = 5000
+const KEEP_STILL_TIMEOUT_MS = 60_000
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
 const BADGE_STYLES: readonly AppBadgeStyle[] = ['crown', 'chip', 'label']
@@ -176,6 +180,7 @@ interface CacheEntry {
   listUrl: string
   expiresAt: number
   apps: ListedApp[]
+  offline: boolean
 }
 
 interface SavedList {
@@ -213,6 +218,60 @@ async function savedAppsFor(listUrl: string, location: AppsLocation): Promise<Li
   return apps.length > 0 ? apps : null
 }
 
+export async function savedListBody(listUrl: string): Promise<string | null> {
+  savedList ??= readSavedListFile()
+  const saved = await savedList
+  return saved?.listUrl === listUrl ? JSON.stringify(saved.apps) : null
+}
+
+function firstStillOf(app: ListedApp): string | null {
+  return stillsOf(app.card)[0] ?? null
+}
+
+async function withDeadline<R>(ms: number, work: (signal: AbortSignal) => Promise<R>): Promise<R> {
+  const controller = new AbortController()
+  const timer = setTimeout(
+    () => controller.abort(new DOMException('The still took too long', 'TimeoutError')),
+    ms
+  )
+  try {
+    return await work(controller.signal)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function savedStill(url: string, budget: AbortSignal): Promise<string | null> {
+  return withDeadline(SAVED_STILL_TIMEOUT_MS, async (signal) =>
+    stillDataUrl(
+      await session.defaultSession.fetch(url, {
+        cache: 'force-cache',
+        signal: AbortSignal.any([signal, budget])
+      })
+    )
+  ).catch(() => null)
+}
+
+function withSavedStills(apps: ListedApp[]): Promise<ListedApp[]> {
+  return withDeadline(SAVED_STILLS_BUDGET_MS, (budget) =>
+    inTurns(apps, async (app) => {
+      const first = budget.aborted ? null : firstStillOf(app)
+      const still = first ? await savedStill(first, budget) : null
+      const covers = still ? [{ url: still, stillUrl: still }] : []
+      return { ...app, card: { ...app.card, covers } }
+    })
+  )
+}
+
+function keepStills(apps: ListedApp[]): void {
+  const urls = apps.flatMap((app) => firstStillOf(app) ?? [])
+  void inTurns(urls, (url) =>
+    withDeadline(KEEP_STILL_TIMEOUT_MS, async (signal) => {
+      await readStill(await session.defaultSession.fetch(url, { signal }))
+    }).catch(() => {})
+  )
+}
+
 async function saveList(listUrl: string, apps: unknown[]): Promise<void> {
   savedList = Promise.resolve({ listUrl, apps })
   try {
@@ -236,12 +295,14 @@ function wait(ms: number): Promise<void> {
 async function fetchApps(listUrl: string, location: AppsLocation): Promise<ListedApp[]> {
   let failure: unknown
   for (const delay of [0, ...RETRY_DELAYS_MS]) {
+    if (delay > 0 && !net.isOnline()) break
     if (delay > 0) await wait(delay)
     try {
       const raw = await fetchList(listUrl)
       const apps = parseAppsList(raw, location)
       if (apps.length > 0) {
         await saveList(listUrl, raw as unknown[])
+        keepStills(apps)
         return apps
       }
       if (!(await hasGoodList(listUrl, location))) return apps
@@ -263,15 +324,17 @@ function loadApps(): Promise<ListedApp[]> {
   const request = fetchApps(listUrl, location)
     .then((apps) => {
       const ttl = apps.length > 0 ? CACHE_TTL_MS : EMPTY_LIST_TTL_MS
-      cache = { listUrl, expiresAt: Date.now() + ttl, apps }
+      cache = { listUrl, expiresAt: Date.now() + ttl, apps, offline: false }
       return apps
     })
     .catch(async (err: unknown) => {
-      if (cache?.listUrl === listUrl) return cache.apps
-      const saved = await savedAppsFor(listUrl, location)
+      const kept = cache?.listUrl === listUrl ? cache : null
+      if (kept?.offline) return kept.apps
+      const saved = (await savedAppsFor(listUrl, location)) ?? kept?.apps
       if (!saved) throw err
-      cache = { listUrl, expiresAt: 0, apps: saved }
-      return saved
+      const offline = await withSavedStills(saved)
+      cache = { listUrl, expiresAt: 0, apps: offline, offline: true }
+      return offline
     })
     .finally(() => {
       if (inFlight?.request === request) inFlight = null

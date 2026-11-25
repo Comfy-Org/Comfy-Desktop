@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import zh from '@locales/zh.json'
+import { resetAppLocale, switchAppLocaleToChinese } from '../../lib/switchAppLocale'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { computed, ref, nextTick } from 'vue'
 
@@ -1159,6 +1161,61 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
+  describe('Overview tab when an update is available', () => {
+    const UPDATE_INSTALL = {
+      ...SAMPLE_INSTALL,
+      status: 'update-available',
+      statusTag: { style: 'update', label: 'Update' }
+    } as unknown as Installation
+    let host: HTMLElement
+    const mounted: VueWrapper[] = []
+
+    beforeEach(() => {
+      host = document.createElement('div')
+      host.style.width = '1200px'
+      document.body.append(host)
+    })
+
+    afterEach(() => {
+      mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+      host.remove()
+    })
+
+    async function mountOn(installation: Installation): Promise<VueWrapper> {
+      const wrapper = mount(ComfyUISettingsContent, {
+        props: { installation, initialTab: 'update', activeOperation: null },
+        global: { plugins: [getActivePinia() ?? createPinia()] },
+        attachTo: host
+      }) as VueWrapper
+      mounted.push(wrapper)
+      await flushPromises()
+      return wrapper
+    }
+
+    function tabEdges(wrapper: VueWrapper): string[] {
+      return wrapper.findAll<HTMLElement>('.settings-v2-tab').map(({ element }) => {
+        const rect = element.getBoundingClientRect()
+        return `${element.dataset.testid}:${rect.left}-${rect.right}`
+      })
+    }
+
+    it('shows only the label on the Overview tab, with no update dot', async () => {
+      const wrapper = await mountOn(UPDATE_INSTALL)
+      const overview = wrapper.get(`[data-testid="${TID.settingsTab('update')}"]`)
+      expect(overview.findAll('[aria-hidden="true"]')).toHaveLength(0)
+      expect(overview.element.children).toHaveLength(1)
+      expect(overview.text()).toBe('Overview')
+    })
+
+    it('keeps every tab in the same place whether or not an update is available', async () => {
+      const without = tabEdges(await mountOn(SAMPLE_INSTALL))
+      mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+      const withUpdate = tabEdges(await mountOn(UPDATE_INSTALL))
+      expect(withUpdate.length).toBeGreaterThan(1)
+      expect(withUpdate).toEqual(without)
+    })
+  })
+
   describe('Startup Args stacked layout', () => {
     let priorSections: unknown[]
     let target: HTMLElement
@@ -1296,6 +1353,24 @@ describe('ComfyUISettingsContent', () => {
       expect(wrapper.find('[data-testid="build-overview"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-section-list-stub"]').exists()).toBe(true)
       expect(wrapper.findComponent({ name: 'StatusFactPanel' }).exists()).toBe(true)
+    })
+  })
+
+  describe('tab language', () => {
+    afterEach(resetAppLocale)
+
+    it('renames the tabs when the app language changes while the page is open', async () => {
+      const w = await mountContent()
+      const overviewTab = () => w.get(`[data-testid="${TID.settingsTab('update')}"]`)
+      expect(overviewTab().text()).toBe('Overview')
+
+      switchAppLocaleToChinese()
+      await nextTick()
+
+      expect(overviewTab().text()).toBe(zh.comfyUISettings.tabOverview)
+      expect(w.get(`[data-testid="${TID.settingsTab('snapshots')}"]`).text()).toBe(
+        zh.comfyUISettings.tabSnapshots
+      )
     })
   })
 

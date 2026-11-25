@@ -261,36 +261,43 @@ interface TabDef {
   tooltip?: string
 }
 
-const ALL_TABS: TabDef[] = [
+interface TabSpec {
+  key: ComfyUISettingsTab
+  sectionTab: SectionTab
+  labelKey: string
+  tooltipKey: string
+}
+
+const ALL_TABS: TabSpec[] = [
   {
     key: 'update',
     sectionTab: 'update',
-    label: t('comfyUISettings.tabOverview'),
-    tooltip: t('tooltips.tabOverview')
+    labelKey: 'comfyUISettings.tabOverview',
+    tooltipKey: 'tooltips.tabOverview'
   },
   {
     key: 'storage',
     sectionTab: 'storage',
-    label: t('comfyUISettings.tabFolders'),
-    tooltip: t('tooltips.tabFolders')
+    labelKey: 'comfyUISettings.tabFolders',
+    tooltipKey: 'tooltips.tabFolders'
   },
   {
     key: 'config',
     sectionTab: 'settings',
-    label: t('comfyUISettings.tabConfig'),
-    tooltip: t('tooltips.tabConfig')
+    labelKey: 'comfyUISettings.tabConfig',
+    tooltipKey: 'tooltips.tabConfig'
   },
   {
     key: 'snapshots',
     sectionTab: 'snapshots',
-    label: t('comfyUISettings.tabSnapshots'),
-    tooltip: t('tooltips.snapshots')
+    labelKey: 'comfyUISettings.tabSnapshots',
+    tooltipKey: 'tooltips.snapshots'
   },
   {
     key: 'console',
     sectionTab: 'console',
-    label: t('comfyUISettings.tabTerminal'),
-    tooltip: t('tooltips.console')
+    labelKey: 'comfyUISettings.tabTerminal',
+    tooltipKey: 'tooltips.console'
   }
 ]
 
@@ -302,18 +309,23 @@ const showConsoleTab = computed(
 
 const isCloud = computed(() => installation.value?.sourceCategory === 'cloud')
 
-function tabHasContent(tab: TabDef): boolean {
+function tabHasContent(tab: TabSpec): boolean {
   if (tab.key === 'console') return showConsoleTab.value
   if (tab.key === 'update' && statusSections.value.length > 0) return true
   return sectionsForTab(tab.sectionTab).value.length > 0
 }
 
+function tabLabelKey(tab: TabSpec): string {
+  return isCloud.value && tab.key === 'config' ? 'comfyUISettings.tabCloudStorage' : tab.labelKey
+}
+
 const tabs = computed<TabDef[]>(() =>
-  ALL_TABS.filter(tabHasContent).map((tab) =>
-    isCloud.value && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabCloudStorage') }
-      : tab
-  )
+  ALL_TABS.filter(tabHasContent).map((tab) => ({
+    key: tab.key,
+    sectionTab: tab.sectionTab,
+    label: t(tabLabelKey(tab)),
+    tooltip: t(tab.tooltipKey)
+  }))
 )
 
 const statusSections = computed(() => sectionsForTab('status').value)
@@ -333,11 +345,6 @@ const diskFree = computed(() =>
 const isStartupArgsPage = computed(
   () => isPage.value && activeTab.value === 'config' && !isCloud.value
 )
-
-const showUpdateBadge = computed(() => {
-  const inst = installation.value
-  return inst?.statusTag?.style === 'update' || inst?.status === 'update-available'
-})
 
 function availableTab(wanted: ComfyUISettingsTab): ComfyUISettingsTab {
   const list = tabs.value
@@ -397,7 +404,6 @@ watch(
   },
   { flush: 'post' }
 )
-watch(() => showUpdateBadge.value, measureTabStrip, { flush: 'post' })
 function onTabValueChange(value: string | number): void {
   const tab = tabs.value.find((item) => item.key === value)
   if (tab) selectTab(tab.key)
@@ -997,7 +1003,7 @@ defineExpose({
                 :value="tab.key"
                 variant="panel"
                 :disabled="opInflight && activeTab !== tab.key"
-                class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
+                class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span]:min-w-0 [&>span]:truncate"
                 :class="[
                   {
                     'is-active': activeTab === tab.key,
@@ -1008,21 +1014,6 @@ defineExpose({
                 :data-testid="TID.settingsTab(tab.key)"
                 @click="selectTab(tab.key)"
               >
-                <span
-                  v-if="tab.key === 'update' && showUpdateBadge"
-                  class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
-                >
-                  <span
-                    v-if="tab.key === 'update' && showUpdateBadge"
-                    :class="[
-                      activeTab === tab.key
-                        ? 'border-neutral-700'
-                        : 'border-[var(--modal-surface-bg)]'
-                    ]"
-                    class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
-                    aria-hidden="true"
-                  ></span>
-                </span>
                 <span>{{ tab.label }}</span>
               </TabsTrigger>
             </Tooltip>

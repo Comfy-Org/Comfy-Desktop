@@ -263,7 +263,7 @@ export function useModal() {
       state.title = opts.title
       state.message = opts.message
       state.options = opts.options.map((o) => ({ ...o }))
-      state.confirmLabel = opts.confirmLabel ?? 'Confirm'
+      state.confirmLabel = opts.confirmLabel ?? i18n.global.t('modal.confirm')
       state.confirmStyle = opts.confirmStyle ?? 'primary'
       state.resolve = resolve as (value: unknown) => void
     })
@@ -286,7 +286,7 @@ export function useModal() {
       state.message = opts.message
       state.placeholder = opts.placeholder ?? ''
       state.defaultValue = opts.defaultValue ?? ''
-      state.confirmLabel = opts.confirmLabel ?? 'OK'
+      state.confirmLabel = opts.confirmLabel ?? i18n.global.t('modal.ok')
       state.required = opts.required ?? false
       state.messageDetails = (opts.messageDetails ?? []).map((g) => ({ ...g, items: [...g.items] }))
       state.resolve = resolve as (value: unknown) => void
@@ -306,7 +306,7 @@ export function useModal() {
       state.title = opts.title
       state.message = opts.message ?? ''
       state.items = opts.items
-      state.confirmLabel = opts.confirmLabel ?? 'OK'
+      state.confirmLabel = opts.confirmLabel ?? i18n.global.t('modal.ok')
       state.resolve = resolve as (value: unknown) => void
     })
   }
