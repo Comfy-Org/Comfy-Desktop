@@ -257,9 +257,9 @@ function withSavedStills(apps: ListedApp[]): Promise<ListedApp[]> {
 function keepStills(apps: ListedApp[]): void {
   const urls = apps.flatMap((app) => firstStillOf(app) ?? [])
   void inTurns(urls, (url) =>
-    withDeadline(KEEP_STILL_TIMEOUT_MS, async (signal) =>
-      readStill(await session.defaultSession.fetch(url, { signal }))
-    ).catch(() => null)
+    withDeadline(KEEP_STILL_TIMEOUT_MS, async (signal) => {
+      await readStill(await session.defaultSession.fetch(url, { signal }))
+    }).catch(() => {})
   )
 }
 

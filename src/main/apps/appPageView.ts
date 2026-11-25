@@ -25,11 +25,7 @@ import { COMFY_BG } from '../lib/theme'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { currentAppsLocation } from './appsConfig'
-import {
-  answersFromKeptCopies,
-  startAnsweringFromKeptCopies,
-  stopAnsweringFromKeptCopies
-} from './appsOffline'
+import { startAnsweringFromKeptCopies, stopAnsweringFromKeptCopies } from './appsOffline'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
 import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
@@ -73,6 +69,7 @@ interface HostedPage {
   appId: string | null
   loaded: LoadedAppPage | null
   loadStarted: boolean
+  retriedFromKeptCopies: boolean
   loadingUrl: string | null
   startUrl: string | null
   routeBase: string | null
@@ -332,9 +329,10 @@ function choosePageSource(hosted: HostedPage): void {
 }
 
 function retriedFromKeptCopies(hosted: HostedPage, failedUrl: string): boolean {
-  if (showsDraftSession(hosted) || answersFromKeptCopies(hosted.session)) return false
+  if (showsDraftSession(hosted) || hosted.retriedFromKeptCopies) return false
   const url = failedUrl || hosted.loadingUrl
   if (!url) return false
+  hosted.retriedFromKeptCopies = true
   startAnsweringFromKeptCopies(hosted.session, currentAppsLocation())
   void hosted.view.webContents.loadURL(url).catch(() => {})
   return true
@@ -342,6 +340,7 @@ function retriedFromKeptCopies(hosted: HostedPage, failedUrl: string): boolean {
 
 function load(windowKey: number, hosted: HostedPage, url: string): void {
   choosePageSource(hosted)
+  hosted.retriedFromKeptCopies = false
   hosted.loaded = null
   hosted.loadStarted = true
   hosted.loadingUrl = url
@@ -486,6 +485,7 @@ function createHostedPage(
     appId: null,
     loaded: null,
     loadStarted: false,
+    retriedFromKeptCopies: false,
     loadingUrl: null,
     startUrl: null,
     routeBase: null,

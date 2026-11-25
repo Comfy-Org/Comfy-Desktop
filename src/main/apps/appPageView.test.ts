@@ -84,7 +84,6 @@ vi.mock('./draftApps', () => ({
   }
 }))
 vi.mock('./appsOffline', () => ({
-  answersFromKeptCopies: (appsSession: unknown) => mocks.answering.has(appsSession),
   startAnsweringFromKeptCopies: (appsSession: unknown, location: unknown) => {
     mocks.answering.add(appsSession)
     mocks.startAnswering(appsSession, location)
@@ -1015,6 +1014,16 @@ describe('an app page with no internet', () => {
 
     finishLoading()
     expect(lastStatusSentToPanel()).toBe('ready')
+  })
+
+  it('still gets its own retry from the kept copies when another page already turned them on', async () => {
+    await openCutout()
+    mocks.answering.add(appsSession)
+
+    dropConnection()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
+    expect(lastStatusSentToPanel()).not.toBe('failed')
   })
 
   it("says the page didn't load when the kept copies fail too", async () => {
