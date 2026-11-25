@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ArrowRight, Plus, Search, X } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+import { ArrowRight, Plus, X } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import CategoryChip from '../../CategoryChip.vue'
 import { allWorkflows } from '../../../gallery'
@@ -21,6 +21,8 @@ import {
   useEscapeCloses
 } from './lookKitB'
 import ResultsB from './ResultsB.vue'
+import CreateComposer from './CreateComposer.vue'
+import { createInput } from '../createInput'
 
 const FEATURE_ID = 'video_ltx2_3_i2v'
 const feature = starterById(FEATURE_ID, 'Image to video', 'dove')!
@@ -70,14 +72,11 @@ const COLLECTIONS: { id: string; title: string; dek: string; starters: Starter[]
 ]
 
 const query = ref('')
-const field = ref<HTMLInputElement>()
+const composer = ref<InstanceType<typeof CreateComposer>>()
+const navigated = ref(false)
+watch(query, () => (navigated.value = false))
 const results = ref<InstanceType<typeof ResultsB>>()
 const recents = computed(() => [...allWorkflows.value].sort((a, b) => a.age - b.age).slice(0, 6))
-const today = new Date().toLocaleDateString('en-GB', {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long'
-})
 const creator = creatorOf(FEATURE_ID)
 const featureReady = computed(() => readiness(feature.template))
 
@@ -88,52 +87,41 @@ function key(e: KeyboardEvent): void {
     else closeCreate()
     return
   }
-  if (query.value.trim()) results.value?.key(e)
+  if (!query.value.trim()) return
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') navigated.value = true
+  results.value?.key(e)
 }
 
-useEscapeCloses(() => field.value)
+useEscapeCloses(() => composer.value?.field)
 </script>
 
 <template>
   <section class="v08 relative min-h-full px-10 pb-24" aria-label="Create">
     <header class="v08-mast">
-      <div class="min-w-0">
-        <p class="v08-date">{{ today }}</p>
-        <h1 class="v08-today">Today</h1>
-      </div>
-      <div class="v08-tools">
-        <label class="v08-field">
-          <Search :size="15" class="shrink-0 text-subtle-foreground" />
-          <input
-            ref="field"
-            v-model="query"
-            type="text"
-            placeholder="Search templates, workflows and nodes"
-            aria-label="Search templates, workflows and nodes"
-            @keydown="key"
-          />
-          <button
-            v-if="query"
-            type="button"
-            class="v08-icon"
-            aria-label="Clear"
-            @click="((query = ''), field?.focus())"
-          >
-            <X :size="13" />
-          </button>
-        </label>
+      <h1 class="v08-ask">What do you want to make?</h1>
+      <div class="v08-start">
+        <CreateComposer
+          ref="composer"
+          v-model="query"
+          class="v08-composer"
+          :mode="createInput.id"
+          :navigated
+          @key="key"
+          @build="(s) => openTemplate(s.template)"
+        />
         <button
           type="button"
           class="v08-blank"
+          :class="`is-${createInput.id}`"
           :title="`Empty canvas on ${activeInstance.name}`"
           @click="startBlank"
         >
           <Plus :size="15" />Blank canvas
         </button>
-        <button type="button" class="v08-icon v08-close" aria-label="Close" @click="closeCreate">
-          <X :size="16" />
-        </button>
       </div>
+      <button type="button" class="v08-icon v08-close" aria-label="Close" @click="closeCreate">
+        <X :size="16" />
+      </button>
     </header>
 
     <ResultsB v-if="query.trim()" ref="results" :query class="mt-10" />
@@ -275,53 +263,32 @@ useEscapeCloses(() => field.value)
   max-width: 1240px;
 }
 :root .proto-ui.proto-ui.proto-ui .v08-mast {
+  position: relative;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 24px;
-  padding-top: 40px;
-  padding-bottom: 20px;
+  padding-top: 56px;
+  padding-bottom: 32px;
   border-bottom: 1px solid var(--color-border-default);
 }
-:root .proto-ui.proto-ui.proto-ui .v08-date {
-  color: var(--color-subtle-foreground);
-  font-size: var(--text-ui);
-  font-weight: 500;
-}
-:root .proto-ui.proto-ui.proto-ui .v08-today {
+:root .proto-ui.proto-ui.proto-ui .v08-ask {
   color: var(--color-base-foreground);
-  font-size: 64px;
+  font-size: 56px;
   font-weight: 750;
-  letter-spacing: -0.04em;
-  line-height: 64px;
+  letter-spacing: -0.035em;
+  line-height: 60px;
+  text-wrap: balance;
 }
-:root .proto-ui.proto-ui.proto-ui .v08-tools {
+:root .proto-ui.proto-ui.proto-ui .v08-start {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  padding-bottom: 6px;
-}
-:root .proto-ui.proto-ui.proto-ui .v08-field {
-  display: flex;
-  width: 320px;
-  height: 40px;
+  width: 100%;
+  max-width: 720px;
   align-items: center;
   gap: 10px;
-  padding: 0 8px 0 14px;
-  border-radius: 999px;
-  background: var(--color-secondary-background);
 }
-:root .proto-ui.proto-ui.proto-ui .v08-field:focus-within {
-  box-shadow: inset 0 0 0 1px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v08-field input {
-  min-width: 0;
+:root .proto-ui.proto-ui.proto-ui .v08-composer {
   flex: 1;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font: inherit;
 }
 :root .proto-ui.proto-ui.proto-ui .v08-icon {
   display: grid;
@@ -337,21 +304,28 @@ useEscapeCloses(() => field.value)
   color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v08-close {
+  position: absolute;
+  top: 24px;
+  right: 0;
   width: 36px;
   height: 36px;
-  margin-left: 4px;
 }
 :root .proto-ui.proto-ui.proto-ui .v08-blank {
   display: inline-flex;
   height: 40px;
+  flex: none;
   align-items: center;
   gap: 7px;
   padding: 0 16px;
   border-radius: 999px;
   background: var(--color-secondary-background);
-  color: var(--color-muted-foreground);
+  color: var(--color-base-foreground);
   font-size: var(--text-ui);
   font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .v08-blank.is-agent {
+  height: 44px;
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
 }
 :root .proto-ui.proto-ui.proto-ui .v08-blank:hover {
   background: var(--color-secondary-background-hover);
@@ -612,11 +586,9 @@ useEscapeCloses(() => field.value)
   :root .proto-ui.proto-ui.proto-ui .v08-feature {
     grid-template-columns: 1fr;
   }
-  :root .proto-ui.proto-ui.proto-ui .v08-mast {
-    flex-wrap: wrap;
-  }
-  :root .proto-ui.proto-ui.proto-ui .v08-tools {
-    margin-left: 0;
+  :root .proto-ui.proto-ui.proto-ui .v08-ask {
+    font-size: 44px;
+    line-height: 48px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

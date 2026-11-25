@@ -17,6 +17,7 @@ import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { createLook } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
+import { CREATE_INPUTS, createInput } from './create/createInput'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
@@ -178,6 +179,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'recentsCover', show: () => when.recentsCover.value },
   { id: 'homeTour', show: () => when.homeTour.value },
   { id: 'createLook', show: () => when.createLook.value },
+  { id: 'createInput', show: () => when.createLook.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -487,6 +489,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('createLook')" label="Create look">
             <Select v-model="createLook.id" :options="CREATE_LOOKS" class="w-full" />
+          </Row>
+          <Row :show="shows('createInput')" label="Create input">
+            <Seg v-model="createInput.id" label="Create input" :options="CREATE_INPUTS" />
           </Row>
           <Row :show="shows('assetFolderLayout')" label="Folders layout">
             <Seg

@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowUp, CornerDownLeft, Plus, X } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { ChevronLeft, ChevronRight, CornerDownLeft, Plus, X } from 'lucide-vue-next'
 import { AgentChat } from '../../icons/agentChat'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance } from '../../../useProto'
-import { mock } from '../../assets/mock'
+import { mock, MOCK } from '../../assets/mock'
+import { thumb } from '../../../mock'
 import { NODE_TYPES, type NodeKind } from '../../graph/canvasData'
 import { NODE_ICONS } from '../../graph/nodeIcons'
 import { closeCreate, openTemplate, openWorkflow, startBlank, startWithNode } from '../createScreen'
 import { readiness, searchStarters, SHELVES, type Starter } from '../createStarters'
 import { buildOf, graphFor, readyIcon, reducedMotion, useEscapeCloses } from './lookKitB'
-import { AGENT_CHIPS, answer, quickPicks, type AgentAnswer } from './v07Agent'
+import { quickPicks } from './v07Agent'
+import CreateComposer from './CreateComposer.vue'
+import { createInput } from '../createInput'
 
 type Item =
   | { id: string; type: 'blank' }
@@ -27,7 +30,7 @@ const BLANK: Item = { id: 'blank', type: 'blank' }
 const YOURS = 'yours'
 
 const query = ref('')
-const field = ref<HTMLInputElement>()
+const composer = ref<InstanceType<typeof CreateComposer>>()
 const shelf = ref<string>(SHELVES[0]!.id)
 const hover = ref(-1)
 const pinned = ref(-1)
@@ -76,48 +79,46 @@ watch([q, shelf], () => {
   hover.value = -1
   pinned.value = -1
   navigated.value = false
+  page.value = 0
 })
 
-const focused = ref(false)
+const PAGE = 7
+const page = ref(0)
+const pages = computed(() => Math.max(1, Math.ceil((items.value.length - 1) / PAGE)))
+const slots = computed(() => [
+  { key: 'blank', index: 0, item: items.value[0] },
+  ...Array.from({ length: PAGE }, (_, j) => {
+    const index = 1 + page.value * PAGE + j
+    const item = items.value[index]
+    return { key: item?.id ?? `empty-${j}`, index, item }
+  })
+])
+watch(pinned, (i) => {
+  if (i > 0) page.value = Math.floor((i - 1) / PAGE)
+})
+
+const lastOutput = (w: ProjectWorkflow): string | undefined =>
+  MOCK[w.name] ?? (w.thumbId ? thumb(w.thumbId) : undefined)
+
 const navigated = ref(false)
-const reply = ref<AgentAnswer | null>(null)
-const peekId = ref<string | null>(null)
-const pickPin = ref<string | null>(null)
+const peek = ref<Starter | null>(null)
+const pickPin = ref<Starter | null>(null)
 const build = ref<{ starter: Starter; shown: number; total: number } | null>(null)
 const built = computed(() => !!build.value && build.value.shown >= build.value.total)
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 const BUILD_STEP_MS = 520
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const current = computed<Item | undefined>(() => {
   if (build.value) return tpl(build.value.starter)
   if (hover.value >= 0) return items.value[hover.value]
-  const peek = reply.value?.picks.find((s) => s.id === (peekId.value ?? pickPin.value))
-  if (peek) return tpl(peek)
+  const picked = peek.value ?? pickPin.value
+  if (picked) return tpl(picked)
   return items.value[pinned.value]
 })
 
 function stopBuild(): void {
   clearTimeout(timer)
   build.value = null
-}
-
-function ask(text = query.value): void {
-  if (!text.trim()) return
-  stopBuild()
-  query.value = text
-  reply.value = answer(text)
-  peekId.value = null
-  pickPin.value = null
-  field.value?.focus()
-}
-
-function dismiss(): void {
-  stopBuild()
-  reply.value = null
-  peekId.value = null
-  pickPin.value = null
-  field.value?.focus()
 }
 
 function step(): void {
@@ -130,9 +131,7 @@ function step(): void {
   }, BUILD_STEP_MS)
 }
 
-function buildIt(): void {
-  const starter = reply.value?.picks.find((s) => s.id === pickPin.value) ?? reply.value?.picks[0]
-  if (!starter) return
+function buildIt(starter: Starter): void {
   stopBuild()
   const total = graphFor(starter).nodes.length
   build.value = { starter, total, shown: reducedMotion() ? total : 1 }
@@ -141,20 +140,16 @@ function buildIt(): void {
 
 function tweak(): void {
   stopBuild()
-  field.value?.focus()
-  field.value?.select()
+  composer.value?.focus()
 }
 
-function focusComposer(e: KeyboardEvent): void {
-  if (e.key !== '/' || !(e.metaKey || e.ctrlKey)) return
-  e.preventDefault()
-  field.value?.focus()
+function forget(): void {
+  stopBuild()
+  peek.value = null
+  pickPin.value = null
 }
-onMounted(() => window.addEventListener('keydown', focusComposer))
-onBeforeUnmount(() => {
-  clearTimeout(timer)
-  window.removeEventListener('keydown', focusComposer)
-})
+
+onBeforeUnmount(() => clearTimeout(timer))
 
 function nameOf(item: Item): string {
   if (item.type === 'template') return item.starter.makes
@@ -256,6 +251,10 @@ const box = (n: Placed) => ({
 const outputOf = computed(() => {
   const item = current.value
   if (item?.type === 'template') return { src: item.starter.poster, clip: item.starter.clip }
+  if (item?.type === 'workflow') {
+    const src = lastOutput(item.workflow)
+    return src ? { src, clip: undefined } : undefined
+  }
   return undefined
 })
 
@@ -273,12 +272,11 @@ function key(e: KeyboardEvent): void {
   const last = items.value.length - 1
   const sideways = !query.value && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')
   if (e.key === 'Escape') {
-    if (reply.value) dismiss()
+    if (build.value) stopBuild()
     else if (query.value) query.value = ''
     else closeCreate()
   } else if (e.key === 'Enter') {
-    if (q.value && !navigated.value) ask()
-    else if (current.value) pick(current.value)
+    if (current.value) pick(current.value)
   } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || sideways) {
     hover.value = -1
     navigated.value = true
@@ -296,7 +294,7 @@ watch(at, (i) =>
   )
 )
 
-useEscapeCloses(() => field.value)
+useEscapeCloses(() => composer.value?.field)
 </script>
 
 <template>
@@ -431,117 +429,107 @@ useEscapeCloses(() => field.value)
     </div>
 
     <div class="v07-dock-wrap">
-      <div v-if="reply" class="v07-reply" aria-live="polite">
-        <div class="v07-reply-head">
-          <span class="v07-avatar"><AgentChat :size="13" /></span>
-          <p class="v07-reply-line">
-            {{ reply.understood || `Nothing I know matches “${reply.prompt}” yet.` }}
-          </p>
-          <button type="button" class="v07-icon-btn" aria-label="Dismiss" @click="dismiss">
-            <X :size="13" />
-          </button>
-        </div>
-        <div v-if="reply.picks.length" class="v07-picks">
-          <button
-            v-for="s in reply.picks"
-            :key="s.id"
-            type="button"
-            class="v07-pick"
-            :class="pickPin === s.id && 'is-on'"
-            :aria-pressed="pickPin === s.id"
-            @pointerenter="peekId = s.id"
-            @pointerleave="peekId = null"
-            @focus="peekId = s.id"
-            @blur="peekId = null"
-            @click="pickPin === s.id ? openTemplate(s.template) : (pickPin = s.id)"
-          >
-            <img :src="s.poster" alt="" />
-            <span class="flex min-w-0 flex-col">
-              <span class="v07-pick-name">{{ s.makes }}</span>
-              <span class="v07-pick-model">{{ s.model }}</span>
-            </span>
-          </button>
-        </div>
-        <div class="v07-reply-acts">
-          <button v-if="reply.picks.length" type="button" class="v07-build" @click="buildIt">
-            Build it for me
-          </button>
-          <button type="button" class="v07-link" @click="startBlank">Or start blank</button>
-        </div>
-      </div>
-      <div v-else-if="focused && !query" class="v07-chips" aria-label="Try">
-        <button
-          v-for="c in AGENT_CHIPS"
-          :key="c"
-          type="button"
-          class="v07-chip"
-          @mousedown.prevent
-          @click="ask(c)"
-        >
-          {{ c }}
-        </button>
-      </div>
-
-      <div class="v07-bar">
-        <div class="v07-composer" @click="field?.focus()">
-          <AgentChat :size="15" class="shrink-0 text-muted-foreground" />
-          <input
-            ref="field"
+      <div class="v07-band">
+        <div class="v07-bar">
+          <CreateComposer
+            ref="composer"
             v-model="query"
-            type="text"
-            placeholder="Describe what you want to make…"
-            aria-label="Describe what you want to make"
-            @keydown="key"
-            @input="navigated = false"
-            @focus="focused = true"
-            @blur="focused = false"
+            class="v07-composer"
+            :mode="createInput.id"
+            :navigated
+            card-at="above"
+            @key="key"
+            @peek="peek = $event"
+            @pin="pickPin = $event"
+            @build="buildIt"
+            @dismiss="forget"
           />
-          <button v-if="query" type="button" class="v07-send" aria-label="Ask" @click.stop="ask()">
-            <ArrowUp :size="14" />
-          </button>
-          <kbd v-else-if="!focused" class="v07-kbd">{{ MOD }} /</kbd>
-        </div>
-        <nav v-if="!q" class="v07-shelves" aria-label="Dock shows">
-          <button
-            v-for="t in TABS"
-            :key="t.id"
-            type="button"
-            class="v07-tab"
-            :class="shelf === t.id && 'is-on'"
-            :aria-pressed="shelf === t.id"
-            @click="shelf = t.id"
-          >
-            {{ t.label }}
-          </button>
-        </nav>
-        <p v-else class="v07-shelves v07-count">
-          {{ items.length - 1 }} matches below, Enter to ask
-        </p>
-      </div>
-      <div class="v07-dock" aria-label="Starting points">
-        <button
-          v-for="(item, i) in items"
-          :key="item.id"
-          type="button"
-          class="v07-tile group"
-          :aria-label="nameOf(item)"
-          :class="[i === hover && 'is-at', i === pinned && 'is-on', `is-${item.type}`]"
-          :aria-pressed="i === pinned"
-          :data-v07-at="i"
-          @pointerenter="hover = i"
-          @pointerleave="hover = -1"
-          @focus="hover = i"
-          @blur="hover = -1"
-          @click="press(i)"
-        >
-          <span class="v07-tile-pic">
-            <img v-if="item.type === 'template'" :src="item.starter.poster" alt="" loading="lazy" />
-            <WorkflowCover v-else-if="item.type === 'workflow'" :name="item.workflow.name" />
-            <component :is="NODE_ICONS[item.node]" v-else-if="item.type === 'node'" :size="16" />
-            <Plus v-else :size="16" />
+          <nav v-if="!q" class="v07-shelves" aria-label="Dock shows">
+            <button
+              v-for="t in TABS"
+              :key="t.id"
+              type="button"
+              class="v07-tab"
+              :class="shelf === t.id && 'is-on'"
+              :aria-pressed="shelf === t.id"
+              @click="shelf = t.id"
+            >
+              {{ t.label }}
+            </button>
+          </nav>
+          <p v-else class="v07-shelves v07-count">
+            {{ items.length - 1 }} matches below, Enter to ask
+          </p>
+          <span v-if="pages > 1" class="v07-pager">
+            <button
+              type="button"
+              class="v07-icon-btn"
+              aria-label="Previous"
+              :disabled="page === 0"
+              @click="page--"
+            >
+              <ChevronLeft :size="15" />
+            </button>
+            <button
+              type="button"
+              class="v07-icon-btn"
+              aria-label="Next"
+              :disabled="page >= pages - 1"
+              @click="page++"
+            >
+              <ChevronRight :size="15" />
+            </button>
           </span>
-          <span class="v07-tile-name" aria-hidden="true">{{ nameOf(item) }}</span>
-        </button>
+        </div>
+        <div class="v07-dock" aria-label="Starting points">
+          <template v-for="slot in slots" :key="slot.key">
+            <button
+              v-if="slot.item"
+              type="button"
+              class="v07-tile group"
+              :class="[
+                slot.index === hover && 'is-at',
+                slot.index === pinned && 'is-on',
+                `is-${slot.item.type}`
+              ]"
+              :aria-pressed="slot.index === pinned"
+              :data-v07-at="slot.index"
+              @pointerenter="hover = slot.index"
+              @pointerleave="hover = -1"
+              @focus="hover = slot.index"
+              @blur="hover = -1"
+              @click="press(slot.index)"
+            >
+              <span class="v07-tile-pic">
+                <img
+                  v-if="slot.item.type === 'template'"
+                  :src="slot.item.starter.poster"
+                  alt=""
+                  loading="lazy"
+                />
+                <template v-else-if="slot.item.type === 'workflow'">
+                  <img
+                    v-if="lastOutput(slot.item.workflow)"
+                    :src="lastOutput(slot.item.workflow)"
+                    alt=""
+                    loading="lazy"
+                  />
+                  <WorkflowCover v-else :name="slot.item.workflow.name" />
+                </template>
+                <component
+                  :is="NODE_ICONS[slot.item.node]"
+                  v-else-if="slot.item.type === 'node'"
+                  :size="18"
+                />
+                <Plus v-else :size="18" />
+              </span>
+              <span class="v07-tile-name">{{ nameOf(slot.item) }}</span>
+            </button>
+            <span v-else class="v07-tile is-empty" aria-hidden="true">
+              <span class="v07-tile-pic" />
+            </span>
+          </template>
+        </div>
       </div>
     </div>
   </section>
@@ -790,186 +778,14 @@ useEscapeCloses(() => field.value)
 :root .proto-ui.proto-ui.proto-ui .v07-go:hover {
   background: var(--color-inverted-background-hover);
 }
-:root .proto-ui.proto-ui.proto-ui .v07-reply {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--radius-panel);
-  background: color-mix(in oklch, var(--color-card-background) 86%, transparent);
-  box-shadow:
-    inset 0 0 0 1px var(--color-border-default),
-    var(--shadow-popover);
-  backdrop-filter: blur(var(--blur-glass));
-  animation: v07-ghost 320ms var(--ease-out-expo) both;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-reply-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-avatar {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-secondary-background);
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-reply-line {
-  min-width: 0;
-  flex: 1;
-  color: var(--color-base-foreground);
-  font-size: 14px;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-picks {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-pick {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px 6px 6px;
-  border-radius: 12px;
-  background: var(--color-secondary-background);
-  text-align: left;
-  outline: none;
-  transition: background-color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-pick:hover,
-:root .proto-ui.proto-ui.proto-ui .v07-pick:focus-visible {
-  background: var(--color-secondary-background-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-pick.is-on {
-  box-shadow: inset 0 0 0 2px var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-pick:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-pick img {
-  width: 56px;
-  height: 40px;
-  flex: none;
-  border-radius: 8px;
-  object-fit: cover;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-pick-name {
-  overflow: hidden;
-  color: var(--color-base-foreground);
-  font-size: var(--text-ui);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-pick-model {
-  overflow: hidden;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-reply-acts {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-build {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: var(--color-inverted-background);
-  color: var(--color-inverted-foreground);
-  font-size: var(--text-ui);
-  font-weight: 600;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-build:hover {
-  background: var(--color-inverted-background-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-link {
-  color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-link:hover {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  animation: v07-fade 200ms ease both;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-chip {
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: var(--color-secondary-background);
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 500;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-chip:hover {
-  background: var(--color-secondary-background-hover);
-  color: var(--color-base-foreground);
+:root .proto-ui.proto-ui.proto-ui .v07-composer {
+  flex: 0 1 420px;
+  --cc-gap: 42px;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-bar {
   display: flex;
   align-items: center;
   gap: 24px;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-composer {
-  display: flex;
-  height: 44px;
-  min-width: 0;
-  flex: 0 1 400px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 7px 0 14px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-card-background) 80%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
-  backdrop-filter: blur(var(--blur-glass));
-  cursor: text;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-composer:focus-within {
-  box-shadow: inset 0 0 0 1px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-composer input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font: inherit;
-  font-size: var(--text-ui);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-composer input::placeholder {
-  color: var(--color-subtle-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-send {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: none;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-inverted-background);
-  color: var(--color-inverted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-kbd {
-  flex: none;
-  margin-right: 7px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--color-secondary-background);
-  color: var(--color-subtle-foreground);
-  font: inherit;
-  font-size: 11px;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-bar .v07-shelves {
   margin-left: auto;
@@ -995,16 +811,32 @@ useEscapeCloses(() => field.value)
 :root .proto-ui.proto-ui.proto-ui .v07-go.is-quiet:hover {
   background: var(--color-secondary-background-hover);
 }
-:root .proto-ui.proto-ui.proto-ui .v07-dock-wrap > * {
-  width: 100%;
-  max-width: 780px;
-}
 :root .proto-ui.proto-ui.proto-ui .v07-dock-wrap {
+  flex: none;
+  padding: 14px 32px 18px;
+  border-top: 1px solid var(--color-border-default);
+  background: color-mix(
+    in oklch,
+    var(--color-base-foreground) 2.5%,
+    var(--color-content-background)
+  );
+}
+:root .proto-ui.proto-ui.proto-ui .v07-band {
+  position: relative;
   display: flex;
+  max-width: 1280px;
   flex-direction: column;
-  align-items: center;
   gap: 14px;
-  padding: 0 24px 16px;
+  margin: 0 auto;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-pager {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-pager button:disabled {
+  opacity: 0.35;
+  pointer-events: none;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-shelves {
   display: flex;
@@ -1029,24 +861,22 @@ useEscapeCloses(() => field.value)
   box-shadow: inset 0 -2px 0 var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-dock {
-  display: flex;
-  margin-top: 16px;
-  max-width: 100%;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  padding: 4px;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 12px;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile {
-  position: relative;
-  flex: none;
-  border-radius: 10px;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
   outline: none;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile-pic {
   display: grid;
-  width: 80px;
-  height: 52px;
+  width: 100%;
+  aspect-ratio: 16 / 10;
   place-items: center;
   overflow: hidden;
   border-radius: 10px;
@@ -1092,28 +922,20 @@ useEscapeCloses(() => field.value)
   object-fit: cover;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile-name {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  z-index: 2;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--color-inverted-background);
-  color: var(--color-inverted-foreground);
-  font-size: 11px;
-  font-weight: 500;
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, 2px);
-  transition:
-    opacity 120ms ease,
-    transform 160ms var(--ease-out-expo);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile.is-at .v07-tile-name,
-:root .proto-ui.proto-ui.proto-ui .v07-tile:focus-visible .v07-tile-name {
-  opacity: 1;
-  transform: translate(-50%, 0);
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on .v07-tile-name {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-empty .v07-tile-pic {
+  background: transparent;
+  outline: 1px dashed var(--color-border-default);
+  outline-offset: -1px;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-empty.is-hint {
   animation: v07-fade 400ms ease both;

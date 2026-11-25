@@ -9,6 +9,7 @@ import { NODE_ICONS } from '../../graph/nodeIcons'
 import { openTemplate, openWorkflow, startBlank, startWithNode } from '../createScreen'
 import { readiness, searchStarters, type Starter } from '../createStarters'
 import { buildOf, readyIcon } from './lookKitB'
+import { quickPicks } from './v07Agent'
 
 type Hit =
   | { id: string; type: 'workflow'; workflow: ProjectWorkflow }
@@ -28,7 +29,10 @@ const sections = computed<{ title: string; hits: Hit[] }[]>(() =>
   [
     {
       title: 'Templates',
-      hits: searchStarters(q.value, 6).map((starter): Hit => ({
+      hits: (searchStarters(q.value, 6).length
+        ? searchStarters(q.value, 6)
+        : quickPicks(q.value, 6)
+      ).map((starter): Hit => ({
         id: `t:${starter.id}`,
         type: 'template',
         starter

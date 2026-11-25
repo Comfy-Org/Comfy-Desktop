@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Play, Plus, Search, X } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+import { Play, Plus, X } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance } from '../../../useProto'
@@ -10,6 +10,8 @@ import { closeCreate, openTemplate, openWorkflow, startBlank } from '../createSc
 import { readiness, SHELVES, type Starter } from '../createStarters'
 import { buildOf, hueOf, readyIcon, useEscapeCloses } from './lookKitB'
 import ResultsB from './ResultsB.vue'
+import CreateComposer from './CreateComposer.vue'
+import { createInput } from '../createInput'
 
 const TABS = [
   { id: 'popular', label: 'Popular' },
@@ -24,7 +26,7 @@ const STRIP_MAX = 4
 const BLANK = 'blank'
 
 const query = ref('')
-const field = ref<HTMLInputElement>()
+const composer = ref<InstanceType<typeof CreateComposer>>()
 const results = ref<InstanceType<typeof ResultsB>>()
 const shelf = ref(TABS[0]!.id)
 
@@ -64,6 +66,7 @@ function key(e: KeyboardEvent): void {
     return
   }
   if (query.value.trim()) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') navigated.value = true
     results.value?.key(e)
     return
   }
@@ -74,44 +77,24 @@ function key(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
+const navigated = ref(false)
+watch(query, () => (navigated.value = false))
 
-function focusSearch(e: KeyboardEvent): void {
-  if (e.key !== '/' || !(e.metaKey || e.ctrlKey)) return
-  e.preventDefault()
-  field.value?.focus()
-  field.value?.select()
-}
-onMounted(() => window.addEventListener('keydown', focusSearch))
-onBeforeUnmount(() => window.removeEventListener('keydown', focusSearch))
-
-useEscapeCloses(() => field.value)
+useEscapeCloses(() => composer.value?.field)
 </script>
 
 <template>
   <section class="v10 relative min-h-full px-10 pb-16" aria-label="Create">
     <header class="v10-head">
-      <div class="v10-field" @click="field?.focus()">
-        <Search :size="15" class="shrink-0 text-subtle-foreground" />
-        <input
-          ref="field"
-          v-model="query"
-          type="text"
-          placeholder="Search your workflows, templates and nodes"
-          aria-label="Search your workflows, templates and nodes"
-          @keydown="key"
-        />
-        <button
-          v-if="query"
-          type="button"
-          class="v10-icon"
-          aria-label="Clear"
-          @click="((query = ''), field?.focus())"
-        >
-          <X :size="13" />
-        </button>
-        <kbd v-else class="v10-kbd">{{ MOD }} /</kbd>
-      </div>
+      <CreateComposer
+        ref="composer"
+        v-model="query"
+        class="v10-composer"
+        :mode="createInput.id"
+        :navigated
+        @key="key"
+        @build="(s) => openTemplate(s.template)"
+      />
       <button type="button" class="v10-icon v10-close" aria-label="Close" @click="closeCreate">
         <X :size="16" />
       </button>
@@ -270,46 +253,9 @@ useEscapeCloses(() => field.value)
   margin: 0 auto;
   padding-top: 20px;
 }
-:root .proto-ui.proto-ui.proto-ui .v10-field {
-  display: flex;
+:root .proto-ui.proto-ui.proto-ui .v10-composer {
   width: 100%;
   max-width: 540px;
-  height: 40px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 8px 0 14px;
-  border-radius: 999px;
-  background: var(--color-secondary-background);
-  cursor: text;
-  transition: background-color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v10-field:hover {
-  background: var(--color-secondary-background-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-field:focus-within {
-  background: var(--color-secondary-background-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-kbd {
-  flex: none;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--color-secondary-background);
-  color: var(--color-subtle-foreground);
-  font: inherit;
-  font-size: 11px;
-}
-:root .proto-ui.proto-ui.proto-ui .v10-field input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font: inherit;
-  font-size: var(--text-ui);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-field input::placeholder {
-  color: var(--color-subtle-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-icon {
   display: grid;
