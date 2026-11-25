@@ -285,19 +285,23 @@ export interface SystemGpuEntry {
   driver_version: string | null
 }
 
+const VIRTUAL_MACHINE_GPU_PATTERNS: RegExp[] = [
+  /vmware/i,
+  /virtualbox/i,
+  /hyper-?v/i,
+  /virtio/i,
+  /\bqxl\b/i,
+  /bochs/i
+]
+
 const VIRTUAL_GPU_PATTERNS: RegExp[] = [
+  ...VIRTUAL_MACHINE_GPU_PATTERNS,
   /microsoft basic render/i,
   /microsoft basic display/i,
   /microsoft remote display/i,
   /remote desktop/i,
   /\brdp\b/i,
   /parsec/i,
-  /vmware/i,
-  /virtualbox/i,
-  /hyper-?v/i,
-  /virtio/i,
-  /\bqxl\b/i,
-  /bochs/i,
   /llvmpipe/i,
   /softpipe/i,
   /citrix/i,
@@ -306,6 +310,10 @@ const VIRTUAL_GPU_PATTERNS: RegExp[] = [
   /virtual monitor/i,
   /\bidd\b/i
 ]
+
+export function isVirtualMachineGpu(model: string): boolean {
+  return VIRTUAL_MACHINE_GPU_PATTERNS.some((re) => re.test(model))
+}
 
 export function isVirtualGpu(model: string | null | undefined): boolean {
   if (!model) return false

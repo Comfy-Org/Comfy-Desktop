@@ -10,9 +10,10 @@ import { stillsOf } from '../../../shared/appStills'
 import { finishedAppIds, runningAppIds } from './appRuns'
 import type { AppCard } from '../types/ipc'
 
-const { currentApp, apps } = defineProps<{
+const { currentApp, apps, label } = defineProps<{
   currentApp: AppCard | null
   apps: AppCard[] | null
+  label: string
 }>()
 
 const emit = defineEmits<{
@@ -83,7 +84,7 @@ watch(
 <template>
   <nav
     class="-mx-3 mt-0.5 flex min-h-0 flex-1 scrollbar-hide flex-col overflow-x-hidden overflow-y-auto px-3 pt-1.5"
-    :aria-label="t('sidebar.apps')"
+    :aria-label="label"
     data-testid="app-sidebar-app-rail"
   >
     <ul class="m-0 flex list-none flex-col gap-2 p-0">

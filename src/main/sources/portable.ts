@@ -166,13 +166,17 @@ export const portable: SourcePlugin = {
         tab: 'status',
         title: t('common.installInfo'),
         fields: [
-          { label: t('common.installMethod'), value: installation.sourceLabel as string },
+          {
+            key: 'install-method',
+            label: t('common.installMethod'),
+            value: installation.sourceLabel as string
+          },
           { label: t('portable.version'), value: installation.version },
           {
             label: t('portable.packageLabel'),
             value: (installation.asset as string | undefined) || '—'
           },
-          { label: t('common.location'), value: installation.installPath || '—' },
+          { key: 'location', label: t('common.location'), value: installation.installPath || '—' },
           {
             label: t('common.installed'),
             value: new Date(installation.createdAt).toLocaleDateString()

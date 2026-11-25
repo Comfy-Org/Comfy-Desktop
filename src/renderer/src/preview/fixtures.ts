@@ -1,5 +1,6 @@
 import type {
   AppCard,
+  HiddenAppCard,
   AssetSummary,
   CatalogWorkflow,
   FieldOption,
@@ -297,6 +298,33 @@ export const APP_CARDS: AppCard[] = [
     title: 'Sketch to image',
     description: 'Turn a rough drawing into a finished picture.',
     covers: []
+  }
+]
+
+export const HIDDEN_APP_CARDS: HiddenAppCard[] = [
+  {
+    id: 'sample-app-alpha',
+    title: 'Sample app alpha',
+    description: 'A made-up app for the preview, with a page to open.',
+    covers: [],
+    reasons: ['hub_only'],
+    page: 'live'
+  },
+  {
+    id: 'sample-app-beta',
+    title: 'Sample app beta',
+    description: 'A made-up app for the preview that is off and still a draft.',
+    covers: [],
+    reasons: ['off', 'draft'],
+    page: 'missing'
+  },
+  {
+    id: 'sample-app-gamma',
+    title: 'Sample app gamma',
+    description: 'A made-up app for the preview that is not published.',
+    covers: [],
+    reasons: ['unpublished'],
+    page: 'missing'
   }
 ]
 

@@ -214,7 +214,11 @@ export const gitSource: SourcePlugin = {
         tab: 'status',
         title: t('git.installInfo'),
         fields: [
-          { label: t('common.installMethod'), value: installation.sourceLabel as string },
+          {
+            key: 'install-method',
+            label: t('common.installMethod'),
+            value: installation.sourceLabel as string
+          },
           { label: t('git.repository'), value: (installation.repo as string) || '—' },
           { label: t('git.branch'), value: (installation.branch as string) || '—' },
           { label: t('git.commit'), value: (installation.commit as string) || '—' },
@@ -226,7 +230,7 @@ export const gitSource: SourcePlugin = {
             editType: 'path',
             browseOnly: true
           },
-          { label: t('common.location'), value: installation.installPath || '—' },
+          { key: 'location', label: t('common.location'), value: installation.installPath || '—' },
           {
             label: t('common.installed'),
             value: new Date(installation.createdAt).toLocaleDateString()

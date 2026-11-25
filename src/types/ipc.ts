@@ -144,7 +144,7 @@ export interface Installation {
 }
 
 export type DashboardPage =
-  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+  'home' | 'apps' | 'assets' | 'chooser' | 'staff-apps' | 'benchmarks' | 'performance-test'
 
 export type AppBadgeStyle = 'crown' | 'chip' | 'label'
 
@@ -172,6 +172,20 @@ export interface AppCard {
   covers: AppCover[]
   badges?: AppBadge[]
   coverPlayback?: 'always'
+}
+
+export type HiddenAppReason = 'off' | 'draft' | 'hub_only' | 'unpublished'
+
+export type HiddenAppPage = 'live' | 'missing' | 'unchecked'
+
+export interface HiddenAppCard extends AppCard {
+  reasons: HiddenAppReason[]
+  page: HiddenAppPage
+}
+
+export interface HiddenAppsList {
+  apps: HiddenAppCard[]
+  stale?: true
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
@@ -1333,6 +1347,7 @@ export interface ElectronApi {
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   listApps(): Promise<AppCard[]>
+  listHiddenApps(): Promise<HiddenAppsList>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
   getAppRuns(): Promise<AppRun[]>

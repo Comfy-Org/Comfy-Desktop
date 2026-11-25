@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import zh from '@locales/zh.json'
+import { resetAppLocale, switchAppLocaleToChinese } from '../../lib/switchAppLocale'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { computed, ref, nextTick } from 'vue'
 
@@ -1296,6 +1298,24 @@ describe('ComfyUISettingsContent', () => {
       expect(wrapper.find('[data-testid="build-overview"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-section-list-stub"]').exists()).toBe(true)
       expect(wrapper.findComponent({ name: 'StatusFactPanel' }).exists()).toBe(true)
+    })
+  })
+
+  describe('tab language', () => {
+    afterEach(resetAppLocale)
+
+    it('renames the tabs when the app language changes while the page is open', async () => {
+      const w = await mountContent()
+      const overviewTab = () => w.get(`[data-testid="${TID.settingsTab('update')}"]`)
+      expect(overviewTab().text()).toBe('Overview')
+
+      switchAppLocaleToChinese()
+      await nextTick()
+
+      expect(overviewTab().text()).toBe(zh.comfyUISettings.tabOverview)
+      expect(w.get(`[data-testid="${TID.settingsTab('snapshots')}"]`).text()).toBe(
+        zh.comfyUISettings.tabSnapshots
+      )
     })
   })
 

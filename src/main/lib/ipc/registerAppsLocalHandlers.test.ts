@@ -18,7 +18,8 @@ const mocks = vi.hoisted(() => ({
   whileChecking: () => {},
   pages: [] as { send: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }[],
   refusedPages: new Set<unknown>(),
-  runsChanged: null as (() => void) | null
+  runsChanged: null as (() => void) | null,
+  machine: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -44,6 +45,7 @@ vi.mock('../../apps/localAppEvents', () => ({
     return () => {}
   }
 }))
+vi.mock('../../apps/machine', () => ({ machine: mocks.machine }))
 vi.mock('../../apps/localComfy', () => ({
   localState: mocks.localState,
   startLocal: mocks.startLocal,
@@ -68,6 +70,7 @@ const OPEN = {
   name: 'Remove Background'
 }
 const BUILDS = [{ id: 'inst-1', name: 'Studio' }]
+const MACHINE = { platform: 'win32', gpuMemoryGb: 8 }
 
 function call(channel: string, ...args: unknown[]): Promise<unknown> {
   const handler = mocks.handlers.get(channel)
@@ -92,6 +95,7 @@ beforeEach(() => {
   mocks.openInComfy.mockResolvedValue({ opened: true })
   mocks.localBuilds.mockResolvedValue(BUILDS)
   mocks.localBuildsForEach.mockImplementation(async (askers: unknown[]) => askers.map(() => BUILDS))
+  mocks.machine.mockResolvedValue(MACHINE)
   registerAppsLocalHandlers()
 })
 
@@ -149,6 +153,7 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
   it('opens a workflow in ComfyUI and lists this computer builds for the page', async () => {
     expect(await call(APPS_LOCAL_CHANNELS.openInComfy, OPEN)).toEqual({ opened: true })
     expect(await call(APPS_LOCAL_CHANNELS.builds)).toEqual(BUILDS)
+    expect(await call(APPS_LOCAL_CHANNELS.machine)).toEqual(MACHINE)
 
     expect(mocks.openInComfy).toHaveBeenCalledWith(EVENT.sender, OPEN)
   })
@@ -168,6 +173,7 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
       error: 'apps.local.notRunning'
     })
     expect(await call(APPS_LOCAL_CHANNELS.builds)).toEqual([])
+    await expect(call(APPS_LOCAL_CHANNELS.machine)).rejects.toThrow()
 
     expect(mocks.localState).not.toHaveBeenCalled()
     expect(mocks.startLocal).not.toHaveBeenCalled()
@@ -175,6 +181,7 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(mocks.localDownload).not.toHaveBeenCalled()
     expect(mocks.openInComfy).not.toHaveBeenCalled()
     expect(mocks.localBuilds).not.toHaveBeenCalled()
+    expect(mocks.machine).not.toHaveBeenCalled()
   })
 })
 
