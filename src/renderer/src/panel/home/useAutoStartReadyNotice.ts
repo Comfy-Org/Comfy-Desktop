@@ -24,13 +24,15 @@ export function useAutoStartReadyNotice() {
     void window.api.dismissAutoStartReady?.(current).catch(() => {})
   }
 
-  const unsubscribe = window.api.onAutoStartReadyChanged?.(({ installationId }) =>
+  let heardAChange = false
+  const unsubscribe = window.api.onAutoStartReadyChanged?.(({ installationId }) => {
+    heardAChange = true
     show(installationId)
-  )
+  })
   void window.api
     .getAutoStartReady?.()
     .then((id) => {
-      if (id !== null && buildId.value === null) show(id)
+      if (!heardAChange && id !== null) show(id)
     })
     .catch(() => {})
 

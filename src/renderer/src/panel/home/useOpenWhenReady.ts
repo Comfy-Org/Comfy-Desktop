@@ -1,8 +1,22 @@
-import { onScopeDispose, shallowRef, watch } from 'vue'
+import { inject, onScopeDispose, provide, shallowRef, watch, type InjectionKey } from 'vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
-export function useOpenWhenReady(open: (build: Installation) => void) {
+export type OpenWhenReady = ReturnType<typeof createOpenWhenReady>
+
+const OPEN_WHEN_READY: InjectionKey<OpenWhenReady> = Symbol('openWhenReady')
+
+export function provideOpenWhenReady(open: (build: Installation) => void): OpenWhenReady {
+  const opensWhenReady = createOpenWhenReady(open)
+  provide(OPEN_WHEN_READY, opensWhenReady)
+  return opensWhenReady
+}
+
+export function useOpenWhenReady(open: (build: Installation) => void): OpenWhenReady {
+  return inject(OPEN_WHEN_READY, null) ?? createOpenWhenReady(open)
+}
+
+function createOpenWhenReady(open: (build: Installation) => void) {
   const sessionStore = useSessionStore()
   const waiting = shallowRef<Installation | null>(null)
 

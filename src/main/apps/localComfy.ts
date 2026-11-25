@@ -418,6 +418,11 @@ export function runsWithItsWindowClosed(installationId: string): boolean {
   )
 }
 
+export async function opensInDesktopWindow(installationId: string): Promise<boolean> {
+  await launches.get(installationId)
+  return isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)
+}
+
 export function hasBuildsRunningForAppsOnly(): boolean {
   return [...startedHere].some(isRunningForAppsOnly)
 }
@@ -463,7 +468,7 @@ export async function startWithDesktop(inst: InstallationRecord): Promise<boolea
   if (!isLocalSource(inst)) return false
   watchSessions()
   const result = await launchOnce(inst.id, true)
-  if (result.ok) return true
+  if (result.ok) return runningPortOf(inst.id) !== null
   if (result.cancelled) return false
   const failure = {
     installationId: inst.id,

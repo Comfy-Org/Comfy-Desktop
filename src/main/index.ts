@@ -142,8 +142,7 @@ import {
 import { runningPortOf } from './apps/localBuild'
 import { noteAutoStartReady, registerAutoStartNoticeHandlers } from './apps/autoStartNotice'
 import {
-  isRunningForAppsOnly,
-  runsWithItsWindowClosed,
+  opensInDesktopWindow,
   startWithDesktop,
   stopBuildsRunningForAppsOnly
 } from './apps/localComfy'
@@ -824,9 +823,7 @@ ipcMain.handle(
     const workspaceId =
       requester && typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
     if (await focusOpenComfyWindow(installationId, requester, workspaceId)) return true
-    if (isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)) {
-      return openWindowForAppsBuild(installationId)
-    }
+    if (await opensInDesktopWindow(installationId)) return openWindowForAppsBuild(installationId)
 
     const proc = ipc.getSessionProcess(installationId)
     if (proc?.pid) {

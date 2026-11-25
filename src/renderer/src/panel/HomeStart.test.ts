@@ -330,6 +330,23 @@ describe('the "ComfyUI is ready" notice', () => {
     expect(toast()?.dataset.buildId).toBe(AUTO.id)
   })
 
+  it('does not come back when it was closed elsewhere while Home was still asking whether it shows', async () => {
+    running(AUTO.id)
+    let answerRead: (id: string | null) => void = () => {}
+    vi.mocked(window.api.getAutoStartReady).mockReturnValue(
+      new Promise((resolve) => {
+        answerRead = resolve
+      })
+    )
+    await openHome()
+
+    await readyNotice(null)
+    answerRead(AUTO.id)
+    await flushPromises()
+
+    expect(toast()).toBeNull()
+  })
+
   it('closes on X', async () => {
     running(AUTO.id)
     await openHome()
