@@ -1239,7 +1239,7 @@ describe('StoragePane for a build whose input and output come from Startup argum
   })
 
   function gitSections(
-    input: { path: string; shared: boolean },
+    input: { path: string; shared: boolean; nextStartPath?: string },
     output: { path: string; shared: boolean }
   ) {
     return [
@@ -1321,6 +1321,23 @@ describe('StoragePane for a build whose input and output come from Startup argum
     const input = wrapper.get('[data-testid="storage-launch-input"]')
     expect(input.text()).toContain('/my/in')
     expect(input.find('.storage-dir-shared-tag').exists()).toBe(false)
+  })
+
+  it('shows the folder a running build started with, and the saved one as after a restart', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections(
+      gitSections(
+        { path: '/launched/in', shared: false, nextStartPath: '/edited/in' },
+        { path: '/shared/output', shared: true }
+      )
+    )
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="storage-launch-input"]').text()).toContain('/launched/in')
+    expect(wrapper.get('[data-testid="storage-launch-input-next"]').text()).toBe(
+      'After a restart: /edited/in'
+    )
+    expect(wrapper.find('[data-testid="storage-launch-output-next"]').exists()).toBe(false)
   })
 
   it('explains how to use other folders, naming the flags as code', async () => {

@@ -142,12 +142,17 @@ const useSharedOutputEnabled = computed<boolean>(() => {
 interface LaunchFolder {
   path: string
   shared: boolean
+  nextStartPath: string | null
 }
 
 function launchFolderOf(id: string): LaunchFolder | null {
   const value = findField(id)?.value as Partial<LaunchFolder> | undefined
   if (!value || typeof value.path !== 'string') return null
-  return { path: value.path, shared: value.shared === true }
+  return {
+    path: value.path,
+    shared: value.shared === true,
+    nextStartPath: typeof value.nextStartPath === 'string' ? value.nextStartPath : null
+  }
 }
 
 const launchInputFolder = computed(() => launchFolderOf('launchInputDir'))
@@ -164,6 +169,8 @@ const showOutputDirRow = computed(
 )
 const headerToggleClass =
   'storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5'
+const nextStartNoteClass =
+  'm-0 px-3 text-[12.5px] leading-[1.45] text-text-muted [overflow-wrap:anywhere]'
 const flagCodeClass =
   'rounded-[3px] bg-[color-mix(in_srgb,currentcolor_14%,transparent)] px-1 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px]'
 
@@ -414,15 +421,23 @@ function handleRevealPath(path: string): void {
         v-if="showInputDirRow"
         class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]"
       >
-        <StorageDirRow
-          v-if="launchInputFolder"
-          data-testid="storage-launch-input"
-          list-aligned
-          :path="launchInputFolder.path"
-          :shared="launchInputFolder.shared"
-          :browsable="false"
-          @open="handleOpenPath(launchInputFolder.path)"
-        />
+        <template v-if="launchInputFolder">
+          <StorageDirRow
+            data-testid="storage-launch-input"
+            list-aligned
+            :path="launchInputFolder.path"
+            :shared="launchInputFolder.shared"
+            :browsable="false"
+            @open="handleOpenPath(launchInputFolder.path)"
+          />
+          <p
+            v-if="launchInputFolder.nextStartPath"
+            data-testid="storage-launch-input-next"
+            :class="nextStartNoteClass"
+          >
+            {{ t('comfyUISettings.folderAfterRestart', { path: launchInputFolder.nextStartPath }) }}
+          </p>
+        </template>
         <template v-else-if="useSharedInputEnabled">
           <StorageDirRow
             v-if="sharedInputField"
@@ -463,15 +478,25 @@ function handleRevealPath(path: string): void {
         v-if="showOutputDirRow"
         class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]"
       >
-        <StorageDirRow
-          v-if="launchOutputFolder"
-          data-testid="storage-launch-output"
-          list-aligned
-          :path="launchOutputFolder.path"
-          :shared="launchOutputFolder.shared"
-          :browsable="false"
-          @open="handleOpenPath(launchOutputFolder.path)"
-        />
+        <template v-if="launchOutputFolder">
+          <StorageDirRow
+            data-testid="storage-launch-output"
+            list-aligned
+            :path="launchOutputFolder.path"
+            :shared="launchOutputFolder.shared"
+            :browsable="false"
+            @open="handleOpenPath(launchOutputFolder.path)"
+          />
+          <p
+            v-if="launchOutputFolder.nextStartPath"
+            data-testid="storage-launch-output-next"
+            :class="nextStartNoteClass"
+          >
+            {{
+              t('comfyUISettings.folderAfterRestart', { path: launchOutputFolder.nextStartPath })
+            }}
+          </p>
+        </template>
         <template v-else-if="useSharedOutputEnabled">
           <StorageDirRow
             v-if="sharedOutputField"

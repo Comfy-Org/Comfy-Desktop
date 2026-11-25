@@ -373,6 +373,21 @@ describe('applyStorageLaunchArgs for a build added from an existing git clone', 
     expect(flagValues(launchCmd.args!, '--output-directory')).toEqual([globalOutput])
   })
 
+  it('creates the input and output folders Startup arguments name before ComfyUI starts', () => {
+    const ownInput = path.join(root, 'missing-own-input')
+    const launchCmd = makeLaunchCmd({
+      cwd: path.join(root, 'git-start-dir'),
+      args: ['main.py', '--input-directory', ownInput, '--output-directory=relative-output']
+    })
+
+    applyStorageLaunchArgs(makeInstall({ sourceId: 'git' }), 'git-missing', launchCmd, storage())
+
+    expect(fs.statSync(ownInput).isDirectory()).toBe(true)
+    expect(fs.statSync(path.join(root, 'git-start-dir', 'relative-output')).isDirectory()).toBe(
+      true
+    )
+  })
+
   it('still adds the shared input folder after a Standalone build own startup argument', () => {
     const ownInput = path.join(root, 'standalone-own-input')
     const launchCmd = makeLaunchCmd({ args: ['main.py', '--input-directory', ownInput] })

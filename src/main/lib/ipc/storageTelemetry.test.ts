@@ -46,7 +46,9 @@ vi.mock('../paths', () => ({
 const resolveInstallModelSearchPaths = vi.fn()
 vi.mock('../models', () => ({
   resolveInstallModelSearchPaths: (...args: unknown[]) => resolveInstallModelSearchPaths(...args),
-  installOutputDir: (installPath: string) => `${installPath}\\ComfyUI\\output`
+  installOutputDir: (installPath: string) => `${installPath}\\ComfyUI\\output`,
+  installInputDir: (installPath: string) => `${installPath}\\ComfyUI\\input`,
+  resolveComfyDir: (installPath: string) => `${installPath}\\ComfyUI`
 }))
 
 const classifyPaths = vi.fn()
@@ -57,11 +59,13 @@ vi.mock('../storageInfo', () => ({
 vi.mock('./shared', () => ({
   sourceMap: {
     standalone: { category: 'local' },
+    git: { category: 'local' },
     cloud: { category: 'cloud' }
   }
 }))
 
 import { emitStorageTelemetry } from './storageTelemetry'
+import { _runningSessions } from './runningSessions'
 
 function drive(overrides: Partial<DriveInfo>): DriveInfo {
   return {
@@ -352,5 +356,38 @@ describe('emitStorageTelemetry', () => {
     expect(props.any_models_on_hdd).toBe(true)
     expect(props.models_all_same_drive_as_install).toBe(false)
     expect(props.any_models_external).toBeNull()
+  })
+
+  it('reports the drive of the output folder a git build started with from Startup arguments', async () => {
+    const renders = 'E:\\renders'
+    getInstallation.mockResolvedValue({
+      ...LOCAL_INST,
+      sourceId: 'git',
+      launchArgs: `--output-directory ${renders}`
+    })
+    _runningSessions.set('inst-1', {
+      launchFolders: { output: renders, input: 'C:\\Users\\u\\input' }
+    } as never)
+    stubClassification({
+      [INSTALL_PATH]: NVME,
+      [BUILTIN_MODELS]: NVME,
+      [SHARED_MODELS]: NVME,
+      [CACHE_DIR]: NVME,
+      [OUTPUT_DIR]: NVME,
+      [APP_DATA]: NVME,
+      [renders]: HDD
+    })
+
+    try {
+      await emitStorageTelemetry('inst-1')
+    } finally {
+      _runningSessions.clear()
+    }
+
+    expect(writeAppLog).not.toHaveBeenCalled()
+    const props = capture.mock.calls[0]![1]
+    expect(props.output_storage_class).toBe('hdd')
+    expect(props.output_drive_key).toBe(1)
+    expect(props.distinct_drive_count).toBe(2)
   })
 })

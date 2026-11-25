@@ -173,7 +173,9 @@ import { getIdClass } from '../../deviceId'
 import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
 import {
   FOLDER_FLAG,
+  comfyStartDir,
   lastArgValue,
+  resolveFolderArg,
   sharedFolder,
   usesStartupArgFolders,
   type ComfyFolderKind
@@ -492,12 +494,25 @@ export interface StorageLaunchState {
   modelSyncOptions: ModelPathsOptions
 }
 
+function createArgFolder(dir: string): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+  } catch (err) {
+    console.warn(`could not create the folder ${dir} named in Startup arguments:`, err)
+  }
+}
+
 function applySharedFolderUnlessArgsSetIt(
-  args: string[],
+  inst: InstallationRecord,
+  { args, cwd }: { args: string[]; cwd?: string },
   kind: ComfyFolderKind,
   storage: Pick<settings.Settings, 'inputDir' | 'outputDir'>
 ): void {
-  if (lastArgValue(args, FOLDER_FLAG[kind])) return
+  const fromArgs = lastArgValue(args, FOLDER_FLAG[kind])
+  if (fromArgs) {
+    createArgFolder(resolveFolderArg(fromArgs, () => cwd ?? comfyStartDir(inst)))
+    return
+  }
   const dir = sharedFolder(kind, storage)
   fs.mkdirSync(dir, { recursive: true })
   args.push(FOLDER_FLAG[kind], dir)
@@ -539,7 +554,12 @@ export function applyStorageLaunchArgs(
   }
   if (argsAvailable && usesStartupArgFolders(inst)) {
     for (const kind of ['input', 'output'] as const) {
-      applySharedFolderUnlessArgsSetIt(launchCmd.args!, kind, storage)
+      applySharedFolderUnlessArgsSetIt(
+        inst,
+        { args: launchCmd.args!, cwd: launchCmd.cwd },
+        kind,
+        storage
+      )
     }
   } else if (argsAvailable) {
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false

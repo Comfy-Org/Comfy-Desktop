@@ -119,13 +119,13 @@ function localBuild(id: string, name = id, extra: Partial<Installation> = {}): I
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
     hasOutputFolder: true,
-    useSharedOutput: false,
+    savesToSharedOutput: false,
     ...extra
   }
 }
 
 function sharedBuild(id: string, name = id): Installation {
-  return localBuild(id, name, { useSharedOutput: true })
+  return localBuild(id, name, { savesToSharedOutput: true })
 }
 
 function shownText(element: Element | null): string {
@@ -997,6 +997,20 @@ describe('AssetsView', () => {
     const cloud = await mountAssets([], { builds, installationId: 'cloud' })
     expect(cloud.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
     expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
+  })
+
+  it('opens a git build with its own output folder in Startup arguments on that folder, not Shared folder', async () => {
+    const gitBuild = localBuild('git', 'Git Clone', { sourceLabel: 'Git clone' })
+    const wrapper = await mountAssets([], {
+      builds: [sharedBuild('a', 'Shared A'), gitBuild],
+      installationId: 'git'
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Git Clone')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('git')
+
+    await openBuildPicker(wrapper)
+    expect(buildRows().map((row) => row.split(' ')[0])).toEqual(['Comfy', 'Shared', 'Git'])
   })
 
   it('says the workspace has no Comfy Cloud build', async () => {

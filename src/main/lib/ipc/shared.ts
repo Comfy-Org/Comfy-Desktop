@@ -40,7 +40,7 @@ import { recordCrash } from '../crashBuffer'
 import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
-import type { AcceleratorSnapshot } from '../hardwareTap'
+import { _runningSessions, type SessionInfo } from './runningSessions'
 import type { ComfyFolders } from '../outputFolders'
 import {
   spawnProcess,
@@ -287,21 +287,6 @@ export const RESERVED_ENV_VARS = new Set([
 const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'comfybuilder'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
-export interface SessionInfo {
-  proc: ChildProcess | null
-  port: number
-  url?: string
-  mode: string
-  installationName: string
-  sourceInstallationId?: string
-  startedAt: number
-  hadWindow?: boolean
-  flushTelemetry?: () => void
-  getAcceleratorInfo?: () => AcceleratorSnapshot | null
-  coreBetaArgs?: readonly BetaArgView[]
-  launchFolders?: ComfyFolders
-}
-
 export interface LaunchCallbackInfo {
   port: number
   url?: string
@@ -368,7 +353,8 @@ export let _onLocaleChanged: LocaleCallback | null = null
 export let _onThemeChanged: ThemeChangedCallback | null = null
 
 export const _operationAborts = new Map<string, AbortController>()
-export const _runningSessions = new Map<string, SessionInfo>()
+export { _runningSessions }
+export type { SessionInfo }
 export const _pendingPorts = new Map<number, string>()
 
 const _launchingInstances = new Map<string, { installationName: string }>()

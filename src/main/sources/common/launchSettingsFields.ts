@@ -17,7 +17,16 @@ import {
   MANAGER_NETWORK_MODES,
   isManagerNetworkMode
 } from '../../lib/managerConfig'
-import { startupArgOrSharedFolder, usesStartupArgFolders } from '../../lib/startupArgFolders'
+import { effectiveFolderOf } from '../../lib/effectiveFolders'
+import { _runningSessions } from '../../lib/ipc/runningSessions'
+import {
+  startupArgOrSharedFolder,
+  usesStartupArgFolders,
+  type ComfyFolderKind,
+  type LaunchFolder
+} from '../../lib/startupArgFolders'
+
+type ShownFolder = LaunchFolder & { nextStartPath?: string }
 
 export interface ExtraModelPathDir {
   type: string
@@ -186,19 +195,26 @@ function inputOutputStorageFields(installation: InstallationRecord): Record<stri
   ]
 }
 
+function shownFolder(installation: InstallationRecord, kind: ComfyFolderKind): ShownFolder {
+  const folder = effectiveFolderOf(installation, kind, _runningSessions.get(installation.id))
+  if (!folder) return startupArgOrSharedFolder(installation, kind)
+  const { nextStartPath, ...shown } = folder
+  return nextStartPath === shown.path ? shown : { ...shown, nextStartPath }
+}
+
 function startupArgFolderFields(installation: InstallationRecord): Record<string, unknown>[] {
   return [
     {
       id: 'launchInputDir',
       label: t('common.perInstallInputDir'),
-      value: startupArgOrSharedFolder(installation, 'input'),
+      value: shownFolder(installation, 'input'),
       editable: false,
       editType: 'hidden'
     },
     {
       id: 'launchOutputDir',
       label: t('common.perInstallOutputDir'),
-      value: startupArgOrSharedFolder(installation, 'output'),
+      value: shownFolder(installation, 'output'),
       editable: false,
       editType: 'hidden'
     }

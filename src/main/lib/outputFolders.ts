@@ -20,10 +20,9 @@ import {
   comfyStartDir,
   lastArgValue,
   resolveFolderArg,
-  startupArgOrSharedFolder,
-  usesStartupArgFolders,
   type ComfyFolderKind
 } from './startupArgFolders'
+import { effectiveFolderOf, type EffectiveFolder } from './effectiveFolders'
 import { _runningSessions, sourceMap } from './ipc/shared'
 import type {
   AssetKind,
@@ -72,27 +71,21 @@ export function hasOutputFolder(inst: InstallationRecord): boolean {
   return source?.category === 'local' && !source.managesOwnPaths
 }
 
-function startupArgFolderFor(inst: InstallationRecord, kind: ComfyFolderKind): string | null {
-  const launched = _runningSessions.get(inst.id)?.launchFolders
-  if (launched) return launched[kind]
-  return startupArgOrSharedFolder(inst, kind).path
-}
-
-function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
-  if (!hasOutputFolder(inst)) return null
-  if (usesStartupArgFolders(inst)) return startupArgFolderFor(inst, 'output')
-  return outputDirOverride(inst, sharedDir) ?? installOutputDir(inst.installPath)
-}
-
 export function sharedInputDir(): string {
   return (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
 }
 
-function inputDirFor(inst: InstallationRecord): string | null {
-  if (!hasOutputFolder(inst)) return null
-  if (usesStartupArgFolders(inst)) return startupArgFolderFor(inst, 'input')
-  if ((inst.useSharedInput as boolean | undefined) !== false) return sharedInputDir()
-  return (inst.inputDir as string | undefined) || installInputDir(inst.installPath)
+export function effectiveFolder(
+  inst: InstallationRecord,
+  kind: ComfyFolderKind
+): EffectiveFolder | null {
+  const running = _runningSessions.get(inst.id)
+  if (!running && !hasOutputFolder(inst)) return null
+  return effectiveFolderOf(inst, kind, running)
+}
+
+function outputDirFor(inst: InstallationRecord): string | null {
+  return effectiveFolder(inst, 'output')?.path ?? null
 }
 
 export interface ComfyFolders {
@@ -128,9 +121,10 @@ export function launchFoldersOf(inst: InstallationRecord, launch: LaunchedWith):
 
 export function comfyFoldersOf(inst: InstallationRecord | null): ComfyFolders {
   if (!inst) return { output: sharedOutputDir(), input: sharedInputDir() }
-  const running = _runningSessions.get(inst.id)
-  if (running) return running.launchFolders ?? NO_FOLDERS
-  return { output: outputDirFor(inst, sharedOutputDir()), input: inputDirFor(inst) }
+  return {
+    output: effectiveFolder(inst, 'output')?.path ?? null,
+    input: effectiveFolder(inst, 'input')?.path ?? null
+  }
 }
 
 async function realDir(dir: string): Promise<string | null> {
@@ -151,7 +145,7 @@ async function findOutputFolders(): Promise<OutputFolders> {
   const shared = await realDir(sharedDir)
   const ofBuild = new Map<string, string>()
   for (const inst of await installations.list()) {
-    const dir = outputDirFor(inst, sharedDir)
+    const dir = outputDirFor(inst)
     const real = dir ? await realDir(dir) : null
     if (real) ofBuild.set(inst.id, real)
   }
@@ -165,7 +159,7 @@ export async function outputFolderPaths(): Promise<OutputFolderPaths> {
   const shared = sharedOutputDir()
   const ofBuild: Record<string, string> = {}
   for (const inst of await installations.list()) {
-    const dir = outputDirFor(inst, shared)
+    const dir = outputDirFor(inst)
     if (dir) ofBuild[inst.id] = dir
   }
   return { home: os.homedir(), shared, ofBuild }
@@ -224,7 +218,7 @@ export async function comfyOutputPath(
   file: ComfyOutputFile,
   bytes: Uint8Array
 ): Promise<string | null> {
-  const dir = outputDirFor(inst, sharedOutputDir())
+  const dir = outputDirFor(inst)
   const root = dir ? await realDir(dir) : null
   if (!root) return null
   const real = await allowedPath(path.join(root, file.subfolder, file.filename))

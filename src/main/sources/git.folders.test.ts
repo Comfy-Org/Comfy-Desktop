@@ -26,6 +26,7 @@ import { gitSource } from './git'
 import { portable } from './portable'
 import { resolveInputDir } from './standalone/templateInputAssets'
 import { _runningSessions } from '../lib/ipc/shared'
+import { effectiveFolder } from '../lib/outputFolders'
 import { startupArgFolder } from '../lib/startupArgFolders'
 import type { InstallationRecord } from '../installations'
 
@@ -127,6 +128,22 @@ describe('the Folders tab of a build added from an existing git clone', () => {
     })
   })
 
+  it('shows the folders a running build started with, and the saved one as after a restart', () => {
+    const launchedInput = path.resolve('/launched/input')
+    _runningSessions.set('git-1', {
+      launchFolders: { input: launchedInput, output: '/shared/output' }
+    } as never)
+
+    const storage = gitStorage({ launchArgs: '--input-directory /edited/since' })
+
+    expect(valueOf(storage, 'launchInputDir')).toEqual({
+      path: launchedInput,
+      shared: false,
+      nextStartPath: path.resolve('/edited/since')
+    })
+    expect(valueOf(storage, 'launchOutputDir')).toEqual({ path: '/shared/output', shared: true })
+  })
+
   it('points its own models folder inside a clone ComfyUI has never run from', () => {
     const root = rootLayoutClone()
 
@@ -142,6 +159,33 @@ describe('the Folders tab of a build added from an existing git clone', () => {
 
     for (const id of FOLDER_SWITCH_IDS) expect(ids, id).toContain(id)
     expect(ids).not.toContain('launchInputDir')
+  })
+})
+
+describe('the output folder Assets reads for a git build', () => {
+  it('is its own folder, not the shared one, when Startup arguments set one', () => {
+    expect(effectiveFolder(record({ launchArgs: '--output-directory /my/out' }), 'output')).toEqual(
+      { path: path.resolve('/my/out'), shared: false, nextStartPath: path.resolve('/my/out') }
+    )
+  })
+
+  it('is the shared folder with no output folder in Startup arguments', () => {
+    expect(effectiveFolder(record(), 'output')).toMatchObject({
+      path: '/shared/output',
+      shared: true
+    })
+  })
+
+  it('is the folder a running build started with', () => {
+    _runningSessions.set('git-1', {
+      launchFolders: { input: '/shared/input', output: path.resolve('/launched/out') }
+    } as never)
+
+    expect(effectiveFolder(record(), 'output')).toEqual({
+      path: path.resolve('/launched/out'),
+      shared: false,
+      nextStartPath: '/shared/output'
+    })
   })
 })
 

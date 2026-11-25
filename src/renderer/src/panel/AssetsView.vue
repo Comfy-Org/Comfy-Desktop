@@ -197,7 +197,7 @@ function inWorkspace(build: Installation): boolean {
 }
 
 function savesToSharedFolder(build: Installation): boolean {
-  return build.useSharedOutput !== false
+  return build.savesToSharedOutput !== false
 }
 
 function placeOption(id: string, name: string, cloud: boolean): AssetBuild {
