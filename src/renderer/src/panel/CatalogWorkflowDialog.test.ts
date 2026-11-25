@@ -255,6 +255,48 @@ describe('opening a catalog workflow', () => {
     expect(dialog.emitted('close')).toBeUndefined()
   })
 
+  it('shows a download that is still running when the page is opened again, with its cancel', async () => {
+    launchCatalogWorkflow.mockReturnValue(new Promise(() => {}))
+    const dialog = await mountDialog([SANDBOX, LAB, OLD, CLOUD])
+    expect(dialog.find('[data-testid="catalog-workflow-progress"]').exists()).toBe(false)
+
+    sendProgress({ id: 'another', build: 'sandbox', receivedBytes: 1, totalBytes: 2 })
+    sendProgress({ id: 'ltx', build: 'lab', receivedBytes: 1, totalBytes: 2 })
+    await flushPromises()
+    expect(
+      launchCatalogWorkflow,
+      'only a download of this workflow into a build still missing models is picked up'
+    ).not.toHaveBeenCalled()
+
+    sendProgress({
+      id: 'ltx',
+      build: 'sandbox',
+      receivedBytes: 4_100_000_000,
+      totalBytes: 34_000_000_000
+    })
+    await flushPromises()
+
+    expect(launchCatalogWorkflow).toHaveBeenCalledExactlyOnceWith(
+      'ltx',
+      { where: 'local', build: 'sandbox' },
+      'selected-workspace',
+      { downloadMissing: true }
+    )
+    expect(dialog.get('[data-testid="catalog-workflow-target"]').text()).toContain('Flux Sandbox')
+    expect(dialog.get('[data-testid="catalog-workflow-progress"]').text()).toBe(
+      'Downloading 4.1 GB of 34.0 GB'
+    )
+    expect(dialog.find('[data-testid="catalog-workflow-cancel"]').exists()).toBe(true)
+  })
+
+  it('names the close button in the reader’s language', async () => {
+    const dialog = await mountDialog([LAB, CLOUD])
+
+    expect(dialog.get('[data-testid="catalog-workflow-close"]').attributes('aria-label')).toBe(
+      'Close'
+    )
+  })
+
   it('judges a local build by the ComfyUI version Desktop launches, not the tag it recorded', async () => {
     const taggedOlder: Installation = {
       ...LAB,

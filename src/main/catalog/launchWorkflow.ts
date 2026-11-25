@@ -109,7 +109,8 @@ async function downloadMissingModels(
     }
     cancels.add(cancel)
     const stop = subscribeTemplateDownload(taskId, (summary) => {
-      if (!page.isDestroyed()) {
+      const ended = isTerminal(summary.status)
+      if (!page.isDestroyed() && (!ended || summary.status === 'done')) {
         const progress: CatalogWorkflowDownload = {
           id,
           build,
@@ -118,7 +119,7 @@ async function downloadMissingModels(
         }
         page.send('catalog:workflow-download', progress)
       }
-      if (!isTerminal(summary.status)) return
+      if (!ended) return
       if (summary.status === 'done') finish({ failure: null, downloaded: true })
       else if (summary.status === 'cancelled') finish('cancelled')
       else if (summary.error === DISK_SPACE_ERROR) {
@@ -126,6 +127,23 @@ async function downloadMissingModels(
       } else finish({ failure: t('workflowLaunch.downloadFailed'), downloaded: false })
     })
   })
+}
+
+interface CatalogLaunch {
+  workflow: NonNullable<ReturnType<typeof listedWorkflow>>
+  target: CatalogWorkflowTarget
+  workspaceId: string
+  downloadMissing: boolean
+}
+
+const launchesUnderWay = new WeakMap<WebContents, Map<string, Promise<ComfyDesktopOpenInComfy>>>()
+
+function launchKey({ workflow, target, workspaceId }: CatalogLaunch): string {
+  return JSON.stringify([
+    workflow.card.id,
+    target.where === 'local' ? target.build : null,
+    workspaceId
+  ])
 }
 
 export async function launchCatalogWorkflow(
@@ -148,6 +166,23 @@ export async function launchCatalogWorkflow(
     return { opened: false, error: t('workflowLaunch.unavailable') }
   }
 
+  const launch = { workflow, target, workspaceId, downloadMissing }
+  const key = launchKey(launch)
+  const underWay = launchesUnderWay.get(page) ?? new Map<string, Promise<ComfyDesktopOpenInComfy>>()
+  launchesUnderWay.set(page, underWay)
+  const same = underWay.get(key)
+  if (same) return same
+  const opening = openListedWorkflow(page, launch).finally(() => {
+    if (underWay.get(key) === opening) underWay.delete(key)
+  })
+  underWay.set(key, opening)
+  return opening
+}
+
+async function openListedWorkflow(
+  page: WebContents,
+  { workflow, target, workspaceId, downloadMissing }: CatalogLaunch
+): Promise<ComfyDesktopOpenInComfy> {
   const session = getCloudSession()
   const subject = session.currentSubject()
   const scope = {

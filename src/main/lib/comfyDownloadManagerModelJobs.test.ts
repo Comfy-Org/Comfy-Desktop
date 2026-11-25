@@ -817,6 +817,45 @@ describe('managed model-job identity (issue #1322)', () => {
     await flush()
   })
 
+  it('only pauses a download no caller holds when the caller that joined it releases as a cancel', async () => {
+    const name = uniqueName()
+    const before = transfers.length
+    const url = `https://host-a.example/${name}`
+    const starter = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await waitForTransfers(before + 1)
+    starter.release()
+    await flush()
+    expect(activeRows().find((r) => r.id === starter.id)?.status).toBe('paused')
+
+    const joiner = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    expect(joiner.id).toBe(starter.id)
+    await flush()
+    expect(activeRows().find((r) => r.id === starter.id)?.status).toBe('downloading')
+
+    const stagedRemovals = removeStagedArtifacts.mock.calls.length
+    joiner.release('cancel')
+    await flush()
+
+    expect(
+      transfers.slice(before).flatMap((transfer) => transfer.cancel.mock.calls),
+      'the partial download stays for Downloads to resume'
+    ).toEqual([])
+    expect(removeStagedArtifacts.mock.calls.length).toBe(stagedRemovals)
+    expect(activeRows().find((r) => r.id === starter.id)?.status).toBe('paused')
+
+    expect(mod.cancelModelDownload(starter.id)).toBe(true)
+    await expect(starter.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+  })
+
   it('keeps the UI Cancel control whole-job even when multiple callers hold leases', async () => {
     const name = uniqueName()
     const before = transfers.length

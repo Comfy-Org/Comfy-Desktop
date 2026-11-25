@@ -288,6 +288,13 @@ async function launch(choice: TargetChoice): Promise<void> {
   }
 }
 
+function rejoinDownloadInto(build: string): void {
+  const downloading = choices.value.find(
+    (choice) => choice.where === 'local' && choice.build.id === build && choice.state === 'missing'
+  )
+  if (downloading) void launch(downloading)
+}
+
 async function cancelDownload(): Promise<void> {
   const build = downloadingInto.value
   if (!build || cancelling.value) return
@@ -358,9 +365,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
 onMounted(async () => {
   stopProgress = window.api.onCatalogWorkflowDownload((update) => {
-    if (update.id === props.workflow.id && downloadingInto.value === update.build) {
-      progress.value = update
-    }
+    if (update.id !== props.workflow.id) return
+    if (!pending.value) rejoinDownloadInto(update.build)
+    if (downloadingInto.value === update.build) progress.value = update
   })
   void loadNeeds()
   versions.value = await window.api.catalogLocalBuildVersions().catch(() => ({}))
@@ -387,7 +394,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="absolute top-0 -right-12 grid size-9 place-items-center rounded-full border-0 bg-white/10 text-foreground outline-none hover:bg-white/16 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-        :aria-label="t('close')"
+        :aria-label="t('common.close')"
         data-testid="catalog-workflow-close"
         @click="emit('close')"
       >

@@ -752,6 +752,7 @@ function joinModelJob(
   if (onProgress) {
     ;(existing.progressSubscribers ??= new Set()).add(onProgress)
   }
+  const heldByNoCaller = !existing.leases?.size
   const release = acquireModelJobLease(
     existing,
     onProgress ? () => existing.progressSubscribers?.delete(onProgress) : undefined
@@ -763,7 +764,7 @@ function joinModelJob(
     savePath: existing.savePath,
     completion:
       existing.completion ?? Promise.resolve({ status: 'error', error: 'Download not joinable' }),
-    release
+    release: heldByNoCaller ? () => release('pause') : release
   }
 }
 

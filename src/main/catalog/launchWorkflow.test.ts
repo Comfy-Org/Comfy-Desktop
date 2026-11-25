@@ -338,6 +338,10 @@ describe('launching workflows from the published catalog', () => {
     expect(await buildIsMissing()).toEqual([MODEL.filename])
     expect(mocks.open).not.toHaveBeenCalled()
     expect(hasActiveTemplateDownloads()).toBe(false)
+    expect(
+      sent,
+      'the failure is the launch’s answer, not one more progress report a reopened page would pick up'
+    ).toHaveLength(1)
   })
 
   it('stops the transfer when the download is cancelled, and does not open the graph', async () => {
@@ -361,6 +365,39 @@ describe('launching workflows from the published catalog', () => {
     expect(await buildIsMissing()).toEqual([MODEL.filename])
     expect(mocks.open).not.toHaveBeenCalled()
     expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(false)
+  })
+
+  it('opens the workflow once when the same launch is asked for again while it is under way', async () => {
+    let finishOpening: (result: { opened: true }) => void = () => {}
+    mocks.open.mockReturnValue(new Promise((resolve) => (finishOpening = resolve)))
+
+    const first = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal')
+    const again = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal')
+    await vi.waitFor(() => expect(mocks.open).toHaveBeenCalled())
+    finishOpening({ opened: true })
+
+    expect(await Promise.all([first, again])).toEqual([{ opened: true }, { opened: true }])
+    expect(mocks.open).toHaveBeenCalledOnce()
+
+    mocks.open.mockResolvedValue({ opened: true })
+    await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal')
+    expect(
+      mocks.open,
+      'a launch asked for after the first one ended opens again'
+    ).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps launches into different places apart', async () => {
+    mocks.subject = 'user'
+    const finishOpening: ((result: { opened: true }) => void)[] = []
+    mocks.open.mockImplementation(() => new Promise((resolve) => finishOpening.push(resolve)))
+
+    const local = launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal')
+    const cloud = launchCatalogWorkflow(PAGE, 'catalog-id', { where: 'cloud' }, 'personal')
+    await vi.waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2))
+
+    for (const finish of finishOpening) finish({ opened: true })
+    expect(await Promise.all([local, cloud])).toEqual([{ opened: true }, { opened: true }])
   })
 
   it('says the disk is full when the models do not fit, before transferring anything', async () => {
