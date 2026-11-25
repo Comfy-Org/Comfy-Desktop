@@ -23,6 +23,7 @@ import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
 import { WF_CASES, tplCase } from './templateModal/templateData'
+import { DOWNLOAD_SCENARIOS, downloadScenario } from './downloads/templateDownloads'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
@@ -158,7 +159,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'pageState', show: () => when.pageState.value },
   { id: 'credits', show: () => when.credits.value },
   { id: 'deployState', show: () => when.deployState.value },
-  { id: 'wfCase', show: () => when.wfCase.value }
+  { id: 'wfCase', show: () => when.wfCase.value },
+  { id: 'downloadScenario', show: () => when.downloadScenario.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBackground', show: () => when.homeBackground.value },
@@ -354,6 +356,14 @@ const linkSays = computed(() => {
           <!-- The Deploy as API modal's states, first while it's open. -->
           <Row :show="shows('wfCase')" label="Workflow case">
             <Select v-model="tplCase.id" :options="WF_CASES" class="w-full" />
+          </Row>
+          <Row :show="shows('downloadScenario')" label="Model download">
+            <Select
+              v-model="downloadScenario.id"
+              :options="DOWNLOAD_SCENARIOS"
+              class="w-full"
+              data-testid="download-scenario"
+            />
           </Row>
           <Row :show="when.tplCases.value" label="Can't-run cases" stack>
             <TplCasesNote />

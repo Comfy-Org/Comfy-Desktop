@@ -74,6 +74,8 @@ import TplGraph from './TplGraph.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import TplDownloadActions from '../downloads/TplDownloadActions.vue'
+import { downloadFor, percentOf, startDownload } from '../downloads/templateDownloads'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
 // wears them, so the two read as one view. Imported for its styles.
 import '../assets/AssetDetail.vue'
@@ -164,6 +166,7 @@ const shown = computed(() => selected.value ?? targets.value[0])
  *  of the reason. Only while the default is the pick. */
 const fit = computed(() =>
   !saved.value &&
+  !bgDownload.value &&
   reason.value &&
   shown.value?.inst.id === best.value?.inst.id &&
   shown.value?.state !== 'running' &&
@@ -177,6 +180,8 @@ const line = computed(() => {
   if (!s) return ''
   if (s.state === 'blocked' || s.state === 'platform')
     return `${s.status}. Pick another build to open it.`
+  if (s.state === 'download' && keptGb.value)
+    return `${fmtGb(keptGb.value)} of ${fmtGb(total.value)} is already here. Downloading picks up where it stopped.`
   // The plain cases need no line: the button says it.
   return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
@@ -200,6 +205,22 @@ const favorited = computed(() =>
       : false
 )
 const selected = computed(() => targets.value.find((x) => x.inst.id === selectedId.value))
+const tplDownload = computed(() =>
+  proto.detail?.kind === 'template' && template.value ? downloadFor(template.value.id) : undefined
+)
+const bgDownload = computed(() =>
+  tplDownload.value?.status === 'cancelled' ? undefined : tplDownload.value
+)
+const downloadBusy = computed(() => Boolean(bgDownload.value && bgDownload.value.status !== 'done'))
+const keptGb = computed(() =>
+  tplDownload.value?.status === 'cancelled' ? tplDownload.value.doneGb : 0
+)
+const DOWNLOAD_NEEDS: Record<string, string> = {
+  paused: 'Paused',
+  failed: 'Download stopped',
+  disk: 'Not enough space',
+  done: 'Installed'
+}
 const view = ref<'result' | 'graph'>('result')
 const phase = ref<'idle' | 'busy'>('idle')
 const progress = ref(0)
@@ -292,7 +313,7 @@ const creditsSheet = ref(false)
 function confirm(): void {
   const s = selected.value
   const t = template.value
-  if (!s || !t || s.disabled || phase.value === 'busy') return
+  if (!s || !t || s.disabled || phase.value === 'busy' || bgDownload.value) return
   if (s.state === 'login') {
     hostActions.signIn()
     return
@@ -309,6 +330,10 @@ function confirm(): void {
     toast(
       s.state === 'credits' ? 'Add credits opens in your browser' : 'Plans open in your browser'
     )
+    return
+  }
+  if (s.state === 'download' && s.inst.kind === 'local' && !saved.value) {
+    startDownload(t, s.inst)
     return
   }
   phase.value = 'busy'
@@ -443,6 +468,14 @@ const needsTone = computed(() =>
       ? 'get'
       : modelState.value
 )
+
+const needsPill = computed(() => {
+  const d = bgDownload.value
+  if (!d) return { label: needsState.value, tone: needsTone.value }
+  if (d.status === 'downloading') return { label: `Downloading ${percentOf(d)}%`, tone: 'get' }
+  const tone = d.status === 'done' ? 'here' : d.status === 'paused' ? 'get' : 'warn'
+  return { label: DOWNLOAD_NEEDS[d.status] ?? '', tone }
+})
 
 const aboutEl = ref<HTMLElement>()
 const aboutOpen = ref(false)
@@ -605,7 +638,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   :aria-label="`Open in ${shown.inst.name}. Change build`"
                   aria-haspopup="menu"
                   :aria-expanded="buildMenu"
-                  :disabled="phase === 'busy' || targets.length < 2"
+                  :disabled="phase === 'busy' || downloadBusy || targets.length < 2"
                   @click="buildMenu = !buildMenu"
                 >
                   <span class="mar-tpl-glyph">
@@ -661,8 +694,8 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               >
                 <summary>
                   <span class="mar-tpl-total">{{ needsLine }}</span>
-                  <span v-if="needsState" class="mar-tpl-state" :data-m="needsTone">{{
-                    needsState
+                  <span v-if="needsPill.label" class="mar-tpl-state" :data-m="needsPill.tone">{{
+                    needsPill.label
                   }}</span>
                   <ChevronDown :size="14" class="mar-tpl-fold" />
                 </summary>
@@ -820,7 +853,10 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
           </div>
 
           <!-- At the bottom: what happens, then the one action. -->
-          <footer class="mad-actions">
+          <footer v-if="bgDownload" class="mad-actions">
+            <TplDownloadActions :download="bgDownload" @close="open = false" />
+          </footer>
+          <footer v-else class="mad-actions">
             <p v-if="line" class="mar-tpl-note">{{ line }}</p>
             <button
               type="button"
