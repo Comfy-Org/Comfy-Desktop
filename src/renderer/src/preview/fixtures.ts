@@ -3,6 +3,8 @@ import type {
   HiddenAppCard,
   AssetSummary,
   CatalogWorkflow,
+  DetailField,
+  DetailSection,
   FieldOption,
   GPUInfo,
   Installation,
@@ -257,6 +259,90 @@ export function cloudBuild(overrides: Partial<Installation> = {}): Installation 
     createdAt: '2026-09-18T12:00:00.000Z',
     ...overrides
   }
+}
+
+export function cloudDetailSections(
+  installation: Installation,
+  sharedOutputDir: string
+): DetailSection[] {
+  const autoDownload = installation.autoDownloadOutputs !== false
+  const sharedOutput = installation.useSharedOutputDir !== false
+  const outputFields: DetailField[] = autoDownload
+    ? [
+        {
+          id: 'useSharedOutputDir',
+          label: 'Use shared output directory',
+          value: sharedOutput,
+          editable: true,
+          editType: 'boolean',
+          refreshSection: true,
+          nested: true,
+          tooltip:
+            'When enabled, downloaded outputs are saved to the shared output directory. Disable to use a custom output folder for this build.'
+        },
+        ...(sharedOutput
+          ? []
+          : [
+              {
+                id: 'outputDir',
+                label: 'Shared output',
+                value:
+                  typeof installation.outputDir === 'string'
+                    ? installation.outputDir
+                    : sharedOutputDir,
+                editable: true,
+                editType: 'path',
+                browseOnly: true,
+                nested: true,
+                tooltip: 'Custom local folder where outputs from this remote build will be saved.'
+              } satisfies DetailField
+            ])
+      ]
+    : []
+  return [
+    {
+      tab: 'status',
+      title: 'Connection info',
+      fields: [
+        { id: 'install-method', label: 'Install method', value: installation.sourceLabel },
+        { id: 'url', label: 'URL', value: 'https://cloud.comfy.org/' },
+        { id: 'added', label: 'Added', value: '9/18/2026' }
+      ]
+    },
+    {
+      tab: 'settings',
+      title: 'Launch settings',
+      fields: [
+        {
+          id: 'browserPartition',
+          label: 'Browser cache',
+          value:
+            typeof installation.browserPartition === 'string'
+              ? installation.browserPartition
+              : 'shared',
+          editable: true,
+          editType: 'select',
+          options: [
+            { value: 'shared', label: 'Shared' },
+            { value: 'unique', label: 'Unique to this build' }
+          ],
+          tooltip:
+            'Controls whether this build shares browser cache (cookies, local storage) with other builds or keeps its own separate cache.'
+        },
+        {
+          id: 'autoDownloadOutputs',
+          label: 'Auto-download outputs',
+          value: autoDownload,
+          editable: true,
+          editType: 'boolean',
+          refreshSection: true,
+          tooltip:
+            'Automatically download output files (images, videos) from this remote build to a local directory after each workflow run.'
+        },
+        ...outputFields
+      ]
+    }
+  ]
 }
 
 export function everydayBuilds(machine: PreviewMachine): Installation[] {

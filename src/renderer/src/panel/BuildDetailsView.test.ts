@@ -93,6 +93,18 @@ describe('BuildDetailsView', () => {
     expect(wrapper.find('.build-details-status').exists()).toBe(false)
   })
 
+  it('names Cloud once when where it runs and what it is are both Cloud', async () => {
+    const { wrapper } = await mountDetails({
+      id: 'a',
+      name: 'Comfy Cloud',
+      sourceId: 'cloud',
+      sourceLabel: 'Comfy Cloud',
+      sourceCategory: 'cloud'
+    })
+
+    expect(wrapper.get('.build-details-meta').text()).toBe('Cloud')
+  })
+
   it('shows a running build as running', async () => {
     const { wrapper } = await mountDetails()
 

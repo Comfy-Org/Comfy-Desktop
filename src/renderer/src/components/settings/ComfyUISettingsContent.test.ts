@@ -1252,13 +1252,17 @@ describe('ComfyUISettingsContent', () => {
       expect(await stackedFor({})).toBe(false)
     })
 
-    it('keeps a cloud build in its own layout, where that tab is labelled Storage', async () => {
-      expect(
-        await stackedFor({
-          pageActionsTarget: '#page-actions',
-          installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
-        })
-      ).toBe(false)
+    it('gives a cloud build its Storage pane in the Folders layout instead of the settings list', async () => {
+      const w = await mountContent({
+        initialTab: 'config',
+        pageActionsTarget: '#page-actions',
+        installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
+      })
+      const pane = w.findComponent({ name: 'CloudStoragePane' })
+      expect(pane.exists()).toBe(true)
+      expect(pane.props('sections')).toEqual([{ tab: 'settings', fields: [] }])
+      expect(w.findComponent({ name: 'SettingsSectionList' }).exists()).toBe(false)
+      w.unmount()
     })
 
     it('keeps the Update tab out of the stacked layout on the build page', async () => {

@@ -2,6 +2,8 @@ import type { BridgeSeed, FakeBridge } from './fakeBridge'
 import {
   HIDDEN_APP_CARDS,
   INSTALL_STEPS,
+  cloudBuild,
+  cloudDetailSections,
   everydayBuilds,
   localAssets,
   type PreviewMachine
@@ -45,6 +47,39 @@ function installThatKeepsRunning(bridge: FakeBridge): (installationId: string) =
     reportInstallProgress(bridge, installationId)
     return NEVER_SETTLES
   }
+}
+
+const CLOUD_BUILD_ID = cloudBuild().id
+
+function cloudStorageSeed(machine: PreviewMachine, autoDownloadOutputs: boolean): BridgeSeed {
+  const builds = everydayBuilds(machine).map((build) =>
+    build.id === CLOUD_BUILD_ID ? { ...build, autoDownloadOutputs } : build
+  )
+  return { installations: builds }
+}
+
+async function openCloudStorageTab(stage: PreviewStage): Promise<void> {
+  const { bridge } = stage
+  const sharedOutputDir = bridge.settings.outputDir
+  bridge.reply({
+    getDetailSections: async (installationId) => {
+      const build = bridge.installations.find((inst) => inst.id === installationId)
+      return build?.id === CLOUD_BUILD_ID ? cloudDetailSections(build, sharedOutputDir) : []
+    },
+    getBuildStorageSnapshot: async () => ({
+      sharedDirectoriesFields: [
+        { id: 'inputDir', label: 'Shared input', value: bridge.settings.inputDir },
+        { id: 'outputDir', label: 'Shared output', value: sharedOutputDir }
+      ],
+      modelsDirs: bridge.settings.modelsDirs.map((path, index) => ({
+        path,
+        isPrimary: index === 0
+      })),
+      modelsSystemDefault: bridge.settings.modelsDirs[0] ?? ''
+    })
+  })
+  await stage.click(`[data-testid="app-sidebar-build-${CLOUD_BUILD_ID}"]`)
+  await stage.click('[data-testid="settings-tab-config"]')
 }
 
 async function acceptTermsAndInstall({ see, click }: PreviewStage): Promise<void> {
@@ -198,6 +233,20 @@ export const SCENARIOS: PreviewScenario[] = [
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-assets"]')
     }
+  },
+  {
+    id: 'cloud-storage',
+    title: 'Comfy Cloud build, Storage tab',
+    ready: '[data-testid="cloud-storage-output-dir"]',
+    seed: (machine) => cloudStorageSeed(machine, true),
+    arrange: openCloudStorageTab
+  },
+  {
+    id: 'cloud-storage-off',
+    title: 'Comfy Cloud build, Storage tab, outputs stay on Cloud',
+    ready: '[data-testid="cloud-storage-outputs-stay"]',
+    seed: (machine) => cloudStorageSeed(machine, false),
+    arrange: openCloudStorageTab
   },
   {
     id: 'signed-in',

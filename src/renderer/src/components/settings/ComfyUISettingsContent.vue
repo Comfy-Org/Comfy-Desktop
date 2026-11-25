@@ -46,6 +46,7 @@ import { formatBytes } from '../../lib/downloadFormatters'
 import InlineNameEdit from '../InlineNameEdit.vue'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
+import CloudStoragePane from '../../views/comfyUISettings/CloudStoragePane.vue'
 import ConsoleTerminalPane from '../../views/comfyUISettings/ConsoleTerminalPane.vue'
 import Tooltip from '../ui/Tooltip.vue'
 import { vSlidingPill } from '../ui/vSlidingPill'
@@ -341,6 +342,8 @@ const diskFree = computed(() =>
     ? formatBytes(diskSpace.value.free)
     : null
 )
+
+const isCloudStorageTab = computed(() => isCloud.value && activeTab.value === 'config')
 
 const isStartupArgsPage = computed(
   () => isPage.value && activeTab.value === 'config' && !isCloud.value
@@ -1304,6 +1307,12 @@ defineExpose({
                         :disk-free="diskFree"
                         :running-action-ids="runningActionIds"
                         @action="runAction"
+                      />
+                      <CloudStoragePane
+                        v-else-if="isCloudStorageTab"
+                        :snapshot="globalSettingsSnapshot"
+                        :sections="visibleSections"
+                        @update-field="updateField"
                       />
                       <template v-else>
                         <SettingsSectionList

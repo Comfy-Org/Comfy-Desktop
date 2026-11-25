@@ -491,7 +491,9 @@
     "argsUnexpected": "Unexpected:",
     "updateFieldTimeout": "Couldn't reach app. Try again",
     "useSharedInput": "Use shared input",
-    "useSharedOutput": "Use shared output"
+    "useSharedOutput": "Use shared output",
+    "cloudOutputsStay": "Outputs stay on Comfy Cloud.",
+    "browserCacheHint": "Shares cookies and local storage with your other builds, or keeps them separate."
   },
   "comfyLifecycle": {
     "preparingTitle": "Preparing…",

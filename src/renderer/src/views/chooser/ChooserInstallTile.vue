@@ -32,6 +32,7 @@ import { openInstallManager } from '../../lib/openInstallManager'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
+import { joinDistinctFacts } from '../../lib/formatting'
 import type { Installation } from '../../types/ipc'
 
 interface Props {
@@ -231,7 +232,7 @@ const showsUpdateNote = computed(
     !isUpdating.value
 )
 
-const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
+const metaLine = computed(() => joinDistinctFacts([leadingFact.value, trailingFact.value]))
 
 const opensLogs = computed(
   () => isBusy.value || (!dangerTag.value && launchFailed(progressStore, inst.value.id))

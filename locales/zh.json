@@ -491,7 +491,9 @@
     "argsUnexpected": "意外的参数：",
     "updateFieldTimeout": "无法连接到应用，请重试",
     "useSharedInput": "使用共享输入",
-    "useSharedOutput": "使用共享输出"
+    "useSharedOutput": "使用共享输出",
+    "cloudOutputsStay": "输出保留在 Comfy Cloud 上。",
+    "browserCacheHint": "与其他构建共享 Cookie 和本地存储，或单独保留。"
   },
   "comfyLifecycle": {
     "preparingTitle": "正在准备…",
