@@ -212,7 +212,7 @@
   "home": {
     "title": "欢迎。开始创作吧！",
     "openComfyUI": "打开 ComfyUI",
-    "startingComfyUI": "正在启动 ComfyUI…",
+    "opensWhenReady": "启动中…就绪后打开",
     "comfyReady": "ComfyUI 已就绪",
     "comfyReadyOpen": "打开",
     "comfyReadyDismiss": "关闭",
@@ -226,7 +226,6 @@
     "autoStartOn": "自动启动",
     "buildRunning": "运行中",
     "buildStarting": "启动中…",
-    "buildStartingPercent": "启动中 · {percent}%",
     "buildNeverUsed": "从未使用",
     "cloudNoSetupNeeded": "无需设置",
     "buildUsedJustNow": "刚刚使用",

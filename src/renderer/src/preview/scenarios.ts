@@ -90,7 +90,7 @@ export const SCENARIOS: PreviewScenario[] = [
   {
     id: 'home-starting',
     title: 'Home while Auto Start starts a build',
-    ready: '[data-testid="home-build-start-bar"]',
+    ready: '[data-testid="home-build-status"][data-starting="true"]',
     seed: (machine) => {
       const [autoStarted] = everydayBuilds(machine)
       return {

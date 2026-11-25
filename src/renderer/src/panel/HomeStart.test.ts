@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
 import HomeView from './HomeView.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { READY_NOTICE_MS } from './home/useAutoStartReadyNotice'
 import { useProgressStore, type Operation } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -106,10 +107,6 @@ function statusOf(id: string): HTMLElement {
   return card(id).querySelector<HTMLElement>('[data-testid="home-build-status"]')!
 }
 
-function startBarOf(id: string): HTMLElement | null {
-  return card(id).querySelector<HTMLElement>('[data-testid="home-build-start-bar"]')
-}
-
 function styleOf(className: string, property: 'color' | 'backgroundColor'): string {
   const probe = document.createElement('span')
   probe.className = className
@@ -129,7 +126,7 @@ function toast(): HTMLElement | null {
 }
 
 describe('a build card while its ComfyUI starts', () => {
-  it('reads "Starting…" in the foreground color with a spinner and an indeterminate edge bar', async () => {
+  it('reads "Starting…" in the foreground color with a spinner, as a status, and no progress bar', async () => {
     launching(AUTO.id)
     await openHome()
 
@@ -139,95 +136,134 @@ describe('a build card while its ComfyUI starts', () => {
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(getComputedStyle(status).color).toBe(styleOf('text-foreground', 'color'))
     expect(status.querySelector('[data-testid="home-build-spinner"]')).not.toBeNull()
-
-    const bar = startBarOf(AUTO.id)!
-    const cardBox = card(AUTO.id).getBoundingClientRect()
-    const barBox = bar.getBoundingClientRect()
-    expect(bar.dataset.indeterminate).toBe('true')
-    expect(bar.hasAttribute('aria-valuenow')).toBe(false)
-    expect(barBox.height).toBe(2)
-    expect(barBox.width).toBe(cardBox.width)
-    expect(barBox.bottom).toBe(cardBox.bottom)
-    expect(getComputedStyle(card(AUTO.id)).overflow).toBe('hidden')
-    const segment = bar.querySelector<HTMLElement>('[data-testid="home-build-start-bar-segment"]')!
-    expect(getComputedStyle(segment).backgroundColor).toBe(
-      styleOf('bg-foreground', 'backgroundColor')
-    )
+    expect(card(AUTO.id).querySelector('[role="progressbar"]')).toBeNull()
   })
 
-  it('shows the percent and a determinate bar only when the start reports progress', async () => {
+  it('shows no percent and no bar even when the start reports one', async () => {
     await openHome()
     launchOperation(AUTO.id, 62)
     await flushPromises()
 
-    expect(statusOf(AUTO.id).textContent?.trim()).toBe('Starting · 62%')
-    const bar = startBarOf(AUTO.id)!
-    expect(bar.getAttribute('aria-valuenow')).toBe('62')
-    expect(
-      bar.querySelector<HTMLElement>('[data-testid="home-build-start-bar-fill"]')!.style.width
-    ).toBe('62%')
+    expect(statusOf(AUTO.id).textContent?.trim()).toBe('Starting…')
+    expect(card(AUTO.id).querySelector('[role="progressbar"]')).toBeNull()
   })
 
-  it('goes back to the running look, with no bar, once the build is up', async () => {
+  it('goes back to the running look once the build is up', async () => {
     launching(AUTO.id)
     await openHome()
-    expect(startBarOf(AUTO.id)).not.toBeNull()
+    expect(statusOf(AUTO.id).textContent?.trim()).toBe('Starting…')
 
     running(AUTO.id)
     await flushPromises()
 
     expect(statusOf(AUTO.id).textContent?.trim()).toBe('Running')
     expect(statusOf(AUTO.id).hasAttribute('role')).toBe(false)
-    expect(startBarOf(AUTO.id)).toBeNull()
+    expect(card(AUTO.id).querySelector('[data-testid="home-build-spinner"]')).toBeNull()
     expect(card(AUTO.id).querySelector('[role="progressbar"]')).toBeNull()
   })
 
-  it('stands the edge bar and spinner still when reduced motion is preferred', async () => {
+  it('stands its spinner and the Open ComfyUI spinner still when reduced motion is preferred', async () => {
     launching(AUTO.id)
     await openHome()
-    const segment = () =>
-      startBarOf(AUTO.id)!.querySelector<HTMLElement>(
-        '[data-testid="home-build-start-bar-segment"]'
-      )!
-    expect(getComputedStyle(segment()).animationName).toBe('start-bar-slide')
+    const spinners = () => [
+      card(AUTO.id).querySelector('[data-testid="home-build-spinner"]')!,
+      host.querySelector('[data-testid="home-open-comfyui-spinner"]')!
+    ]
+    expect(spinners().map((spinner) => getComputedStyle(spinner).animationName)).toEqual([
+      'spin',
+      'spin'
+    ])
 
     await cdp().send('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
     })
 
-    expect(getComputedStyle(segment()).animationName).toBe('none')
-    const spinner = card(AUTO.id).querySelector('[data-testid="home-build-spinner"]')!
-    expect(getComputedStyle(spinner).animationName).toBe('none')
+    expect(spinners().map((spinner) => getComputedStyle(spinner).animationName)).toEqual([
+      'none',
+      'none'
+    ])
   })
 })
 
 describe('Open ComfyUI while the build it opens is starting', () => {
-  it('says "Starting ComfyUI…" with a spinner, keeps its width, and still opens the build', async () => {
-    const wrapper = await openHome()
-    const button = host.querySelector<HTMLElement>('[data-testid="home-open-comfyui"]')!
-    const restingWidth = button.getBoundingClientRect().width
-    const visibleLabel = () =>
-      [...button.querySelectorAll<HTMLElement>('[data-testid="home-open-comfyui-label"] > span')]
-        .filter((label) => getComputedStyle(label).visibility === 'visible')
-        .map((label) => label.textContent?.trim())
+  function openButton(): HTMLElement {
+    return host.querySelector<HTMLElement>('[data-testid="home-open-comfyui"]')!
+  }
 
-    expect(visibleLabel()).toEqual(['Open ComfyUI'])
+  it('keeps its label and width, swaps only its icon for a spinner, and says it opens when ready', async () => {
+    const wrapper = await openHome()
+    const restingWidth = openButton().getBoundingClientRect().width
+    const restingText = openButton().textContent
 
     launching(AUTO.id)
     await flushPromises()
 
-    expect(visibleLabel()).toEqual(['Starting ComfyUI…'])
-    expect(button.querySelector('[data-testid="home-open-comfyui-spinner"]')).not.toBeNull()
-    expect(button.getBoundingClientRect().width).toBe(restingWidth)
-    button.click()
-    expect(wrapper.emitted('pick')).toEqual([[AUTO]])
+    expect(openButton().textContent).toBe(restingText)
+    expect(openButton().textContent).toContain('Open ComfyUI')
+    expect(openButton().getBoundingClientRect().width).toBe(restingWidth)
+    expect(openButton().querySelector('[data-testid="home-open-comfyui-spinner"]')).not.toBeNull()
+    expect(openButton().querySelector('[data-testid="home-open-comfyui-icon"]')).toBeNull()
+    expect(openButton().getAttribute('aria-description')).toBe("Starting… opens when it's ready")
+    expect(
+      wrapper
+        .findAllComponents(Tooltip)
+        .map((tooltip) => tooltip.props('text'))
+        .includes("Starting… opens when it's ready")
+    ).toBe(true)
 
     running(AUTO.id)
     await flushPromises()
 
-    expect(visibleLabel()).toEqual(['Open ComfyUI'])
-    expect(button.querySelector('[data-testid="home-open-comfyui-spinner"]')).toBeNull()
-    expect(button.getBoundingClientRect().width).toBe(restingWidth)
+    expect(openButton().querySelector('[data-testid="home-open-comfyui-spinner"]')).toBeNull()
+    expect(openButton().querySelector('[data-testid="home-open-comfyui-icon"]')).not.toBeNull()
+    expect(openButton().hasAttribute('aria-description')).toBe(false)
+    expect(openButton().getBoundingClientRect().width).toBe(restingWidth)
+  })
+
+  it('opens the build once it is ready when pressed while it starts', async () => {
+    launching(AUTO.id)
+    const wrapper = await openHome()
+
+    openButton().click()
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    running(AUTO.id)
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toEqual([[AUTO]])
+
+    useSessionStore().runningInstances.delete(AUTO.id)
+    launching(AUTO.id)
+    running(AUTO.id)
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toHaveLength(1)
+  })
+
+  it('opens the build once it is ready when its card is pressed while it starts', async () => {
+    launching(AUTO.id)
+    const wrapper = await openHome()
+
+    card(AUTO.id).click()
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    running(AUTO.id)
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toEqual([[AUTO]])
+  })
+
+  it('opens nothing when the start fails after it was pressed', async () => {
+    launching(AUTO.id)
+    const wrapper = await openHome()
+
+    openButton().click()
+    await flushPromises()
+    useSessionStore().launchingInstances.delete(AUTO.id)
+    await flushPromises()
+    running(AUTO.id)
+    await flushPromises()
+
+    expect(wrapper.emitted('pick')).toBeUndefined()
   })
 })
 
@@ -252,6 +288,21 @@ describe('the "ComfyUI is ready" notice', () => {
     expect(wrapper.emitted('pick')).toEqual([[AUTO]])
     expect(toast()).toBeNull()
     expect(window.api.dismissAutoStartReady).toHaveBeenCalledWith(AUTO.id)
+  })
+
+  it('sits just below Open ComfyUI, on its right edge, clear of the builds row', async () => {
+    running(AUTO.id)
+    await openHome()
+    await readyNotice(AUTO.id)
+
+    for (const animation of toast()!.getAnimations()) animation.finish()
+    const button = host.querySelector('[data-testid="home-open-build"]')!.getBoundingClientRect()
+    const notice = toast()!.getBoundingClientRect()
+    const builds = host.querySelector('[data-testid="home-builds"]')!.getBoundingClientRect()
+    expect(notice.top).toBeGreaterThan(button.bottom)
+    expect(notice.top - button.bottom).toBeLessThanOrEqual(16)
+    expect(notice.right).toBe(button.right)
+    expect(notice.bottom).toBeLessThan(builds.top)
   })
 
   it('shows a build that became ready before Home opened', async () => {

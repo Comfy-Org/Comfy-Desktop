@@ -14,6 +14,7 @@ import HomeReadyToast from './home/HomeReadyToast.vue'
 import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useAutoStartReadyNotice } from './home/useAutoStartReadyNotice'
+import { useOpenWhenReady } from './home/useOpenWhenReady'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
@@ -132,12 +133,17 @@ const readyBuild = computed(() => {
   if (id === null || !sessionStore.isRunning(id)) return null
   return installationStore.installations.find((build) => build.id === id) ?? null
 })
+const opensWhenReady = useOpenWhenReady((build) => emit('pick', build))
 function pickBuild(build: Installation): void {
   readyNotice.dismiss(build.id)
+  if (opensWhenReady.openWhenReady(build)) return
+  opensWhenReady.forget()
   emit('pick', build)
 }
 function openBuild(build: Installation): void {
   readyNotice.dismiss(build.id)
+  if (build.statusTag?.style !== 'danger' && opensWhenReady.openWhenReady(build)) return
+  opensWhenReady.forget()
   if (build.statusTag?.style === 'danger') emit('open-build', build)
   else if (launchFailed(progressStore, build.id)) viewBuildLogs(build.id)
   else emit('pick', build)
@@ -175,7 +181,7 @@ onMounted(() => {
 
     <HomeReadyToast
       v-if="readyBuild"
-      class="fixed right-6 bottom-6 z-20"
+      class="absolute top-14 right-4 z-10"
       :data-build-id="readyBuild.id"
       @open="openBuild(readyBuild)"
       @dismiss="readyNotice.dismiss()"

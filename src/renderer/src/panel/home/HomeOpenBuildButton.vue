@@ -51,7 +51,8 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
   <SplitButton
     v-model:open="open"
     :label="t('home.openComfyUIIn', { name: target.name })"
-    :tooltip="t('home.opensIn', { name: target.name })"
+    :tooltip="targetStarting ? t('home.opensWhenReady') : t('home.opensIn', { name: target.name })"
+    :description="targetStarting ? t('home.opensWhenReady') : undefined"
     :menu-label="t('home.chooseBuildToOpen')"
     main-testid="home-open-comfyui"
     menu-testid="home-open-build-menu"
@@ -74,20 +75,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       aria-hidden="true"
       data-testid="home-open-comfyui-icon"
     />
-    <span class="grid" data-testid="home-open-comfyui-label">
-      <span
-        class="[grid-area:1/1]"
-        :class="targetStarting && 'invisible'"
-        :aria-hidden="targetStarting ? 'true' : undefined"
-        >{{ t('home.openComfyUI') }}</span
-      >
-      <span
-        class="[grid-area:1/1]"
-        :class="!targetStarting && 'invisible'"
-        :aria-hidden="targetStarting ? undefined : 'true'"
-        >{{ t('home.startingComfyUI') }}</span
-      >
-    </span>
+    <span>{{ t('home.openComfyUI') }}</span>
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
     <template v-if="builds.length > 1" #menu>
       <DropdownMenuRadioGroup :model-value="target.id">

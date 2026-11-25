@@ -127,7 +127,7 @@ describe('Home build tiles', () => {
       const name = card.querySelector('[data-testid="home-build-name"]')!
 
       expect(columnsOf(section)).toBe(columns)
-      expect(status.textContent?.trim()).toBe('Starting · 5%')
+      expect(status.textContent?.trim()).toBe('Starting…')
       expect(fullyShown(status)).toBe(true)
       expect(name.textContent?.trim()).toBe(STARTING.name)
       expect(fullyShown(name)).toBe(true)

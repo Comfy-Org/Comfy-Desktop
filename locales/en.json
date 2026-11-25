@@ -212,7 +212,7 @@
   "home": {
     "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
-    "startingComfyUI": "Starting ComfyUI…",
+    "opensWhenReady": "Starting… opens when it's ready",
     "comfyReady": "ComfyUI is ready",
     "comfyReadyOpen": "Open",
     "comfyReadyDismiss": "Dismiss",
@@ -226,7 +226,6 @@
     "autoStartOn": "Auto start",
     "buildRunning": "Running",
     "buildStarting": "Starting…",
-    "buildStartingPercent": "Starting · {percent}%",
     "buildNeverUsed": "Never used",
     "cloudNoSetupNeeded": "No setup needed",
     "buildUsedJustNow": "Used just now",

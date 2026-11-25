@@ -9,7 +9,6 @@ import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildMetaLine from './BuildMetaLine.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
-import BuildStartBar from './BuildStartBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import {
   HOME_BUILD_TONES,
@@ -59,12 +58,6 @@ const uninstalling = computed(() => install.progress.value?.kind === 'uninstall'
 const updating = computed(() => install.progress.value?.kind === 'update')
 const working = computed(() => install.progress.value?.kind === 'working')
 const startingUp = computed(() => starting.value || (!busy.value && status === 'starting'))
-const startPercent = computed(() => (starting.value ? install.progress.value!.percent : null))
-const startingLabel = computed(() =>
-  startPercent.value === null
-    ? t('home.buildStarting')
-    : t('home.buildStartingPercent', { percent: startPercent.value })
-)
 const changesInPlace = computed(() => updating.value || working.value)
 const showsUpdateLock = computed(() => status === 'updating' && !changesInPlace.value)
 const promoting = computed(() => isPromotingToWorkspace(build))
@@ -101,7 +94,7 @@ const statusLabel = computed(() => {
   if (uninstalling.value) return t('uninstallProgress.status')
   const inPlace = install.progress.value ? inPlaceTaskLabel(install.progress.value, t) : null
   if (inPlace !== null) return inPlace
-  if (starting.value) return startingLabel.value
+  if (starting.value) return t('home.buildStarting')
   if (busy.value) {
     const phase = t('home.buildInstalling')
     const percent = install.progress.value?.percent
@@ -115,7 +108,7 @@ const statusLabel = computed(() => {
     case 'running':
       return t('home.buildRunning')
     case 'starting':
-      return startingLabel.value
+      return t('home.buildStarting')
     case 'update':
     case 'ready':
       return autoStart && !isCloudBuild(build) ? t('home.autoStartOn') : restingLabel.value
@@ -302,14 +295,8 @@ function openContextMenu(event: MouseEvent): void {
     >
       <Ellipsis :size="15" aria-hidden="true" />
     </Button>
-    <BuildStartBar
-      v-if="startingUp"
-      :percent="startPercent"
-      :label="statusLabel"
-      data-testid="home-build-start-bar"
-    />
     <BuildProgressBar
-      v-else-if="install.progress.value?.percent != null"
+      v-if="!startingUp && install.progress.value?.percent != null"
       :percent="install.progress.value.percent"
       :label="statusLabel"
       data-testid="home-build-progress"
