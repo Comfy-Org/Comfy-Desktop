@@ -77,6 +77,25 @@ const center = computed(() => composerPos.id === 'center')
 const dq = computed(() => (center.value ? '' : q.value))
 const results = ref<InstanceType<typeof ResultsB>>()
 
+const CENTER_TABS = [
+  { id: 'popular', label: 'Templates' },
+  { id: YOURS, label: 'Yours' }
+]
+const CENTER_SLOTS = 8
+
+function centerTemplates(): Starter[] {
+  const seen = new Set<string>()
+  return SHELVES.flatMap((s) => s.starters())
+    .filter((s) =>
+      seen.has(s.id) || seen.has(s.poster) ? false : (seen.add(s.id), seen.add(s.poster), true)
+    )
+    .slice(0, CENTER_SLOTS)
+}
+const tabsShown = computed(() => (center.value ? CENTER_TABS : TABS))
+watch(center, (on) => {
+  if (on && shelf.value !== YOURS) shelf.value = 'popular'
+})
+
 const items = computed<Item[]>(() => {
   if (dq.value) {
     const kinds = (Object.keys(NODE_TYPES) as NodeKind[]).filter((k) =>
@@ -100,6 +119,7 @@ const items = computed<Item[]>(() => {
     ]
   }
   if (shelf.value === YOURS) return [BLANK, ...workflows.value.slice(0, 10).map(wf)]
+  if (center.value) return [BLANK, ...centerTemplates().map(tpl)]
   return [BLANK, ...(SHELVES.find((s) => s.id === shelf.value) ?? SHELVES[0]!).starters().map(tpl)]
 })
 watch([dq, shelf, center], () => {
@@ -473,10 +493,6 @@ useEscapeCloses(() => composer.value?.field)
     <div class="v07-canvas" aria-hidden="true" />
 
     <div class="v07-main">
-      <button type="button" class="v07-icon-btn v07-close" aria-label="Close" @click="closeCreate">
-        <X :size="16" />
-      </button>
-
       <div class="v07-stage-wrap" :class="agentGraph && 'is-agent'">
         <div class="v07-stage">
           <svg
@@ -556,7 +572,11 @@ useEscapeCloses(() => composer.value?.field)
             :mode="createInput.id"
             :navigated
             hero
-            placeholder="Search or describe what you want to make…"
+            :placeholder="
+              createInput.id === 'agent'
+                ? 'Describe what you want to make, or search templates'
+                : 'Search templates, workflows and nodes'
+            "
             external
             @key="key"
             @ask="onAsk"
@@ -634,9 +654,14 @@ useEscapeCloses(() => composer.value?.field)
               @ask="onAsk"
             />
             <p v-else class="v07-stuck">Or start from something</p>
-            <nav v-if="!dq" class="v07-shelves" aria-label="Dock shows">
+            <nav
+              v-if="!dq"
+              class="v07-shelves"
+              :class="center && 'is-inline'"
+              aria-label="Dock shows"
+            >
               <button
-                v-for="t in TABS"
+                v-for="t in tabsShown"
                 :key="t.id"
                 type="button"
                 class="v07-tab"
@@ -861,15 +886,6 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v07-icon-btn:hover {
   background: var(--color-secondary-background-hover);
   color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 3;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-control);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-stage-wrap.is-agent {
   padding-right: 48px;
@@ -1416,6 +1432,9 @@ useEscapeCloses(() => composer.value?.field)
 }
 :root .proto-ui.proto-ui.proto-ui .v07-bar .v07-shelves {
   margin-left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-bar .v07-shelves.is-inline {
+  margin-left: 0;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-count {
   color: var(--color-subtle-foreground);

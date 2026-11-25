@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Plus, X } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance } from '../../../useProto'
@@ -167,10 +167,6 @@ useEscapeCloses(() => composer.value?.field)
     <div class="v13-canvas" aria-hidden="true" />
 
     <div class="v13-main">
-      <button type="button" class="v13-close" aria-label="Close" @click="closeCreate">
-        <X :size="16" />
-      </button>
-
       <div class="v13-ghost" :class="ghostOn && !flow.panel.value && 'is-on'" aria-hidden="true">
         <GhostGraph
           v-if="ghostStarter || ghostWorkflow"
@@ -305,22 +301,6 @@ useEscapeCloses(() => composer.value?.field)
   align-items: center;
   justify-content: center;
   padding: 48px 32px;
-}
-:root .proto-ui.proto-ui.proto-ui .v13-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 3;
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: var(--radius-control);
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v13-close:hover {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v13-ghost,
 :root .proto-ui.proto-ui.proto-ui .v13-built {

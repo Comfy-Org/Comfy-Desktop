@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowRight, Plus, X } from 'lucide-vue-next'
+import { ArrowRight, Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import CategoryChip from '../../CategoryChip.vue'
 import { allWorkflows } from '../../../gallery'
@@ -119,9 +119,6 @@ useEscapeCloses(() => composer.value?.field)
           <Plus :size="15" />Blank canvas
         </button>
       </div>
-      <button type="button" class="v08-icon v08-close" aria-label="Close" @click="closeCreate">
-        <X :size="16" />
-      </button>
     </header>
 
     <ResultsB v-if="query.trim()" ref="results" :query class="mt-10" />
@@ -302,13 +299,6 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v08-icon:hover {
   background: var(--color-secondary-background-hover);
   color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v08-close {
-  position: absolute;
-  top: 24px;
-  right: 0;
-  width: 36px;
-  height: 36px;
 }
 :root .proto-ui.proto-ui.proto-ui .v08-blank {
   display: inline-flex;
