@@ -1,12 +1,12 @@
 import { activeInstance, proto } from '../../useProto'
-import { thumb, type Template } from '../../mock'
+import type { Template } from '../../mock'
 import { mock } from '../assets/mock'
 import {
   HUB_WORKFLOWS,
   hubById,
   hubLine,
   hubTemplate,
-  hubThumb,
+  workflowThumb,
   type HubUseCase,
   type HubWorkflow
 } from '../explore/hubWorkflows'
@@ -42,7 +42,10 @@ export interface Readiness {
 
 const seed = (id: string): number => [...id].reduce((n, c) => n + c.charCodeAt(0), 0)
 
-function clipFor(w: HubWorkflow, pinned?: string): { poster: string; clip: string } | undefined {
+export function clipFor(
+  w: HubWorkflow,
+  pinned?: string
+): { poster: string; clip: string } | undefined {
   if (w.media !== 'video') return undefined
   const slot = pinned ?? CLIP_SLOTS[seed(w.id) % CLIP_SLOTS.length]!
   const clip = CLIPS[`../assets/examples/gv-${slot}.mp4`]
@@ -59,7 +62,7 @@ export function starterOf(w: HubWorkflow, makes?: string, slot?: string): Starte
     model: w.family,
     line: hubLine(w),
     media: w.media,
-    poster: video?.poster ?? hubThumb(w.id) ?? thumb(w.id),
+    poster: video?.poster ?? workflowThumb(w.id),
     clip: video?.clip
   }
 }

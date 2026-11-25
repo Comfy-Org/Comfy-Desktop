@@ -1,6 +1,5 @@
 import { openDetail } from '../../useProto'
-import { thumb } from '../../mock'
-import { HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
+import { HUB_WORKFLOWS, hubLine, workflowThumb, type HubWorkflow } from '../explore/hubWorkflows'
 import { EXAMPLES, runExample } from './examples'
 import { openAppPage } from '../../appFlow'
 import { can } from '../../milestones'
@@ -54,7 +53,7 @@ function template(w: HubWorkflow): ArcItem {
     does: what ?? hubLine(w),
     kind: 'template',
     topic: w.media,
-    src: hubThumb(w.id) ?? thumb(w.id),
+    src: workflowThumb(w.id),
     open: () => openDetail('template', w.id)
   }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
-import { ArrowUpRight, Check, CornerDownLeft, Download, Plus, Search, X } from 'lucide-vue-next'
+import { ArrowUpRight, CornerDownLeft, Plus, Search, X } from 'lucide-vue-next'
 import WorkflowCover from '../brand/WorkflowCover.vue'
 import CategoryChip from '../CategoryChip.vue'
 import MarSeg from '../pages/MarSeg.vue'
@@ -12,7 +12,7 @@ import { NODE_TYPES, type NodeKind } from '../graph/canvasData'
 import { NODE_ICONS } from '../graph/nodeIcons'
 import { recentsCover } from '../cover'
 import { closeCreate, openTemplate, openWorkflow, startBlank, startWithNode } from './createScreen'
-import { readiness, searchStarters, SHELVES, type Readiness, type Starter } from './createStarters'
+import { readiness, searchStarters, SHELVES, type Starter } from './createStarters'
 
 type Hit =
   | { id: string; type: 'workflow'; workflow: ProjectWorkflow }
@@ -107,7 +107,6 @@ function meta(hit: Hit): string {
 const icon = (hit: Hit): Component =>
   hit.type === 'node' ? NODE_ICONS[hit.node] : hit.type === 'blank' ? Plus : Search
 
-const readyIcon = (r: Readiness): Component => (r.tone === 'fetch' ? Download : Check)
 const workflowPicture = (w: ProjectWorkflow): string | undefined =>
   recentsCover.id === 'image' ? thumb(w.thumbId) : undefined
 const hueOf = (w: ProjectWorkflow): string => `--h: ${buildOf(w)?.hue ?? 250}`
@@ -252,15 +251,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKey))
                 <span class="mcs-tpl-title">{{ s.makes }}</span>
                 <span class="mcs-tpl-model">{{ s.model }}</span>
                 <span v-if="i === 0" class="mcs-tpl-line">{{ s.line }}.</span>
-                <span
-                  v-for="r in [readiness(s.template)]"
-                  :key="r.label"
-                  class="mcs-ready"
-                  :class="`is-${r.tone}`"
-                >
-                  <component :is="readyIcon(r)" v-if="r.tone !== 'off'" :size="12" />
-                  {{ r.label }}
-                </span>
               </span>
             </button>
           </div>
@@ -696,9 +686,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKey))
   font-weight: 500;
   white-space: nowrap;
   backdrop-filter: blur(14px) saturate(1.5);
-}
-:root .proto-ui.proto-ui.proto-ui .mcs-ready.is-ready svg {
-  color: var(--color-status-running);
 }
 :root .proto-ui.proto-ui.proto-ui .mcs-ready.is-off {
   opacity: 0.8;

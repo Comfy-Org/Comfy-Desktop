@@ -4,7 +4,7 @@ import { allAssets } from '../gallery'
 import { openApp } from '../appFlow'
 import { openDetail, toast } from '../useProto'
 import { tplById } from './templateModal/templateData'
-import { hubThumb } from './explore/hubWorkflows'
+import { workflowThumb } from './explore/hubWorkflows'
 import { favorites, type FavoriteKind } from './favorites'
 
 /** What a starred key points at, for the sidebar and the Favorites page. */
@@ -29,7 +29,7 @@ function resolve(key: string): FavoriteItem | undefined {
         kind,
         id,
         title: t.title,
-        src: hubThumb(t.id) ?? thumb(t.id),
+        src: workflowThumb(t.id),
         open: () => openDetail('template', t.id)
       }
     )
