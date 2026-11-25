@@ -239,13 +239,15 @@ const relightFields = (): Field[] => [
     on: true,
     options: ['1', '2', '4']
   },
-  ...LOCKED.map(([label, node], i): Field => ({
-    id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `s${i}`,
-    label,
-    kind: 'text',
-    node,
-    on: false
-  }))
+  ...LOCKED.map(
+    ([label, node], i): Field => ({
+      id: label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `s${i}`,
+      label,
+      kind: 'text',
+      node,
+      on: false
+    })
+  )
 ]
 const simpleFields = (what: string): Field[] => [
   { id: 'photo', label: what, kind: 'image', node: 'Load Image #1', on: true },
@@ -978,7 +980,14 @@ export const usd = (n: number): string => `$${n.toFixed(2)}`
 // --- The creator journey (scripted agent) -----------------------------------
 
 export type Stage =
-  'idle' | 'workflow' | 'layout' | 'inputs' | 'look' | 'preview' | 'publish' | 'live'
+  | 'idle'
+  | 'workflow'
+  | 'layout'
+  | 'inputs'
+  | 'look'
+  | 'preview'
+  | 'publish'
+  | 'live'
 
 export interface Msg {
   id: number

@@ -37,13 +37,15 @@ const BLANK: Hit = { id: 'blank', type: 'blank' }
 const MODELS = KINDS.flatMap((node) =>
   NODE_TYPES[node].controls().flatMap((c) =>
     c.kind === 'model'
-      ? c.options.map((o): Hit => ({
-          id: `model:${node}:${o.value}`,
-          type: 'model',
-          node,
-          model: o.value,
-          provider: o.provider
-        }))
+      ? c.options.map(
+          (o): Hit => ({
+            id: `model:${node}:${o.value}`,
+            type: 'model',
+            node,
+            model: o.value,
+            provider: o.provider
+          })
+        )
       : []
   )
 )

@@ -343,11 +343,7 @@ function copyText(text: string, what: string): void {
 }
 /** Show in Finder: only a file on this computer, never a Comfy Cloud one. */
 const onDisk = computed(() => asset.source !== 'cloud')
-const savedFolder = computed(() => ({
-  name: facts.value.imported ? 'input' : 'output',
-  parent: `~/Documents/ComfyUI/${build}`
-}))
-const savedIn = computed(() => `${savedFolder.value.parent}/${savedFolder.value.name}`)
+const savedFolder = computed(() => (facts.value.imported ? 'input' : 'output'))
 const extension = computed(() => {
   const dot = asset.name.lastIndexOf('.')
   return dot >= 0 ? asset.name.slice(dot + 1).toUpperCase() : facts.value.format
@@ -848,9 +844,9 @@ onBeforeUnmount(() => {
 
               <section v-if="full && onDisk" class="mad-sec" aria-label="Saved in">
                 <h3 class="mad-label">Saved in</h3>
-                <div class="mad-saved-in" :title="savedIn">
-                  <span class="mad-saved">{{ savedFolder.name }}</span>
-                  <span class="mad-saved is-parent">{{ savedFolder.parent }}</span>
+                <div class="mad-saved-in">
+                  <span class="mad-saved">{{ savedFolder }}</span>
+                  <span class="mad-saved is-parent">{{ build }}</span>
                 </div>
               </section>
 

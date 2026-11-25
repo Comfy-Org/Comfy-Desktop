@@ -290,8 +290,12 @@ watch(
     const t = template.value
     const kase =
       t && !saved.value ? targets.value.find((x) => x.inst.id === caseBuild(t)) : undefined
-    selectedId.value = (kase ?? home ?? best.value ?? targets.value.find((x) => !x.disabled))?.inst
-      .id
+    selectedId.value = (
+      kase ??
+      home ??
+      best.value ??
+      targets.value.find((x) => !x.disabled)
+    )?.inst.id
     view.value = 'result'
     exampleAt.value = 0
     buildMenu.value = false
@@ -633,8 +637,12 @@ const full = computed(() => can.value.onboarding)
               >Made with {{ example.madeWith }}</span
             >
           </header>
-          <div v-if="view === 'result'" class="mad-view" :class="examples.length && 'has-strip'">
-            <div class="mad-fit" :class="natural && 'is-natural'" :style="fitStyle">
+          <div
+            v-if="view === 'result'"
+            class="mad-view"
+            :class="examples.length > 0 && 'has-strip'"
+          >
+            <div class="mad-fit" :class="natural > 0 && 'is-natural'" :style="fitStyle">
               <div ref="mediaEl" class="mad-media" :style="{ scale: zoom / 100 }">
                 <video
                   v-if="example?.clip"

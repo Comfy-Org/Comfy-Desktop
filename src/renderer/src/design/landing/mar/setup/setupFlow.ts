@@ -51,7 +51,12 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  open: the first-run Home stays around the card. Off by default, and
  *  only where there is a Home. */
 export type Onboarding =
-  'install' | 'home-running' | 'home-direct' | 'oneclick' | 'home' | 'home-open'
+  | 'install'
+  | 'home-running'
+  | 'home-direct'
+  | 'oneclick'
+  | 'home'
+  | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'oneclick', label: 'One-click install (proposed)' },
   { value: 'install', label: 'Install first (today)' },

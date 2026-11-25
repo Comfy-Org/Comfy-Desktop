@@ -40,11 +40,13 @@ const sections = computed<{ title: string; hits: Hit[] }[]>(() =>
       hits: (searchStarters(q.value, 6).length
         ? searchStarters(q.value, 6)
         : quickPicks(q.value, 6)
-      ).map((starter): Hit => ({
-        id: `t:${starter.id}`,
-        type: 'template',
-        starter
-      }))
+      ).map(
+        (starter): Hit => ({
+          id: `t:${starter.id}`,
+          type: 'template',
+          starter
+        })
+      )
     },
     {
       title: 'Nodes',

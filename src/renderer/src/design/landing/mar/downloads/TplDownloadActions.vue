@@ -71,7 +71,7 @@ const title = computed(() => {
       return DOWNLOAD_COPY.failed
     case 'cancelled':
       return DOWNLOAD_COPY.cancelled
-    case 'done':
+    default:
       return `${DOWNLOAD_COPY.downloaded} · ${formatGb(d.totalGb)}`
   }
 })

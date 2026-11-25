@@ -225,7 +225,8 @@ function newChat(): void {
       </button>
       <template v-for="(g, gi) in groups" :key="gi">
         <div v-if="g.title" class="mar-side-label">
-          <span v-if="open">{{ g.title }}</span><span v-else class="mar-side-sep" />
+          <span v-if="open">{{ g.title }}</span
+          ><span v-else class="mar-side-sep" />
         </div>
         <button
           v-for="i in g.items"

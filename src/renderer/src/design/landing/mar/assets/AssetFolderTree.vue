@@ -51,7 +51,7 @@ const MAX_LEVELS = 8
 
 function ancestors(id: string): AssetFolder[] {
   const out: AssetFolder[] = []
-  for (let f = folders.find((x) => x.id === id); f?.parent;) {
+  for (let f = folders.find((x) => x.id === id); f?.parent; ) {
     const up = folders.find((x) => x.id === f!.parent)
     if (!up) break
     out.unshift(up)

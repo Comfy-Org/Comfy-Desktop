@@ -660,7 +660,7 @@ watch(folder, (id) => id && folderPath(id).forEach((p) => unfold(p.id, true)), {
 /** The folders above this one, from the top. */
 function folderPath(id: string): AssetFolder[] {
   const out: AssetFolder[] = []
-  for (let f = folders.find((x) => x.id === id); f?.parent;) {
+  for (let f = folders.find((x) => x.id === id); f?.parent; ) {
     const up = folders.find((x) => x.id === f!.parent)
     if (!up) break
     out.unshift(up)
@@ -1531,10 +1531,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           >
             <section v-for="g in sections" :key="g.key" class="mar-asset-job">
               <p v-if="g.title" class="mar-asset-job-head">
-                <span class="mar-asset-job-name">{{ g.title }}</span><span
-                  class="mar-asset-job-n"
-                  >{{ g.items.length }}</span
-                >
+                <span class="mar-asset-job-name">{{ g.title }}</span
+                ><span class="mar-asset-job-n">{{ g.items.length }}</span>
               </p>
               <div
                 :class="
@@ -1977,9 +1975,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
               :aria-pressed="filter.tags.includes(t.tag)"
               @click="toggleTag(t.tag)"
             >
-              <span class="mar-anav-name">{{ t.tag }}</span><span class="mar-anav-n">{{
-                t.count
-              }}</span>
+              <span class="mar-anav-name">{{ t.tag }}</span
+              ><span class="mar-anav-n">{{ t.count }}</span>
             </button>
             <span class="mar-anav-folder-tools">
               <MarItemMenu
