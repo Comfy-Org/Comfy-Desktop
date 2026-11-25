@@ -13,7 +13,7 @@ export interface Step {
   agent?: boolean
 }
 
-const video = starterById('video_ltx2_3_i2v', 'Image to video', 'waves')
+const video = starterById('video_ltx2_3_i2v', 'Image to video', 'dove')
 
 export const STEPS: Step[] = [
   {

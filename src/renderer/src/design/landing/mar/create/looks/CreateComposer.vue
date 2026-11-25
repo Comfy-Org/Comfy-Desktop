@@ -13,6 +13,7 @@ const {
   navigated = false,
   external = false,
   hero = false,
+  send = false,
   placeholder
 } = defineProps<{
   mode: CreateInput
@@ -20,6 +21,7 @@ const {
   navigated?: boolean
   external?: boolean
   hero?: boolean
+  send?: boolean
   placeholder?: string
 }>()
 const query = defineModel<string>({ required: true })
@@ -119,7 +121,7 @@ defineExpose({ focus, dismiss, field })
         @blur="focused = false"
       />
       <button
-        v-if="query && agent && external"
+        v-if="query && agent && external && !send"
         type="button"
         class="cc-ask"
         aria-label="Ask"

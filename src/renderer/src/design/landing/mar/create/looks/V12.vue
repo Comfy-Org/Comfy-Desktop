@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
-import { AgentChat } from '../../icons/agentChat'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance } from '../../../useProto'
 import { thumb } from '../../../mock'
@@ -20,7 +19,7 @@ import {
 import { readiness, SHELVES, type Starter } from '../createStarters'
 import { createInput } from '../createInput'
 import { agentOpens } from '../agentOpens'
-import { buildOf, readyIcon, reducedMotion, useEscapeCloses } from './lookKitB'
+import { buildOf, playIn, readyIcon, reducedMotion, stopIn, useEscapeCloses } from './lookKitB'
 import { agentStart, type AgentAnswer } from './v07Agent'
 import { STEPS, type Step } from './firstSteps'
 import { useCreateAgent } from './createAgent'
@@ -127,6 +126,19 @@ function key(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
+const placeholder = computed(() =>
+  createInput.id === 'agent'
+    ? 'Describe what you want to make, or search templates'
+    : 'Search templates, workflows and nodes'
+)
+
+const dropping = computed(() => createInput.id === 'search' && !!query.value.trim())
+
+function enter(i: number, el: EventTarget | null): void {
+  hover.value = i
+  if (!reducedMotion()) playIn(el)
+}
+
 useEscapeCloses(() => composer.value?.field)
 </script>
 
@@ -143,28 +155,41 @@ useEscapeCloses(() => composer.value?.field)
       >
         <GhostGraph :starter="flow.build.value.starter" :agent="flow.ghost.value" />
       </div>
+      <div
+        class="v12-scrim"
+        :class="(leaving || flow.panel.value) && 'is-hidden'"
+        aria-hidden="true"
+      />
 
       <div
         class="v12-over"
         :class="[leaving && 'is-leaving', flow.panel.value && 'is-hidden']"
         :aria-hidden="flow.panel.value"
       >
-        <h1 class="v12-title">Your canvas is ready</h1>
-        <p class="v12-sub">Start from a first step, or describe what you want to make.</p>
-        <CreateComposer
-          ref="composer"
-          v-model="query"
-          class="v12-composer"
-          :mode="createInput.id"
-          :navigated
-          external
-          @key="key"
-          @ask="onAsk"
-        />
+        <h1 class="v12-title">What do you want to make?</h1>
+        <div class="v12-ask">
+          <CreateComposer
+            ref="composer"
+            v-model="query"
+            class="v12-composer"
+            :mode="createInput.id"
+            :navigated
+            :placeholder
+            hero
+            send
+            external
+            @key="key"
+            @ask="onAsk"
+          />
+          <div v-if="dropping" class="v12-drop">
+            <ResultsB ref="results" :query />
+          </div>
+        </div>
+        <button type="button" class="v12-link" @click="leave(startBlank)">
+          <Plus :size="14" />Start with a blank canvas
+        </button>
 
-        <ResultsB v-if="query.trim()" ref="results" :query class="v12-results" />
-
-        <template v-else>
+        <div class="v12-starts" :class="dropping && 'is-under'">
           <nav class="v12-tabs" aria-label="Start from">
             <button
               v-for="t in TABS"
@@ -189,8 +214,10 @@ useEscapeCloses(() => composer.value?.field)
                 type="button"
                 class="v12-card"
                 :class="hover === i && 'is-at'"
-                @pointerenter="hover = i"
-                @focus="hover = i"
+                @pointerenter="enter(i, $event.currentTarget)"
+                @pointerleave="stopIn($event.currentTarget)"
+                @focus="enter(i, $event.currentTarget)"
+                @blur="stopIn($event.currentTarget)"
                 @click="pick(c)"
               >
                 <span class="v12-pic">
@@ -203,10 +230,8 @@ useEscapeCloses(() => composer.value?.field)
                       muted
                       loop
                       playsinline
-                      autoplay
-                      class="motion-reduce:hidden"
+                      preload="none"
                     />
-                    <span v-if="c.step.agent" class="v12-mark"><AgentChat :size="13" /></span>
                   </template>
                   <img
                     v-else-if="c.type === 'template'"
@@ -237,7 +262,7 @@ useEscapeCloses(() => composer.value?.field)
 
           <p class="v12-line" aria-live="polite">
             <template v-if="shown?.type === 'step'">
-              {{ shown.step.chain }}, on {{ activeInstance.name }}
+              {{ shown.step.line }} Runs on {{ activeInstance.name }}.
             </template>
             <template v-else-if="shown?.type === 'template'">
               <span
@@ -251,18 +276,20 @@ useEscapeCloses(() => composer.value?.field)
               </span>
             </template>
             <template v-else-if="shown?.type === 'workflow'">
-              {{ buildOf(shown.workflow)?.name }}, edited
+              On {{ buildOf(shown.workflow)?.name }}, edited
               {{ shown.workflow.modified.toLowerCase() }}
             </template>
           </p>
-        </template>
+        </div>
 
-        <footer class="v12-foot">
-          <button type="button" class="v12-link" @click="leave(startWithNodeSearch)">
-            <Plus :size="13" />Add node
-          </button>
-          <button type="button" class="v12-link" @click="leave(startBlank)">Start blank</button>
-        </footer>
+        <button
+          type="button"
+          class="v12-link v12-add"
+          :class="dropping && 'is-under'"
+          @click="leave(startWithNodeSearch)"
+        >
+          <Plus :size="14" />Add node
+        </button>
       </div>
     </div>
 
@@ -301,7 +328,7 @@ useEscapeCloses(() => composer.value?.field)
   flex: 1;
   align-items: center;
   justify-content: center;
-  padding: 48px 32px;
+  padding: 48px 40px;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-built {
   position: absolute;
@@ -313,19 +340,34 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v12-built.is-faint {
   opacity: 0.2;
 }
+:root .proto-ui.proto-ui.proto-ui .v12-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(
+    ellipse 44% 50% at 50% 50%,
+    color-mix(in oklch, var(--color-content-background) 90%, transparent) 35%,
+    transparent 80%
+  );
+  pointer-events: none;
+  transition: opacity 260ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-scrim.is-hidden {
+  opacity: 0;
+}
 :root .proto-ui.proto-ui.proto-ui .v12-over {
   position: relative;
   z-index: 2;
   display: flex;
   width: 100%;
-  max-width: 880px;
+  max-width: 840px;
   flex-direction: column;
   align-items: center;
   text-align: center;
   transition:
     opacity 220ms ease,
     transform 220ms var(--ease-out-expo);
-  animation: v12-in 420ms var(--ease-out-expo) both;
+  animation: v12-in 520ms var(--ease-out-expo) both;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-over.is-leaving,
 :root .proto-ui.proto-ui.proto-ui .v12-over.is-hidden {
@@ -335,37 +377,84 @@ useEscapeCloses(() => composer.value?.field)
 }
 :root .proto-ui.proto-ui.proto-ui .v12-title {
   color: var(--color-base-foreground);
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 36px;
+  letter-spacing: -0.022em;
+  line-height: 38px;
 }
-:root .proto-ui.proto-ui.proto-ui .v12-sub {
-  margin-top: 6px;
-  color: var(--color-subtle-foreground);
-  font-size: 14px;
-}
-:root .proto-ui.proto-ui.proto-ui .v12-composer {
-  width: 100%;
-  max-width: 560px;
+:root .proto-ui.proto-ui.proto-ui .v12-ask {
+  position: relative;
+  width: min(640px, 100%);
   margin-top: 24px;
   text-align: left;
 }
-:root .proto-ui.proto-ui.proto-ui .v12-results {
+:root .proto-ui.proto-ui.proto-ui .v12-drop {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  z-index: 6;
+  width: min(860px, calc(100vw - 96px));
+  max-height: min(440px, 50vh);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: var(--radius-panel);
+  background: var(--color-card-background);
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-default),
+    var(--shadow-popover);
+  transform: translateX(-50%);
+  backdrop-filter: blur(var(--blur-glass));
+  scrollbar-width: thin;
+  animation: v12-fade 160ms ease both;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-link {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-link:hover {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v12-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui .v12-starts {
+  display: flex;
   width: 100%;
-  margin-top: 24px;
-  text-align: left;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 48px;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-starts,
+:root .proto-ui.proto-ui.proto-ui .v12-add {
+  transition: opacity 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-starts.is-under,
+:root .proto-ui.proto-ui.proto-ui .v12-add.is-under {
+  opacity: 0;
+  pointer-events: none;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-tabs {
   display: flex;
-  gap: 22px;
-  margin-top: 36px;
+  gap: 24px;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-tab {
-  padding: 4px 0;
+  padding: 4px 0 6px;
   color: var(--color-subtle-foreground);
   font-size: var(--text-ui);
   font-weight: 500;
+  transition: color 140ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-tab:hover,
 :root .proto-ui.proto-ui.proto-ui .v12-tab.is-on {
@@ -374,51 +463,37 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v12-tab.is-on {
   box-shadow: inset 0 -2px 0 var(--color-base-foreground);
 }
+:root .proto-ui.proto-ui.proto-ui .v12-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+  border-radius: 4px;
+}
 :root .proto-ui.proto-ui.proto-ui .v12-row {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
   margin-top: 18px;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-card {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 16px;
-  background: color-mix(in oklch, var(--color-card-background) 80%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  gap: 10px;
   text-align: left;
   outline: none;
-  backdrop-filter: blur(var(--blur-glass));
-  transition:
-    transform 220ms var(--ease-out-expo),
-    box-shadow 160ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v12-card.is-at {
-  transform: translateY(-3px);
-  box-shadow:
-    inset 0 0 0 1px var(--color-border-strong),
-    var(--shadow-popover);
-}
-:root .proto-ui.proto-ui.proto-ui .v12-card:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v12-card.is-empty {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
-  backdrop-filter: none;
-  opacity: 0.5;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-pic {
   position: relative;
   display: block;
   aspect-ratio: 4 / 3;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--color-secondary-background);
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  transition:
+    transform 260ms var(--ease-out-expo),
+    box-shadow 200ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-pic > img,
 :root .proto-ui.proto-ui.proto-ui .v12-pic > video,
@@ -429,30 +504,44 @@ useEscapeCloses(() => composer.value?.field)
   height: 100%;
   object-fit: cover;
 }
-:root .proto-ui.proto-ui.proto-ui .v12-mark {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-media-overlay);
-  color: white;
+:root .proto-ui.proto-ui.proto-ui .v12-pic > video {
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-card.is-at .v12-pic > video {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-card.is-at .v12-pic {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-elev-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .v12-card:focus-visible .v12-pic {
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui .v12-card.is-empty .v12-pic {
+  background: transparent;
+  box-shadow: none;
+  outline: 1px dashed var(--color-border-default);
+  outline-offset: -1px;
 }
 :root .proto-ui.proto-ui.proto-ui .v12-name {
   overflow: hidden;
-  padding: 0 4px 2px;
-  color: var(--color-base-foreground);
+  padding: 0 2px;
+  color: var(--color-muted-foreground);
   font-size: var(--text-ui);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v12-card.is-at .v12-name {
+  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v12-line {
   min-height: 20px;
-  margin-top: 14px;
+  margin-top: 16px;
   color: var(--color-subtle-foreground);
   font-size: 12px;
 }
@@ -464,39 +553,39 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v12-ready.is-ready svg {
   color: var(--color-status-running);
 }
-:root .proto-ui.proto-ui.proto-ui .v12-foot {
-  display: flex;
-  gap: 6px;
-  margin-top: 22px;
-}
-:root .proto-ui.proto-ui.proto-ui .v12-link {
-  display: inline-flex;
-  height: 30px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  border-radius: 999px;
+:root .proto-ui.proto-ui.proto-ui .v12-add {
+  margin-top: 28px;
   color: var(--color-subtle-foreground);
-  font-size: var(--text-ui);
-}
-:root .proto-ui.proto-ui.proto-ui .v12-link:hover {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
 }
 @keyframes v12-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
+  }
+}
+@keyframes v12-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (max-width: 1180px) {
+  :root .proto-ui.proto-ui.proto-ui .v12-row {
+    gap: 12px;
+  }
+  :root .proto-ui.proto-ui.proto-ui .v12-starts {
+    margin-top: 40px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   :root .proto-ui.proto-ui.proto-ui .v12-over,
-  :root .proto-ui.proto-ui.proto-ui .v12-card,
+  :root .proto-ui.proto-ui.proto-ui .v12-drop,
+  :root .proto-ui.proto-ui.proto-ui .v12-pic,
+  :root .proto-ui.proto-ui.proto-ui .v12-scrim,
   :root .proto-ui.proto-ui.proto-ui .v12-built {
     animation: none;
     transition: none;
   }
-  :root .proto-ui.proto-ui.proto-ui .v12-card.is-at {
+  :root .proto-ui.proto-ui.proto-ui .v12-card.is-at .v12-pic {
     transform: none;
   }
 }
