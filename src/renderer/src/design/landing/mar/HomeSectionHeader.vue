@@ -31,8 +31,9 @@ const emit = defineEmits<{ open: []; add: [] }>()
     <div v-if="add !== 'never'" class="hsh-add" :class="`is-${add}`">
       <Tooltip :content="addLabel">
         <Button
-          variant="secondary"
+          variant="ghost"
           size="icon"
+          class="bg-(--color-secondary-background) text-base-foreground hover:bg-(--color-secondary-background-hover)"
           :aria-label="addLabel"
           :data-home-tour="addAnchor"
           @click="emit('add')"
