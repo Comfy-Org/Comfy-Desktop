@@ -9,6 +9,7 @@ import {
   Folder,
   FolderInput,
   Image,
+  Layers,
   ListFilter,
   Palette,
   Puzzle,
@@ -38,6 +39,8 @@ import { fieldVariants } from '../../ui/field.variants'
 import { floatingSurface, menuItem } from '../../ui/menu.styles'
 import { PORTAL_TO } from '../../ui/portal'
 import RangeCalendar from './RangeCalendar.vue'
+import LocationIcon from '../../ui/LocationIcon.vue'
+import type { AssetBuildRow } from '../assets/assetBuilds'
 import { LABELS } from '../assets/assetLabels'
 import { activeFilters, noFilter, type AssetFilter, type AssetType } from '../assets/assetFilters'
 
@@ -62,7 +65,8 @@ const {
   range = false,
   typesLabel = 'Media type',
   folders,
-  meta
+  meta,
+  builds
 } = defineProps<{
   types: readonly { value: AssetType; label: string }[]
   tags: string[]
@@ -76,12 +80,29 @@ const {
   /** Desktop: the build's folders, in tree order (ComfyUI's tab keeps
    *  them in its sidebar). One folder at a time, its subfolders in it. */
   folders?: { id: string; name: string; depth: number }[]
+  builds?: AssetBuildRow[]
 }>()
 const f = defineModel<AssetFilter>({ required: true })
 // Desktop's page clears every filter with ⌘⌫ (MarAssetsPage); the menu says so.
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 const folder = defineModel<string>('folder', { default: '' })
-const count = computed(() => activeFilters(f.value) + (folder.value ? 1 : 0))
+const build = defineModel<string>('build', { default: 'all' })
+const buildOn = computed(() => !!builds?.length && build.value !== 'all')
+const count = computed(
+  () => activeFilters(f.value) + (folder.value ? 1 : 0) + (buildOn.value ? 1 : 0)
+)
+const BUILD_ALL: AssetBuildRow = {
+  id: 'all',
+  name: 'All builds',
+  cloud: false,
+  status: '',
+  sub: ''
+}
+const buildRows = computed(() => (builds?.length ? [BUILD_ALL, ...builds] : []))
+function clearAll(): void {
+  f.value = noFilter()
+  if (builds?.length) build.value = 'all'
+}
 const pickFolder = (id: string): void => {
   folder.value = folder.value === id ? '' : id
 }
@@ -151,6 +172,7 @@ const q = ref('')
 const match = (s: string): boolean => s.toLowerCase().includes(q.value.trim().toLowerCase())
 const found = computed(() => ({
   sources: source ? SOURCES.filter((x) => match(x.label)) : [],
+  builds: buildRows.value.filter((x) => match(x.name)),
   types: types.filter((t) => match(t.label)),
   dates: DATES.filter((d) => match(d.label)),
   tags: tags.filter(match),
@@ -215,6 +237,25 @@ const searching = computed(() => !!q.value.trim())
                 @select.prevent="setSource(x.value)"
               >
                 <span class="afm-grow">{{ x.label }}</span>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </template>
+          <template v-if="found.builds.length">
+            <DropdownMenuLabel class="afm-label">Build</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="build">
+              <DropdownMenuRadioItem
+                v-for="x in found.builds"
+                :key="x.id"
+                :class="item"
+                :value="x.id"
+                @select.prevent="build = x.id"
+              >
+                <Layers v-if="x.id === 'all'" :size="16" class="afm-icon" /><LocationIcon
+                  v-else
+                  :kind="x.cloud ? 'cloud' : 'local'"
+                  :size="16"
+                  class="afm-icon"
+                /><span class="afm-grow truncate" :title="x.name">{{ x.name }}</span>
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </template>
@@ -303,6 +344,7 @@ const searching = computed(() => !!q.value.trim())
           <p
             v-if="
               !found.sources.length &&
+              !found.builds.length &&
               !found.types.length &&
               !found.dates.length &&
               !found.tags.length &&
@@ -338,6 +380,40 @@ const searching = computed(() => !!q.value.trim())
                     @select.prevent="setSource(x.value)"
                   >
                     <span class="afm-grow">{{ x.label }}</span>
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+          <DropdownMenuSub
+            v-if="buildRows.length"
+            :open="sub === 'builds'"
+            @update:open="only('builds', $event)"
+          >
+            <DropdownMenuSubTrigger :class="item">
+              <Layers :size="16" class="afm-icon" /><span class="afm-grow">Build</span
+              ><ChevronRight :size="16" class="afm-icon" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal :to="PORTAL_TO">
+              <DropdownMenuSubContent
+                :side-offset="8"
+                :align-offset="-9"
+                :class="cn(surface, 'afm-builds')"
+              >
+                <DropdownMenuRadioGroup :model-value="build">
+                  <DropdownMenuRadioItem
+                    v-for="x in buildRows"
+                    :key="x.id"
+                    :class="item"
+                    :value="x.id"
+                    @select.prevent="build = x.id"
+                  >
+                    <Layers v-if="x.id === 'all'" :size="16" class="afm-icon" /><LocationIcon
+                      v-else
+                      :kind="x.cloud ? 'cloud' : 'local'"
+                      :size="16"
+                      class="afm-icon"
+                    /><span class="afm-grow truncate" :title="x.name">{{ x.name }}</span>
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
@@ -534,9 +610,9 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuSub>
           </template>
         </template>
-        <template v-if="activeFilters(f)">
+        <template v-if="activeFilters(f) || buildOn">
           <DropdownMenuSeparator class="afm-sep" />
-          <DropdownMenuItem :class="[item, 'is-muted']" @select.prevent="f = noFilter()">
+          <DropdownMenuItem :class="[item, 'is-muted']" @select.prevent="clearAll">
             <X :size="16" class="afm-icon" /><span class="afm-grow">Clear filters</span
             ><kbd v-if="field" class="mar-menu-hint">{{ MOD }}⌫</kbd>
           </DropdownMenuItem>
@@ -688,6 +764,9 @@ const searching = computed(() => !!q.value.trim())
 .afm-none {
   padding: 6px 12px;
   color: var(--color-muted-foreground);
+}
+.afm-builds {
+  width: 240px;
 }
 /* Deep trees stay readable: a fixed width, long names cut. */
 .afm-folders {

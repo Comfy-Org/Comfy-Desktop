@@ -115,6 +115,7 @@ import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, metaIn, noFilter, passes, tagsIn } from '../assets/assetFilters'
 import {
+  assetBuildRows,
   assetBuilds,
   buildStatus,
   defaultBuild,
@@ -162,9 +163,17 @@ const followsTitleBar = computed(
 )
 const titleBarBuild = (): string =>
   assetBuilds.value.some((b) => b.id === proto.activeInstanceId) ? proto.activeInstanceId : ''
+const treeOn = computed(
+  () => !inGraph && !fixedProject && can.value.onboarding && assetFolderLayout.id === 'tree'
+)
 const linkedBuild = assetLink.at === 'desktop' ? assetLink.build : ''
 if (followsTitleBar.value && linkedBuild) proto.activeInstanceId = linkedBuild
-const build = ref(linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild())
+const build = ref(
+  treeOn.value
+    ? linkedBuild || 'all'
+    : linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild()
+)
+watch(treeOn, (on) => (build.value = on ? 'all' : defaultBuild()))
 watch(
   () => [followsTitleBar.value, proto.activeInstanceId] as const,
   ([follows]) => {
@@ -179,9 +188,6 @@ const query = ref('')
 const label = ref<AssetLabel | ''>('')
 /** And a folder, with every folder inside it. */
 const folder = ref('')
-const treeOn = computed(
-  () => !inGraph && !fixedProject && can.value.onboarding && assetFolderLayout.id === 'tree'
-)
 const foldersOn = computed(() => assetFoldersShown.id === 'on' || treeOn.value)
 function railForTree(on: boolean): void {
   const before = railBeforeTree.get()
@@ -207,8 +213,8 @@ const store = inGraph ? graphLibrary : assets
 
 // Everywhere (a UI Playground tweak) reads every running build at once;
 // each card names its own.
-const running = computed(() =>
-  assetBuilds.value.filter((b) => buildStatus(b) === 'running').map((b) => b.id)
+const allBuildIds = computed(() =>
+  assetBuilds.value.filter((b) => treeOn.value || buildStatus(b) === 'running').map((b) => b.id)
 )
 const base = computed(() =>
   store.items.filter(
@@ -217,14 +223,14 @@ const base = computed(() =>
       (fixedProject
         ? a.project === fixedProject
         : build.value === 'all'
-          ? running.value.includes(a.envId ?? '')
+          ? allBuildIds.value.includes(a.envId ?? '')
           : a.envId === build.value)
   )
 )
 // The tweak off, Everywhere goes back to a build.
 watch(
   () => assetsEverywhere.id,
-  (id) => id === 'off' && build.value === 'all' && (build.value = defaultBuild())
+  (id) => id === 'off' && !treeOn.value && build.value === 'all' && (build.value = defaultBuild())
 )
 const current = computed(() => assetBuilds.value.find((b) => b.id === build.value))
 const buildName = (a: MarAsset): string =>
@@ -400,10 +406,14 @@ const FOLDER_LIST = computed(() =>
 )
 /** Any filter on (the folder too, on Desktop): what ⌘⌫ clears. */
 const filtered = computed(
-  () => activeFilters(filter.value) > 0 || (!inGraph && !treeOn.value && !!folder.value)
+  () =>
+    activeFilters(filter.value) > 0 ||
+    (treeOn.value && build.value !== 'all') ||
+    (!inGraph && !treeOn.value && !!folder.value)
 )
 function clearFilters(): void {
   filter.value = noFilter()
+  if (treeOn.value) build.value = 'all'
   if (!inGraph && !treeOn.value) folder.value = ''
 }
 // ⌘⌫ / Ctrl+Backspace clears every filter, ahead of the selection's own
@@ -805,13 +815,14 @@ const sections = computed(() => {
 // the search or the filters either.
 const detail = ref<MarAsset | null>(null)
 watch(build, (id) => {
-  rememberBuild(id)
   detail.value = null
+  lib.sel.clear()
+  if (treeOn.value) return
+  rememberBuild(id)
   filter.value = noFilter()
   folder.value = ''
   query.value = ''
   kind.value = 'all'
-  lib.sel.clear()
 })
 const suggested = computed(() => suggestedBuild())
 const finished = computed(() => shown.value.filter((a) => !a.status))
@@ -1334,7 +1345,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 
     <template #toolbar>
       <div class="mar-asset-tools">
-        <AssetBuildPicker v-if="!fixedProject && !inGraph && !followsTitleBar" v-model="build" />
+        <AssetBuildPicker
+          v-if="!fixedProject && !inGraph && !followsTitleBar && !treeOn"
+          v-model="build"
+        />
         <MarSeg
           v-if="!fixedProject && browsable"
           v-model="kind"
@@ -1367,6 +1381,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           </Tooltip>
           <AssetFilterMenu
             v-model="filter"
+            v-model:build="build"
             :folder="treeOn ? '' : folder"
             field
             source
@@ -1376,6 +1391,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :tags="TAGS"
             :meta="metaIn(base)"
             :folders="FOLDER_LIST"
+            :builds="treeOn ? assetBuildRows : undefined"
             @update:folder="folder = $event"
           />
           <AssetSearch v-model:query="query" />

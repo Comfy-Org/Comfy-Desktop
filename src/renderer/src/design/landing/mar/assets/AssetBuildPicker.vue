@@ -7,7 +7,7 @@ import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import { floatingSurface, menuItem } from '../../ui/menu.styles'
 import { PORTAL_TO } from '../../ui/portal'
-import { assetBuilds, buildStatus, type AssetBuild } from './assetBuilds'
+import { assetBuildRows, assetBuilds, type AssetBuild, type AssetBuildRow } from './assetBuilds'
 import { assetsEverywhere } from './assetsEverywhere'
 
 /** Whose assets (Assets, Phase 2): one build at a time, each with its
@@ -19,9 +19,7 @@ import { assetsEverywhere } from './assetsEverywhere'
 const model = defineModel<string>({ required: true })
 const open = ref(false)
 const current = (): AssetBuild | undefined => assetBuilds.value.find((b) => b.id === model.value)
-const STATE = { running: 'Running', launching: 'Starting', stopped: 'Stopped' } as const
-// Two lines a row: the name, then where it runs and its state.
-const rows = computed(() => [
+const rows = computed<AssetBuildRow[]>(() => [
   ...(assetsEverywhere.id === 'on'
     ? [
         {
@@ -33,18 +31,7 @@ const rows = computed(() => [
         }
       ]
     : []),
-  ...assetBuilds.value.map((b) => {
-    const cloud = b.kind === 'cloud'
-    // Cloud is always there to browse: Ready, with no running dot.
-    const status = cloud ? '' : buildStatus(b)
-    return {
-      id: b.id,
-      name: b.name,
-      cloud,
-      status,
-      sub: cloud ? 'Cloud · Ready' : `Local · ${STATE[buildStatus(b)]}`
-    }
-  })
+  ...assetBuildRows.value
 ])
 function pick(id: string): void {
   model.value = id
