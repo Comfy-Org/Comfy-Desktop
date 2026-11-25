@@ -5,7 +5,6 @@ import Button from '../ui/Button.vue'
 import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
 import { onCloud, SURFACES, surface } from './shell/surface'
-import { homeBackground, type HomeBackground } from './shell/marShell'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import Switch from '../ui/Switch.vue'
 import Select from '../ui/Select.vue'
@@ -77,14 +76,6 @@ import GroupHead from './tuner/TunerGroupHead.vue'
 /** Local setup › Jump to: the last screen picked. */
 const setupScreen = ref<Screen | null>(null)
 
-const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
-  { value: 'spotlight', label: 'Spotlight · soft light' },
-  { value: 'bloom', label: 'Latent bloom · colour out of grain' },
-  { value: 'output', label: 'Latest output · blurred' },
-  { value: 'canvas', label: 'Canvas · the editor’s dot grid' },
-  { value: 'wires', label: 'Wires · a graph traced in light' },
-  { value: 'grade', label: 'Latent grade · latest output, duotone' }
-]
 const ACCOUNTS = [
   { value: 'in', label: 'Signed in' },
   { value: 'out', label: 'Signed out' }
@@ -168,7 +159,6 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'downloadScenario', show: () => when.downloadScenario.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
-  { id: 'homeBackground', show: () => when.homeBackground.value },
   { id: 'firstRun', show: () => when.firstRun.value },
   { id: 'exampleLook', show: () => when.exampleLook.value },
   { id: 'homeArcMix', show: () => when.homeArcMix.value },
@@ -435,9 +425,6 @@ const linkSays = computed(() => {
           />
           <Row :show="!pageIds.length">
             <p class="text-ui text-subtle-foreground">Nothing to tweak on this page</p>
-          </Row>
-          <Row :show="shows('homeBackground')" label="Background">
-            <Select v-model="homeBackground.id" :options="BACKGROUNDS" class="w-full" />
           </Row>
           <Row :show="shows('firstRun')" label="First run">
             <Select v-model="firstRun.id" :options="FIRST_RUNS" class="w-full" />

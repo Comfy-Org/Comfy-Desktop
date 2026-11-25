@@ -69,7 +69,7 @@ const SWATCHES = Object.entries(WIRE) as [Wire, string][]
 <template>
   <Section
     title="Home backgrounds"
-    note="Three ways to carry the brand behind Home without a logo: the editor’s canvas, the graph itself, or your own work in the Latent grade. Each sits on the Spotlight’s light. UI Playground › Background."
+    note="Three ways to carry the brand behind Home without a logo: the editor’s canvas, the graph itself, or your own work in the Latent grade. Each sits on the Spotlight’s light."
   >
     <Cells :min="900">
       <Cell v-for="b in BACKGROUNDS" :key="b.id" :label="b.label" fill :height="300">

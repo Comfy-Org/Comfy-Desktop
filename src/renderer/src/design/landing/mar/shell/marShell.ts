@@ -186,45 +186,6 @@ export const spaceCover = computed<{ bg: string; accent: string } | undefined>((
   return brand && { bg: brand.logo.bg ?? brand.color, accent: brand.color }
 })
 
-/** Home's background (UI Playground › Home background): Spotlight
- *  (default), Latent bloom, the photo, or one of the quieter alternatives.
- *  Canvas, Wires and Latent grade follow DS › Brand imagery. */
-export type HomeBackground =
-  | 'bloom'
-  | 'photo'
-  | 'mesh'
-  | 'spotlight'
-  | 'aurora'
-  | 'grain'
-  | 'output'
-  | 'canvas'
-  | 'wires'
-  | 'grade'
-const BG_KEY = 'comfy.design.mar.homeBackground'
-function loadBackground(): HomeBackground {
-  try {
-    const v = localStorage.getItem(BG_KEY) as HomeBackground | null
-    // Spotlight is the default; retired picks (photo, mesh, aurora, grain)
-    // fall back to it.
-    return v && ['bloom', 'spotlight', 'output', 'canvas', 'wires', 'grade'].includes(v)
-      ? v
-      : 'spotlight'
-  } catch {
-    return 'spotlight'
-  }
-}
-export const homeBackground = reactive<{ id: HomeBackground }>({ id: loadBackground() })
-watch(
-  () => homeBackground.id,
-  (id) => {
-    try {
-      localStorage.setItem(BG_KEY, id)
-    } catch {
-      // Storage blocked: the pick lasts for this window only.
-    }
-  }
-)
-
 // Home's light. Milestone 1's dashboard is its stand-in, before there is a Home.
 const lit = computed(() => proto.page === 'overview' || !can.value.builds)
 
@@ -232,17 +193,9 @@ const lit = computed(() => proto.page === 'overview' || !can.value.builds)
  *  frames the content instead of greeting you. */
 export const quietLight = computed(() => !lit.value)
 
-/** Latent bloom is on screen: Home, bloom picked. */
-export const bloomOn = computed(() => lit.value && homeBackground.id === 'bloom')
-
 /** Pages that take Home's neutral white light instead of a photo. */
 const NEUTRAL = ['environments', 'explore', 'assets']
 
-/** One of the quieter Home backgrounds (CSS only, MarBackdrop.vue). Builds,
- *  Explore and Assets always take the neutral light, whatever Home picked. */
-export const altBackground = computed(() => {
-  if (NEUTRAL.includes(proto.page) || proto.page.startsWith('tool:')) return 'spotlight'
-  return lit.value && !['bloom', 'photo'].includes(homeBackground.id)
-    ? homeBackground.id
-    : undefined
-})
+export const spotlightOn = computed(
+  () => lit.value || NEUTRAL.includes(proto.page) || proto.page.startsWith('tool:')
+)
