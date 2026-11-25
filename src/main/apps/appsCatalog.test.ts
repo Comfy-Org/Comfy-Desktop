@@ -645,6 +645,37 @@ describe('the apps Desktop lists with no internet', () => {
     )
   })
 
+  it('show a kept still for a later app after six earlier stills hang until their two seconds run out', async () => {
+    vi.useFakeTimers()
+    electron.online = false
+    savedOnDisk(
+      LIST_URL,
+      Array.from({ length: 7 }, (_, n) => appWithStill(n))
+    )
+    electron.fetchStill.mockImplementation((url, init) => {
+      const signal = init?.signal
+      if (signal?.aborted) return Promise.reject(signal.reason)
+      if (url === 'https://comfy.org/catalog-media/still-6/v1') {
+        return Promise.resolve(
+          new Response(STILL_BYTES, { headers: { 'content-type': 'image/webp' } })
+        )
+      }
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason))
+      })
+    })
+    mockedFetchJSON.mockRejectedValue(new Error('offline'))
+
+    const pending = listApps()
+    await vi.advanceTimersByTimeAsync(2000)
+    const apps = await pending
+
+    expect(electron.fetchStill).toHaveBeenCalledTimes(7)
+    expect(apps.find((app) => app.id === 'app-6')?.covers).toEqual([
+      { url: 'data:image/webp;base64,AQID', stillUrl: 'data:image/webp;base64,AQID' }
+    ])
+  })
+
   it('look for only the first still of each app', async () => {
     electron.online = false
     savedWithStills()
@@ -729,6 +760,23 @@ describe('the apps Desktop lists with no internet', () => {
     await listApps()
 
     expect(electron.fetchStill).toHaveBeenCalledTimes(6)
+  })
+
+  it('give a later still its own minute after six earlier stills hang until theirs run out', async () => {
+    vi.useFakeTimers()
+    mockedFetchJSON.mockResolvedValue(Array.from({ length: 7 }, (_, n) => appWithStill(n)))
+    electron.fetchStill.mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+        })
+    )
+
+    await listApps()
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(electron.fetchStill).toHaveBeenCalledTimes(7)
+    expect(electron.fetchStill.mock.calls[6]?.[1]?.signal?.aborted).toBe(false)
   })
 
   it('stop keeping a still over two megabytes after a good load', async () => {
