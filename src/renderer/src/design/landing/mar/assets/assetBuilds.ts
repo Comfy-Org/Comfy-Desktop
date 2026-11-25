@@ -58,6 +58,27 @@ export function suggestedBuild(): AssetBuild | undefined {
   return list.find((b) => buildStatus(b) === 'running') ?? list[0]
 }
 
+const STATE = { running: 'Running', launching: 'Starting', stopped: 'Stopped' } as const
+export interface AssetBuildRow {
+  id: string
+  name: string
+  cloud: boolean
+  status: string
+  sub: string
+}
+export const assetBuildRows = computed<AssetBuildRow[]>(() =>
+  assetBuilds.value.map((b) => {
+    const cloud = b.kind === 'cloud'
+    return {
+      id: b.id,
+      name: b.name,
+      cloud,
+      status: cloud ? '' : buildStatus(b),
+      sub: cloud ? 'Cloud · Ready' : `Local · ${STATE[buildStatus(b)]}`
+    }
+  })
+)
+
 export function startBuild(id: string): void {
   started[id] = 'launching'
   setTimeout(() => (started[id] = 'running'), 1400)
