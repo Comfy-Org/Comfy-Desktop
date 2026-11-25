@@ -3,5 +3,8 @@
   "installCommand": "pnpm install --ignore-scripts",
   "buildCommand": "pnpm run design:build",
   "outputDirectory": "dist-design",
-  "rewrites": [{ "source": "/", "destination": "/design-landing.html" }]
+  "rewrites": [
+    { "source": "/", "destination": "/design-landing.html" },
+    { "source": "/ds", "destination": "/src/design/landing/mar/ds/index.html" }
+  ]
 }
