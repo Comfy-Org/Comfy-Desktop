@@ -238,8 +238,14 @@ function openContextMenu(event: MouseEvent): void {
         :data-starting="startingUp ? 'true' : undefined"
         data-testid="home-build-status"
       >
+        <span
+          v-if="startingUp"
+          class="size-1.5 shrink-0 animate-status-starting rounded-full bg-status-starting shadow-[0_0_0_3px_rgb(245_158_11/0.36)] motion-reduce:animate-none"
+          aria-hidden="true"
+          data-testid="home-build-starting-dot"
+        />
         <LoaderCircle
-          v-if="busy || startingUp || promoting || status === 'updating'"
+          v-else-if="busy || promoting || status === 'updating'"
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
           aria-hidden="true"
@@ -255,6 +261,7 @@ function openContextMenu(event: MouseEvent): void {
           v-else-if="isRunning"
           class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
           aria-hidden="true"
+          data-testid="home-build-running-dot"
         />
         <Power
           v-else-if="resting && autoStart && !isCloudBuild(build)"

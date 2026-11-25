@@ -126,7 +126,7 @@ function toast(): HTMLElement | null {
 }
 
 describe('a build card while its ComfyUI starts', () => {
-  it('reads "Starting…" in the foreground color with a spinner, as a status, and no progress bar', async () => {
+  it('reads "● Starting…" with an amber dot and white text, as a status, with no spinner and no progress bar', async () => {
     launching(AUTO.id)
     await openHome()
 
@@ -135,7 +135,10 @@ describe('a build card while its ComfyUI starts', () => {
     expect(status.getAttribute('role')).toBe('status')
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(getComputedStyle(status).color).toBe(styleOf('text-foreground', 'color'))
-    expect(status.querySelector('[data-testid="home-build-spinner"]')).not.toBeNull()
+    const dot = status.querySelector<HTMLElement>('[data-testid="home-build-starting-dot"]')!
+    expect(getComputedStyle(dot).backgroundColor).toBe('rgb(245, 158, 11)')
+    expect(card(AUTO.id).querySelector('[data-testid="home-build-spinner"]')).toBeNull()
+    expect(card(AUTO.id).querySelector('svg.animate-spin')).toBeNull()
     expect(card(AUTO.id).querySelector('[role="progressbar"]')).toBeNull()
   })
 
@@ -148,13 +151,27 @@ describe('a build card while its ComfyUI starts', () => {
     expect(card(AUTO.id).querySelector('[role="progressbar"]')).toBeNull()
   })
 
-  it('goes back to the running look once the build is up', async () => {
+  it('swaps the amber dot for the green Running dot in the same place once the build is up', async () => {
     launching(AUTO.id)
     await openHome()
     expect(statusOf(AUTO.id).textContent?.trim()).toBe('Starting…')
+    const startingDot = statusOf(AUTO.id)
+      .querySelector('[data-testid="home-build-starting-dot"]')!
+      .getBoundingClientRect()
 
     running(AUTO.id)
     await flushPromises()
+
+    const runningDot = statusOf(AUTO.id)
+      .querySelector('[data-testid="home-build-running-dot"]')!
+      .getBoundingClientRect()
+    expect([startingDot.left, startingDot.top, startingDot.width, startingDot.height]).toEqual([
+      runningDot.left,
+      runningDot.top,
+      runningDot.width,
+      runningDot.height
+    ])
+    expect(card(AUTO.id).querySelector('[data-testid="home-build-starting-dot"]')).toBeNull()
 
     expect(statusOf(AUTO.id).textContent?.trim()).toBe('Running')
     expect(statusOf(AUTO.id).hasAttribute('role')).toBe(false)
@@ -162,15 +179,15 @@ describe('a build card while its ComfyUI starts', () => {
     expect(card(AUTO.id).querySelector('[role="progressbar"]')).toBeNull()
   })
 
-  it('stands its spinner and the Open ComfyUI spinner still when reduced motion is preferred', async () => {
+  it('stills the pulsing amber dot and the Open ComfyUI spinner when reduced motion is preferred', async () => {
     launching(AUTO.id)
     await openHome()
     const spinners = () => [
-      card(AUTO.id).querySelector('[data-testid="home-build-spinner"]')!,
+      card(AUTO.id).querySelector('[data-testid="home-build-starting-dot"]')!,
       host.querySelector('[data-testid="home-open-comfyui-spinner"]')!
     ]
     expect(spinners().map((spinner) => getComputedStyle(spinner).animationName)).toEqual([
-      'spin',
+      'status-starting',
       'spin'
     ])
 
