@@ -350,6 +350,23 @@ describe('AssetsView', () => {
     )
   })
 
+  it('draws a sound as a waveform on its card and in the viewer filmstrip', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/song.flac', 'song.flac', 'audio'),
+      asset('/out/still.png', 'still.png', 'image')
+    ])
+
+    const waveform = 'svg[class*="lucide-audio-lines"]'
+    expect(wrapper.find(`[data-testid="asset-/out/song.flac"] ${waveform}`).exists()).toBe(true)
+    expect(
+      wrapper.find('[data-testid="asset-/out/song.flac"] svg[class*="lucide-music"]').exists()
+    ).toBe(false)
+
+    await wrapper.get('[data-testid="asset-open-/out/song.flac"]').trigger('click')
+    await flushPromises()
+    expect(viewer()!.querySelectorAll(waveform).length).toBeGreaterThanOrEqual(2)
+  })
+
   it('shows how long a sound runs on its card', async () => {
     const wrapper = await mountAssets([
       asset('song', 'song.flac', 'audio', { durationSeconds: 69.4 }),

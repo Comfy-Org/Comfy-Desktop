@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useEventListener, usePreferredReducedMotion } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
 import {
+  AudioLines,
   Box,
   Check,
   ChevronDown,
@@ -11,7 +12,6 @@ import {
   File,
   Images,
   LoaderCircle,
-  Music,
   ScanSearch,
   Workflow,
   X
@@ -248,7 +248,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           :load="item.loadModel"
         />
         <div v-else class="m-auto flex flex-col items-center gap-2 text-subtle-foreground">
-          <Music v-if="item.kind === 'audio'" :size="40" aria-hidden="true" />
+          <AudioLines v-if="item.kind === 'audio'" :size="40" aria-hidden="true" />
           <Box v-else-if="item.kind === '3d'" :size="40" aria-hidden="true" />
           <File v-else :size="40" aria-hidden="true" />
           <span class="text-ui">{{ extension }}</span>

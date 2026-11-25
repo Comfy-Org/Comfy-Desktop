@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
+  AudioLines,
   Box,
   Check,
   ChevronDown,
@@ -16,7 +17,6 @@ import {
   Folder,
   LayoutGrid,
   LayoutDashboard,
-  Music,
   RefreshCw,
   ScanSearch,
   Search,
@@ -1618,7 +1618,7 @@ function extensionOf(name: string): string {
                   class="flex size-full flex-col items-center justify-center gap-2 text-[14px]/[14px] font-semibold transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   :class="placeholderTint(asset)"
                 >
-                  <Music v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
+                  <AudioLines v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
                   <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
                   <File v-else :size="40" aria-hidden="true" />
                   <span>{{ extensionOf(asset.name) }}</span>
