@@ -33,7 +33,7 @@ import SidebarAppRail from './SidebarAppRail.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
-import { buildFailure, buildProgressOf } from '../composables/useBuildProgress'
+import { buildFailure, buildProgressOf, type BuildProgress } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -181,6 +181,11 @@ function isLive(build: Installation): boolean {
   return homeBuildStatus(build, sessionStore) === 'running'
 }
 
+function isStarting(build: Installation, install: BuildProgress | null): boolean {
+  if (install) return install.kind === 'launch'
+  return homeBuildStatus(build, sessionStore) === 'starting'
+}
+
 function failureText(build: Installation): string | null {
   const failure = buildFailure(build, sessionStore, progressStore, t)
   if (!failure) return null
@@ -201,12 +206,15 @@ const buildRows = computed(() =>
   visibleInstalls.value
     .filter((build) => isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId))
     .map((build) => {
-      const install = buildProgressOf(progressStore, build.id)
+      const progress = buildProgressOf(progressStore, build.id)
+      const starting = isStarting(build, progress)
+      const install = starting ? null : progress
       return {
         build,
         install,
-        failure: install ? null : failureText(build),
-        live: !install && isLive(build)
+        starting,
+        failure: progress ? null : failureText(build),
+        live: !progress && isLive(build)
       }
     })
 )
@@ -527,7 +535,7 @@ function openSettings(): void {
               </p>
               <template v-if="buildRowsMounted">
                 <Button
-                  v-for="{ build, install, failure, live } in buildRows"
+                  v-for="{ build, install, starting, failure, live } in buildRows"
                   :key="build.id"
                   variant="muted-textonly"
                   size="unset"
@@ -552,7 +560,18 @@ function openSettings(): void {
                       aria-hidden="true"
                     />
                     <span
-                      v-if="failure || live"
+                      v-if="starting"
+                      class="absolute -right-0.5 -bottom-0.5 box-border size-2 animate-spin rounded-full border-[1.5px] border-solid border-foreground border-t-transparent ring-2 [animation-duration:900ms] motion-reduce:animate-none"
+                      :class="
+                        build.id === activeBuildId
+                          ? 'bg-[oklch(0.27_0_0)] ring-[oklch(0.27_0_0)]'
+                          : 'bg-sidebar-background ring-sidebar-background'
+                      "
+                      data-testid="app-sidebar-dot-starting"
+                      aria-hidden="true"
+                    />
+                    <span
+                      v-else-if="failure || live"
                       class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
                       :class="[
                         failure ? 'bg-destructive' : 'bg-success',

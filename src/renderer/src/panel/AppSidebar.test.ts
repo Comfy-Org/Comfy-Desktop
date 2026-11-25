@@ -1092,6 +1092,37 @@ describe('AppSidebar', () => {
       expect([live('new'), live('cloud'), live('old')]).toEqual([true, true, false])
     })
 
+    it('rings the icon with a spinner while a build starts, and turns it into the green dot once it runs', async () => {
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+      const row = () => wrapper.get(`[data-testid="app-sidebar-build-${NEW.id}"]`)
+      const starting = () => row().find('[data-testid="app-sidebar-dot-starting"]')
+      const liveDot = () => row().find('[data-testid="app-sidebar-dot-live"]')
+
+      expect(starting().exists()).toBe(true)
+      expect(liveDot().exists()).toBe(false)
+      expect(starting().classes()).toEqual(
+        expect.arrayContaining(['absolute', '-right-0.5', '-bottom-0.5', 'size-2', 'animate-spin'])
+      )
+      expect(
+        wrapper
+          .get(`[data-testid="app-sidebar-build-${OLD.id}"]`)
+          .find('[data-testid="app-sidebar-dot-starting"]')
+          .exists()
+      ).toBe(false)
+
+      useSessionStore().launchingInstances.delete(NEW.id)
+      useSessionStore().runningInstances.set(NEW.id, {
+        installationId: NEW.id,
+        installationName: NEW.name,
+        mode: 'console'
+      })
+      await flushPromises()
+
+      expect(starting().exists()).toBe(false)
+      expect(liveDot().exists()).toBe(true)
+    })
+
     it('marks a build that failed to start and says why on hover', async () => {
       useSessionStore().errorInstances.set(OLD.id, {
         installationName: OLD.name,
