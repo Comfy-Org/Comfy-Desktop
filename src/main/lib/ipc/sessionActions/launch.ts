@@ -58,6 +58,7 @@ import {
   dropValuelessArgs,
   filterUnsupportedArgs,
   getComfyFeatureFlagRegistry,
+  sessionLifecycleEvents,
   _broadcastToRenderer
 } from '../shared'
 import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
@@ -2290,6 +2291,7 @@ async function runLaunch(
       if (pendingModelFolderRelaunch || checkRebootMarker(sessionPath)) {
         const isModelRelaunch = pendingModelFolderRelaunch
         pendingModelFolderRelaunch = false
+        sessionLifecycleEvents.emit('restarting', sessionId)
         if (!isModelRelaunch) {
           sendOutput('\n--- ComfyUI restarting ---\n\n')
         }
@@ -2381,8 +2383,8 @@ async function runLaunch(
       execTap.flushSummary()
       hwTap.flushSummary()
       assetsTap.flushSummary()
+      _removeSession(sessionId, crashed)
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
-      _removeSession(sessionId)
       const exitedPayload = {
         installationId: sessionId,
         crashed,
