@@ -4,7 +4,6 @@ import {
   Box,
   Check,
   ChevronDown,
-  Cloud,
   Clock,
   Cpu,
   Image,
@@ -31,6 +30,8 @@ import { PORTAL_TO } from '../../ui/portal'
 import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import Select from '../../ui/Select.vue'
+import Switch from '../../ui/Switch.vue'
+import SectionHeader from '../../ui/SectionHeader.vue'
 import { ROUTER_MODELS, TUTORIALS, thumb } from '../../mock'
 import { exploreStart } from './exploreStart'
 import {
@@ -42,6 +43,9 @@ import {
   type HubWorkflow
 } from './hubWorkflows'
 import { mediaFor } from '../templateModal/templateData'
+import { readinessFor, type Readiness } from '../templateModal/runReadiness'
+import WorkflowIntentRow from './WorkflowIntentRow.vue'
+import { WORKFLOW_INTENTS, picksFor, startHere } from './workflowIntents'
 import { EXPLORE, PROD_LIB_APPS, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { PROD_EXAMPLES, prodApp, prodClip, prodStill } from '../apps/prodApps'
@@ -152,35 +156,72 @@ const has = (s: string): boolean => s.toLowerCase().includes(query.value.trim().
 // Sort by use or date; search reads the name and the description.
 const useCases = ref<string[]>([])
 const families = ref<string[]>([])
-const runsOn = ref<string[]>([])
+const localOnly = ref(false)
+const intent = ref<string | null>(null)
 const wfSort = ref('popular')
 const WF_SORTS = [
   { value: 'popular', label: 'Popular' },
+  { value: 'used', label: 'Most used' },
   { value: 'newest', label: 'Newest' },
   { value: 'az', label: 'Name A to Z' }
 ]
-const RUNS = [
-  { value: 'local', label: 'This computer', icon: Cpu },
-  { value: 'cloud', label: 'Comfy Cloud', icon: Cloud }
-]
-const runsHere = (w: HubWorkflow, v: string): boolean =>
-  v === 'local' ? w.runs !== 'cloud' : w.runs !== 'local'
+const LOCAL_READINESS: Readiness[] = ['ready', 'download', 'setup']
+const runsLocally = computed(
+  () =>
+    new Set(
+      HUB_WORKFLOWS.filter((w) => {
+        const r = readinessFor(w.id)
+        return r ? LOCAL_READINESS.includes(r.kind) : w.runs !== 'cloud'
+      }).map((w) => w.id)
+    )
+)
+const CATALOG_DAY = Math.max(...HUB_WORKFLOWS.map((w) => Date.parse(w.date)))
+const DAY_MS = 86_400_000
+const trending = (w: HubWorkflow): number =>
+  w.usage / Math.sqrt((CATALOG_DAY - Date.parse(w.date)) / DAY_MS + 30)
 const wfSearched = computed(() =>
   HUB_WORKFLOWS.filter((w) => has(`${w.title} ${w.description} ${w.family} ${w.useCase}`))
 )
-type Facet = 'use' | 'model' | 'runs'
+type Facet = 'use' | 'model'
 /** Passes every picked filter but `skip`'s, so each menu row counts what
  *  picking it would show. */
 const wfPasses = (w: HubWorkflow, skip?: Facet): boolean =>
   (skip === 'use' || !useCases.value.length || useCases.value.includes(w.useCase)) &&
   (skip === 'model' || !families.value.length || families.value.includes(w.family)) &&
-  (skip === 'runs' || !runsOn.value.length || runsOn.value.some((v) => runsHere(w, v)))
-const templates = computed(() => {
-  const list = wfSearched.value.filter((w) => wfPasses(w))
+  (!localOnly.value || runsLocally.value.has(w.id))
+const sortWorkflows = (list: HubWorkflow[]): HubWorkflow[] => {
   if (wfSort.value === 'az') return [...list].sort((a, b) => a.title.localeCompare(b.title))
   if (wfSort.value === 'newest') return [...list].sort((a, b) => b.date.localeCompare(a.date))
-  return [...list].sort((a, b) => b.usage - a.usage)
+  if (wfSort.value === 'used') return [...list].sort((a, b) => b.usage - a.usage)
+  return [...list].sort((a, b) => trending(b) - trending(a))
+}
+const pickedIntent = computed(() => WORKFLOW_INTENTS.find((i) => i.id === intent.value))
+const allTemplates = computed(() => sortWorkflows(wfSearched.value.filter((w) => wfPasses(w))))
+const intentTemplates = computed(() =>
+  pickedIntent.value
+    ? picksFor(pickedIntent.value, (w) => wfSearched.value.includes(w) && wfPasses(w))
+    : []
+)
+const templates = computed(() => (pickedIntent.value ? intentTemplates.value : allTemplates.value))
+const startTemplates = computed(() => startHere().filter((w) => wfPasses(w)))
+const showStart = computed(
+  () =>
+    !pickedIntent.value &&
+    !query.value.trim() &&
+    !useCases.value.length &&
+    !families.value.length &&
+    startTemplates.value.length > 0
+)
+const sameUseCase = computed(() => {
+  const i = pickedIntent.value
+  return i ? HUB_WORKFLOWS.filter((w) => w.useCase === i.useCase && wfPasses(w)).length : 0
 })
+function seeUseCase(): void {
+  const i = pickedIntent.value
+  if (!i) return
+  useCases.value = [i.useCase]
+  intent.value = null
+}
 const facet = (skip: Facet): HubWorkflow[] => wfSearched.value.filter((w) => wfPasses(w, skip))
 // Every family in the catalog, the biggest first.
 const FAMILIES = [...new Set(HUB_WORKFLOWS.map((w) => w.family))].sort(
@@ -225,7 +266,8 @@ function clearFilters(): void {
   kinds.value = []
   useCases.value = []
   families.value = []
-  runsOn.value = []
+  localOnly.value = false
+  intent.value = null
 }
 const apps = computed(() => {
   const list = searched.value
@@ -258,7 +300,6 @@ const FILTER = computed<FilterGroup[]>(() => {
   if (tab.value === 'templates') {
     const byUse = facet('use')
     const byModel = facet('model')
-    const byRuns = facet('runs')
     return [
       {
         key: 'use',
@@ -279,16 +320,6 @@ const FILTER = computed<FilterGroup[]>(() => {
           value: f,
           label: f,
           count: byModel.filter((w) => w.family === f).length
-        }))
-      },
-      {
-        key: 'runs',
-        title: 'Runs on',
-        icon: Cpu,
-        list: runsOn,
-        items: RUNS.map((r) => ({
-          ...r,
-          count: byRuns.filter((w) => runsHere(w, r.value)).length
         }))
       }
     ]
@@ -326,7 +357,7 @@ const FILTER = computed<FilterGroup[]>(() => {
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 // ⌘⌫ / Ctrl+Backspace clears every filter, unless you're typing.
 useEventListener(window, 'keydown', (e: KeyboardEvent) => {
-  if (e.key !== 'Backspace' || !(e.metaKey || e.ctrlKey) || !picked.value.length) return
+  if (e.key !== 'Backspace' || !(e.metaKey || e.ctrlKey) || !narrowed.value) return
   const t = e.target as HTMLElement | null
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
   e.preventDefault()
@@ -357,6 +388,7 @@ const picked = computed(() =>
     g.items.filter((i) => g.list.value.includes(i.value)).map((i) => ({ ...i, group: g }))
   )
 )
+const narrowed = computed(() => picked.value.length > 0 || localOnly.value || intent.value !== null)
 // Apps and Templates: one grid of cards; Size picks five, four or three
 // across.
 const cardSize = ref(2)
@@ -378,7 +410,22 @@ function rhythmOf<T>(list: T[]): Rhythm<T>[] {
   return rows
 }
 const rhythm = computed(() => rhythmOf(apps.value))
-const wfRhythm = computed(() => rhythmOf(templates.value))
+const wfRhythm = computed(() => rhythmOf(allTemplates.value))
+const wfTile = (t: HubWorkflow) => ({
+  name: t.title,
+  blurb: hubLine(t),
+  thumb: workflowThumb(t.id),
+  preview: WF_PREVIEW.get(t.id),
+  role: 'button',
+  tabindex: 0,
+  'aria-label': `Open ${t.title}`,
+  onClick: () => openDetail('template', t.id),
+  onKeydown: (e: KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    openDetail('template', t.id)
+  }
+})
 const WF_PREVIEW = new Map<string, string>(
   HUB_WORKFLOWS.flatMap((w) => {
     const out = mediaFor(hubTemplate(w)).output
@@ -544,6 +591,20 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
             </DropdownMenuContent>
           </DropdownMenuRoot>
         </span>
+        <span v-if="tab === 'templates'" key="local" class="inline-flex">
+          <label
+            :class="
+              cn(
+                fieldVariants(),
+                'w-auto cursor-pointer gap-2 pr-1.5 has-[button[data-state=checked]]:border-border-strong'
+              )
+            "
+          >
+            <Cpu :size="14" class="shrink-0 text-subtle-foreground" />
+            <span class="whitespace-nowrap">Runs on this computer</span>
+            <Switch v-model="localOnly" aria-label="Runs on this computer" />
+          </label>
+        </span>
         <!-- Keyed by tab, so its label follows the tab (All types, All topics). -->
         <span v-else-if="tab !== 'mine'" :key="`type-${tab}`" class="inline-flex">
           <Select v-model="type" :options="TYPES[tab]" class="w-36" />
@@ -656,46 +717,49 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     <!-- Templates (the Hub's workflows): the same card as an app, its name and the
          first line of the catalog's description. -->
     <template v-else-if="tab === 'templates'">
-      <div v-if="appView === 'rhythm'" class="mar-ex-rhythm">
-        <div
-          v-for="(row, r) in wfRhythm"
-          :key="r"
-          class="mar-ex-rhythm-row"
-          :style="{ '--cols': row.cols }"
-        >
-          <AppRhythmTile
-            v-for="t in row.items"
-            :key="t.id"
-            :name="t.title"
-            :blurb="hubLine(t)"
-            :thumb="workflowThumb(t.id)"
-            :preview="WF_PREVIEW.get(t.id)"
-            :big="row.big"
-            role="button"
-            tabindex="0"
-            :aria-label="`Open ${t.title}`"
-            @click="openDetail('template', t.id)"
-            @keydown.enter="openDetail('template', t.id)"
-            @keydown.space.prevent="openDetail('template', t.id)"
-          />
-        </div>
-      </div>
-      <div v-else class="mar-ex-rhythm-row is-grid" :style="{ '--cols': COLS[cardSize] }">
-        <AppRhythmTile
-          v-for="t in templates"
-          :key="t.id"
-          :name="t.title"
-          :blurb="hubLine(t)"
-          :thumb="workflowThumb(t.id)"
-          :preview="WF_PREVIEW.get(t.id)"
-          role="button"
-          tabindex="0"
-          :aria-label="`Open ${t.title}`"
-          @click="openDetail('template', t.id)"
-          @keydown.enter="openDetail('template', t.id)"
-          @keydown.space.prevent="openDetail('template', t.id)"
+      <WorkflowIntentRow v-if="!query.trim()" v-model="intent" :intents="WORKFLOW_INTENTS" />
+      <section v-if="pickedIntent" :aria-label="pickedIntent.label">
+        <SectionHeader
+          :title="pickedIntent.label"
+          :link="
+            sameUseCase > intentTemplates.length
+              ? `See all ${sameUseCase} in ${pickedIntent.useCase}`
+              : undefined
+          "
+          @link="seeUseCase"
         />
-      </div>
+        <div class="mar-ex-rhythm-row" :style="{ '--cols': Math.max(3, intentTemplates.length) }">
+          <AppRhythmTile v-for="t in intentTemplates" :key="t.id" v-bind="wfTile(t)" big />
+        </div>
+      </section>
+      <template v-else>
+        <section v-if="showStart" class="mar-ex-start" aria-label="Start here">
+          <SectionHeader title="Start here">
+            <template #controls>
+              <span class="text-ui text-subtle-foreground"
+                >Quick to set up and reliable on most computers</span
+              >
+            </template>
+          </SectionHeader>
+          <div class="mar-ex-rhythm-row is-start" :style="{ '--cols': startTemplates.length }">
+            <AppRhythmTile v-for="t in startTemplates" :key="t.id" v-bind="wfTile(t)" />
+          </div>
+        </section>
+        <SectionHeader v-if="showStart" title="All workflows" />
+        <div v-if="appView === 'rhythm'" class="mar-ex-rhythm">
+          <div
+            v-for="(row, r) in wfRhythm"
+            :key="r"
+            class="mar-ex-rhythm-row"
+            :style="{ '--cols': row.cols }"
+          >
+            <AppRhythmTile v-for="t in row.items" :key="t.id" v-bind="wfTile(t)" :big="row.big" />
+          </div>
+        </div>
+        <div v-else class="mar-ex-rhythm-row is-grid" :style="{ '--cols': COLS[cardSize] }">
+          <AppRhythmTile v-for="t in allTemplates" :key="t.id" v-bind="wfTile(t)" />
+        </div>
+      </template>
     </template>
 
     <!-- Models: what each costs, from whom. -->
@@ -836,6 +900,15 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   display: grid;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   gap: 14px;
+}
+.mar-ex-start {
+  margin-bottom: 36px;
+}
+.mar-ex-start :deep(.mar-rt-name) {
+  display: -webkit-box;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .mar-ex-mark {
   display: inline-flex;
