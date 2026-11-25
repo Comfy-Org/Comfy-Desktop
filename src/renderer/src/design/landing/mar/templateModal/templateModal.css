@@ -117,12 +117,10 @@
   outline: 2px solid var(--color-border-focus);
   outline-offset: 1px;
 }
-/* No filmstrip under a template: the picture (or the graph) takes the
-   room down to the zoom's row, where the asset view has it. */
-.mar-tpl .mad-view {
+.mar-tpl .mad-view:not(.has-strip) {
   bottom: 72px;
 }
-.mad.mar-tpl.is-full .mad-view {
+.mad.mar-tpl.is-full .mad-view:not(.has-strip) {
   bottom: 80px;
 }
 :root .proto-ui.proto-ui.proto-ui.mar-tpl .mad-head-close:focus-visible {
