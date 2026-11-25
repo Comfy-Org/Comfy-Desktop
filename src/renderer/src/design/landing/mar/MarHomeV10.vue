@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useResizeObserver } from '@vueuse/core'
 import Greeting from '../parts/Greeting.vue'
 import PromptBox from '../parts/PromptBox.vue'
 import WhatsNew from './WhatsNew.vue'
@@ -62,6 +63,7 @@ import NewWorkflowTile from './NewWorkflowTile.vue'
 import { openCreate } from './create/createScreen'
 import { onHome } from './tunerContext'
 import { search } from './search/search'
+import { homeLayout } from './home/homeLayout'
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -181,6 +183,16 @@ const recent = computed<Recent[]>(() =>
     .sort((a, b) => a.age - b.age)
     .slice(0, 8)
 )
+const recentsFirst = computed(() => homeLayout.id === 'recents' && can.value.exploreApps)
+const homeEl = ref<HTMLElement>()
+const paneWidth = ref(0)
+useResizeObserver(
+  () => (recentsFirst.value ? homeEl.value?.parentElement : undefined),
+  ([entry]) => (paneWidth.value = entry?.contentRect.width ?? 0)
+)
+const homeStyle = computed(() =>
+  recentsFirst.value && paneWidth.value ? { '--mar-pane': `${paneWidth.value}px` } : undefined
+)
 const RECENT_COLUMNS = 5
 const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
 </script>
@@ -191,7 +203,12 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
          while it is there, the Builds card does not. -->
     <CreateMenu v-if="!can.onboarding && !installPending && (!flow.ready || cardInBuilds)" />
   </div>
-  <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
+  <div
+    ref="homeEl"
+    class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16"
+    :class="recentsFirst && 'is-recents-first'"
+    :style="homeStyle"
+  >
     <!-- First run or not, the top is the same: the greeting and the prompt
          sit where a returning user finds them. -->
     <section :class="['flex flex-col', tight ? 'pt-14 pb-4' : 'pt-12 pb-4']">
@@ -226,10 +243,12 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
       <!-- The Apps stage: the apps arc leads for everyone from Milestone 2
            on; from Milestone 3 Apps | Workflows tabs sit over it (layout in
            UI Playground › Apps and templates). -->
-      <HomeArcMix v-if="can.explore" class="mt-6" />
-      <HomeLoadFailed v-else-if="can.exploreApps && offline" class="mt-6" />
-      <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
-      <MarBuildsRow v-if="!onCloud" />
+      <template v-if="!recentsFirst">
+        <HomeArcMix v-if="can.explore" class="mt-6" />
+        <HomeLoadFailed v-else-if="can.exploreApps && offline" class="mt-6" />
+        <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
+        <MarBuildsRow v-if="!onCloud" />
+      </template>
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). Not once the apps arc leads the Home (Milestone 2):
@@ -269,7 +288,10 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
 
       <!-- Milestone 2 is apps only: Recently used comes back with Workflows
            (Recents & Assets), apps and workflows together. -->
-      <section v-if="recent.length && (can.workflows || !can.exploreApps)" class="mt-10">
+      <section
+        v-if="recent.length && (can.workflows || !can.exploreApps)"
+        :class="recentsFirst ? 'mt-6' : 'mt-10'"
+      >
         <HomeSectionHeader
           v-if="can.onboarding"
           title="Recently used"
@@ -303,6 +325,15 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
           <NewWorkflowTile v-if="can.onboarding && recentHasRoom" @open="openCreate()" />
         </ScrollRow>
       </section>
+
+      <template v-if="recentsFirst">
+        <div class="mar-home-bleed mt-10">
+          <HomeArcMix v-if="can.explore" full />
+          <HomeLoadFailed v-else-if="offline" />
+          <ExampleArc v-else full />
+        </div>
+        <MarBuildsRow v-if="!onCloud" />
+      </template>
 
       <section v-if="parts.examples === 'rows'" class="mt-10">
         <SectionHeader
@@ -353,3 +384,27 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
   />
   <MarHomeTour v-if="can.onboarding" :active="tourActive" />
 </template>
+
+<style>
+.mar-home-bleed {
+  margin-inline: calc(50% - var(--mar-pane, 100%) / 2);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-home-bleed .mar-arc-card {
+  border-radius: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-home-bleed .mar-arc-step {
+  background: rgb(14 14 16 / 0.42);
+  backdrop-filter: blur(14px) saturate(1.5);
+  color: #fff;
+  opacity: 0.85;
+}
+:root
+  .proto-ui.proto-ui.proto-ui
+  .mar-home-bleed
+  .mar-arc
+  .mar-arc-step:is(:hover, :focus-visible) {
+  background: rgb(14 14 16 / 0.6);
+  color: #fff;
+  opacity: 1;
+}
+</style>

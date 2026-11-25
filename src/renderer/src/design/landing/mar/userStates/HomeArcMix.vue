@@ -13,6 +13,8 @@ import { ARC_TEMPLATES, arcApps, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
 
+const { full = false } = defineProps<{ full?: boolean }>()
+
 /**
  * Milestone 3's Home stage: the apps arc plus the Hub's templates, in the
  * layout picked in UI Playground › Apps and templates. The arc keeps a featured
@@ -169,6 +171,7 @@ function scrollRow(by: number): void {
         :items="shown.items"
         :all-label="shown.label"
         :chip="mix === 'topics-kind' ? 'kind' : 'topic'"
+        :full="full"
         @all="seeAll(shown.on)"
       />
     </div>

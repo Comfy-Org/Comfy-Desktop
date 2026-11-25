@@ -51,6 +51,7 @@ import { downloadScenario, templateDownloads } from './downloads/templateDownloa
 import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
+import { homeLayout } from './home/homeLayout'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -95,6 +96,9 @@ export const when = {
   ),
   // Milestone 3's Home: how the arc shows apps and workflows.
   homeArcMix: computed(() => onHome.value && can.value.explore),
+  homeLayout: computed(
+    () => onHome.value && can.value.exploreApps && (!onFirstRun.value || firstRun.id === 'original')
+  ),
   // The node editor's way in, under the examples of the Original first run.
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
   // Template cards: Explore and Favorites.
@@ -272,6 +276,7 @@ export const TWEAKS = {
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),
+  homeLayout: one(homeLayout, 'current'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   // The milestone picks the cover (cover.ts): the canvas, then the image.

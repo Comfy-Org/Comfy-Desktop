@@ -8,6 +8,7 @@ import SectionHeader from '../ui/SectionHeader.vue'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import HomeArcMix from './userStates/HomeArcMix.vue'
 import { installPending } from './setup/setupFlow'
+import { homeLayout } from './home/homeLayout'
 import { EXAMPLES } from './userStates/examples'
 import EditorEntry from './userStates/EditorEntry.vue'
 import { editorEntry } from './userStates/editorEntry'
@@ -30,7 +31,10 @@ function openCloud(): void {
 </script>
 
 <template>
-  <HomeArcMix v-if="can.onboarding" class="mt-6" />
+  <div v-if="can.onboarding && homeLayout.id === 'recents'" class="mar-home-bleed mt-6">
+    <HomeArcMix full />
+  </div>
+  <HomeArcMix v-else-if="can.onboarding" class="mt-6" />
   <section v-else class="mt-10">
     <SectionHeader
       class="mar-sec"

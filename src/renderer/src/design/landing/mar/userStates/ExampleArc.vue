@@ -11,6 +11,7 @@ import {
   Video,
   Workflow
 } from 'lucide-vue-next'
+import { useResizeObserver } from '@vueuse/core'
 import ImageGlyph from '../apps/ImageGlyph.vue'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
@@ -33,13 +34,15 @@ import { ARC_APPS, type ArcItem } from './arcItems'
 const {
   items: given,
   allLabel = 'See all apps',
-  chip = 'topic'
+  chip = 'topic',
+  full = false
 } = defineProps<{
   /** What stands on the arc: the apps unless a Home layout (M3) passes
    *  apps and workflows. */
   items?: ArcItem[]
   allLabel?: string
   chip?: 'topic' | 'kind'
+  full?: boolean
 }>()
 const emit = defineEmits<{ all: [] }>()
 
@@ -60,6 +63,21 @@ const badge = (x: ArcItem): Badge => (chip === 'kind' ? KIND[x.kind] : TOPIC[x.t
 const N = computed(() => items.value.length)
 const ANGLE = 25 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
+const FULL_REACH = 1.3
+const stage = ref<HTMLElement>()
+const stageWidth = ref(0)
+useResizeObserver(
+  () => (full ? stage.value : undefined),
+  ([entry]) => (stageWidth.value = entry?.contentRect.width ?? 0)
+)
+const radius = computed(() =>
+  full ? Math.max(RADIUS, (stageWidth.value / 2) * FULL_REACH) : RADIUS
+)
+const angle = computed(() =>
+  full
+    ? (Math.asin((RADIUS * Math.sin((ANGLE * Math.PI) / 180)) / radius.value) * 180) / Math.PI
+    : ANGLE
+)
 const DRAG = 240 // px of drag that turns the arc by one card
 const HOLD = 1600 // ms each side of the front card stays up
 const LAND = 350 // ms after a card reaches the front before it first sweeps
@@ -110,23 +128,30 @@ function offset(i: number): number {
   return d >= n / 2 ? d - n : d
 }
 
+function fullFade(a: number): number {
+  const turned = a * angle.value
+  if (turned >= 88) return 0
+  return Math.min(1, (88 - turned) / 20) * (1 - Math.min(a, 3) * 0.08)
+}
+
 function pose(i: number): Record<string, string> {
   const d = offset(i)
   const a = Math.abs(d)
-  const rad = (d * ANGLE * Math.PI) / 180
-  const x = RADIUS * Math.sin(rad)
-  const z = RADIUS * (Math.cos(rad) - 1)
+  const rad = (d * angle.value * Math.PI) / 180
+  const x = radius.value * Math.sin(rad)
+  const z = radius.value * (Math.cos(rad) - 1)
   // Fully there at the front, see-through to the sides so the arc melts
   // into the page; gone by the seam at the back.
   const half = N.value / 2
-  const fade =
-    Math.max(0, Math.min(1, (half - a) / Math.max(half - 1, 1))) * (1 - Math.min(a, 2) * 0.24)
+  const fade = full
+    ? fullFade(a)
+    : Math.max(0, Math.min(1, (half - a) / Math.max(half - 1, 1))) * (1 - Math.min(a, 2) * 0.24)
   return {
-    transform: `translateX(${x}px) translateZ(${z}px) rotateY(${d * ANGLE}deg)`,
+    transform: `translateX(${x}px) translateZ(${z}px) rotateY(${d * angle.value}deg)`,
     zIndex: String(100 - Math.round(a * 10)),
     opacity: String(fade),
     visibility: fade < 0.01 ? 'hidden' : 'visible',
-    '--dim': String(Math.min(a * 0.36, 0.72))
+    '--dim': String(full ? Math.min(a * 0.22, 0.55) : Math.min(a * 0.36, 0.72))
   }
 }
 
@@ -253,6 +278,7 @@ function wheel(e: WheelEvent): void {
     @keydown="key"
   >
     <div
+      ref="stage"
       class="mar-arc-stage"
       :class="dragging && moved && 'is-dragging'"
       @pointerdown="down"

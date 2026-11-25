@@ -15,6 +15,7 @@ import { APP_RUNS_ON, appRunsOn } from './apps/openAppInComfy'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
+import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { COVERS, RECENTS_COVERS, cover, recentsCover } from './cover'
@@ -156,6 +157,7 @@ const PARTS: Part[] = [
   one('firstRun', firstRun, 'original', FIRST_RUNS),
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
   one('arcMix', homeArcMix, 'tabs', HOME_ARC_MIXES),
+  one('homeLayout', homeLayout, 'current', HOME_LAYOUTS),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),
   // The cover's default follows the milestone (cover.ts).
