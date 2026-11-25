@@ -31,6 +31,10 @@ const tab = (active: boolean): string =>
       ? 'bg-secondary-background-hover text-base-foreground'
       : 'text-muted-foreground hover:bg-secondary-background hover:text-base-foreground'
   ].join(' ')
+const ONBOARDING_MILESTONE = 8.5
+const homeInFront = (): boolean => state.home && !state.agent
+const showsHomeButton = (): boolean => state.milestone !== ONBOARDING_MILESTONE || !homeInFront()
+
 const close = (active: boolean): string =>
   [
     'inline-flex size-5 shrink-0 items-center justify-center rounded-min text-subtle-foreground outline-none hover:bg-secondary-background-hover hover:text-base-foreground focus-visible:opacity-100',
@@ -41,8 +45,9 @@ const close = (active: boolean): string =>
 <template>
   <nav class="proto-ui flex min-w-0 flex-1 items-center gap-1" aria-label="Tabs">
     <button
+      v-if="showsHomeButton()"
       type="button"
-      :class="[tab(state.home && !state.agent), 'w-8 shrink-0 justify-center']"
+      :class="[tab(homeInFront()), 'w-8 shrink-0 justify-center']"
       title="Home (⌘⇧H)"
       aria-label="Home"
       :aria-current="state.home ? 'page' : undefined"
