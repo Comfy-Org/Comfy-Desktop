@@ -58,10 +58,9 @@ import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
 import { graphOpen, type AgentStart, type GraphTemplate } from './graphOpen'
-import { addOwnImage, exampleCanvas } from '../templateOpen/templateCanvas'
+import { exampleCanvas } from '../templateOpen/templateCanvas'
 import { appCanvas } from '../apps/appCanvas'
 import { copiedTabs, copyName, extrasOn } from '../apps/appToComfy'
-import FirstResult from '../templateOpen/FirstResult.vue'
 import AssetsPanel from './AssetsPanel.vue'
 import JobsPanel from './panels/JobsPanel.vue'
 import NodesPanel from './panels/NodesPanel.vue'
@@ -1226,7 +1225,7 @@ const offEngine = engine.on((e) => {
     else jobs.value[i] = e.job
     if (e.job.status === 'done') results.value++
     if (e.job.id === exampleJob.value && e.job.status !== 'running' && e.job.status !== 'queued')
-      exampleEnded(e.job.status === 'done')
+      exampleJob.value = undefined
     clearTimeout(settle)
   } else if (e.type === 'removed') {
     jobs.value = jobs.value.filter((j) => j.id !== e.jobId)
@@ -1269,19 +1268,11 @@ watch(
 const exampleJob = ref<string>()
 const exampleSpec = ref<GraphTemplate>()
 const exampleRan = ref(false)
-const firstResult = ref<{ src: string; name: string }>()
 const runHint = ref<'image' | 'video'>()
 const MAKES_RESULT = new Set<NodeKind>(['generate', 'generateVideo', 'output'])
 function exampleValue(jobId: string, n: SNode, v: RunValue): RunValue {
   const a = exampleSpec.value
   return a && jobId === exampleJob.value && MAKES_RESULT.has(n.kind) ? { ...v, src: a.output } : v
-}
-function exampleEnded(done: boolean): void {
-  const a = exampleSpec.value
-  exampleJob.value = undefined
-  if (!done || !a) return
-  firstResult.value = { src: a.output, name: a.title.split(':')[0]!.trim() }
-  selection.value = ['out']
 }
 function takeTemplate(): void {
   const a = graphOpen.template
@@ -1298,7 +1289,6 @@ function takeTemplate(): void {
   last = freeze()
   canUndo.value = canRedo.value = false
   selection.value = []
-  firstResult.value = undefined
   exampleSpec.value = a
   exampleJob.value = undefined
   exampleRan.value = false
@@ -1328,7 +1318,6 @@ function takeAppGraph(): void {
   last = freeze()
   canUndo.value = canRedo.value = false
   selection.value = []
-  firstResult.value = undefined
   appCopy.value = extrasOn()
   appEdited.value = false
   delete copiedTabs[proto.activeTab]
@@ -1340,21 +1329,6 @@ watch(
   ([g]) => g && takeAppGraph(),
   { flush: 'post' }
 )
-function changePrompt(): void {
-  firstResult.value = undefined
-  selection.value = ['prompt']
-  nextTick(() =>
-    host.value?.querySelector<HTMLTextAreaElement>('[data-node="prompt"] textarea')?.focus()
-  )
-}
-function tryOwnImage(): void {
-  firstResult.value = undefined
-  const ref = addOwnImage(sNodes, links)
-  if (!ref) return
-  commit()
-  selection.value = [ref.id]
-  nextTick(fit)
-}
 
 // ── Editing. Values are the graph's own; changing one makes the results
 // that depend on it out of date until the next run. ──
@@ -2071,16 +2045,6 @@ function addFromPanel(kind: NodeKind): void {
       <Search :size="14" />
     </button>
 
-    <Transition name="mg-toast">
-      <FirstResult
-        v-if="firstResult && !toast"
-        :src="firstResult.src"
-        :name="firstResult.name"
-        @prompt="changePrompt"
-        @image="tryOwnImage"
-        @close="firstResult = undefined"
-      />
-    </Transition>
     <!-- What Save to Assets says. -->
     <Transition name="mg-toast">
       <div v-if="toast" class="mg-toast" role="status">
@@ -2225,7 +2189,7 @@ function addFromPanel(kind: NodeKind): void {
       @save="save(sById[viewing!]!)"
     />
     <!-- Milestone 2 on: a local build offers to connect an agent. -->
-    <McpNudge v-if="!firstResult" />
+    <McpNudge />
     <McpSetupModal />
   </div>
 </template>

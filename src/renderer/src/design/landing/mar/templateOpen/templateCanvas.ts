@@ -37,14 +37,3 @@ export function exampleCanvas(a: GraphTemplate): {
   }
   return { nodes, links, groups: [] }
 }
-
-export function addOwnImage(nodes: SNode[], links: Link[]): SNode | undefined {
-  const have = nodes.find((n) => n.id === 'ref')
-  if (have) return have
-  const gen = nodes.find((n) => n.id === 'gen')
-  if (!gen) return undefined
-  const ref = createNode('image', 40, 300, 'ref')
-  nodes.push(ref)
-  links.push(link('ref', 'gen', 1))
-  return ref
-}
