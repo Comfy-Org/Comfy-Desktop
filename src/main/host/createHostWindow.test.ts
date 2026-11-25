@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
   stopAppsBuilds: vi.fn(async () => {}),
   keepComfyRunning: undefined as boolean | undefined,
   cursor: { x: 0, y: 0 },
-  displays: [] as Electron.Rectangle[]
+  displays: [] as Electron.Rectangle[],
+  saved: {} as Record<string, Electron.Rectangle & { maximized: boolean }>
 }))
 
 vi.mock('electron', () => {
@@ -42,8 +43,11 @@ vi.mock('electron', () => {
 })
 
 vi.mock('../lib/windowState', () => ({
-  getSavedBounds: () => undefined,
-  getWindowOptions: vi.fn(),
+  getSavedBounds: (key: string) => mocks.saved[key],
+  getWindowOptions: (key: string) => {
+    const { x, y, width, height } = mocks.saved[key]!
+    return { x, y, width, height }
+  },
   saveWindowBounds: vi.fn()
 }))
 
@@ -196,6 +200,10 @@ describe('cascadeOffsetForCollisions', () => {
 describe('placeHostWindow', () => {
   const laptop = { x: 0, y: 33, width: 1512, height: 889 }
 
+  beforeEach(() => {
+    mocks.saved = {}
+  })
+
   it('waits to maximize a hidden window on a small screen until the window is revealed', () => {
     mocks.displays = [laptop]
     mocks.cursor = { x: 100, y: 100 }
@@ -259,6 +267,46 @@ describe('placeHostWindow', () => {
       height: 877,
       minWidth: 800,
       minHeight: 600
+    })
+  })
+
+  it('reopens the Desktop window at its saved size when no other window is open', () => {
+    mocks.displays = [{ x: 0, y: 0, width: 2560, height: 1400 }]
+    mocks.saved = { chooser: { x: 300, y: 120, width: 1800, height: 1100, maximized: false } }
+    expect(placeHostWindow('chooser', true, null, [])).toEqual({
+      bounds: { x: 300, y: 120, width: 1800, height: 1100, minWidth: 800, minHeight: 600 },
+      maximizeNow: false,
+      maximizeOnReveal: false
+    })
+  })
+
+  it('reopens the Desktop window maximized when it was left maximized', () => {
+    mocks.displays = [{ x: 0, y: 0, width: 2560, height: 1400 }]
+    mocks.saved = { chooser: { x: 300, y: 120, width: 1800, height: 1100, maximized: true } }
+    expect(placeHostWindow('chooser', true, null, [])).toMatchObject({
+      maximizeNow: false,
+      maximizeOnReveal: true
+    })
+  })
+
+  it('opens next to an open window at the default size, not maximized', () => {
+    mocks.displays = [{ x: 0, y: 0, width: 1920, height: 1032 }]
+    mocks.saved = { chooser: { x: 200, y: 100, width: 1000, height: 700, maximized: true } }
+    const open = { x: 200, y: 100, width: 1000, height: 700 }
+    expect(placeHostWindow('chooser', false, open, [open])).toEqual({
+      bounds: { x: 230, y: 130, width: 1632, height: 877, minWidth: 800, minHeight: 600 },
+      maximizeNow: false,
+      maximizeOnReveal: false
+    })
+  })
+
+  it('gives a saved size larger than the screen the default size for that screen', () => {
+    mocks.displays = [laptop]
+    mocks.saved = { chooser: { x: 0, y: 0, width: 2200, height: 1400, maximized: false } }
+    expect(placeHostWindow('chooser', true, null, [])).toEqual({
+      bounds: { x: 114, y: 93, width: 1285, height: 756, minWidth: 800, minHeight: 600 },
+      maximizeNow: false,
+      maximizeOnReveal: true
     })
   })
 })

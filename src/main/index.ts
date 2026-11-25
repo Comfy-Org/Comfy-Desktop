@@ -31,7 +31,7 @@ import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { relaunchIntoUninstallCleanup } from './lib/uninstallCleanup'
-import { saveWindowBounds } from './lib/windowState'
+import { flushWindowStateSync, saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
@@ -1774,6 +1774,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       _stopPeriodicReleaseChecks = null
     }
     flushLastSessionSync()
+    flushWindowStateSync()
     flushOperationOutput()
     cleanupTempDownloads()
     stopAgentPrefetches()
