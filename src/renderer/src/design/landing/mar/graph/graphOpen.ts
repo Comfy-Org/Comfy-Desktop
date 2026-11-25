@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import type { NodeKind } from './canvasData'
+import type { NodeKind, Recipe } from './canvasData'
 
 export interface GraphAutorun {
   title: string
@@ -20,6 +20,9 @@ export const graphOpen = reactive({
   inspect: false,
   scratch: false,
   start: null as null | { kind: NodeKind; model?: string },
+  recipe: null as null | Recipe,
+  agent: false,
+  nodeSearch: false,
   autorun: null as null | GraphAutorun,
   /** Assets › Open workflow: ComfyUI opens with this one on the canvas,
    *  on the workflow's output (MarGraph's landAsset). */

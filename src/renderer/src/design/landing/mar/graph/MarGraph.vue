@@ -886,17 +886,34 @@ landAsset()
 
 const scratch = ref(false)
 function startFromScratch(): void {
-  const start = graphOpen.start
-  if (!graphOpen.scratch && !start) return
+  const { start, recipe, agent: ask, nodeSearch: find } = graphOpen
+  if (!graphOpen.scratch && !start && !recipe && !ask && !find) return
   graphOpen.scratch = false
   graphOpen.start = null
+  graphOpen.recipe = null
+  graphOpen.agent = false
+  graphOpen.nodeSearch = false
   sNodes.splice(0)
   links.splice(0)
   groups.splice(0)
   selection.value = []
   last = freeze()
   if (start) startWith(start.kind, start.model)
+  else if (recipe || ask || find) onMounted(() => nextTick(() => openWith(recipe, ask)))
   else scratch.value = true
+}
+function openWith(recipe: Recipe | null, ask: boolean): void {
+  if (recipe) build(recipe)
+  else if (ask) agent.value = true
+  else addMenuInView()
+}
+function addMenuInView(): void {
+  pending = undefined
+  menu.value = {
+    x: Math.max(8, size.w / 2 - 150),
+    y: Math.max(8, size.h / 3),
+    at: toWorld({ x: size.w / 2, y: size.h / 2 })
+  }
 }
 function startWith(kind: NodeKind, model?: string): void {
   scratch.value = false

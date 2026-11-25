@@ -171,6 +171,7 @@ defineExpose({ focus, dismiss, field })
       </div>
     </div>
     <div v-else-if="agent && focused && !query" class="cc-pop cc-chips" aria-label="Try">
+      <span class="cc-chips-label">Try</span>
       <button
         v-for="c in AGENT_CHIPS"
         :key="c"
@@ -382,20 +383,33 @@ defineExpose({ focus, dismiss, field })
 :root .proto-ui.proto-ui.proto-ui .cc-chips {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--color-card-background) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-default),
+    var(--shadow-popover);
+  backdrop-filter: blur(var(--blur-glass));
   animation: cc-fade 200ms ease both;
+}
+:root .proto-ui.proto-ui.proto-ui .cc-chips-label {
+  padding: 0 6px 0 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
 }
 :root .proto-ui.proto-ui.proto-ui .cc-chip {
   height: 30px;
   padding: 0 12px;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--color-card-background) 90%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  background: var(--color-secondary-background);
   color: var(--color-muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
 :root .proto-ui.proto-ui.proto-ui .cc-chip:hover {
+  background: var(--color-secondary-background-hover);
   color: var(--color-base-foreground);
 }
 @keyframes cc-in {

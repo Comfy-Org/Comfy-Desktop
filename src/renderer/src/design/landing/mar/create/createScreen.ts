@@ -3,7 +3,7 @@ import { activeInstance, hostActions, instanceById, proto } from '../../useProto
 import type { ProtoInstance, Template } from '../../mock'
 import type { ProjectWorkflow } from '../../gallery'
 import { graphOpen } from '../graph/graphOpen'
-import type { NodeKind } from '../graph/canvasData'
+import type { NodeKind, Recipe } from '../graph/canvasData'
 import { marTabsOn } from '../shell/titleTabs'
 
 export const NEW_TAB_ID = 'new-tab'
@@ -119,6 +119,21 @@ export function startBlank(): void {
 
 export function startWithNode(kind: NodeKind, model?: string): void {
   graphOpen.start = { kind, model }
+  land(activeInstance.value, 'Untitled workflow', false)
+}
+
+export function startWithRecipe(recipe: Recipe): void {
+  graphOpen.recipe = recipe
+  land(activeInstance.value, 'Untitled workflow', false)
+}
+
+export function startWithAgent(): void {
+  graphOpen.agent = true
+  land(activeInstance.value, 'Untitled workflow', false)
+}
+
+export function startWithNodeSearch(): void {
+  graphOpen.nodeSearch = true
   land(activeInstance.value, 'Untitled workflow', false)
 }
 
