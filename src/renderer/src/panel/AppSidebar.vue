@@ -570,7 +570,18 @@ function openSettings(): void {
                       aria-hidden="true"
                     />
                     <span
-                      v-if="!starting && (failure || live)"
+                      v-if="starting"
+                      class="absolute -right-[3px] -bottom-[3px] box-border size-2.5 animate-spin rounded-full border-[1.5px] border-solid border-foreground border-t-transparent ring-2 [animation-duration:900ms] motion-reduce:animate-none"
+                      :class="
+                        build.id === activeBuildId
+                          ? 'bg-[oklch(0.27_0_0)] ring-[oklch(0.27_0_0)]'
+                          : 'bg-sidebar-background ring-sidebar-background'
+                      "
+                      data-testid="app-sidebar-dot-starting"
+                      aria-hidden="true"
+                    />
+                    <span
+                      v-else-if="failure || live"
                       class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
                       :class="[
                         failure ? 'bg-destructive' : 'bg-success',
@@ -595,20 +606,9 @@ function openSettings(): void {
                     >
                     <span v-if="failure" class="sr-only">· {{ failure }}</span>
                   </Tooltip>
-                  <span
-                    v-if="starting"
-                    class="flex shrink-0 items-center gap-1.5 text-xs/4 text-foreground"
-                    role="status"
-                    aria-live="polite"
-                    data-testid="app-sidebar-build-starting"
+                  <span v-if="starting" class="sr-only" role="status" aria-live="polite"
+                    >· {{ t('home.buildStarting') }}</span
                   >
-                    <LoaderCircle
-                      :size="12"
-                      class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-                      aria-hidden="true"
-                    />
-                    {{ t('home.buildStarting') }}
-                  </span>
                   <span
                     v-else-if="install && install.percent !== null"
                     class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"

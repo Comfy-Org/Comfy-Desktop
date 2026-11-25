@@ -1093,26 +1093,36 @@ describe('AppSidebar', () => {
       expect([live('new'), live('cloud'), live('old')]).toEqual([true, true, false])
     })
 
-    it('keeps the icon and shows a trailing spinner with "Starting…" on a starting row, then the green dot once it runs', async () => {
+    it('rings the build icon with a 10px spinner where the green dot goes while it starts, then shows the green dot once it runs', async () => {
       useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
-      const wrapper = await mountSidebar('home', [OLD, NEW])
+      useInstallationStore().installations = [OLD, NEW]
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      await flushPromises()
       const row = () => wrapper.get(`[data-testid="app-sidebar-build-${NEW.id}"]`)
-      const starting = () => row().find('[data-testid="app-sidebar-build-starting"]')
+      const ring = () => row().find('[data-testid="app-sidebar-dot-starting"]')
       const liveDot = () => row().find('[data-testid="app-sidebar-dot-live"]')
 
-      expect(starting().exists()).toBe(true)
-      expect(starting().text()).toBe('Starting…')
-      expect(starting().classes()).toContain('text-foreground')
-      expect(starting().attributes('role')).toBe('status')
-      expect(starting().find('svg.animate-spin').classes()).toContain('motion-reduce:animate-none')
-      expect(row().element.lastElementChild).toBe(starting().element)
-      expect(row().findAll('svg').length).toBe(2)
-      expect(row().find('[data-testid="app-sidebar-build-installing"]').exists()).toBe(false)
+      expect(ring().exists()).toBe(true)
+      const ringElement = ring().element as HTMLElement
+      const box = ringElement.getBoundingClientRect()
+      const style = getComputedStyle(ringElement)
+      expect([box.width, box.height]).toEqual([10, 10])
+      expect(style.borderTopColor).toBe('rgba(0, 0, 0, 0)')
+      expect(style.animationName).toBe('spin')
+      expect(ring().classes()).toEqual(
+        expect.arrayContaining(['ring-2', 'ring-sidebar-background', 'motion-reduce:animate-none'])
+      )
+      expect(row().findAll('svg').length).toBe(1)
+      expect(row().text()).toBe(`${NEW.name}· Starting…`)
+      expect(row().get('[role="status"]').classes()).toContain('sr-only')
       expect(liveDot().exists()).toBe(false)
       expect(
         wrapper
           .get(`[data-testid="app-sidebar-build-${OLD.id}"]`)
-          .find('[data-testid="app-sidebar-build-starting"]')
+          .find('[data-testid="app-sidebar-dot-starting"]')
           .exists()
       ).toBe(false)
 
@@ -1124,8 +1134,10 @@ describe('AppSidebar', () => {
       })
       await flushPromises()
 
-      expect(starting().exists()).toBe(false)
+      expect(ring().exists()).toBe(false)
       expect(liveDot().exists()).toBe(true)
+      expect(row().text()).toBe(NEW.name)
+      wrapper.unmount()
     })
 
     it('shows a build started from Desktop the same way, not as a big spinner in place of its icon', async () => {
@@ -1140,8 +1152,9 @@ describe('AppSidebar', () => {
       await flushPromises()
       const row = wrapper.get(`[data-testid="app-sidebar-build-${NEW.id}"]`)
 
-      expect(row.find('[data-testid="app-sidebar-build-starting"]').text()).toBe('Starting…')
+      expect(row.find('[data-testid="app-sidebar-dot-starting"]').exists()).toBe(true)
       expect(row.find('[data-testid="app-sidebar-build-installing"]').exists()).toBe(false)
+      expect(row.findAll('svg').length).toBe(1)
     })
 
     it('turns the Builds icon into a spinner in the collapsed sidebar while a build starts', async () => {
