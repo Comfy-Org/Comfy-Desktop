@@ -54,15 +54,15 @@ const MOTION_CLASS =
       >
         <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
       </span>
-      <AppBadges
-        v-if="app.badges?.length"
-        :badges="app.badges"
-        :description-id-prefix="descriptionIdPrefix"
-        :revealed="revealed"
-        :glass-picture="coverFailed ? null : glassPictureOf(app.covers, coverShowing)"
-        class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
-      />
     </span>
+    <AppBadges
+      v-if="app.badges?.length"
+      :badges="app.badges"
+      :description-id-prefix="descriptionIdPrefix"
+      :revealed="revealed"
+      :glass-picture="coverFailed ? null : glassPictureOf(app.covers, coverShowing)"
+      class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
+    />
     <span
       class="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgb(0_0_0/0.7),rgb(0_0_0/0.55)_28%,transparent_60%)]"
       aria-hidden="true"

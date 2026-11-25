@@ -124,9 +124,14 @@ async function disableHardwareAccelerationFromDesktopSettings(ctx: AppContext): 
       `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-checked')`
     )
   ).toBe('true')
-  expect(await popup.allText('.settings-v2-field-description')).toContain(
+  const restartNotice =
     'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
-  )
+  expect(
+    await popup.evaluate(
+      `[...document.querySelectorAll('.info-tooltip-trigger')].map((el) => el.getAttribute('aria-label'))`
+    )
+  ).toContain(restartNotice)
+  expect(await popup.allText('.settings-v2-field-description')).not.toContain(restartNotice)
   expect(await popup.click(selector)).toBe(true)
   await popup.waitFor(
     async () =>

@@ -31,6 +31,7 @@ import {
 import { startModelTransfer, type ModelTransferHandle } from './modelDownloadTransport'
 import { ModelDownloadTelemetry, type ModelDownloadSource } from './modelDownloadTelemetry'
 import { isQuitInProgress } from './quit-state'
+import { createSpeedMeter, type SpeedMeter } from './downloadSpeed'
 
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 
@@ -118,8 +119,9 @@ interface PendingDownload {
   completion?: Promise<ModelJobOutcome>
   telemetry?: ModelDownloadTelemetry
   lastProgress: DownloadProgress & { id: string }
-  lastSpeedBytes: number
-  lastSpeedTime: number
+  speed: SpeedMeter
+  transferBytes?: { receivedBytes: number; totalBytes: number }
+  lastReportAt?: number
 }
 
 const attachedSessions = new WeakSet<Electron.Session>()
@@ -821,11 +823,69 @@ function finishDestructiveCancel(pending: PendingDownload, destKey: string): voi
 }
 
 const MODEL_PROGRESS_REPORT_MS = 500
+const MODEL_SPEED_TICK_MS = 1000
+
+let speedTicker: ReturnType<typeof setInterval> | null = null
+
+function reportModelTransferProgress(pending: PendingDownload, now: number): void {
+  const bytes = pending.transferBytes
+  if (!bytes) return
+  const { receivedBytes, totalBytes } = bytes
+  pending.lastReportAt = now
+  const speed = pending.speed.read(now)
+  reportProgress({
+    id: pending.id,
+    url: pending.url,
+    filename: pending.filename,
+    directory: pending.directory,
+    progress: totalBytes > 0 ? Math.min(1, receivedBytes / totalBytes) : 0,
+    receivedBytes,
+    totalBytes: totalBytes > 0 ? totalBytes : undefined,
+    speedBytesPerSec: speed,
+    etaSeconds:
+      speed !== undefined && speed > 0 && totalBytes > 0
+        ? Math.max(0, totalBytes - receivedBytes) / speed
+        : undefined,
+    status: 'downloading'
+  })
+}
+
+function tickModelSpeeds(now = Date.now()): void {
+  let active = false
+  for (const pending of pendingDownloads.values()) {
+    if (pending.kind !== 'model' || !pending.transport || pending.suspended || pending.cancelling) {
+      continue
+    }
+    active = true
+    if (now - (pending.lastReportAt ?? 0) >= MODEL_SPEED_TICK_MS) {
+      reportModelTransferProgress(pending, now)
+    }
+  }
+  if (!active && speedTicker) {
+    clearInterval(speedTicker)
+    speedTicker = null
+  }
+}
+
+function ensureSpeedTicker(): void {
+  if (speedTicker) return
+  speedTicker = setInterval(() => tickModelSpeeds(), MODEL_SPEED_TICK_MS)
+  speedTicker.unref?.()
+}
+
+function withoutSpeed(
+  progress: DownloadProgress & { id: string }
+): DownloadProgress & { id: string } {
+  return { ...progress, speedBytesPerSec: undefined, etaSeconds: undefined }
+}
 
 async function runModelTransport(pending: PendingDownload): Promise<void> {
   const gen = (pending.attemptGen = (pending.attemptGen ?? 0) + 1)
   pending.cancelRequested = false
   pending.pauseHoldsClaim = false
+  pending.speed.reset()
+  pending.transferBytes = undefined
+  pending.lastReportAt = undefined
   const destKey = canonicalDestKey(pending.savePath)
   const prior = pending.transport
   if (prior) {
@@ -861,28 +921,14 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
         for (const sub of pending.progressSubscribers) sub(receivedBytes, totalBytes)
       }
       const now = Date.now()
-      const elapsed = (now - pending.lastSpeedTime) / 1000
-      if (elapsed * 1000 < MODEL_PROGRESS_REPORT_MS) return
-      const delta = receivedBytes - pending.lastSpeedBytes
-      const speed = delta > 0 ? delta / elapsed : 0
-      pending.lastSpeedBytes = receivedBytes
-      pending.lastSpeedTime = now
-      const eta = speed > 0 && totalBytes > 0 ? (totalBytes - receivedBytes) / speed : undefined
-      reportProgress({
-        id: pending.id,
-        url: pending.url,
-        filename: pending.filename,
-        directory: pending.directory,
-        progress: totalBytes > 0 ? Math.min(1, receivedBytes / totalBytes) : 0,
-        receivedBytes,
-        totalBytes: totalBytes > 0 ? totalBytes : undefined,
-        speedBytesPerSec: speed > 0 ? speed : undefined,
-        etaSeconds: eta,
-        status: 'downloading'
-      })
+      pending.speed.record(receivedBytes, now)
+      pending.transferBytes = { receivedBytes, totalBytes }
+      if (now - (pending.lastReportAt ?? 0) < MODEL_PROGRESS_REPORT_MS) return
+      reportModelTransferProgress(pending, now)
     }
   })
   pending.transport = transport
+  ensureSpeedTicker()
 
   const outcome = await transport.done
   if (pending.transport === transport) pending.transport = null
@@ -1119,8 +1165,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     completion,
     telemetry,
     lastProgress: initial,
-    lastSpeedBytes: 0,
-    lastSpeedTime: Date.now()
+    speed: createSpeedMeter()
   }
   const starterOnProgress = opts.onProgress
   const release = acquireModelJobLease(
@@ -1294,8 +1339,7 @@ export async function startManagedAssetDownload(
       progress: 0,
       status: 'pending'
     },
-    lastSpeedBytes: 0,
-    lastSpeedTime: Date.now()
+    speed: createSpeedMeter()
   }
   registerPending(pending)
 
@@ -1462,8 +1506,7 @@ export function startFileSave(options: FileSaveOptions): string {
       status: 'pending',
       canPause: false
     },
-    lastSpeedBytes: 0,
-    lastSpeedTime: Date.now()
+    speed: createSpeedMeter()
   }
   registerPending(pending)
   retryParamsById.set(id, {
@@ -1514,21 +1557,12 @@ function reportTransferProgress(
   status: 'downloading' | 'paused'
 ): void {
   const now = Date.now()
-  const elapsed = (now - pending.lastSpeedTime) / 1000
-  let speed: number | undefined
-  let eta: number | undefined
-  if (elapsed >= 0.5) {
-    const delta = received - pending.lastSpeedBytes
-    speed = delta / elapsed
-    pending.lastSpeedBytes = received
-    pending.lastSpeedTime = now
-    if (speed > 0 && total > 0) {
-      eta = (total - received) / speed
-    }
-  } else {
-    speed = pending.lastProgress.speedBytesPerSec
-    eta = pending.lastProgress.etaSeconds
-  }
+  pending.speed.record(received, now)
+  const speed = status === 'downloading' ? pending.speed.read(now) : undefined
+  const eta =
+    speed !== undefined && speed > 0 && total > 0
+      ? Math.max(0, total - received) / speed
+      : undefined
 
   reportProgress({
     id: pending.id,
@@ -1772,8 +1806,7 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
         subscriberContents: new Set(),
         item,
         lastProgress: { id, url, filename, progress: 0, status: 'pending' },
-        lastSpeedBytes: 0,
-        lastSpeedTime: Date.now()
+        speed: createSpeedMeter()
       }
       registerPending(general)
       reportProgress(general.lastProgress)
@@ -1793,14 +1826,15 @@ export function pauseModelDownload(ref: string): boolean {
     if (pending.transport) {
       pending.pauseHoldsClaim = pending.transport.pause()
     }
-    reportProgress({ ...pending.lastProgress, status: 'paused' })
+    reportProgress({ ...withoutSpeed(pending.lastProgress), status: 'paused' })
     return true
   }
   if (pending.canPause === false) return false
   if (pending.item && !pending.item.isPaused()) {
     pending.item.pause()
+    pending.speed.reset()
     reportProgress({
-      ...pending.lastProgress,
+      ...withoutSpeed(pending.lastProgress),
       status: 'paused'
     })
   }
@@ -1816,15 +1850,16 @@ export function resumeModelDownload(ref: string): boolean {
     if (quittingModelDownloads || isQuitInProgress()) return false
     if (pending.suspended) {
       pending.suspended = false
-      reportProgress({ ...pending.lastProgress, status: 'downloading' })
+      reportProgress({ ...withoutSpeed(pending.lastProgress), status: 'downloading' })
       if (!pending.starting) void runModelTransport(pending)
     }
     return true
   }
   if (pending.item && pending.item.isPaused()) {
     pending.item.resume()
+    pending.speed.reset()
     reportProgress({
-      ...pending.lastProgress,
+      ...withoutSpeed(pending.lastProgress),
       status: 'downloading'
     })
   }
@@ -2317,8 +2352,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       settleJob,
       completion,
       lastProgress: progress,
-      lastSpeedBytes: stagedBytes,
-      lastSpeedTime: Date.now()
+      speed: createSpeedMeter()
     }
     registerPending(pending)
     modelJobIdByDest.set(destKey, id)
@@ -2432,6 +2466,10 @@ async function waitForOnline(timeoutMs: number): Promise<void> {
   }
 }
 
+export function _test_tickModelSpeeds(now: number): void {
+  tickModelSpeeds(now)
+}
+
 export function _test_resetModelDownloadsQuitLatch(): void {
   quittingModelDownloads = false
 }
@@ -2466,8 +2504,7 @@ export function _test_setSeededTrayState(snapshot: DownloadsTrayState): void {
       subscriberWindows: new Set(),
       subscriberContents: new Set(),
       lastProgress: { ...entry, id },
-      lastSpeedBytes: 0,
-      lastSpeedTime: Date.now()
+      speed: createSpeedMeter()
     }
     registerPending(stub)
   }

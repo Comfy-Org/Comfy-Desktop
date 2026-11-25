@@ -44,13 +44,19 @@ import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordDashboardSurface, recordInstanceSurface } from '../lib/lastSession'
 import * as settings from '../settings'
 import * as updater from '../lib/updater'
-import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
+import {
+  getSavedBounds,
+  getWindowOptions,
+  saveWindowBounds,
+  type WindowBounds
+} from '../lib/windowState'
 import {
   defaultWindowBoundsMatching,
   defaultWindowBoundsUnderCursor,
   fitWindowToDisplay,
   fitWindowToWorkArea,
-  type FittedWindow
+  type FittedWindow,
+  type FreshWindowBounds
 } from '../lib/defaultWindowSize'
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
@@ -296,7 +302,7 @@ function liveBoundsOf(win: BrowserWindow | undefined): Electron.Rectangle | null
 function findLiveSiblingBounds(boundsKey: string): Electron.Rectangle | null {
   for (const [, entry] of comfyWindows) {
     if (entry.window.isDestroyed()) continue
-    if (liveBoundsKeyFor(entry) !== boundsKey) continue
+    if (boundsKey !== CHOOSER_HOST_BOUNDS_KEY && liveBoundsKeyFor(entry) !== boundsKey) continue
     return entry.window.getBounds()
   }
   return null
@@ -308,6 +314,12 @@ export interface HostWindowPlacement {
   maximizeOnReveal: boolean
 }
 
+function defaultWhenLargerThanScreen(saved: WindowBounds): FreshWindowBounds | null {
+  const fresh = defaultWindowBoundsMatching(saved)
+  const fits = saved.width <= fresh.workArea.width && saved.height <= fresh.workArea.height
+  return fits ? null : fresh
+}
+
 export function placeHostWindow(
   boundsKey: string,
   initiallyHidden: boolean,
@@ -315,12 +327,12 @@ export function placeHostWindow(
   existingOrigins: ReadonlyArray<{ x: number; y: number }>,
   requester: Electron.Rectangle | null = null
 ): HostWindowPlacement {
-  const saved = boundsKey === CHOOSER_HOST_BOUNDS_KEY ? undefined : getSavedBounds(boundsKey)
+  const saved = getSavedBounds(boundsKey)
   const anchor = requester ?? sibling
   const fresh = anchor
     ? defaultWindowBoundsMatching(anchor)
     : saved
-      ? null
+      ? defaultWhenLargerThanScreen(saved)
       : defaultWindowBoundsUnderCursor()
   const initialOptions = fresh
     ? {
@@ -331,7 +343,7 @@ export function placeHostWindow(
       }
     : getWindowOptions(boundsKey)
   const cascaded = cascadeOffsetForCollisions(initialOptions, existingOrigins)
-  const maximize = saved ? saved.maximized : fresh?.maximize === true
+  const maximize = fresh ? fresh.maximize : saved?.maximized === true
   return {
     bounds: fresh ? fitWindowToWorkArea(cascaded, fresh.workArea) : fitWindowToDisplay(cascaded),
     maximizeNow: maximize && !initiallyHidden,
@@ -510,9 +522,13 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
 
   const persistBounds = (): void => {
     const live = comfyWindows.get(windowKey)
-    if (!live || isChooserHost(live)) return
+    if (!live) return
     if (!isWindowLayoutable(comfyWindow)) return
-    saveWindowBounds(liveBoundsKeyFor(live), comfyWindow)
+    const boundsKey = liveBoundsKeyFor(live)
+    saveWindowBounds(boundsKey, comfyWindow)
+    if (boundsKey !== CHOOSER_HOST_BOUNDS_KEY) {
+      saveWindowBounds(CHOOSER_HOST_BOUNDS_KEY, comfyWindow)
+    }
   }
   comfyWindow.on('resize', persistBounds)
   comfyWindow.on('move', persistBounds)
@@ -832,7 +848,12 @@ export function openChooserHostWindow(
   entry.coldStartPendingReveal = !opts.deferColdStartReveal
 
   entry.activePanel = initialPanel
-  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry), opts.dashboardPage)
+  ensurePanelView(
+    entry.windowKey,
+    entry,
+    computeBodyMode(entry),
+    opts.dashboardPage ?? settings.startPage()
+  )
 
   entry.layoutViews()
 

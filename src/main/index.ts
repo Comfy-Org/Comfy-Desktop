@@ -31,7 +31,7 @@ import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { relaunchIntoUninstallCleanup } from './lib/uninstallCleanup'
-import { saveWindowBounds } from './lib/windowState'
+import { flushWindowStateSync, saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
@@ -141,9 +141,9 @@ import {
   type DraftLinkStartup
 } from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
+import { noteAutoStartReady, registerAutoStartNoticeHandlers } from './apps/autoStartNotice'
 import {
-  isRunningForAppsOnly,
-  runsWithItsWindowClosed,
+  opensInDesktopWindow,
   startWithDesktop,
   stopBuildsRunningForAppsOnly
 } from './apps/localComfy'
@@ -317,7 +317,11 @@ async function openStartupSurface(): Promise<void> {
 
   openOrFocusHomeHostWindow()
 
-  if (explicitInst) void startWithDesktop(explicitInst)
+  if (explicitInst) void announceWhenReady(explicitInst)
+}
+
+async function announceWhenReady(inst: InstallationRecord): Promise<void> {
+  if (await startWithDesktop(inst)) noteAutoStartReady(inst.id)
 }
 
 function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
@@ -743,7 +747,7 @@ ipcMain.on('comfy-window:show-home', (event) => {
   const found = findEntryByTitleBarSender(event.sender)
   if (!found || !isInstallHost(found.entry)) return
   recordIpcInvocation('comfy-window:show-home')
-  openOrFocusHomeHostWindow()
+  openOrFocusHomeHostWindow('home')
 })
 
 function startHomeTour(fromWindowKey: number): void {
@@ -821,9 +825,7 @@ ipcMain.handle(
     const workspaceId =
       requester && typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
     if (await focusOpenComfyWindow(installationId, requester, workspaceId)) return true
-    if (isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)) {
-      return openWindowForAppsBuild(installationId)
-    }
+    if (await opensInDesktopWindow(installationId)) return openWindowForAppsBuild(installationId)
 
     const proc = ipc.getSessionProcess(installationId)
     if (proc?.pid) {
@@ -1055,7 +1057,9 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       relaunchStates,
       computeInstallUpdateAvailable
     })
-    setHostFactories({ createChooser: openChooserHostWindow })
+    setHostFactories({
+      createChooser: (dashboardPage) => openChooserHostWindow('comfy', { dashboardPage })
+    })
     registerPanelViewIpc()
     registerOutputFolderHandlers()
 
@@ -1624,6 +1628,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     })
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
+    registerAutoStartNoticeHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     registerTemplateInputAssetHandlers({
       findInstallationIdForWindow,
@@ -1773,6 +1778,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       _stopPeriodicReleaseChecks = null
     }
     flushLastSessionSync()
+    flushWindowStateSync()
     flushOperationOutput()
     cleanupTempDownloads()
     stopAgentPrefetches()

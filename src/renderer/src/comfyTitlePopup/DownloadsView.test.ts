@@ -71,7 +71,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(wrapper.find('.downloads-clear').exists()).toBe(false)
   })
 
-  it('renders an active downloading entry with what has arrived, the time left and an inline progress gradient', async () => {
+  it('renders an active downloading entry with its percent, speed and time left and an inline progress gradient', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const state: MockDownloadsState = {
       active: [
@@ -95,7 +95,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(item.exists()).toBe(true)
     expect(item.find('.downloads-item-name').text()).toBe('models/checkpoints / a.bin')
     const sub = item.find('.downloads-item-sub').text()
-    expect(sub).toBe('4.0 MB of 9.5 MB · Less than a minute left')
+    expect(sub).toBe('42% · 1.0 MB/s · Less than a minute left')
     const style = item.attributes('style') ?? ''
     expect(style).toContain('linear-gradient')
     expect(style).toContain('42%')
@@ -126,7 +126,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
   describe('status lines in the app language', () => {
     afterEach(resetAppLocale)
 
-    it('writes what has arrived, the time left and the finished state in Chinese', async () => {
+    it('writes the percent, the time left and the finished state in Chinese', async () => {
       switchAppLocaleToChinese()
       const { default: DownloadsView } = await import('./DownloadsView.vue')
       const state: MockDownloadsState = {
@@ -156,7 +156,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
       await flushPromises()
 
       const subtitles = wrapper.findAll('.downloads-item-sub').map((sub) => sub.text())
-      expect(subtitles).toContain(`4.0 MB / 9.5 MB · ${zh.downloadsPopup.timeLeftUnderMinute}`)
+      expect(subtitles).toContain(`42% · ${zh.downloadsPopup.timeLeftUnderMinute}`)
       expect(subtitles).toContain(zh.downloadsPopup.statusWaiting)
       expect(subtitles).toContain(zh.downloadsPopup.statusDownloaded)
     })

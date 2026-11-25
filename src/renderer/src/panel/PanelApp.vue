@@ -55,6 +55,7 @@ import { provideBuildMenuHost } from './home/useBuildMenu'
 import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
+import { provideOpenWhenReady } from './home/useOpenWhenReady'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { runningAppIds, watchAppRuns } from './appRuns'
 import { useAppSwitchConfirm } from './useAppSwitchConfirm'
@@ -323,10 +324,6 @@ function homePageOf(app: AppCard): AppHomePage {
 const openedAppHome = ref<AppHomePage>('apps')
 const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHome.value : 'apps'))
 
-const railApps = computed(() =>
-  appHome.value === 'staff-apps' ? liveStaffApps.value : listedApps.value
-)
-
 const confirmAppSwitch = useAppSwitchConfirm()
 
 function showExplore(tab: 'apps' | 'workflows'): void {
@@ -531,6 +528,7 @@ chooserHandoff = useChooserHandoff({
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
 provideAutoStartBuild()
+provideOpenWhenReady((build) => void handleChooserPick(build))
 provideBuildMenuHost({
   launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
   openDetails: openBuildFromSidebar,
@@ -757,12 +755,10 @@ onUnmounted(() => {
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
         :app-in-progress="appInProgress"
-        :apps="railApps"
         :app-home="appHome"
         :show-staff-apps="staffApps.shown.value"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
-        @switch-app="openAppFromHome"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />

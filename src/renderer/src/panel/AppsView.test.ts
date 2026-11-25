@@ -250,6 +250,29 @@ describe('AppsView badge glass', () => {
     expect(card.find('[data-testid="app-badge-square"]').exists()).toBe(true)
     expect(card.find('[data-testid="app-badge-glass-picture"]').exists()).toBe(false)
   })
+
+  it('keeps the badges still while the picture zooms on hover, outside the zooming layer', async () => {
+    const wrapper = await mountApps([{ ...CUTOUT, badges: [CROWN] }])
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const picture = card.get('[data-testid="app-card-picture"]').element
+    const badges = card.get('[data-testid="app-badges"]').element
+
+    expect(picture.className).toContain('group-hover:scale-[1.04]')
+    expect(picture.contains(badges)).toBe(false)
+    expect(badges.parentElement).toBe(card.element)
+
+    const restingPicture = picture.getBoundingClientRect()
+    const restingBadges = badges.getBoundingClientRect()
+    await userEvent.hover(card.element)
+    await expect
+      .poll(() => picture.getBoundingClientRect().width, { timeout: 2_000 })
+      .toBeCloseTo(restingPicture.width * 1.04, 0)
+    const hoveredBadges = badges.getBoundingClientRect()
+    expect(hoveredBadges.left).toBe(restingBadges.left)
+    expect(hoveredBadges.top).toBe(restingBadges.top)
+    expect(hoveredBadges.width).toBe(restingBadges.width)
+    await userEvent.unhover(card.element)
+  })
 })
 
 describe('AppsView', () => {
