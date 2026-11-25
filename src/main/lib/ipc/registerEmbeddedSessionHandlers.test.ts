@@ -239,6 +239,13 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
     })
   })
 
+  it('resolves a sign-in a sign-out overtook without an error as plain signed-out', async () => {
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_OUT).mockResolvedValue(SIGNED_OUT)
+    mocks.signInToCloud.mockResolvedValue(undefined)
+
+    await expect(requestSignIn()({})).resolves.toStrictEqual({ status: 'signed_out' })
+  })
+
   it('resolves a sign-in a sign-out cut short with the state the view is in by then', async () => {
     mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValue(SIGNED_OUT)
     mocks.signInToCloud.mockRejectedValue(
@@ -380,6 +387,14 @@ describe('desktop2-auth:sign-out', () => {
       status: 'disabled',
       reason: 'not_local'
     })
+    expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a local view whose sharing is turned off', async () => {
+    mocks.isTrustedSender.mockReturnValue(true)
+    mocks.stateForSender.mockResolvedValue({ status: 'disabled', reason: 'off' })
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual({ status: 'disabled', reason: 'off' })
     expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
   })
 })
