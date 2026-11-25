@@ -29,6 +29,7 @@ import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
 import { AGENT_OPENS, agentOpens } from './create/agentOpens'
+import { COMPOSER_POSITIONS, composerPos } from './create/composerPos'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
@@ -167,6 +168,7 @@ const PARTS: Part[] = [
   one('createLook', createLook, DEFAULT_CREATE_LOOK, CREATE_LOOKS),
   one('createInput', createInput, 'agent', CREATE_INPUTS),
   one('agentOpens', agentOpens, 'create', AGENT_OPENS),
+  one('composer', composerPos, 'bottom', COMPOSER_POSITIONS),
   one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),

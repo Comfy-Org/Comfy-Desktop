@@ -31,6 +31,8 @@ import { buildOf, graphFor, readyIcon, reducedMotion, useEscapeCloses } from './
 import { agentStart, answer, quickPicks, type AgentAnswer } from './v07Agent'
 import { agentOpens } from '../agentOpens'
 import CreateComposer from './CreateComposer.vue'
+import ResultsB from './ResultsB.vue'
+import { composerPos } from '../composerPos'
 import { createInput } from '../createInput'
 
 type Item =
@@ -71,8 +73,12 @@ const wf = (workflow: ProjectWorkflow): Item => ({
   workflow
 })
 
+const center = computed(() => composerPos.id === 'center')
+const dq = computed(() => (center.value ? '' : q.value))
+const results = ref<InstanceType<typeof ResultsB>>()
+
 const items = computed<Item[]>(() => {
-  if (q.value) {
+  if (dq.value) {
     const kinds = (Object.keys(NODE_TYPES) as NodeKind[]).filter((k) =>
       `${NODE_TYPES[k].title} ${NODE_TYPES[k].description}`.toLowerCase().includes(q.value)
     )
@@ -96,26 +102,26 @@ const items = computed<Item[]>(() => {
   if (shelf.value === YOURS) return [BLANK, ...workflows.value.slice(0, 10).map(wf)]
   return [BLANK, ...(SHELVES.find((s) => s.id === shelf.value) ?? SHELVES[0]!).starters().map(tpl)]
 })
-watch([q, shelf], () => {
+watch([dq, shelf, center], () => {
   hover.value = -1
   pinned.value = -1
   navigated.value = false
   page.value = 0
 })
 
-const PAGE = 7
 const page = ref(0)
-const pages = computed(() => Math.max(1, Math.ceil((items.value.length - 1) / PAGE)))
+const perPage = computed(() => (center.value ? 8 : 7))
+const pages = computed(() => Math.max(1, Math.ceil((items.value.length - 1) / perPage.value)))
 const slots = computed(() => [
-  { key: 'blank', index: 0, item: items.value[0] },
-  ...Array.from({ length: PAGE }, (_, j) => {
-    const index = 1 + page.value * PAGE + j
+  ...(center.value ? [] : [{ key: 'blank', index: 0, item: items.value[0] }]),
+  ...Array.from({ length: perPage.value }, (_, j) => {
+    const index = 1 + page.value * perPage.value + j
     const item = items.value[index]
     return { key: item?.id ?? `empty-${j}`, index, item }
   })
 ])
 watch(pinned, (i) => {
-  if (i > 0) page.value = Math.floor((i - 1) / PAGE)
+  if (i > 0) page.value = Math.floor((i - 1) / perPage.value)
 })
 
 const lastOutput = (w: ProjectWorkflow): string | undefined =>
@@ -146,6 +152,8 @@ const build = ref<{ starter: Starter; shown: number; total: number; prompt: stri
 const built = computed(() => !!build.value && build.value.shown >= build.value.total)
 const agentGraph = computed(() => !!build.value && hover.value < 0)
 const recId = computed(() => last.value?.rec?.id)
+const heroAway = computed(() => hover.value >= 0 || (agentGraph.value && panel.value))
+const heroTop = computed(() => !heroAway.value && !!current.value)
 
 const current = computed<Item | undefined>(() => {
   if (hover.value >= 0) return items.value[hover.value]
@@ -418,6 +426,10 @@ const promptOf = computed(() => {
 })
 
 function key(e: KeyboardEvent): void {
+  if (center.value && createInput.id === 'search' && query.value.trim() && e.key !== 'Escape') {
+    results.value?.key(e)
+    return
+  }
   const last = items.value.length - 1
   const sideways = !query.value && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')
   if (e.key === 'Escape') {
@@ -522,7 +534,29 @@ useEscapeCloses(() => composer.value?.field)
           </p>
         </div>
 
-        <p v-if="!current" class="v07-empty is-hint">Point at a template to preview it here</p>
+        <p v-if="!current && !center" class="v07-empty is-hint">
+          Point at a template to preview it here
+        </p>
+        <div v-if="center" class="v07-hero" :class="[heroAway && 'is-away', heroTop && 'is-top']">
+          <CreateComposer
+            ref="composer"
+            v-model="query"
+            class="v07-hero-field"
+            :mode="createInput.id"
+            :navigated
+            hero
+            placeholder="Search or describe what you want to make…"
+            external
+            @key="key"
+            @ask="onAsk"
+          />
+          <div v-if="createInput.id === 'search' && query.trim()" class="v07-hero-drop">
+            <ResultsB ref="results" :query />
+          </div>
+          <button v-else-if="!heroTop" type="button" class="v07-hero-blank" @click="startBlank">
+            <Plus :size="14" />Start with a blank canvas
+          </button>
+        </div>
         <aside
           v-if="current && !agentGraph"
           :key="`d-${current.id}`"
@@ -574,6 +608,7 @@ useEscapeCloses(() => composer.value?.field)
         <div class="v07-band">
           <div class="v07-bar">
             <CreateComposer
+              v-if="!center"
               ref="composer"
               v-model="query"
               class="v07-composer"
@@ -584,7 +619,8 @@ useEscapeCloses(() => composer.value?.field)
               @key="key"
               @ask="onAsk"
             />
-            <nav v-if="!q" class="v07-shelves" aria-label="Dock shows">
+            <p v-else class="v07-stuck">Or start from something</p>
+            <nav v-if="!dq" class="v07-shelves" aria-label="Dock shows">
               <button
                 v-for="t in TABS"
                 :key="t.id"
@@ -826,6 +862,74 @@ useEscapeCloses(() => composer.value?.field)
 }
 :root .proto-ui.proto-ui.proto-ui .v07-composer + .v07-pager {
   margin-left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 32px;
+  pointer-events: none;
+  transition:
+    opacity 260ms ease,
+    transform 320ms var(--ease-out-expo);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero > * {
+  pointer-events: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero.is-away {
+  opacity: 0;
+  transform: translateY(-16px);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero.is-away > * {
+  pointer-events: none;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero.is-top {
+  justify-content: flex-start;
+  padding-top: 20px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero-field {
+  width: min(640px, 100%);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero-drop {
+  width: min(860px, 100%);
+  max-height: min(460px, 52vh);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--color-card-background) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-default),
+    var(--shadow-popover);
+  backdrop-filter: blur(var(--blur-glass));
+  scrollbar-width: thin;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero-blank {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-hero-blank:hover {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-stuck {
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .v07-hero {
+    transition: none;
+  }
 }
 :root .proto-ui.proto-ui.proto-ui .v07-main {
   position: relative;

@@ -43,6 +43,7 @@ import { homeTour } from './homeTour/homeTour'
 import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { createInput } from './create/createInput'
 import { agentOpens } from './create/agentOpens'
+import { composerPos } from './create/composerPos'
 import { createScreen } from './create/createScreen'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
 import { connection } from './offline/connection'
@@ -277,6 +278,7 @@ export const TWEAKS = {
   createLook: one(createLook, DEFAULT_CREATE_LOOK),
   createInput: one(createInput, 'agent'),
   agentOpens: one(agentOpens, 'create'),
+  composerPos: one(composerPos, 'bottom'),
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),

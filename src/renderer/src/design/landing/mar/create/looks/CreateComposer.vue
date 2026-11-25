@@ -11,12 +11,16 @@ const {
   mode,
   cardAt = 'below',
   navigated = false,
-  external = false
+  external = false,
+  hero = false,
+  placeholder
 } = defineProps<{
   mode: CreateInput
   cardAt?: 'above' | 'below'
   navigated?: boolean
   external?: boolean
+  hero?: boolean
+  placeholder?: string
 }>()
 const query = defineModel<string>({ required: true })
 const emit = defineEmits<{
@@ -100,7 +104,7 @@ defineExpose({ focus, dismiss, field })
 </script>
 
 <template>
-  <div class="cc" :class="[`is-${mode}`, `card-${cardAt}`]">
+  <div class="cc" :class="[`is-${mode}`, `card-${cardAt}`, hero && 'is-hero']">
     <div class="cc-field" @click="field?.focus()">
       <AgentChat v-if="agent" :size="15" class="shrink-0 text-muted-foreground" />
       <Search v-else :size="15" class="shrink-0 text-subtle-foreground" />
@@ -109,7 +113,8 @@ defineExpose({ focus, dismiss, field })
         v-model="query"
         type="text"
         :placeholder="
-          agent ? 'Describe what you want to make…' : 'Search templates, workflows and nodes'
+          placeholder ??
+          (agent ? 'Describe what you want to make…' : 'Search templates, workflows and nodes')
         "
         :aria-label="
           agent ? 'Describe what you want to make' : 'Search templates, workflows and nodes'
@@ -246,6 +251,24 @@ defineExpose({ focus, dismiss, field })
   color: var(--color-base-foreground);
   font: inherit;
   font-size: var(--text-ui);
+}
+:root .proto-ui.proto-ui.proto-ui .cc.is-hero .cc-field {
+  height: 52px;
+  gap: 12px;
+  padding: 0 8px 0 18px;
+  background: color-mix(in oklch, var(--color-card-background) 86%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-default),
+    var(--shadow-popover);
+  backdrop-filter: blur(var(--blur-glass));
+}
+:root .proto-ui.proto-ui.proto-ui .cc.is-hero .cc-field:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--color-border-focus),
+    var(--shadow-popover);
+}
+:root .proto-ui.proto-ui.proto-ui .cc.is-hero .cc-field input {
+  font-size: 15px;
 }
 :root .proto-ui.proto-ui.proto-ui .cc-field input::placeholder {
   color: var(--color-subtle-foreground);
