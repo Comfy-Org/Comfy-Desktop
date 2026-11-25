@@ -4,6 +4,7 @@ import { goIn, instanceById, proto } from '../../useProto'
 import { notify } from '../pages/undo'
 import { fmtGb, totalGb, tplById } from '../templateModal/templateData'
 import { downloadFinished, runTemplate } from '../autorun/autorun'
+import { prepOfTemplate } from '../autorun/prepTabs'
 
 export type DownloadScenario = 'normal' | 'fail' | 'disk' | 'slow'
 
@@ -152,7 +153,8 @@ export function menuLine(d: TemplateDownload): string {
 }
 
 const watching = (d: TemplateDownload): boolean =>
-  proto.detail?.kind === 'template' && proto.detail.id === d.id
+  (proto.detail?.kind === 'template' && proto.detail.id === d.id) ||
+  prepOfTemplate(d.id)?.tabId === proto.activeTab
 
 let timer: ReturnType<typeof setInterval> | undefined
 let tickCount = 0

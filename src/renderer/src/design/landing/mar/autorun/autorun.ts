@@ -1,12 +1,13 @@
-import { computed } from 'vue'
+import { watch } from 'vue'
 import type { ProtoInstance, Template } from '../../mock'
 import { hostActions, instanceById, proto } from '../../useProto'
-import { notify } from '../pages/undo'
+import { dismiss, notify, undoToast } from '../pages/undo'
 import { downloadFor, remove } from '../downloads/templateDownloads'
 import { graphOpen } from '../graph/graphOpen'
 import { hubById } from '../explore/hubWorkflows'
 import { infoFor, mediaFor, tplById, type Target } from '../templateModal/templateData'
-import { addReady, clearReady, markDownloaded, readyList } from './installed'
+import { markDownloaded } from './installed'
+import { dropPrepTab, prepOfTab, prepOfTemplate } from './prepTabs'
 
 const EXAMPLE_PROMPTS: Record<string, string> = {
   image_moss_image_t2i:
@@ -64,23 +65,37 @@ export const autoRuns = (s: Target | undefined): boolean =>
       (s.state === 'cloud' && !s.inst.deployment))
   )
 
+const readyMessage = (t: Template, inst: ProtoInstance): string =>
+  `${shortName(t)} is ready on ${inst.name}`
+
 export function runTemplate(t: Template, inst: ProtoInstance): void {
   const media = mediaFor(t)
+  const prep = prepOfTemplate(t.id)
+  const inTab = prep && prep.instId === inst.id ? prep : undefined
   graphOpen.autorun = {
     title: t.title,
     model: infoFor(t).model ?? shortName(t),
     prompt: examplePrompt(t),
     output: media.output,
     input: takesImage(t) ? (media.input ?? '') : undefined,
-    video: t.category === 'video'
+    video: t.category === 'video',
+    tabId: inTab?.tabId
   }
-  clearReady(t.id, inst.id)
   if (downloadFor(t.id)?.status === 'done') remove(t.id)
-  hostActions.launch(inst, t.title)
+  if (undoToast.message === readyMessage(t, inst)) dismiss()
+  if (!inTab) {
+    hostActions.launch(inst, t.title)
+    return
+  }
+  dropPrepTab(inTab.tabId)
+  proto.detail = null
+  proto.activeInstanceId = inst.id
+  proto.activeTab = inTab.tabId
 }
 
 const watching = (templateId: string): boolean =>
-  proto.detail?.kind === 'template' && proto.detail.id === templateId
+  (proto.detail?.kind === 'template' && proto.detail.id === templateId) ||
+  prepOfTemplate(templateId)?.tabId === proto.activeTab
 
 export function downloadFinished(templateId: string, instId: string): void {
   markDownloaded(templateId, instId)
@@ -91,24 +106,17 @@ export function downloadFinished(templateId: string, instId: string): void {
     runTemplate(t, inst)
     return
   }
-  addReady(templateId, instId)
-  notify(
-    `${shortName(t)} is ready on ${inst.name}`,
-    () => runTemplate(t, inst),
-    'success',
-    'Open and run'
-  )
+  const prep = prepOfTemplate(templateId)
+  if (prep) prep.ready = true
+  notify(readyMessage(t, inst), () => runTemplate(t, inst), 'success', 'Open and run')
 }
 
-export const readyTemplate = computed(() => {
-  for (const r of readyList()) {
-    const t = tplById(r.templateId)
-    const inst = instanceById(r.instId)
-    if (t && inst) return { t, inst, src: mediaFor(t).output }
+watch(
+  () => proto.activeTab,
+  (tabId) => {
+    const prep = prepOfTab(tabId)
+    const t = prep?.ready ? tplById(prep.templateId) : undefined
+    const inst = prep ? instanceById(prep.instId) : undefined
+    if (t && inst) runTemplate(t, inst)
   }
-  return undefined
-})
-
-export function dismissReady(templateId: string, instId: string): void {
-  clearReady(templateId, instId)
-}
+)

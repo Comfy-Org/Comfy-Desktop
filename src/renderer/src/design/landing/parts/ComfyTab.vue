@@ -8,6 +8,8 @@ import { buildState } from '../buildTabs'
 import MarGraph from '../mar/graph/MarGraph.vue'
 import MarCloudBar from '../mar/shell/MarCloudBar.vue'
 import { onCloud } from '../mar/shell/surface'
+import PreparingTab from '../mar/autorun/PreparingTab.vue'
+import { prepOfTab } from '../mar/autorun/prepTabs'
 
 /**
  * A build's tab, under its ComfyUI. In the app with your real builds, main
@@ -19,6 +21,7 @@ const tab = computed(() => proto.tabs.find((t) => t.id === proto.activeTab))
 const inst = computed(() => (tab.value ? instanceById(tab.value.instanceId) : undefined))
 const state = computed(() => (inst.value ? buildState[inst.value.id] : undefined))
 const real = computed(() => proto.live && !!inst.value?.source)
+const prep = computed(() => (tab.value ? prepOfTab(tab.value.id) : undefined))
 </script>
 
 <template>
@@ -26,8 +29,9 @@ const real = computed(() => proto.live && !!inst.value?.source)
        (mar/shell). -->
   <MarCloudBar v-if="onCloud" />
   <!-- A mock of ComfyUI's graph editor (mar/graph). -->
+  <PreparingTab v-if="prep && !prep.ready" :prep="prep" />
   <MarGraph
-    v-if="tab && inst && !real && state?.kind !== 'error'"
+    v-else-if="tab && inst && !real && state?.kind !== 'error'"
     :workflow="tab.workflow === 'Untitled workflow' ? undefined : tab.workflow"
   />
   <div

@@ -8,6 +8,7 @@ export interface GraphAutorun {
   output: string
   input?: string
   video: boolean
+  tabId?: string
 }
 
 /** What ComfyUI opens with when a share link asks for it (?comfy=assets,

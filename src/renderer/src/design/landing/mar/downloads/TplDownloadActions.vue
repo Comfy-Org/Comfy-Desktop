@@ -13,7 +13,7 @@ import {
   type TemplateDownload
 } from './templateDownloads'
 
-const props = defineProps<{ download: TemplateDownload; leaveNote?: string }>()
+const props = defineProps<{ download: TemplateDownload }>()
 const emit = defineEmits<{ close: [] }>()
 
 const copy = computed(() => copyFor(props.download))
@@ -107,14 +107,6 @@ const primary = computed(() =>
       {{ copy.detail }}
     </p>
   </div>
-  <p
-    v-if="download.status === 'downloading'"
-    class="m-0 px-0.5 text-[12px] leading-[18px] text-muted-foreground [order:-3]"
-  >
-    {{
-      leaveNote ?? 'It keeps downloading if you leave. Follow it under Downloads in the title bar.'
-    }}
-  </p>
   <button
     v-if="primary"
     type="button"
