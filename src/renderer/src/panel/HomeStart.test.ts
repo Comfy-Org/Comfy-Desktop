@@ -347,6 +347,27 @@ describe('the "ComfyUI is ready" notice', () => {
     expect(toast()).toBeNull()
   })
 
+  it('leaves no notice timer behind when Home closed before it heard whether the notice shows', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    running(AUTO.id)
+    let answerRead: (id: string | null) => void = () => {}
+    vi.mocked(window.api.getAutoStartReady).mockReturnValue(
+      new Promise((resolve) => {
+        answerRead = resolve
+      })
+    )
+    const wrapper = await openHome()
+    wrapper.unmount()
+    mounted.splice(mounted.indexOf(wrapper), 1)
+
+    answerRead(AUTO.id)
+    await flushPromises()
+    vi.advanceTimersByTime(READY_NOTICE_MS)
+    await flushPromises()
+
+    expect(window.api.dismissAutoStartReady).not.toHaveBeenCalled()
+  })
+
   it('closes on X', async () => {
     running(AUTO.id)
     await openHome()

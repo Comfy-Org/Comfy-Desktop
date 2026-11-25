@@ -25,6 +25,7 @@ export function useAutoStartReadyNotice() {
   }
 
   let heardAChange = false
+  let disposed = false
   const unsubscribe = window.api.onAutoStartReadyChanged?.(({ installationId }) => {
     heardAChange = true
     show(installationId)
@@ -32,11 +33,12 @@ export function useAutoStartReadyNotice() {
   void window.api
     .getAutoStartReady?.()
     .then((id) => {
-      if (!heardAChange && id !== null) show(id)
+      if (!disposed && !heardAChange && id !== null) show(id)
     })
     .catch(() => {})
 
   onScopeDispose(() => {
+    disposed = true
     unsubscribe?.()
     stopTimer()
   })
