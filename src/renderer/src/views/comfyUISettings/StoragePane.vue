@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { I18nT, useI18n } from 'vue-i18n'
 import { AlertTriangle } from '@lucide/vue'
 import { useModal } from '../../composables/useModal'
 import ModelsDirList from '../../comfyTitlePopup/globalSettings/ModelsDirList.vue'
@@ -138,6 +138,26 @@ const useSharedOutputEnabled = computed<boolean>(() => {
   const f = useSharedOutputField.value
   return f ? f.value !== false : true
 })
+
+interface LaunchFolder {
+  path: string
+  shared: boolean
+}
+
+function launchFolderOf(id: string): LaunchFolder | null {
+  const value = findField(id)?.value as Partial<LaunchFolder> | undefined
+  if (!value || typeof value.path !== 'string') return null
+  return { path: value.path, shared: value.shared === true }
+}
+
+const launchInputFolder = computed(() => launchFolderOf('launchInputDir'))
+const launchOutputFolder = computed(() => launchFolderOf('launchOutputDir'))
+const foldersFromStartupArgs = computed(
+  () => launchInputFolder.value !== null || launchOutputFolder.value !== null
+)
+
+const flagCodeClass =
+  'rounded-[3px] bg-[color-mix(in_srgb,currentcolor_14%,transparent)] px-1 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px]'
 
 function handleToggleField(field: DetailField | undefined, value: boolean): void {
   if (field) emit('update-field', field, value)
@@ -386,7 +406,16 @@ function handleRevealPath(path: string): void {
           />
         </label>
       </template>
-      <template v-if="useSharedInputEnabled">
+      <StorageDirRow
+        v-if="launchInputFolder"
+        data-testid="storage-launch-input"
+        list-aligned
+        :path="launchInputFolder.path"
+        :shared="launchInputFolder.shared"
+        :browsable="false"
+        @open="handleOpenPath(launchInputFolder.path)"
+      />
+      <template v-else-if="useSharedInputEnabled">
         <StorageDirRow
           v-if="sharedInputField"
           list-aligned
@@ -423,7 +452,16 @@ function handleRevealPath(path: string): void {
           />
         </label>
       </template>
-      <template v-if="useSharedOutputEnabled">
+      <StorageDirRow
+        v-if="launchOutputFolder"
+        data-testid="storage-launch-output"
+        list-aligned
+        :path="launchOutputFolder.path"
+        :shared="launchOutputFolder.shared"
+        :browsable="false"
+        @open="handleOpenPath(launchOutputFolder.path)"
+      />
+      <template v-else-if="useSharedOutputEnabled">
         <StorageDirRow
           v-if="sharedOutputField"
           list-aligned
@@ -446,6 +484,22 @@ function handleRevealPath(path: string): void {
         @reset="handleResetOutputDir"
       />
     </GlobalSettingsMicroSection>
+
+    <I18nT
+      v-if="foldersFromStartupArgs"
+      keypath="comfyUISettings.startupArgFoldersNote"
+      tag="p"
+      scope="global"
+      class="storage-startup-arg-note m-0 text-[13px] leading-[1.45] text-text-muted"
+      data-testid="storage-startup-arg-note"
+    >
+      <template #inputFlag>
+        <code :class="flagCodeClass">--input-directory</code>
+      </template>
+      <template #outputFlag>
+        <code :class="flagCodeClass">--output-directory</code>
+      </template>
+    </I18nT>
 
     <ExtraModelPathsModal
       :open="extraModalOpen"

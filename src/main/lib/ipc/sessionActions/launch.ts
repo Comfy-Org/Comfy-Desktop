@@ -171,6 +171,13 @@ import {
 } from '../../coreBetaCampaignFlags'
 import { getIdClass } from '../../deviceId'
 import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
+import {
+  FOLDER_FLAG,
+  lastArgValue,
+  sharedFolder,
+  usesStartupArgFolders,
+  type ComfyFolderKind
+} from '../../startupArgFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 export function desktopFeatureFlags(inst: InstallationRecord): Record<string, string> {
@@ -485,6 +492,17 @@ export interface StorageLaunchState {
   modelSyncOptions: ModelPathsOptions
 }
 
+function applySharedFolderUnlessArgsSetIt(
+  args: string[],
+  kind: ComfyFolderKind,
+  storage: Pick<settings.Settings, 'inputDir' | 'outputDir'>
+): void {
+  if (lastArgValue(args, FOLDER_FLAG[kind])) return
+  const dir = sharedFolder(kind, storage)
+  fs.mkdirSync(dir, { recursive: true })
+  args.push(FOLDER_FLAG[kind], dir)
+}
+
 export function applyStorageLaunchArgs(
   inst: InstallationRecord,
   installationId: string,
@@ -519,7 +537,11 @@ export function applyStorageLaunchArgs(
     const baselineSet = new Set([...(config?.extraFolders ?? []), ...installExtras])
     preLaunchExtras = [...baselineSet].sort()
   }
-  if (argsAvailable) {
+  if (argsAvailable && usesStartupArgFolders(inst)) {
+    for (const kind of ['input', 'output'] as const) {
+      applySharedFolderUnlessArgsSetIt(launchCmd.args!, kind, storage)
+    }
+  } else if (argsAvailable) {
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
     if (useSharedInput) {
       const inputDir = storage.inputDir || settings.defaults.inputDir

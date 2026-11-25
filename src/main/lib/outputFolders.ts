@@ -15,6 +15,7 @@ import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installInputDir, installOutputDir } from './models'
+import { lastArgValue, startupArgOrSharedFolder, usesStartupArgFolders } from './startupArgFolders'
 import { _runningSessions, sourceMap } from './ipc/shared'
 import type {
   AssetKind,
@@ -65,6 +66,7 @@ export function hasOutputFolder(inst: InstallationRecord): boolean {
 
 function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
   if (!hasOutputFolder(inst)) return null
+  if (usesStartupArgFolders(inst)) return startupArgOrSharedFolder(inst, 'output').path
   return outputDirOverride(inst, sharedDir) ?? installOutputDir(inst.installPath)
 }
 
@@ -74,6 +76,7 @@ export function sharedInputDir(): string {
 
 function inputDirFor(inst: InstallationRecord): string | null {
   if (!hasOutputFolder(inst)) return null
+  if (usesStartupArgFolders(inst)) return startupArgOrSharedFolder(inst, 'input').path
   if ((inst.useSharedInput as boolean | undefined) !== false) return sharedInputDir()
   return (inst.inputDir as string | undefined) || installInputDir(inst.installPath)
 }
@@ -84,15 +87,6 @@ export interface ComfyFolders {
 }
 
 const NO_FOLDERS: ComfyFolders = { output: null, input: null }
-
-function lastArgValue(args: readonly string[], flag: string): string | null {
-  let value: string | undefined
-  for (const [i, arg] of args.entries()) {
-    if (arg === flag) value = args[i + 1]
-    else if (arg.startsWith(`${flag}=`)) value = arg.slice(flag.length + 1)
-  }
-  return value || null
-}
 
 export function launchFoldersOf(
   inst: InstallationRecord,

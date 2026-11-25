@@ -427,6 +427,7 @@
     "envVarsCount": "{n} defined",
     "emptyInstallLess": "Open a ComfyUI build to view its settings.",
     "storageRestartNote": "Restart the application (or close and reopen) for these changes to take effect.",
+    "startupArgFoldersNote": "Git builds use the shared input and output folders. To use your own, add {inputFlag} or {outputFlag} in Startup arguments.",
     "dirMissingTitle": "Folder not found: {dir}",
     "viewCustomPathDetails": "View custom path details",
     "yamlTag": "YAML",

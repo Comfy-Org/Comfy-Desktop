@@ -427,6 +427,7 @@
     "envVarsCount": "已定义 {n} 个",
     "emptyInstallLess": "打开一个 ComfyUI 构建以查看其设置。",
     "storageRestartNote": "重启应用（或关闭后重新打开）以使这些更改生效。",
+    "startupArgFoldersNote": "Git 构建使用共享的输入和输出文件夹。如需使用自己的文件夹，请在启动参数中添加 {inputFlag} 或 {outputFlag}。",
     "dirMissingTitle": "找不到文件夹 —— {dir}",
     "viewCustomPathDetails": "查看自定义路径详情",
     "yamlTag": "YAML",

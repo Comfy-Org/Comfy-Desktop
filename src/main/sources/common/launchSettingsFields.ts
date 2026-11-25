@@ -17,6 +17,7 @@ import {
   MANAGER_NETWORK_MODES,
   isManagerNetworkMode
 } from '../../lib/managerConfig'
+import { startupArgOrSharedFolder, usesStartupArgFolders } from '../../lib/startupArgFolders'
 
 export interface ExtraModelPathDir {
   type: string
@@ -78,14 +79,9 @@ export interface LaunchSettingsOptions {
   extraFields?: Record<string, unknown>[]
 }
 
-export function buildStorageFields(installation: InstallationRecord): Record<string, unknown>[] {
+function modelStorageFields(installation: InstallationRecord): Record<string, unknown>[] {
   const useSharedModels = (installation.useSharedModels as boolean | undefined) !== false
-  const useSharedInput = (installation.useSharedInput as boolean | undefined) !== false
-  const useSharedOutput = (installation.useSharedOutput as boolean | undefined) !== false
   const installPath = installation.installPath as string | undefined
-  const ownModelsDir = installPath ? installModelsDir(installPath) : ''
-  const ownInputDir = installPath ? installInputDir(installPath) : ''
-  const ownOutputDir = installPath ? installOutputDir(installPath) : ''
   return [
     {
       id: 'useSharedModels',
@@ -94,24 +90,6 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
       editable: true,
       editType: 'boolean',
       tooltip: t('tooltips.useSharedModels'),
-      requiresRestart: true
-    },
-    {
-      id: 'useSharedInput',
-      label: t('common.useSharedInput'),
-      value: useSharedInput,
-      editable: true,
-      editType: 'boolean',
-      tooltip: t('tooltips.useSharedInput'),
-      requiresRestart: true
-    },
-    {
-      id: 'useSharedOutput',
-      label: t('common.useSharedOutput'),
-      value: useSharedOutput,
-      editable: true,
-      editType: 'boolean',
-      tooltip: t('tooltips.useSharedOutput'),
       requiresRestart: true
     },
     {
@@ -134,9 +112,42 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
     {
       id: 'installModelsDir',
       label: t('common.perInstallModelDirs'),
-      value: ownModelsDir,
+      value: installPath ? installModelsDir(installPath) : '',
       editable: false,
       editType: 'hidden'
+    },
+    {
+      id: 'extraModelPaths',
+      label: 'extraModelPaths',
+      value: buildExtraModelPathsView(installation),
+      editable: false,
+      editType: 'hidden'
+    }
+  ]
+}
+
+function inputOutputStorageFields(installation: InstallationRecord): Record<string, unknown>[] {
+  const useSharedInput = (installation.useSharedInput as boolean | undefined) !== false
+  const useSharedOutput = (installation.useSharedOutput as boolean | undefined) !== false
+  const installPath = installation.installPath as string | undefined
+  return [
+    {
+      id: 'useSharedInput',
+      label: t('common.useSharedInput'),
+      value: useSharedInput,
+      editable: true,
+      editType: 'boolean',
+      tooltip: t('tooltips.useSharedInput'),
+      requiresRestart: true
+    },
+    {
+      id: 'useSharedOutput',
+      label: t('common.useSharedOutput'),
+      value: useSharedOutput,
+      editable: true,
+      editType: 'boolean',
+      tooltip: t('tooltips.useSharedOutput'),
+      requiresRestart: true
     },
     {
       id: 'inputDir',
@@ -161,25 +172,44 @@ export function buildStorageFields(installation: InstallationRecord): Record<str
     {
       id: 'inputDirDefault',
       label: t('common.perInstallInputDir'),
-      value: ownInputDir,
+      value: installPath ? installInputDir(installPath) : '',
       editable: false,
       editType: 'hidden'
     },
     {
       id: 'outputDirDefault',
       label: t('common.perInstallOutputDir'),
-      value: ownOutputDir,
-      editable: false,
-      editType: 'hidden'
-    },
-    {
-      id: 'extraModelPaths',
-      label: 'extraModelPaths',
-      value: buildExtraModelPathsView(installation),
+      value: installPath ? installOutputDir(installPath) : '',
       editable: false,
       editType: 'hidden'
     }
   ]
+}
+
+function startupArgFolderFields(installation: InstallationRecord): Record<string, unknown>[] {
+  return [
+    {
+      id: 'launchInputDir',
+      label: t('common.perInstallInputDir'),
+      value: startupArgOrSharedFolder(installation, 'input'),
+      editable: false,
+      editType: 'hidden'
+    },
+    {
+      id: 'launchOutputDir',
+      label: t('common.perInstallOutputDir'),
+      value: startupArgOrSharedFolder(installation, 'output'),
+      editable: false,
+      editType: 'hidden'
+    }
+  ]
+}
+
+export function buildStorageFields(installation: InstallationRecord): Record<string, unknown>[] {
+  const folderFields = usesStartupArgFolders(installation)
+    ? startupArgFolderFields(installation)
+    : inputOutputStorageFields(installation)
+  return [...modelStorageFields(installation), ...folderFields]
 }
 
 export function buildLaunchSettingsFields(
