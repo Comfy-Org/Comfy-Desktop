@@ -51,51 +51,30 @@ function cancel(): void {
     </PopoverRoot>
   </Tooltip>
 
-  <div v-else class="mar-signin-wait" role="status" aria-live="polite" data-testid="signin-waiting">
-    <div class="mar-signin-wait-head">
-      <Loader2
-        :size="15"
-        class="shrink-0 animate-spin text-base-foreground motion-reduce:animate-none"
-      />
-      <span class="flex min-w-0 flex-1 flex-col">
-        <span class="truncate font-medium text-base-foreground">{{ title }}</span>
-        <span class="truncate text-subtle-foreground">{{ body }}</span>
-      </span>
-    </div>
-    <div class="mar-signin-wait-actions">
-      <Button variant="ghost" size="sm" @click="cancel">{{ WAITING_COPY.cancel }}</Button>
-      <Button variant="secondary" size="sm" class="flex-1" @click="openBrowserAgain">{{
-        WAITING_COPY.openAgain
+  <div v-else class="mar-corner-card" role="status" aria-live="polite" data-testid="signin-waiting">
+    <div class="mar-corner-top">
+      <span class="mar-corner-mark"
+        ><Loader2 :size="16" class="animate-spin motion-reduce:animate-none"
+      /></span>
+      <Button variant="ghost" size="sm" class="-mr-1.5" @click="cancel">{{
+        WAITING_COPY.cancel
       }}</Button>
     </div>
+    <div class="mar-corner-text">
+      <p class="font-medium text-base-foreground">{{ title }}</p>
+      <p class="text-subtle-foreground">{{ body }}</p>
+    </div>
+    <Button variant="secondary" block @click="openBrowserAgain">{{
+      WAITING_COPY.openAgain
+    }}</Button>
   </div>
 </template>
 
 <style scoped>
-.mar-signin-wait {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px;
-  border-radius: calc(var(--radius-control) + 4px);
-  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  font-size: var(--text-ui);
-  line-height: 1.35;
-}
-.mar-signin-wait.is-pop {
+:root .proto-ui.proto-ui.proto-ui .mar-corner-card.is-pop {
+  padding: 8px;
   background: none;
   box-shadow: none;
-}
-.mar-signin-wait-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 6px 0 8px;
-}
-.mar-signin-wait-actions {
-  display: flex;
-  gap: 4px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-signin-wait-rail {
   position: relative;
