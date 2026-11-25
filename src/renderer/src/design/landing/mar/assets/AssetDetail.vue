@@ -1649,8 +1649,8 @@ onBeforeUnmount(() => {
   height: 44px;
   align-items: center;
   color: var(--color-base-foreground);
-  font-size: var(--text-ui);
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   user-select: none;
 }
 .mad-ul-tabs {
