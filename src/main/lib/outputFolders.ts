@@ -72,9 +72,15 @@ export function hasOutputFolder(inst: InstallationRecord): boolean {
   return source?.category === 'local' && !source.managesOwnPaths
 }
 
+function startupArgFolderFor(inst: InstallationRecord, kind: ComfyFolderKind): string | null {
+  const launched = _runningSessions.get(inst.id)?.launchFolders
+  if (launched) return launched[kind]
+  return startupArgOrSharedFolder(inst, kind).path
+}
+
 function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
   if (!hasOutputFolder(inst)) return null
-  if (usesStartupArgFolders(inst)) return startupArgOrSharedFolder(inst, 'output').path
+  if (usesStartupArgFolders(inst)) return startupArgFolderFor(inst, 'output')
   return outputDirOverride(inst, sharedDir) ?? installOutputDir(inst.installPath)
 }
 
@@ -84,7 +90,7 @@ export function sharedInputDir(): string {
 
 function inputDirFor(inst: InstallationRecord): string | null {
   if (!hasOutputFolder(inst)) return null
-  if (usesStartupArgFolders(inst)) return startupArgOrSharedFolder(inst, 'input').path
+  if (usesStartupArgFolders(inst)) return startupArgFolderFor(inst, 'input')
   if ((inst.useSharedInput as boolean | undefined) !== false) return sharedInputDir()
   return (inst.inputDir as string | undefined) || installInputDir(inst.installPath)
 }

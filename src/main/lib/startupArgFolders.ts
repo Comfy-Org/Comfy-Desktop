@@ -47,8 +47,19 @@ export function comfyStartDir(inst: Pick<InstallationRecord, 'installPath'>): st
   return resolveComfyDir(inst.installPath)
 }
 
-export function resolveFolderArg(value: string, startDir: () => string): string {
-  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(startDir(), value)
+function isFullyQualified(value: string, pathApi: path.PlatformPath): boolean {
+  if (!pathApi.isAbsolute(value)) return false
+  return pathApi.sep === '/' || !/^[\\/]$/.test(pathApi.parse(value).root)
+}
+
+export function resolveFolderArg(
+  value: string,
+  startDir: () => string,
+  pathApi: path.PlatformPath = path
+): string {
+  return isFullyQualified(value, pathApi)
+    ? pathApi.resolve(value)
+    : pathApi.resolve(startDir(), value)
 }
 
 export function startupArgFolder(inst: InstallationRecord, kind: ComfyFolderKind): string | null {

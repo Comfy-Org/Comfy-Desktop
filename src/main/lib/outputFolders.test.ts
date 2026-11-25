@@ -79,6 +79,7 @@ vi.mock('./ipc/shared', () => ({
   _runningSessions: runningSessions,
   sourceMap: {
     standalone: { category: 'local' },
+    git: { category: 'local' },
     desktop: { category: 'local', managesOwnPaths: true },
     cloud: { category: 'cloud' }
   }
@@ -316,6 +317,29 @@ describe('listOutputFolders', () => {
       ownDir,
       path.join(installDir, 'ComfyUI', 'output')
     ])
+  })
+
+  it('uses the output folder a running git build started with, not Startup arguments saved since', async () => {
+    const launched = path.join(root, 'git-launched-output')
+    const savedSince = path.join(root, 'git-saved-since')
+    fs.mkdirSync(launched, { recursive: true })
+    fs.mkdirSync(savedSince, { recursive: true })
+    const git = install('git-build', {
+      sourceId: 'git',
+      launchArgs: `--output-directory "${savedSince}"`
+    })
+    installs.mockResolvedValue([git])
+
+    expect(await outputFolderPaths(), 'stopped: the saved folder').toMatchObject({
+      ofBuild: { 'git-build': savedSince }
+    })
+
+    runningSessions.set('git-build', { launchFolders: { output: launched, input: launched } })
+
+    expect(await outputFolderPaths(), 'running: the folder it started with').toMatchObject({
+      ofBuild: { 'git-build': launched }
+    })
+    expect(await listOutputFolders()).toEqual([sharedDir, launched])
   })
 
   it('leaves out folders that do not exist yet', async () => {
