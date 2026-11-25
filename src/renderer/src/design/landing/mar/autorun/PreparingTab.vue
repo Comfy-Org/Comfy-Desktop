@@ -17,21 +17,39 @@ import {
   resume,
   retry
 } from '../downloads/templateDownloads'
-import { mediaFor, targetFor, tplById } from '../templateModal/templateData'
+import {
+  fmtGb,
+  mediaFor,
+  needsFor,
+  targetFor,
+  totalGb,
+  tplById
+} from '../templateModal/templateData'
 import { runTemplate, shortName } from './autorun'
 import type { PrepTab } from './prepTabs'
+import { BUILD_INSTALLING, cancelInstall, installPhase } from './installThenRun'
 
 const { prep } = defineProps<{ prep: PrepTab }>()
 
 const t = computed(() => tplById(prep.templateId))
 const d = computed(() => downloadFor(prep.templateId))
 const copy = computed(() => (d.value ? copyFor(d.value) : undefined))
+const installing = computed(() => prep.install)
+const installLine = computed(() => {
+  const i = installing.value
+  if (!i || !t.value) return ''
+  const phase = installPhase(i.percent)
+  return needsFor(t.value).length ? `${phase} · then ${fmtGb(totalGb(t.value))} of models` : phase
+})
 const line = computed(() =>
-  d.value?.status === 'downloading'
-    ? copy.value?.detail.replace(/ · \d+ MB\/s/, '')
-    : copy.value?.detail
+  installing.value
+    ? installLine.value
+    : d.value?.status === 'downloading'
+      ? copy.value?.detail.replace(/ · \d+ MB\/s/, '')
+      : copy.value?.detail
 )
 const title = computed(() => {
+  if (installing.value) return BUILD_INSTALLING
   const s = d.value?.status
   const name = t.value ? shortName(t.value) : ''
   if (s === 'failed') return `${name} · download stopped`
@@ -40,6 +58,9 @@ const title = computed(() => {
   return `Preparing ${name}`
 })
 const live = computed(() => d.value?.status === 'downloading' || d.value?.status === 'paused')
+const progress = computed(() =>
+  installing.value ? installing.value.percent / 100 : d.value ? progressOf(d.value) : 0
+)
 
 const cloud = computed(() => instances.value.find((i) => i.kind === 'cloud' && !i.deployment))
 const cloudTarget = computed(() =>
@@ -72,10 +93,10 @@ function tryCloud(): void {
 
 <template>
   <div
-    v-if="t && d"
+    v-if="t && (d || installing)"
     class="flex min-h-0 flex-1 items-center justify-center px-6"
     data-preparing-tab
-    :data-download="d.status"
+    :data-download="installing ? 'install' : d?.status"
   >
     <div class="flex w-full max-w-100 flex-col gap-5">
       <div class="flex items-center gap-3">
@@ -87,12 +108,12 @@ function tryCloud(): void {
         <div class="min-w-0">
           <p class="m-0 flex items-center gap-1.5 truncate text-body font-medium">
             <TriangleAlert
-              v-if="d.status === 'failed'"
+              v-if="d?.status === 'failed'"
               :size="14"
               class="shrink-0 text-status-danger"
             />
             <HardDrive
-              v-else-if="d.status === 'disk'"
+              v-else-if="d?.status === 'disk'"
               :size="14"
               class="shrink-0 text-comfy-yellow"
             />{{ title }}
@@ -107,23 +128,26 @@ function tryCloud(): void {
         <div
           class="h-full origin-left rounded-full transition-transform duration-200 ease-linear motion-reduce:transition-none"
           :class="
-            d.status === 'failed'
+            d?.status === 'failed'
               ? 'bg-status-danger'
-              : d.status === 'disk'
+              : d?.status === 'disk'
                 ? 'bg-comfy-yellow'
-                : d.status === 'paused'
+                : d?.status === 'paused'
                   ? 'bg-muted-foreground'
                   : 'bg-base-foreground'
           "
-          :style="{ transform: `scaleX(${progressOf(d)})` }"
+          :style="{ transform: `scaleX(${progress})` }"
         />
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <Button v-if="d.status === 'failed'" variant="primary" size="md" @click="retry(d.id)">
+        <Button v-if="installing" variant="ghost" size="md" @click="cancelInstall(prep.tabId)"
+          ><X :size="14" />Cancel</Button
+        >
+        <Button v-else-if="d?.status === 'failed'" variant="primary" size="md" @click="retry(d.id)">
           <RotateCw :size="14" />Retry
         </Button>
         <Button
-          v-else-if="d.status === 'disk'"
+          v-else-if="d?.status === 'disk'"
           variant="primary"
           size="md"
           @click="freeUpSpace(d.id)"
@@ -131,7 +155,7 @@ function tryCloud(): void {
           <HardDrive :size="14" />Free up space
         </Button>
         <Button
-          v-else-if="live"
+          v-else-if="live && d"
           variant="secondary"
           size="md"
           @click="d.status === 'paused' ? resume(d.id) : pause(d.id)"
@@ -139,7 +163,9 @@ function tryCloud(): void {
           <Play v-if="d.status === 'paused'" :size="14" />
           <Pause v-else :size="14" />{{ d.status === 'paused' ? 'Resume' : 'Pause' }}
         </Button>
-        <Button variant="ghost" size="md" @click="cancel(d.id)"><X :size="14" />Cancel</Button>
+        <Button v-if="d && !installing" variant="ghost" size="md" @click="cancel(d.id)"
+          ><X :size="14" />Cancel</Button
+        >
         <span class="flex-1" />
         <Button
           v-if="cloudOffer"

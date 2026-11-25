@@ -357,7 +357,10 @@ const INSTALLED: Record<string, string[]> = {
 
 /** Saved workflows whose build lost their models since they were saved
  *  (moved or deleted files): the modal says so before it opens. */
-export const SAVED_MISSING_MODELS = new Set(['krea-street'])
+export const SAVED_MISSING_FROM: Record<string, string> = {
+  'krea-street': 'image_krea2_turbo_t2i'
+}
+export const SAVED_MISSING_MODELS = new Set(Object.keys(SAVED_MISSING_FROM))
 
 /** The ComfyUI each workflow needs, when newer than every build's. */
 const MIN_COMFY: Record<string, string> = {
@@ -378,6 +381,11 @@ const INSTALLED_PACKS: Record<string, string[]> = {
   'local-flux': [],
   'team-build': ['rgthree-comfy', 'ComfyUI-KJNodes']
 }
+
+export const missingPacks = (n: number): string => `${n} missing node pack${n === 1 ? '' : 's'}`
+
+export const managerHint = (n: number): string =>
+  `Install ${n === 1 ? 'it' : 'them'} in ComfyUI with Manager`
 
 const CASE_VERSION = 'v0.38.0'
 const CASE_PACK = 'ComfyUI-KJNodes'
@@ -631,21 +639,21 @@ export function targetFor(
     const n = packs.length
     const steps = [
       short && `updates ${inst.name} to ComfyUI ${short}`,
-      n && `installs ${n} node pack${n === 1 ? '' : 's'}`,
       !has && `downloads ${fmtGb(gb)} once`
     ].filter(Boolean) as string[]
-    const line = `${steps.join(', ')}, then opens this graph.`
+    const opens = steps.length
+      ? `${steps.join(', ')}, then opens this graph in ${inst.name}.`
+      : `opens this graph in ${inst.name}.`
+    const line = `${opens[0]!.toUpperCase()}${opens.slice(1)}`
     const again = inst.state === 'running' ? 'restart' : 'start'
+    const open = inst.state === 'running' ? `Open in ${inst.name}` : `Start ${inst.name}`
     return {
       ...base,
       state: short ? 'update' : 'nodes',
-      // The row names only what blocks most: the version, then the nodes.
-      status: short
-        ? `Needs ComfyUI ${short} · has ${inst.version}`
-        : `${n} node pack${n === 1 ? '' : 's'} missing`,
+      status: short ? `Needs ComfyUI ${short} · has ${inst.version}` : missingPacks(n),
       cost: has ? '' : fmtGb(gb),
-      action: short ? `Update and ${again}` : `Install nodes and ${again}`,
-      note: line[0]!.toUpperCase() + line.slice(1),
+      action: short ? `Update and ${again}` : has ? open : 'Download and start',
+      note: line,
       fetch: !has
     }
   }
@@ -772,7 +780,7 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
     case 'nodes':
       return best.fetch
         ? `Downloads ${fmtGb(totalGb(t))} once, then runs free.`
-        : 'Has every model; only node packs are missing. Then runs free on this Mac.'
+        : 'Has every model. Its missing node packs install in ComfyUI with Manager.'
     case 'new':
       return 'No build on this Mac yet. Sets one up with everything this needs.'
     case 'repair':
