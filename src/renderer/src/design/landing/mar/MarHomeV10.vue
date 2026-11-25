@@ -14,6 +14,8 @@ import ExampleArc from './userStates/ExampleArc.vue'
 import HomeLoadFailed from './offline/HomeLoadFailed.vue'
 import { offline } from './offline/connection'
 import HomeArcMix from './userStates/HomeArcMix.vue'
+import AppStrip from './home/AppStrip.vue'
+import { arcApps } from './userStates/arcItems'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES, runExample, type Example } from './userStates/examples'
@@ -330,7 +332,7 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
         <div class="mar-home-bleed mt-10">
           <HomeArcMix v-if="can.explore" full />
           <HomeLoadFailed v-else-if="offline" />
-          <ExampleArc v-else full />
+          <AppStrip v-else :items="arcApps()" data-home-tour="apps-carousel" @all="go('apps')" />
         </div>
         <MarBuildsRow v-if="!onCloud" />
       </template>

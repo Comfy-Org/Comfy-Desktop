@@ -3,6 +3,7 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import ExampleArc from './ExampleArc.vue'
+import AppStrip from '../home/AppStrip.vue'
 import HomeLoadFailed from '../offline/HomeLoadFailed.vue'
 import { offline } from '../offline/connection'
 import ScrollRow from '../../ui/ScrollRow.vue'
@@ -165,6 +166,12 @@ function scrollRow(by: number): void {
       <HomeLoadFailed
         v-if="offline"
         :kind="mix === 'tabs' && kind === 'templates' ? 'workflows' : 'apps'"
+      />
+      <AppStrip
+        v-else-if="full"
+        :items="shown.items"
+        :all-label="shown.label"
+        @all="seeAll(shown.on)"
       />
       <ExampleArc
         v-else
