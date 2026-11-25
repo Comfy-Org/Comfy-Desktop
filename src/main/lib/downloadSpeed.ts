@@ -15,7 +15,6 @@ export interface SpeedMeter {
 
 export function createSpeedMeter(windowMs = SPEED_WINDOW_MS): SpeedMeter {
   let samples: SpeedSample[] = []
-  let latest: SpeedSample | null = null
 
   const prune = (at: number): void => {
     const cutoff = at - windowMs
@@ -24,18 +23,21 @@ export function createSpeedMeter(windowMs = SPEED_WINDOW_MS): SpeedMeter {
 
   return {
     record(bytes, at) {
-      if (latest && bytes < latest.bytes) {
-        samples = []
-        latest = null
-      }
-      latest = { at, bytes }
       const last = samples.at(-1)
-      if (!last || at - last.at >= SAMPLE_SPACING_MS) samples.push(latest)
+      if (last && bytes < last.bytes) samples = []
+      const sample = { at, bytes }
+      const beforeLast = samples.at(-2)
+      if (beforeLast && at - beforeLast.at < SAMPLE_SPACING_MS) {
+        samples[samples.length - 1] = sample
+      } else {
+        samples.push(sample)
+      }
       prune(at)
     },
     read(at) {
       prune(at)
       const anchor = samples[0]
+      const latest = samples.at(-1)
       if (!anchor || !latest) return undefined
       const span = at - anchor.at
       if (span < MIN_SPAN_MS) return undefined
@@ -43,7 +45,6 @@ export function createSpeedMeter(windowMs = SPEED_WINDOW_MS): SpeedMeter {
     },
     reset() {
       samples = []
-      latest = null
     }
   }
 }

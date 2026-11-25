@@ -1560,7 +1560,9 @@ function reportTransferProgress(
   pending.speed.record(received, now)
   const speed = status === 'downloading' ? pending.speed.read(now) : undefined
   const eta =
-    speed !== undefined && speed > 0 && total > 0 ? Math.max(0, total - received) / speed : undefined
+    speed !== undefined && speed > 0 && total > 0
+      ? Math.max(0, total - received) / speed
+      : undefined
 
   reportProgress({
     id: pending.id,

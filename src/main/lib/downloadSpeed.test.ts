@@ -37,6 +37,13 @@ describe('createSpeedMeter', () => {
     expect(meter.read(10_000)).toBe(0)
   })
 
+  it('reaches 0 after a stall when the last two chunks arrived close together', () => {
+    const meter = createSpeedMeter()
+    meter.record(1 * MB, 0)
+    meter.record(2 * MB, 100)
+    expect(meter.read(6000)).toBe(0)
+  })
+
   it('averages bursts over the window', () => {
     const meter = createSpeedMeter()
     let bytes = 0

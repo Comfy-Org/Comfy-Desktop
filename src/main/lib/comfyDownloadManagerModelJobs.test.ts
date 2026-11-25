@@ -2578,6 +2578,39 @@ describe('model download speed', () => {
     await flush()
   })
 
+  it('drops the speed to 0 after two quick chunks and then no bytes', async () => {
+    const name = uniqueName()
+    const before = transfers.length
+    const h = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await waitForTransfers(before + 1)
+    const t = transfers[before]!
+    const row = () => activeRows().find((r) => r.id === h.id)
+    const start = Date.now()
+    let clock = start
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    try {
+      t.opts.onProgress?.({ receivedBytes: 1 * MB, totalBytes: 100 * MB })
+      clock = start + 100
+      t.opts.onProgress?.({ receivedBytes: 2 * MB, totalBytes: 100 * MB })
+
+      clock = start + 6000
+      mod._test_tickModelSpeeds(clock)
+      expect(row()?.receivedBytes).toBe(2 * MB)
+      expect(row()?.speedBytesPerSec).toBe(0)
+      expect(row()?.etaSeconds).toBeUndefined()
+    } finally {
+      nowSpy.mockRestore()
+    }
+
+    expect(mod.cancelModelDownload(h.id)).toBe(true)
+    await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+  })
+
   it('shows no speed from before a pause, and starts counting again after resume', async () => {
     const name = uniqueName()
     const before = transfers.length
