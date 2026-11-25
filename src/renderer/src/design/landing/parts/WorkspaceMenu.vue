@@ -5,6 +5,8 @@ import WorkspaceAvatar from './WorkspaceAvatar.vue'
 import MarWorkspaceMenu from '../mar/MarWorkspaceMenu.vue'
 import MarCredits from '../mar/MarCredits.vue'
 import MarSignIn from '../mar/shell/MarSignIn.vue'
+import MarSignInWaiting from '../mar/signIn/MarSignInWaiting.vue'
+import { signInWaiting } from '../mar/signIn/signInCorner'
 import { marNav, marPanelsOn } from '../mar/shell/marShell'
 import MarCreditsFlyout from '../mar/MarCreditsFlyout.vue'
 import { creditsStyle, creditsTotal } from '../mar/credits'
@@ -14,7 +16,8 @@ import { shownCredits, shownEmail, shownWorkspace as workspace } from '../accoun
 </script>
 
 <template>
-  <MarSignIn v-if="!proto.signedIn" :open="!(marPanelsOn && marNav.collapsed)" />
+  <MarSignInWaiting v-if="signInWaiting" :rail="marPanelsOn && marNav.collapsed" />
+  <MarSignIn v-else-if="!proto.signedIn" :open="!(marPanelsOn && marNav.collapsed)" />
   <div v-else class="flex flex-col gap-1">
     <!-- Credits as a chip or meter instead (mar/). -->
     <!-- Before Home there are no credits in the sidebar (mar/). -->

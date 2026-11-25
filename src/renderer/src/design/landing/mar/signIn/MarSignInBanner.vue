@@ -10,6 +10,9 @@ import {
   openBrowserAgain,
   SIGN_IN_COPY
 } from './browserSignIn'
+import { signInCornerShown } from './signInCorner'
+import { building } from '../../appFlow'
+import { marSidebarClosed } from '../shell/marShell'
 
 const copied = ref(false)
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
@@ -25,7 +28,11 @@ function copyLink(): void {
 <template>
   <Teleport :to="PORTAL_TO">
     <div
-      v-if="browserSignIn.banner && !browserSignIn.browser"
+      v-if="
+        browserSignIn.banner &&
+        !browserSignIn.browser &&
+        (!signInCornerShown || building || marSidebarClosed)
+      "
       class="proto-ui mar-signin-banner"
       role="status"
       data-testid="signin-banner"
@@ -54,8 +61,8 @@ function copyLink(): void {
 <style scoped>
 .mar-signin-banner {
   position: fixed;
-  bottom: 20px;
-  left: 50%;
+  bottom: 16px;
+  left: 16px;
   z-index: 2147483647;
   display: flex;
   width: max-content;
@@ -71,7 +78,6 @@ function copyLink(): void {
   font-size: var(--text-ui);
   line-height: 1.45;
   pointer-events: auto;
-  transform: translateX(-50%);
 }
 .mar-signin-banner-msg {
   min-width: 0;

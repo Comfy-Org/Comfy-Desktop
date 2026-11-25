@@ -312,7 +312,7 @@ function confirm(): void {
   const t = template.value
   if (!s || !t || s.disabled || phase.value === 'busy' || bgDownload.value) return
   if (s.state === 'login') {
-    hostActions.signIn()
+    hostActions.signIn(() => void nextTick(confirm))
     return
   }
   if (s.state === 'new') {
