@@ -10,6 +10,7 @@ import MarSeg from '../pages/MarSeg.vue'
 import { ARC_TEMPLATES, arcApps, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
+import { can } from '../../milestones'
 
 /**
  * Milestone 3's Home stage: the apps arc plus the Hub's templates, in the
@@ -191,6 +192,7 @@ function scrollRow(by: number): void {
           :src="w.src"
           :title="w.label"
           :meta="w.does"
+          :readiness-of="can.onboarding ? w.id : undefined"
           @open="w.open()"
         />
       </ScrollRow>

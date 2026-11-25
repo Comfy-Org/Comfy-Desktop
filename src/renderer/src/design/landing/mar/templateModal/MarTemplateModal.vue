@@ -36,7 +36,7 @@ import {
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
-import { hostActions, instanceById, instances, proto, toast } from '../../useProto'
+import { hostActions, instanceById, proto, toast } from '../../useProto'
 import { can } from '../../milestones'
 import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
@@ -56,19 +56,17 @@ import {
   hasPack,
   infoFor,
   minComfyFor,
-  newBuildTarget,
   packsFor,
   mediaFor,
   needsFor,
-  rankTargets,
   reasonFor,
-  targetFor,
   tplById,
   totalGb,
   versionShort,
   type NeedKind,
   type Target
 } from './templateData'
+import { bestTarget, targetsFor } from './runReadiness'
 import { graphFor } from './graphSpec'
 import TplGraph from './TplGraph.vue'
 import Tooltip from '../../ui/Tooltip.vue'
@@ -131,14 +129,13 @@ const graph = computed(() =>
 const targets = computed<Target[]>(() => {
   const t = template.value
   if (!t) return []
-  const gone = (i: (typeof instances.value)[number]): boolean =>
-    Boolean(saved.value && i.id === savedIn.value?.id && SAVED_MISSING_MODELS.has(saved.value.name))
-  const list = instances.value.map((i) => targetFor(t, i, proto.signedIn, gone(i)))
-  const fresh = !instances.value.some((i) => i.kind === 'local' && !i.deployment)
-  const add = fresh ? newBuildTarget(t) : undefined
-  return rankTargets(add ? [...list, add] : list, saved.value ? undefined : caseBuild(t))
+  const gone = saved.value && SAVED_MISSING_MODELS.has(saved.value.name)
+  return targetsFor(t, {
+    modelsGoneOn: gone ? savedIn.value?.id : undefined,
+    prefer: saved.value ? null : undefined
+  })
 })
-const best = computed(() => targets.value.find((x) => !x.disabled && x.state !== 'login'))
+const best = computed(() => bestTarget(targets.value))
 const reason = computed(() =>
   best.value && template.value ? reasonFor(best.value, targets.value, template.value) : ''
 )

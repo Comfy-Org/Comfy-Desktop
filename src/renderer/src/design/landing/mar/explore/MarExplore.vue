@@ -40,6 +40,7 @@ import { PROD_EXAMPLES, prodApp, prodClip, prodStill } from '../apps/prodApps'
 import { goIn, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
+import ReadinessBadge from '../templateModal/ReadinessBadge.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import ExampleTile from '../apps/ExampleTile.vue'
@@ -658,7 +659,10 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         @keydown.space.prevent="openDetail('template', t.id)"
       >
         <span class="mar-ex-media"
-          ><img :src="hubThumb(t.id) ?? thumb(t.id)" alt="" loading="lazy"
+          ><img :src="hubThumb(t.id) ?? thumb(t.id)" alt="" loading="lazy" /><ReadinessBadge
+            v-if="can.onboarding"
+            :id="t.id"
+            class="absolute bottom-2 left-2"
         /></span>
         <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
           <span class="block min-w-0 flex-1">
