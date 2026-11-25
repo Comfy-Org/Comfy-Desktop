@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuRadioGroup } from 'reka-ui'
-import { Cloud, Laptop } from '@lucide/vue'
+import { Cloud, Laptop, LoaderCircle } from '@lucide/vue'
 import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
@@ -30,6 +30,8 @@ const open = ref(false)
 const sessionStore = useSessionStore()
 const progressStore = useProgressStore()
 
+const targetStarting = computed(() => statusOf(target) === 'starting')
+
 function isLive(build: Installation): boolean {
   return statusOf(build) === 'running'
 }
@@ -49,15 +51,24 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
   <SplitButton
     v-model:open="open"
     :label="t('home.openComfyUIIn', { name: target.name })"
-    :tooltip="t('home.opensIn', { name: target.name })"
+    :tooltip="targetStarting ? t('home.opensWhenReady') : t('home.opensIn', { name: target.name })"
+    :description="targetStarting ? t('home.opensWhenReady') : undefined"
     :menu-label="t('home.chooseBuildToOpen')"
     main-testid="home-open-comfyui"
     menu-testid="home-open-build-menu"
     data-testid="home-open-build"
     @run="emit('open', target)"
   >
+    <LoaderCircle
+      v-if="targetStarting"
+      class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+      :size="14"
+      aria-hidden="true"
+      data-testid="home-open-comfyui-spinner"
+    />
     <component
       :is="isCloudBuild(target) ? Cloud : Laptop"
+      v-else
       class="shrink-0"
       :size="14"
       :data-kind="isCloudBuild(target) ? 'cloud' : 'local'"

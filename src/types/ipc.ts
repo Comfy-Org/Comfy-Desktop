@@ -1394,6 +1394,9 @@ export interface ElectronApi {
   releaseAttachHostPreview(): Promise<boolean>
   getRunningInstances(): Promise<RunningInstance[]>
   getLaunchingInstances(): Promise<{ installationId: string; installationName: string }[]>
+  getAutoStartReady(): Promise<string | null>
+  dismissAutoStartReady(installationId: string): Promise<void>
+  onAutoStartReadyChanged(callback: (data: { installationId: string | null }) => void): Unsubscribe
   getStoppingInstances(): Promise<string[]>
   getActiveOperations(): Promise<{ installationId: string; actionId: string; sessionId?: string }[]>
   getLastCrashError(installationId: string): Promise<ComfyExitedData | null>

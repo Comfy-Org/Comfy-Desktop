@@ -1489,6 +1489,25 @@ describe('the Auto start build, started when Desktop opens', () => {
     expect(getAllCrashes()).toEqual([])
   })
 
+  it('reports whether it is ready, so Home is told only about a build that came up', async () => {
+    startsWhenLaunched()
+    expect(await startWithDesktop()).toBe(true)
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+    expect(await startWithDesktop()).toBe(false)
+
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+    expect(await startWithDesktop()).toBe(false)
+
+    expect(
+      await local.startWithDesktop(
+        build({ sourceId: 'remote', installPath: '' }) as unknown as InstallationRecord
+      )
+    ).toBe(false)
+  })
+
   it('says nothing when its start was cancelled', async () => {
     mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
 
@@ -1496,6 +1515,45 @@ describe('the Auto start build, started when Desktop opens', () => {
 
     expect(mocks.broadcasts).toEqual([])
     expect(getAllCrashes()).toEqual([])
+  })
+
+  it('is not reported ready when it is a Legacy Desktop build, whose start never waits for ComfyUI to answer', async () => {
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      mocks.sessions.set(STUDIO, { port: 0 })
+      return { ok: true, mode: 'console' }
+    }
+
+    expect(await startWithDesktop()).toBe(false)
+    expect(launches).toHaveLength(1)
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
+  })
+
+  it('opens in a Desktop window only once its start is through, also when it restarts for new model folders after it came up', async () => {
+    let finishRestart: () => void = () => {}
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      running(STUDIO)
+      await new Promise<void>((resolve) => {
+        finishRestart = resolve
+      })
+      return { ok: true, mode: 'console', port: PORT }
+    }
+    const started = startWithDesktop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    let answer: boolean | undefined
+    void local.opensInDesktopWindow(STUDIO).then((opens) => {
+      answer = opens
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(answer).toBeUndefined()
+
+    finishRestart()
+    expect(await started).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(answer).toBe(true)
   })
 })
 

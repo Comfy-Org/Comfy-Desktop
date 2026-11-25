@@ -140,9 +140,9 @@ import {
   type DraftLinkStartup
 } from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
+import { noteAutoStartReady, registerAutoStartNoticeHandlers } from './apps/autoStartNotice'
 import {
-  isRunningForAppsOnly,
-  runsWithItsWindowClosed,
+  opensInDesktopWindow,
   startWithDesktop,
   stopBuildsRunningForAppsOnly
 } from './apps/localComfy'
@@ -316,7 +316,11 @@ async function openStartupSurface(): Promise<void> {
 
   openOrFocusHomeHostWindow()
 
-  if (explicitInst) void startWithDesktop(explicitInst)
+  if (explicitInst) void announceWhenReady(explicitInst)
+}
+
+async function announceWhenReady(inst: InstallationRecord): Promise<void> {
+  if (await startWithDesktop(inst)) noteAutoStartReady(inst.id)
 }
 
 function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
@@ -819,9 +823,7 @@ ipcMain.handle(
     const workspaceId =
       requester && typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
     if (await focusOpenComfyWindow(installationId, requester, workspaceId)) return true
-    if (isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)) {
-      return openWindowForAppsBuild(installationId)
-    }
+    if (await opensInDesktopWindow(installationId)) return openWindowForAppsBuild(installationId)
 
     const proc = ipc.getSessionProcess(installationId)
     if (proc?.pid) {
@@ -1622,6 +1624,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     })
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
+    registerAutoStartNoticeHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     registerTemplateInputAssetHandlers({
       findInstallationIdForWindow,
