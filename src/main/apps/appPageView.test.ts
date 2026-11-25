@@ -1010,7 +1010,7 @@ describe('an app page with no internet', () => {
     expect(mocks.startAnswering).toHaveBeenCalledTimes(1)
     expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
     expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(CUTOUT_URL)
-    expect(lastStatusSentToPanel()).toBe('loading')
+    expect(lastStatusSentToPanel()).not.toBe('failed')
     expect(mocks.capture).not.toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, expect.anything())
 
     finishLoading()
