@@ -5,6 +5,7 @@ import { notify } from '../pages/undo'
 import { isOffline, needsFor, totalGb, tplById } from '../templateModal/templateData'
 import { downloadFinished, runTemplate } from '../autorun/autorun'
 import { prepOfTemplate } from '../autorun/prepTabs'
+import { markDownloaded } from '../autorun/installed'
 import { offline } from '../offline/connection'
 
 export type DownloadScenario = 'normal' | 'fail' | 'disk' | 'slow'
@@ -33,6 +34,7 @@ export interface TemplateDownload {
   diskCleared: boolean
   stalledAt?: number
   seen: boolean
+  autorun: boolean
 }
 
 export const DOWNLOAD_COPY = {
@@ -310,7 +312,8 @@ function finish(d: TemplateDownload): void {
   d.status = 'done'
   d.doneGb = d.totalGb
   d.seen = false
-  downloadFinished(d.id, d.instId)
+  if (d.autorun) downloadFinished(d.id, d.instId)
+  else markDownloaded(d.id, d.instId)
 }
 
 function run(d: TemplateDownload): void {
@@ -326,7 +329,11 @@ function run(d: TemplateDownload): void {
   ensureTimer()
 }
 
-export function startDownload(t: Template, inst: ProtoInstance): void {
+export function startDownload(
+  t: Template,
+  inst: ProtoInstance,
+  { autorun = true }: { autorun?: boolean } = {}
+): void {
   const was = downloadFor(t.id)
   if (was && was.status !== 'cancelled' && was.status !== 'done') return
   const next: TemplateDownload = {
@@ -339,7 +346,8 @@ export function startDownload(t: Template, inst: ProtoInstance): void {
     mbps: 0,
     failedOnce: false,
     diskCleared: false,
-    seen: true
+    seen: true,
+    autorun
   }
   templateDownloads.list = [next, ...templateDownloads.list.filter((d) => d.id !== t.id)]
   run(downloadFor(t.id)!)

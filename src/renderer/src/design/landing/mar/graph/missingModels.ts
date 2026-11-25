@@ -51,7 +51,7 @@ export function downloadMissingModels(
 ): void {
   const inst = instanceById(instId)
   closeMissingModels(tabId, workflow)
-  if (inst) startDownload(template, inst)
+  if (inst) startDownload(template, inst, { autorun: false })
 }
 
 export function modelFolder(name: string): string {

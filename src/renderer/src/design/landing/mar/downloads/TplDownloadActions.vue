@@ -34,7 +34,11 @@ const PRIMARY: Partial<
   cancelled: { label: DOWNLOAD_COPY.retry, run: retry },
   done: { label: DOWNLOAD_COPY.openAndRun, run: openAndRun }
 }
-const primary = computed(() => PRIMARY[props.download.status])
+const primary = computed(() =>
+  props.download.status === 'done' && !props.download.autorun
+    ? undefined
+    : PRIMARY[props.download.status]
+)
 
 const file = computed(() => currentFile(props.download))
 const fileLabel = computed(() =>
