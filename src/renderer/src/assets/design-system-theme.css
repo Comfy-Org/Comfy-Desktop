@@ -57,7 +57,6 @@
   --animate-fade-in: fade-in 160ms ease-out;
   --animate-bell-nudge: bell-nudge 600ms ease-out 1;
   --animate-bell-fade: bell-fade 600ms ease-out 1;
-  --animate-rail-thumb-bounce: rail-thumb-bounce 650ms 1;
   --animate-status-pulse: status-pulse 2s ease-out infinite;
   --animate-status-breathe: status-breathe 1.6s ease-in-out infinite;
   --animate-status-starting: status-starting 1.2s ease-in-out infinite;
@@ -92,27 +91,6 @@
     }
     70% {
       transform: rotate(5deg);
-    }
-  }
-  @keyframes rail-thumb-bounce {
-    0% {
-      transform: translateY(0);
-      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-    }
-    30% {
-      transform: translateY(-6px);
-      animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
-    }
-    55% {
-      transform: translateY(0);
-      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-    }
-    75% {
-      transform: translateY(-2.5px);
-      animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
-    }
-    100% {
-      transform: translateY(0);
     }
   }
   @keyframes bell-fade {

@@ -310,10 +310,6 @@ function homePageOf(app: AppCard): AppHomePage {
 const openedAppHome = ref<AppHomePage>('apps')
 const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHome.value : 'apps'))
 
-const railApps = computed(() =>
-  appHome.value === 'staff-apps' ? liveStaffApps.value : listedApps.value
-)
-
 const confirmAppSwitch = useAppSwitchConfirm()
 
 function showApp(app: AppCard): void {
@@ -739,12 +735,10 @@ onUnmounted(() => {
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
         :app-in-progress="appInProgress"
-        :apps="railApps"
         :app-home="appHome"
         :show-staff-apps="staffApps.shown.value"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
-        @switch-app="openAppFromHome"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
