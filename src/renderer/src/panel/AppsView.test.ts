@@ -210,6 +210,18 @@ describe('AppsView badge glass', () => {
     expect(picture.className).toContain('group-hover:scale-[1.04]')
     expect(picture.contains(badges)).toBe(false)
     expect(badges.parentElement).toBe(card.element)
+
+    const restingPicture = picture.getBoundingClientRect()
+    const restingBadges = badges.getBoundingClientRect()
+    await userEvent.hover(card.element)
+    await expect
+      .poll(() => picture.getBoundingClientRect().width, { timeout: 2_000 })
+      .toBeCloseTo(restingPicture.width * 1.04, 0)
+    const hoveredBadges = badges.getBoundingClientRect()
+    expect(hoveredBadges.left).toBe(restingBadges.left)
+    expect(hoveredBadges.top).toBe(restingBadges.top)
+    expect(hoveredBadges.width).toBe(restingBadges.width)
+    await userEvent.unhover(card.element)
   })
 })
 
