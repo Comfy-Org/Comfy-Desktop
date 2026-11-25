@@ -78,7 +78,8 @@ const EMBEDDED_PROMPTS: [RegExp, string][] = [
   [/night_market/, 'handheld walk through a crowded night market, lanterns and steam'],
   [/surfer_slowmo/, 'surfer cutting through a turquoise wave, spray in slow motion'],
   [/train_window/, 'view from a train window, countryside passing at dusk'],
-  [/wok_fire/, 'chef tossing a flaming wok, sparks and oil in the air, warm kitchen light']
+  [/wok_fire/, 'chef tossing a flaming wok, sparks and oil in the air, warm kitchen light'],
+  [/harbor_dawn/, 'fishing harbor at dawn, pink mist over still water, moored boats, gulls']
 ]
 const promptFromName = (name: string, stem: string): string =>
   EMBEDDED_PROMPTS.find(([re]) => re.test(name))?.[1] ??
@@ -155,9 +156,22 @@ export function factsFor(a: MarAsset): AssetFacts {
   else if (a.type === 'video') {
     ;[width, height] = VIDEO_SIZES[h % VIDEO_SIZES.length]!
     duration = `0:0${4 + (h % 6)}`
-  } else if (a.type === '3d') [width, height] = [1024, 1024]
-  else if (a.type === 'audio') duration = `0:${String(18 + (h % 40)).padStart(2, '0')}`
+  } else if (a.type === 'audio') duration = `0:${String(18 + (h % 40)).padStart(2, '0')}`
   const ratio = width && height ? width / height : a.type === 'audio' ? 16 / 9 : 4 / 3
+
+  if (a.type === 'audio' || a.type === '3d')
+    return {
+      ratio,
+      duration,
+      format: ext,
+      imported,
+      tags: [],
+      workflow: 'missing',
+      history: 'missing',
+      metadata: 'missing',
+      models: [],
+      embedded: NO_EMBEDDED
+    }
 
   if (imported)
     return {
@@ -177,7 +191,7 @@ export function factsFor(a: MarAsset): AssetFacts {
     }
 
   const kept = recent(a.when)
-  const workflow = a.type === 'audio' || a.noWorkflow ? 'missing' : 'available'
+  const workflow = a.noWorkflow ? 'missing' : 'available'
   // The template it came from, else the file's stem without its counter.
   const stem = a.name.replace(/\.[^.]+$/, '').replace(/_\d+$/, '')
   const prompt = PROMPTS.find(([re]) => re.test(a.name))?.[1]

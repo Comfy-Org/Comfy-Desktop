@@ -75,7 +75,6 @@ import SettingsDialog from './panels/SettingsDialog.vue'
 import NodeSearch from './NodeSearch.vue'
 import ScratchSearch from './ScratchSearch.vue'
 import type { Template } from '../../mock'
-import MediaViewer from './MediaViewer.vue'
 import AgentPanel from './AgentPanel.vue'
 import McpNudge from '../mcp/McpNudge.vue'
 import McpSetupModal from '../mcp/McpSetupModal.vue'
@@ -1065,8 +1064,6 @@ watch(agentStart, (s) => {
 watch(panel, (id) => id && (agent.value = false))
 watch(agent, (on) => on && (panel.value = ''))
 const viewing = ref<string>()
-/** The redesign opens a result in the same asset view as Assets does; as
- *  today it's ComfyUI's own result viewer (MediaViewer). */
 const viewNode = computed(() => (viewing.value ? sById.value[viewing.value] : undefined))
 const viewList = computed<MarAsset[]>(() => {
   const n = viewNode.value
@@ -2171,7 +2168,7 @@ function addFromPanel(kind: NodeKind): void {
       <div class="mg-assets-main"><MarAssetsPage in-graph @collapse="collapseAssets" /></div>
     </div>
     <AssetDetail
-      v-if="viewNode && comfyLook.id !== 'production' && viewList.length"
+      v-if="viewNode && viewList.length"
       :asset="viewList[Math.min(viewNode.pick, viewList.length - 1)]!"
       :list="viewList"
       build="Generated"
@@ -2180,13 +2177,6 @@ function addFromPanel(kind: NodeKind): void {
       @go="(a) => pick(viewNode!, viewList.indexOf(a))"
       @save="save(viewNode!)"
       @close="viewing = undefined"
-    />
-    <MediaViewer
-      v-else-if="viewing && sById[viewing]"
-      :node="sById[viewing]!"
-      @close="viewing = undefined"
-      @pick="(index) => pick(sById[viewing!]!, index)"
-      @save="save(sById[viewing!]!)"
     />
     <!-- Milestone 2 on: a local build offers to connect an agent. -->
     <McpNudge />
