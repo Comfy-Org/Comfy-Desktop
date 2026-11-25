@@ -127,6 +127,7 @@
     },
     "refresh": "刷新资产",
     "search": "按名称搜索…",
+    "searchPlaceholder": "搜索",
     "viewOptions": "视图选项",
     "layoutLabel": "布局",
     "layout": {

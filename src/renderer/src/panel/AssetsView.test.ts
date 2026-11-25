@@ -725,6 +725,40 @@ describe('AssetsView', () => {
     expect(shown('assets-search-toggle')).toBe(false)
   })
 
+  it('shows the search shortcut in the empty field, and the shortcut puts the cursor in it', async () => {
+    page.style.width = '1400px'
+    const wrapper = await mountAssets([asset('b', 'forest.png', 'image')])
+    const toolbar = () => wrapper.get('[data-testid="assets-toolbar"]')
+    await vi.waitFor(() => expect(toolbar().find('input').exists()).toBe(true))
+
+    expect(toolbar().get('input').attributes('placeholder')).toBe('Search')
+    expect(toolbar().get('[data-testid="assets-search-shortcut"]').text()).toBe('⌘ /')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }))
+    expect(document.activeElement, 'Ctrl / does nothing on a Mac').not.toBe(
+      toolbar().get('input').element
+    )
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', metaKey: true }))
+    expect(document.activeElement).toBe(toolbar().get('input').element)
+
+    await toolbar().get('input').setValue('fo')
+    expect(toolbar().find('[data-testid="assets-search-shortcut"]').exists()).toBe(false)
+  })
+
+  it('opens the compact search with the search shortcut', async () => {
+    page.style.width = '560px'
+    const wrapper = await mountAssets([asset('b', 'forest.png', 'image')])
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="assets-search-toggle"]').exists()).toBe(true)
+    )
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', metaKey: true }))
+
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="assets-search-compact"] input')).not.toBeNull()
+    )
+  })
+
   it('keeps the compact search open while a query changes the results', async () => {
     page.style.width = '560px'
     const wrapper = await mountAssets([

@@ -127,6 +127,7 @@
     },
     "refresh": "Refresh assets",
     "search": "Search by name…",
+    "searchPlaceholder": "Search",
     "viewOptions": "View options",
     "layoutLabel": "Layout",
     "layout": {

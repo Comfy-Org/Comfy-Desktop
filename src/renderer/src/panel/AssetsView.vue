@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
+import {
+  refDebounced,
+  useEventListener,
+  useLocalStorage,
+  useResizeObserver,
+  useScroll
+} from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
   Box,
@@ -1173,6 +1179,21 @@ function cardImage(asset: AssetSummary): string | null {
   return asset.kind === '3d' ? asset.thumbnailUrl : null
 }
 
+const searchBox = useTemplateRef<HTMLElement>('searchBox')
+const searchShortcut = computed(() =>
+  window.api.platform === 'darwin'
+    ? { label: '⌘ /', aria: 'Meta+/', mod: 'metaKey' as const }
+    : { label: 'Ctrl /', aria: 'Control+/', mod: 'ctrlKey' as const }
+)
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== '/' || !event[searchShortcut.value.mod] || event.altKey) return
+  event.preventDefault()
+  const field = searchBox.value?.querySelector('input')
+  if (field) field.focus()
+  else searchOpen.value = true
+})
+
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.')
   return dot >= 0 ? name.slice(dot) : ''
@@ -1376,14 +1397,25 @@ function extensionOf(name: string): string {
               aria-hidden="true"
             />
           </Button>
-          <div v-if="toolbarCompactness < SEARCH_AS_ICON" class="w-[220px] min-w-[150px] shrink">
+          <div
+            v-if="toolbarCompactness < SEARCH_AS_ICON"
+            ref="searchBox"
+            class="w-[220px] min-w-[150px] shrink"
+          >
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-ui"
-              :placeholder="t('assets.search')"
+              :placeholder="t('assets.searchPlaceholder')"
               :aria-label="t('assets.search')"
             >
               <template #leading><Search :size="14" /></template>
+              <template v-if="!searchQuery" #trailing>
+                <kbd
+                  class="rounded-[5px] border border-solid border-border px-1.5 font-sans text-[11px]/[18px] text-subtle-foreground"
+                  data-testid="assets-search-shortcut"
+                  >{{ searchShortcut.label }}</kbd
+                >
+              </template>
             </BaseInput>
           </div>
           <div v-else>
@@ -1394,7 +1426,8 @@ function extensionOf(name: string): string {
                   :variant="searchQuery ? 'secondary' : 'muted-textonly'"
                   size="icon"
                   :aria-label="t('assets.search')"
-                  :title="t('assets.search')"
+                  :title="`${t('assets.search')} (${searchShortcut.label})`"
+                  :aria-keyshortcuts="searchShortcut.aria"
                   data-testid="assets-search-toggle"
                 >
                   <Search :size="15" aria-hidden="true" />
