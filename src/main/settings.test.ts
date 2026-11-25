@@ -553,6 +553,24 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     })
   })
 
+  it('startPage reports the page by name, unset as home, and null for a hand-edited value', () => {
+    expect(settings.getTrackedSettingsTelemetryProperties(['startPage'])).toEqual({
+      setting_start_page: 'home'
+    })
+    settings.set('startPage', 'chooser')
+    expect(settings.getTrackedSettingsTelemetryProperties(['startPage'])).toEqual({
+      setting_start_page: 'builds'
+    })
+    settings.set('startPage', 'assets')
+    expect(settings.getTrackedSettingsTelemetryProperties(['startPage'])).toEqual({
+      setting_start_page: 'assets'
+    })
+    fs.writeFileSync(settingsPath, JSON.stringify({ startPage: '/Users/me/secret' }), 'utf-8')
+    expect(settings.getTrackedSettingsTelemetryProperties(['startPage'])).toEqual({
+      setting_start_page: null
+    })
+  })
+
   it('omits the dark-only theme setting entirely', () => {
     settings.set('theme', 'light')
     const props = settings.getTrackedSettingsTelemetryProperties()
@@ -654,6 +672,31 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     for (const value of Object.values(props)) {
       expect(['boolean', 'number', 'string']).toContain(value === null ? 'boolean' : typeof value)
     }
+  })
+})
+
+describe('startPage', () => {
+  it('opens on Home when the setting is unset', () => {
+    expect(settings.startPage()).toBe('home')
+  })
+
+  it('opens on the page that was picked', () => {
+    settings.set('startPage', 'chooser')
+    expect(settings.startPage()).toBe('chooser')
+    settings.set('startPage', 'apps')
+    expect(settings.startPage()).toBe('apps')
+  })
+
+  it('opens on Home when settings.json holds a page that does not exist', () => {
+    fs.writeFileSync(settingsPath, JSON.stringify({ startPage: 'library' }), 'utf-8')
+    expect(settings.startPage()).toBe('home')
+  })
+
+  it('stores nothing when Home is picked again', () => {
+    settings.set('startPage', 'chooser')
+    settings.set('startPage', 'home')
+    expect(settings.has('startPage')).toBe(false)
+    expect(settings.startPage()).toBe('home')
   })
 })
 
