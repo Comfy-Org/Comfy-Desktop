@@ -267,7 +267,7 @@ export const newInstanceHooks: (() => boolean)[] = []
 export const hostActions = {
   launch(inst: ProtoInstance, what?: string): void {
     if (inst.kind === 'cloud' && !proto.signedIn) {
-      requireLogin()
+      hostActions.signIn(() => hostActions.launch(inst, what))
       return
     }
     proto.detail = null

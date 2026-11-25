@@ -118,7 +118,9 @@ import {
   assetBuildRows,
   assetBuilds,
   buildStatus,
+  CLOUD_SIGNED_OUT,
   defaultBuild,
+  needsLogIn,
   rememberBuild,
   startBuild,
   suggestedBuild
@@ -214,7 +216,9 @@ const store = inGraph ? graphLibrary : assets
 // Everywhere (a UI Playground tweak) reads every running build at once;
 // each card names its own.
 const allBuildIds = computed(() =>
-  assetBuilds.value.filter((b) => treeOn.value || buildStatus(b) === 'running').map((b) => b.id)
+  assetBuilds.value
+    .filter((b) => !needsLogIn(b) && (treeOn.value || buildStatus(b) === 'running'))
+    .map((b) => b.id)
 )
 const base = computed(() =>
   store.items.filter(
@@ -236,8 +240,12 @@ const current = computed(() => assetBuilds.value.find((b) => b.id === build.valu
 const buildName = (a: MarAsset): string =>
   assetBuilds.value.find((b) => b.id === a.envId)?.name ?? ''
 const status = computed(() => (current.value ? buildStatus(current.value) : 'running'))
+const cloudSignedOut = computed(() => !!current.value && needsLogIn(current.value))
 const browsable = computed(
-  () => inGraph || !!fixedProject || (build.value !== '' && status.value === 'running')
+  () =>
+    inGraph ||
+    !!fixedProject ||
+    (build.value !== '' && status.value === 'running' && !cloudSignedOut.value)
 )
 const unpicked = computed(() => !inGraph && !fixedProject && build.value === '')
 const KINDS = computed(() =>
@@ -1420,6 +1428,15 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       :action="suggested ? `Browse ${suggested.name}` : undefined"
       compact
       @action="suggested && (build = suggested.id)"
+    />
+    <MarEmpty
+      v-else-if="cloudSignedOut"
+      :icon="ComfyAssets"
+      :title="CLOUD_SIGNED_OUT.title"
+      :text="CLOUD_SIGNED_OUT.body"
+      :action="CLOUD_SIGNED_OUT.action"
+      compact
+      @action="hostActions.signIn()"
     />
     <MarEmpty
       v-else-if="!browsable && current"

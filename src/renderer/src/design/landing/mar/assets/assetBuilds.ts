@@ -15,10 +15,18 @@ export type AssetBuild = ProtoInstance
 const started = reactive<Record<string, 'launching' | 'running'>>({})
 
 export const assetBuilds = computed<AssetBuild[]>(() =>
-  [...instances.value]
-    .filter((i) => !i.deployment && (i.kind === 'local' || proto.signedIn))
-    .sort((a, b) => a.lastUsedRank - b.lastUsedRank)
+  [...instances.value].filter((i) => !i.deployment).sort((a, b) => a.lastUsedRank - b.lastUsedRank)
 )
+
+export const CLOUD_SIGNED_OUT = {
+  title: 'Log in to see your assets',
+  body: 'Assets that you make in Comfy Cloud show here.',
+  action: 'Log in to Comfy Cloud'
+} as const
+
+export const needsLogIn = (b: AssetBuild): boolean => b.kind === 'cloud' && !proto.signedIn
+
+const openBuilds = computed(() => assetBuilds.value.filter((b) => !needsLogIn(b)))
 
 export function buildStatus(b: AssetBuild): 'running' | 'launching' | 'stopped' {
   // A build open in a ComfyUI tab is running: you're in it.
@@ -37,12 +45,12 @@ export function defaultBuild(): string {
   try {
     const v = localStorage.getItem(KEY) ?? ''
     if (v === 'all' && assetsEverywhere.id === 'on') return v
-    const last = assetBuilds.value.find((b) => b.id === v)
+    const last = openBuilds.value.find((b) => b.id === v)
     if (last && buildStatus(last) === 'running') return last.id
   } catch {
     // Storage blocked: fall through to the most recent running build.
   }
-  const running = assetBuilds.value.filter((b) => buildStatus(b) === 'running')
+  const running = openBuilds.value.filter((b) => buildStatus(b) === 'running')
   return (running.find((b) => b.kind === 'local') ?? running[0])?.id ?? ''
 }
 export function rememberBuild(id: string): void {
@@ -54,7 +62,7 @@ export function rememberBuild(id: string): void {
 }
 /** The one a click on "Pick a build" suggests: the most recent running. */
 export function suggestedBuild(): AssetBuild | undefined {
-  const list = assetBuilds.value
+  const list = openBuilds.value
   return list.find((b) => buildStatus(b) === 'running') ?? list[0]
 }
 
@@ -74,7 +82,11 @@ export const assetBuildRows = computed<AssetBuildRow[]>(() =>
       name: b.name,
       cloud,
       status: cloud ? '' : buildStatus(b),
-      sub: cloud ? 'Cloud · Ready' : `Local · ${STATE[buildStatus(b)]}`
+      sub: needsLogIn(b)
+        ? CLOUD_SIGNED_OUT.title
+        : cloud
+          ? 'Cloud · Ready'
+          : `Local · ${STATE[buildStatus(b)]}`
     }
   })
 )

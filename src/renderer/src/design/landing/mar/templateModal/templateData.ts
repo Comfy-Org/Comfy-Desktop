@@ -482,7 +482,7 @@ export function targetFor(
       return {
         ...base,
         state: 'login',
-        status: 'Needs a Comfy account',
+        status: 'Log in to use',
         cost: '',
         action: 'Log in to Comfy Cloud',
         note:
@@ -920,7 +920,7 @@ export const CASE_STATE: Partial<Record<TargetState, { label: string; tone: stri
   plan: { label: 'Needs a plan', tone: 'warn' },
   media: { label: 'Input missing', tone: 'warn' },
   offline: { label: 'Needs a connection', tone: 'warn' },
-  login: { label: 'Sign in first', tone: 'get' },
+  login: { label: 'Log in to use', tone: 'get' },
   memory: { label: 'May run out of memory', tone: 'warn' }
 }
 

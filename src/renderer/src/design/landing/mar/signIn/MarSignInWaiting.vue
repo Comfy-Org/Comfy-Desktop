@@ -1,39 +1,51 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { PopoverRoot, PopoverTrigger } from 'reka-ui'
-import { Loader2 } from 'lucide-vue-next'
+import { Check, Copy, ExternalLink, Loader2 } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import PopoverContent from '../../ui/PopoverContent.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import WorkspaceAvatar from '../../parts/WorkspaceAvatar.vue'
 import { proto } from '../../useProto'
 import { shownWorkspace } from '../../account'
-import { dismissSignInBanner, openBrowserAgain } from './browserSignIn'
-import { useSignInCorner, WAITING_COPY } from './signInCorner'
+import {
+  dismissSignInBanner,
+  FAKE_LOGIN_URL,
+  openBrowserAgain,
+  SIGN_IN_COPY
+} from './browserSignIn'
+import { useSignInCorner } from './signInCorner'
 
-const {
-  rail = false,
-  title = WAITING_COPY.title,
-  body = WAITING_COPY.body
-} = defineProps<{ rail?: boolean; title?: string; body?: string }>()
+const { rail = false } = defineProps<{ rail?: boolean }>()
 
 const emit = defineEmits<{ cancel: [] }>()
 
 useSignInCorner()
 
-function cancel(): void {
+const copied = ref(false)
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+
+function copyLink(): void {
+  void navigator.clipboard?.writeText(FAKE_LOGIN_URL).catch(() => {})
+  copied.value = true
+  clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => (copied.value = false), 1500)
+}
+
+function dismiss(): void {
   dismissSignInBanner()
   emit('cancel')
 }
 </script>
 
 <template>
-  <Tooltip v-if="rail" :content="WAITING_COPY.title" side="right" wrap>
+  <Tooltip v-if="rail" :content="SIGN_IN_COPY.waiting" side="right" wrap>
     <PopoverRoot>
       <PopoverTrigger as-child>
         <button
           type="button"
           class="mar-signin-wait-rail"
-          :aria-label="WAITING_COPY.title"
+          :aria-label="SIGN_IN_COPY.waiting"
           data-testid="signin-waiting-rail"
         >
           <template v-if="proto.signedIn">
@@ -46,7 +58,7 @@ function cancel(): void {
         </button>
       </PopoverTrigger>
       <PopoverContent side="right" align="end" :side-offset="10" class="proto-ui w-60 p-1">
-        <MarSignInWaiting class="is-pop" :title :body @cancel="emit('cancel')" />
+        <MarSignInWaiting class="is-pop" @cancel="emit('cancel')" />
       </PopoverContent>
     </PopoverRoot>
   </Tooltip>
@@ -56,17 +68,20 @@ function cancel(): void {
       <span class="mar-corner-mark"
         ><Loader2 :size="16" class="animate-spin motion-reduce:animate-none"
       /></span>
-      <Button variant="ghost" size="sm" class="-mr-1.5" @click="cancel">{{
-        WAITING_COPY.cancel
+      <Button variant="ghost" size="sm" class="-mr-1.5" @click="dismiss">{{
+        SIGN_IN_COPY.banner.dismiss
       }}</Button>
     </div>
-    <div class="mar-corner-text">
-      <p class="font-medium text-base-foreground">{{ title }}</p>
-      <p class="text-subtle-foreground">{{ body }}</p>
+    <p class="mar-corner-text text-base-foreground">{{ SIGN_IN_COPY.banner.message }}</p>
+    <div class="mar-signin-wait-actions">
+      <Button variant="primary" block @click="copyLink">
+        <Check v-if="copied" :size="14" /><Copy v-else :size="14" />
+        {{ copied ? SIGN_IN_COPY.banner.copied : SIGN_IN_COPY.banner.copy }}
+      </Button>
+      <Button variant="secondary" block @click="openBrowserAgain">
+        <ExternalLink :size="14" />{{ SIGN_IN_COPY.banner.openAgain }}
+      </Button>
     </div>
-    <Button variant="secondary" block @click="openBrowserAgain">{{
-      WAITING_COPY.openAgain
-    }}</Button>
   </div>
 </template>
 
@@ -89,6 +104,11 @@ function cancel(): void {
 }
 :root .proto-ui.proto-ui.proto-ui .mar-signin-wait-rail:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+.mar-signin-wait-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .mar-signin-wait-badge {
   position: absolute;

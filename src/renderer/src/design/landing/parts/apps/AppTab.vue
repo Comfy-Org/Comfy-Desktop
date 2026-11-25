@@ -22,7 +22,7 @@ import MarRunCreditsSheet from '../../mar/MarRunCreditsSheet.vue'
 import { runBlock } from '../../mar/runCredits'
 import { browserSignIn, SIGN_IN_COPY } from '../../mar/signIn/browserSignIn'
 import MarSignInWaiting from '../../mar/signIn/MarSignInWaiting.vue'
-import { signInWaiting, WAITING_COPY } from '../../mar/signIn/signInCorner'
+import { signInWaiting } from '../../mar/signIn/signInCorner'
 import { appPage } from '../../mar/apps/appPage'
 import { can } from '../../milestones'
 import { APP_RUNS, appsStage, downloaded } from '../../mar/apps/appsStage'
@@ -369,11 +369,7 @@ function done(): void {
       >
         <template v-if="staged" #place><AppRunPlace :id /></template>
         <template v-if="waitingToRun" #runNote>
-          <MarSignInWaiting
-            :title="WAITING_COPY.runNote"
-            :body="WAITING_COPY.runBody"
-            @cancel="signInToRun = false"
-          />
+          <MarSignInWaiting @cancel="signInToRun = false" />
         </template>
         <template v-if="starter" #saved>
           <Button variant="link" size="sm" @click="viewAssets">Saved to Assets</Button>

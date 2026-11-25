@@ -31,6 +31,8 @@ export interface OpenAppRequest {
 
 export const opening = reactive<{ key: string }>({ key: '' })
 
+export const runPlaces = reactive<Record<string, OpenWhere>>({})
+
 const START_MS = 1800
 const SHOW_MS = 450
 
