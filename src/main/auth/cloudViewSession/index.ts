@@ -100,10 +100,14 @@ export function decideCloudViewSession(
       ? { kind: 'write_marker', marker: { ...marker, state: 'declined' } }
       : { kind: 'none' }
   }
-  if (uid || !desktop.signedIn) {
+  if (!desktop.signedIn) {
     return marker ? { kind: 'write_marker', marker: null } : { kind: 'none' }
   }
-  return { kind: 'sign_in' }
+  if (!uid) return { kind: 'sign_in' }
+  return {
+    kind: 'write_marker',
+    marker: { v: 1, uid, sub: desktop.sub, fam: desktop.fam, state: 'declined' }
+  }
 }
 
 function firebaseEnvForIssuer(issuerOrigin: string): FirebaseEnv {
@@ -260,7 +264,7 @@ async function signInClaimedView(target: ViewTarget): Promise<void> {
     session.currentAuthGeneration() === generation &&
     session.currentSubject() === sub &&
     currentOrigin(contents) === origin
-  if (!sub || isWaitingOutDecline(sub, fam)) return
+  if (!sub || isWaitingOutDecline(sub, fam) || hasActiveFirebaseSessionInjection()) return
 
   const accessToken = await session.getGrantAccessToken()
   if (!accessToken || !unchanged()) return

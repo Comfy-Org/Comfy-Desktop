@@ -231,7 +231,18 @@ describe('decideCloudViewSession', () => {
       signedOut,
       { kind: 'none' }
     ],
-    ["keeps the person's own session", { uid: 'person', marker: null }, signedIn, { kind: 'none' }],
+    [
+      "remembers that the view holds the person's own account",
+      { uid: 'person', marker: null },
+      signedIn,
+      { kind: 'write_marker', marker: marker({ uid: 'person', state: 'declined' }) }
+    ],
+    [
+      "leaves the person's own account alone once that is remembered",
+      { uid: 'person', marker: marker({ uid: 'person', state: 'declined' }) },
+      signedIn,
+      { kind: 'none' }
+    ],
     [
       "keeps the person's own session after Desktop signs out",
       { uid: 'person', marker: null },
@@ -269,10 +280,10 @@ describe('decideCloudViewSession', () => {
       { kind: 'write_marker', marker: marker({ state: 'declined' }) }
     ],
     [
-      'drops the marker of an earlier Desktop sign-in while the person uses their own account',
+      "remembers the person's own account under a new Desktop sign-in too",
       { uid: 'person', marker: marker({ state: 'declined' }) },
       { signedIn: true, sub: 'desktop-sub', fam: 'fam-2' },
-      { kind: 'write_marker', marker: null }
+      { kind: 'write_marker', marker: marker({ uid: 'person', fam: 'fam-2', state: 'declined' }) }
     ],
     [
       'remembers that the person signed out of the view',
@@ -553,6 +564,19 @@ describe('reconcileCloudViewSession', () => {
 
     await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
 
+    expect(h.requestWebSessionToken).not.toHaveBeenCalled()
+    expect(h.beginFirebaseSessionInjection).not.toHaveBeenCalled()
+    expect(h.injectFirebaseSession).not.toHaveBeenCalled()
+  })
+
+  it('stands aside for a sign-in flow the person starts during the exchange', async () => {
+    h.requestWebSessionToken.mockImplementation(() => {
+      h.hasActiveFirebaseSessionInjection.mockReturnValue(true)
+      return Promise.resolve({ kind: 'minted', customToken: 'custom-token' })
+    })
+
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+
     expect(h.beginFirebaseSessionInjection).not.toHaveBeenCalled()
     expect(h.injectFirebaseSession).not.toHaveBeenCalled()
   })
@@ -562,6 +586,32 @@ describe('reconcileCloudViewSession', () => {
 
     expect(h.requestWebSessionToken).not.toHaveBeenCalled()
     expect(h.injectFirebaseSession).not.toHaveBeenCalled()
+  })
+
+  it('keeps the view signed out when the person signs out of an account they signed in to themselves', async () => {
+    const state: PageState = { uid: 'person', marker: null }
+    const view = fakeView(state)
+    await reconcileCloudViewSession(view.contents)
+
+    state.uid = null
+    await reconcileCloudViewSession(view.contents)
+
+    expect(h.requestWebSessionToken).not.toHaveBeenCalled()
+    expect(h.injectFirebaseSession).not.toHaveBeenCalled()
+    expect(state.marker).toBe(serializeMarker(marker({ uid: 'person', state: 'declined' })))
+  })
+
+  it('signs the view in once Desktop signs in again after the person signed out of their own account', async () => {
+    const state: PageState = { uid: 'person', marker: null }
+    const view = fakeView(state)
+    await reconcileCloudViewSession(view.contents)
+    state.uid = null
+
+    h.session.fam = 'fam-2'
+    await reconcileCloudViewSession(view.contents)
+
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(1)
+    expect(outcomes()).toEqual([{ outcome: 'signed_in' }])
   })
 
   it('keeps the view signed out when the person signs out after Desktop signed out and back in while the view was closed', async () => {
@@ -645,11 +695,14 @@ describe('reconcileCloudViewSession', () => {
 
     const first = reconcileCloudViewSession(view.contents)
     await vi.waitFor(() => expect(h.requestWebSessionToken).toHaveBeenCalled())
+    h.session.generation += 1
+    h.session.signedIn = false
     const second = reconcileCloudViewSession(view.contents)
     finishExchange({ kind: 'minted', customToken: 'custom-token' })
     await first
     await second
 
+    expect(h.injectFirebaseSession).not.toHaveBeenCalled()
     expect(reads(view)).toHaveLength(2)
   })
 })
