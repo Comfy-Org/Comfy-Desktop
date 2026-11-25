@@ -1749,6 +1749,62 @@ describe('AssetsView', () => {
     expect(viewerTitle()).toBe('mid.png')
   })
 
+  it('heads the panel with the type, when the file was made, and its format, size and pixels', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', {
+        createdAt: '2026-11-03T08:00:00Z',
+        width: 960,
+        height: 645,
+        sizeBytes: 3 * 1024 * 1024
+      })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    const subtitle = shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))
+    expect(subtitle).toMatch(/^Image · Created /)
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe(
+      'PNG 960 × 645 3.0 MB'
+    )
+  })
+
+  it('says an uploaded input was imported rather than created', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await signInWith([
+      asset('c', 'reference.png', 'image', { tags: ['input'], createdAt: '2026-11-03T08:00:00Z' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-c"]').trigger('click')
+    await flushPromises()
+
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))).toMatch(
+      /^Image · Imported /
+    )
+  })
+
+  it('leaves out the facts an audio or 3D file does not have, without empty rows', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/voice.wav', 'voice.wav', 'audio', { width: 0, height: 0 }),
+      asset('/out/bust.glb', 'bust.glb', '3d', { sizeBytes: null })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-/out/voice.wav"]').trigger('click')
+    await flushPromises()
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))).toBe(
+      'Audio'
+    )
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe(
+      'WAV 1 KB'
+    )
+
+    await press('ArrowRight')
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe('GLB')
+    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
+    expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
+  })
+
   it('titles the panel Details, with More and Close at its top right', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 

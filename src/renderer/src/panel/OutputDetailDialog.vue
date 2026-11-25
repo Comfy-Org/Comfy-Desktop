@@ -42,6 +42,9 @@ export interface OutputDetailItem {
   createdAt: string | null
   previewUrl: string | null
   thumbnailUrl: string | null
+  width?: number | null
+  height?: number | null
+  imported?: boolean
   savedIn?: string | null
   models?: string[]
   prompts?: string[]
@@ -118,22 +121,27 @@ const extension = computed(() => {
   const dot = item.value.name.lastIndexOf('.')
   return dot >= 0 ? item.value.name.slice(dot + 1).toUpperCase() : ''
 })
+const whenMade = computed(() => {
+  const { createdAt, imported } = item.value
+  if (!createdAt) return imported ? t('assets.detail.imported') : null
+  const date = new Date(createdAt).toLocaleString(locale.value)
+  return t(imported ? 'assets.detail.importedAt' : 'assets.detail.createdAt', { date })
+})
 const subtitle = computed(() =>
-  [
-    t(`assets.kindSingular.${item.value.kind ?? 'file'}`),
-    item.value.createdAt
-      ? t('assets.detail.createdAt', {
-          date: new Date(item.value.createdAt).toLocaleString(locale.value)
-        })
-      : null
-  ]
+  [t(`assets.kindSingular.${item.value.kind ?? 'file'}`), whenMade.value]
     .filter(Boolean)
     .join(' · ')
 )
+const dimensions = computed(() => {
+  if (item.value.kind !== 'image' && item.value.kind !== 'video') return null
+  if (natural.value) return natural.value
+  const { width, height } = item.value
+  return width && height ? { width, height } : null
+})
 const facts = computed(() =>
   [
     extension.value,
-    natural.value ? `${natural.value.width} × ${natural.value.height}` : null,
+    dimensions.value ? `${dimensions.value.width} × ${dimensions.value.height}` : null,
     item.value.sizeBytes === null ? null : formatBytes(item.value.sizeBytes)
   ].filter((fact): fact is string => !!fact)
 )
@@ -372,9 +380,15 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           <h2 class="m-0 line-clamp-2 text-heading font-semibold break-words text-foreground">
             {{ item.name }}
           </h2>
-          <p class="m-0 text-ui text-subtle-foreground">{{ subtitle }}</p>
+          <p class="m-0 text-ui text-subtle-foreground" data-testid="output-detail-subtitle">
+            {{ subtitle }}
+          </p>
         </div>
-        <div v-if="facts.length > 0" class="flex flex-wrap gap-1.5">
+        <div
+          v-if="facts.length > 0"
+          class="flex flex-wrap gap-1.5"
+          data-testid="output-detail-facts"
+        >
           <Tag v-for="fact in facts" :key="fact" :label="fact" />
         </div>
       </div>

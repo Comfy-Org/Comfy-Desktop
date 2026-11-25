@@ -836,6 +836,9 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     createdAt: asset.createdAt,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
+    width: asset.width,
+    height: asset.height,
+    imported: isImported(asset),
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
     moreActions: viewerMenuItemsFor(asset),
     mainAction: isLocal(asset) ? null : 'download',
@@ -857,6 +860,10 @@ watch(detailIndex, (index) => {
     lookedUpDetail.value = null
   } else if (index < visibleAssets.value.length) scrollToIndex(index)
 })
+
+function isImported(asset: GalleryAsset): boolean {
+  return asset.tags.includes('input') && !asset.tags.includes('output')
+}
 
 const WORKFLOW_KINDS: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
 

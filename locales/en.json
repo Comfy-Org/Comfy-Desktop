@@ -185,6 +185,8 @@
       "prompts": "Prompts",
       "models": "Models",
       "createdAt": "Created {date}",
+      "imported": "Imported",
+      "importedAt": "Imported {date}",
       "fit": "Fit",
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
