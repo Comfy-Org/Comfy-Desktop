@@ -187,6 +187,10 @@ function measure(e: Event): void {
  *  size as on an asset. */
 const mediaEl = ref<HTMLElement>()
 const { width: mediaW } = useElementSize(mediaEl)
+const fitStyle = computed(() => ({
+  '--r': ratio.value,
+  '--natural-w': natural.value ? `${natural.value}px` : undefined
+}))
 const picFit = computed(() => (natural.value && mediaW.value ? mediaW.value / natural.value : 1))
 /** What the section and the action show: the pick, or, when nothing can
  *  be picked (offline, Cloud only), the first build and why it can't. */
@@ -617,9 +621,8 @@ const full = computed(() => can.value.onboarding)
               >Made with {{ example.madeWith }}</span
             >
           </header>
-          <div v-if="view === 'result'" class="mad-view">
-            <!-- The picture fits the stage, like an asset's. -->
-            <div class="mad-fit" :style="{ '--r': ratio }">
+          <div v-if="view === 'result'" class="mad-view" :class="examples.length && 'has-strip'">
+            <div class="mad-fit" :class="natural && 'is-natural'" :style="fitStyle">
               <div ref="mediaEl" class="mad-media" :style="{ scale: zoom / 100 }">
                 <video
                   v-if="example?.clip"
