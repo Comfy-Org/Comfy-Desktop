@@ -1632,7 +1632,7 @@ onBeforeUnmount(() => {
   flex: none;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 20px;
+  padding: 14px 20px;
 }
 .mad-label {
   display: flex;
