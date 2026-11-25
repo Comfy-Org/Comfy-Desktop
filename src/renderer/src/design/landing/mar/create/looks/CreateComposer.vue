@@ -10,11 +10,13 @@ import { AGENT_CHIPS, answer, type AgentAnswer } from './v07Agent'
 const {
   mode,
   cardAt = 'below',
-  navigated = false
+  navigated = false,
+  external = false
 } = defineProps<{
   mode: CreateInput
   cardAt?: 'above' | 'below'
   navigated?: boolean
+  external?: boolean
 }>()
 const query = defineModel<string>({ required: true })
 const emit = defineEmits<{
@@ -23,6 +25,7 @@ const emit = defineEmits<{
   pin: [starter: Starter | null]
   build: [starter: Starter]
   dismiss: []
+  ask: [reply: AgentAnswer]
 }>()
 
 const field = ref<HTMLInputElement>()
@@ -35,6 +38,10 @@ const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 function ask(text = query.value): void {
   if (!agent.value || !text.trim()) return
   query.value = text
+  if (external) {
+    emit('ask', answer(text))
+    return
+  }
   reply.value = answer(text)
   pinId.value = null
   emit('peek', null)
@@ -112,7 +119,16 @@ defineExpose({ focus, dismiss, field })
         @blur="focused = false"
       />
       <button
-        v-if="query && agent"
+        v-if="query && agent && external"
+        type="button"
+        class="cc-ask"
+        aria-label="Ask"
+        @click.stop="ask()"
+      >
+        <kbd>↵</kbd>Ask
+      </button>
+      <button
+        v-else-if="query && agent"
         type="button"
         class="cc-send"
         aria-label="Ask"
@@ -170,7 +186,11 @@ defineExpose({ focus, dismiss, field })
         <button type="button" class="cc-link" @click="startBlank">Or start blank</button>
       </div>
     </div>
-    <div v-else-if="agent && focused && !query" class="cc-pop cc-chips" aria-label="Try">
+    <div
+      v-else-if="agent && !external && focused && !query"
+      class="cc-pop cc-chips"
+      aria-label="Try"
+    >
       <span class="cc-chips-label">Try</span>
       <button
         v-for="c in AGENT_CHIPS"
@@ -239,6 +259,24 @@ defineExpose({ focus, dismiss, field })
   border-radius: 999px;
   background: var(--color-inverted-background);
   color: var(--color-inverted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .cc-ask {
+  display: inline-flex;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .cc-ask:hover {
+  background: var(--color-secondary-background-hover);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .cc-ask kbd {
+  font: inherit;
 }
 :root .proto-ui.proto-ui.proto-ui .cc-clear {
   display: grid;

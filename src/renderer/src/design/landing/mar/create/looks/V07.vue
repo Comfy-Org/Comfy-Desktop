@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { ChevronLeft, ChevronRight, CornerDownLeft, Plus, X } from 'lucide-vue-next'
+import {
+  ArrowUp,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CornerDownLeft,
+  Plus,
+  Upload,
+  X
+} from 'lucide-vue-next'
 import { AgentChat } from '../../icons/agentChat'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
@@ -12,7 +21,7 @@ import { NODE_ICONS } from '../../graph/nodeIcons'
 import { closeCreate, openTemplate, openWorkflow, startBlank, startWithNode } from '../createScreen'
 import { readiness, searchStarters, SHELVES, type Starter } from '../createStarters'
 import { buildOf, graphFor, readyIcon, reducedMotion, useEscapeCloses } from './lookKitB'
-import { quickPicks } from './v07Agent'
+import { answer, quickPicks, type AgentAnswer } from './v07Agent'
 import CreateComposer from './CreateComposer.vue'
 import { createInput } from '../createInput'
 
@@ -59,12 +68,16 @@ const items = computed<Item[]>(() => {
     const kinds = (Object.keys(NODE_TYPES) as NodeKind[]).filter((k) =>
       `${NODE_TYPES[k].title} ${NODE_TYPES[k].description}`.toLowerCase().includes(q.value)
     )
+    const found = searchStarters(q.value, 8).length
+      ? searchStarters(q.value, 8)
+      : quickPicks(q.value, 6)
+    const rec = last.value?.rec
+    const list = rec && !found.some((s) => s.id === rec.id) ? [rec, ...found] : found
+    const seen = new Set<string>()
+    const unique = list.filter((s) => (seen.has(s.poster) ? false : (seen.add(s.poster), true)))
     return [
       BLANK,
-      ...(searchStarters(q.value, 8).length
-        ? searchStarters(q.value, 8)
-        : quickPicks(q.value, 6)
-      ).map(tpl),
+      ...unique.map(tpl),
       ...workflows.value
         .filter((w) => w.name.toLowerCase().includes(q.value))
         .slice(0, 6)
@@ -101,24 +114,44 @@ const lastOutput = (w: ProjectWorkflow): string | undefined =>
   MOCK[w.name] ?? (w.thumbId ? thumb(w.thumbId) : undefined)
 
 const navigated = ref(false)
-const peek = ref<Starter | null>(null)
-const pickPin = ref<Starter | null>(null)
-const build = ref<{ starter: Starter; shown: number; total: number } | null>(null)
-const built = computed(() => !!build.value && build.value.shown >= build.value.total)
-const BUILD_STEP_MS = 520
+const BUILD_STEP_MS = 700
+const TYPE_STEP_MS = 24
 let timer: ReturnType<typeof setTimeout> | undefined
+let typer: ReturnType<typeof setInterval> | undefined
+
+interface Exchange {
+  id: number
+  prompt: string
+  reply: string
+  typed: number
+  rec: Starter | null
+  choice: string | null
+}
+
+const panel = ref(false)
+const talk = ref<Exchange[]>([])
+const last = computed(() => talk.value.at(-1))
+const followUp = ref('')
+const panelField = ref<HTMLInputElement>()
+const scroller = ref<HTMLElement>()
+const build = ref<{ starter: Starter; shown: number; total: number; prompt: string } | null>(null)
+const built = computed(() => !!build.value && build.value.shown >= build.value.total)
+const agentGraph = computed(() => !!build.value && hover.value < 0)
+const recId = computed(() => last.value?.rec?.id)
 
 const current = computed<Item | undefined>(() => {
-  if (build.value) return tpl(build.value.starter)
   if (hover.value >= 0) return items.value[hover.value]
-  const picked = peek.value ?? pickPin.value
-  if (picked) return tpl(picked)
+  if (build.value) return tpl(build.value.starter)
   return items.value[pinned.value]
 })
 
 function stopBuild(): void {
   clearTimeout(timer)
   build.value = null
+}
+
+function scrollDown(): void {
+  scroller.value?.scrollTo({ top: scroller.value.scrollHeight, behavior: 'smooth' })
 }
 
 function step(): void {
@@ -128,28 +161,132 @@ function step(): void {
     if (!build.value) return
     build.value.shown += 1
     step()
+    nextTick(scrollDown)
   }, BUILD_STEP_MS)
 }
 
-function buildIt(starter: Starter): void {
+function startBuild(starter: Starter, prompt: string): void {
   stopBuild()
   const total = graphFor(starter).nodes.length
-  build.value = { starter, total, shown: reducedMotion() ? total : 1 }
+  build.value = { starter, total, prompt, shown: reducedMotion() ? total : 1 }
   step()
 }
 
-function tweak(): void {
-  stopBuild()
+function replyFor(a: AgentAnswer, prev: Starter | null): { text: string; rec: Starter | null } {
+  const rec = a.picks[0] ?? prev
+  if (!rec)
+    return {
+      text: `I couldn’t match “${a.prompt}” to a template yet. You can start blank and add nodes yourself.`,
+      rec: null
+    }
+  const lead = a.understood ? `${a.understood}.` : 'Got it.'
+  return {
+    text: `${lead} I’d start from ${rec.model} ${rec.makes}, and I’m setting it up on the canvas now.`,
+    rec
+  }
+}
+
+function stream(): void {
+  clearInterval(typer)
+  typer = setInterval(() => {
+    const e = last.value
+    if (!e || e.typed >= e.reply.length) {
+      clearInterval(typer)
+      return
+    }
+    e.typed = Math.min(e.reply.length, e.typed + 3)
+  }, TYPE_STEP_MS)
+}
+
+function onAsk(a: AgentAnswer): void {
+  const { text, rec } = replyFor(a, last.value?.rec ?? null)
+  talk.value.push({
+    id: talk.value.length,
+    prompt: a.prompt,
+    reply: text,
+    typed: reducedMotion() ? text.length : 0,
+    rec,
+    choice: null
+  })
+  panel.value = true
+  hover.value = -1
+  pinned.value = -1
+  stream()
+  if (rec) startBuild(rec, a.prompt)
+  nextTick(scrollDown)
+}
+
+function refine(): void {
+  const text = followUp.value.trim()
+  if (!text) return
+  followUp.value = ''
+  onAsk(answer(text))
+}
+
+function changeSomething(): void {
+  panelField.value?.focus()
+}
+
+function closePanel(): void {
+  clearInterval(typer)
+  panel.value = false
   composer.value?.focus()
 }
 
-function forget(): void {
-  stopBuild()
-  peek.value = null
-  pickPin.value = null
-}
+onBeforeUnmount(() => {
+  clearTimeout(timer)
+  clearInterval(typer)
+})
 
-onBeforeUnmount(() => clearTimeout(timer))
+const STEP_LABEL: Partial<Record<NodeKind, string>> = {
+  image: 'Adding your photo input',
+  prompt: 'Adding the prompt',
+  output: 'Wiring to Output'
+}
+const steps = computed(() =>
+  build.value
+    ? graphFor(build.value.starter).nodes.map((n) => STEP_LABEL[n.kind] ?? `Adding ${n.title}`)
+    : []
+)
+
+const PLAIN = ['photo', 'image', 'picture', 'pic']
+const subject = computed(() => {
+  const word = /\bmy ([a-z]+)/i.exec(build.value?.prompt ?? '')?.[1]?.toLowerCase()
+  return word && !PLAIN.includes(word) ? word : null
+})
+const dropLabel = computed(() =>
+  subject.value ? `Drop your ${subject.value} photo` : 'Drop your photo'
+)
+const promptFill = computed(() => {
+  const b = build.value
+  if (!b) return ''
+  if (b.starter.media === 'video')
+    return subject.value
+      ? `Your ${subject.value}, gentle camera push-in`
+      : 'Gentle camera push-in, soft natural light'
+  return b.prompt.charAt(0).toUpperCase() + b.prompt.slice(1)
+})
+const outLabel = computed(() =>
+  build.value?.starter.media === 'video' ? 'Your video appears here' : 'Your image appears here'
+)
+
+function questionOf(e: Exchange): { label: string; options: string[] } {
+  return e.rec?.media === 'video'
+    ? { label: 'Length', options: ['5 s', '10 s'] }
+    : { label: 'Runs on', options: [activeInstance.value.name, 'Comfy Cloud'] }
+}
+const choiceOf = (e: Exchange): string => e.choice ?? questionOf(e).options[0]!
+
+function resultLine(e: Exchange): string {
+  const rec = e.rec!
+  const choice = choiceOf(e)
+  const cost =
+    choice === 'Comfy Cloud'
+      ? 'Runs on Comfy Cloud, nothing to download'
+      : readiness(rec.template).label
+  const length = choice === '10 s' ? ' · 10 s clip' : ''
+  return `${rec.makes} · ${build.value?.total ?? 0} nodes · ${cost}${length}`
+}
 
 function nameOf(item: Item): string {
   if (item.type === 'template') return item.starter.makes
@@ -224,7 +361,7 @@ const graph = computed(() => {
       col
     }
   })
-  const shown = build.value?.shown ?? nodes.length
+  const shown = agentGraph.value ? build.value!.shown : nodes.length
   const wires = g.wires
     .filter(([a, b]) => a < shown && b < shown)
     .map(([a, b]) => {
@@ -272,7 +409,7 @@ function key(e: KeyboardEvent): void {
   const last = items.value.length - 1
   const sideways = !query.value && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')
   if (e.key === 'Escape') {
-    if (build.value) stopBuild()
+    if (panel.value) closePanel()
     else if (query.value) query.value = ''
     else closeCreate()
   } else if (e.key === 'Enter') {
@@ -298,240 +435,312 @@ useEscapeCloses(() => composer.value?.field)
 </script>
 
 <template>
-  <section class="v07 relative flex h-full min-h-[640px] flex-col" aria-label="Create">
+  <section class="v07 relative flex h-full min-h-[640px]" aria-label="Create">
     <div class="v07-canvas" aria-hidden="true" />
 
-    <button type="button" class="v07-icon-btn v07-close" aria-label="Close" @click="closeCreate">
-      <X :size="16" />
-    </button>
+    <div class="v07-main">
+      <button type="button" class="v07-icon-btn v07-close" aria-label="Close" @click="closeCreate">
+        <X :size="16" />
+      </button>
 
-    <div class="v07-stage-wrap">
-      <div class="v07-stage">
-        <svg
-          :key="`w-${current?.id}`"
-          class="v07-wires"
-          :viewBox="`0 0 ${STAGE_W} ${STAGE_H}`"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path v-for="d in graph.wires" :key="d" :d class="v07-wire" />
-          <path v-for="d in graph.wires" :key="`p${d}`" :d class="v07-pulse" pathLength="100" />
-        </svg>
-        <div
-          v-for="(n, i) in graph.nodes"
-          :key="`${current?.id}-${n.key}`"
-          class="v07-node"
-          :class="[`is-col${n.col}`, `is-${n.kind}`]"
-          :style="[box(n), { '--i': i }]"
-        >
-          <p class="v07-node-head">
-            <component :is="NODE_ICONS[n.kind]" :size="12" />
-            <span class="truncate">{{ n.title }}</span>
-          </p>
-          <div v-if="n.col === 2" class="v07-out">
-            <template v-if="outputOf">
-              <img :src="outputOf.src" alt="" />
-              <video
-                v-if="outputOf.clip"
-                :key="outputOf.clip"
-                :src="outputOf.clip"
-                muted
-                loop
-                playsinline
-                autoplay
-                class="motion-reduce:hidden"
+      <div class="v07-stage-wrap" :class="agentGraph && 'is-agent'">
+        <div class="v07-stage">
+          <svg
+            :key="`w-${current?.id}`"
+            class="v07-wires"
+            :viewBox="`0 0 ${STAGE_W} ${STAGE_H}`"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <path v-for="d in graph.wires" :key="d" :d class="v07-wire" />
+            <path v-for="d in graph.wires" :key="`p${d}`" :d class="v07-pulse" pathLength="100" />
+          </svg>
+          <div
+            v-for="(n, i) in graph.nodes"
+            :key="`${current?.id}-${n.key}`"
+            class="v07-node"
+            :class="[`is-col${n.col}`, `is-${n.kind}`]"
+            :style="[box(n), { '--i': i }]"
+          >
+            <p class="v07-node-head">
+              <component :is="NODE_ICONS[n.kind]" :size="12" />
+              <span class="truncate">{{ n.title }}</span>
+            </p>
+            <div v-if="n.col === 2" class="v07-out" :class="agentGraph && 'is-empty'">
+              <p v-if="agentGraph" class="v07-out-empty">{{ outLabel }}</p>
+              <template v-else-if="outputOf">
+                <img :src="outputOf.src" alt="" />
+                <video
+                  v-if="outputOf.clip"
+                  :key="outputOf.clip"
+                  :src="outputOf.clip"
+                  muted
+                  loop
+                  playsinline
+                  autoplay
+                  class="motion-reduce:hidden"
+                />
+              </template>
+              <WorkflowCover
+                v-else-if="current?.type === 'workflow'"
+                :name="current.workflow.name"
               />
-            </template>
-            <WorkflowCover v-else-if="current?.type === 'workflow'" :name="current.workflow.name" />
+            </div>
+            <div v-else-if="n.kind === 'image' && agentGraph" class="v07-drop">
+              <Upload :size="16" />
+              <span>{{ dropLabel }}</span>
+            </div>
+            <img
+              v-else-if="n.kind === 'image'"
+              :src="mock('asset-actor-ref')"
+              alt=""
+              class="v07-in-pic"
+            />
+            <p v-else-if="n.kind === 'prompt'" class="v07-prompt">
+              {{ agentGraph ? promptFill : promptOf }}
+            </p>
+            <div v-else class="v07-widgets">
+              <span><i>steps</i><b>20</b></span>
+              <span><i>cfg</i><b>4.0</b></span>
+              <span><i>seed</i><b>randomize</b></span>
+            </div>
           </div>
-          <img
-            v-else-if="n.kind === 'image'"
-            :src="mock('asset-actor-ref')"
-            alt=""
-            class="v07-in-pic"
-          />
-          <p v-else-if="n.kind === 'prompt'" class="v07-prompt">{{ promptOf }}</p>
-          <div v-else class="v07-widgets">
-            <span><i>steps</i><b>20</b></span>
-            <span><i>cfg</i><b>4.0</b></span>
-            <span><i>seed</i><b>randomize</b></span>
-          </div>
+          <p v-if="current?.type === 'blank'" class="v07-empty">
+            An empty canvas on {{ activeInstance.name }}. Double-click to add your first node.
+          </p>
         </div>
-        <p v-if="current?.type === 'blank'" class="v07-empty">
-          An empty canvas on {{ activeInstance.name }}. Double-click to add your first node.
-        </p>
+
+        <p v-if="!current" class="v07-empty is-hint">Point at a template to preview it here</p>
+        <aside
+          v-if="current && !agentGraph"
+          :key="`d-${current.id}`"
+          class="v07-detail"
+          aria-live="polite"
+        >
+          <template v-if="current.type === 'template'">
+            <p class="v07-detail-title">{{ current.starter.makes }}</p>
+            <p class="v07-detail-sub">{{ current.starter.model }}</p>
+            <p class="v07-detail-line">{{ current.starter.line }}.</p>
+            <p class="v07-ready" :class="`is-${readiness(current.starter.template).tone}`">
+              <component
+                :is="readyIcon(readiness(current.starter.template))"
+                v-if="readiness(current.starter.template).tone !== 'off'"
+                :size="13"
+              />
+              {{ readiness(current.starter.template).label }}
+            </p>
+          </template>
+          <template v-else-if="current.type === 'workflow'">
+            <p class="v07-detail-title">{{ current.workflow.name }}</p>
+            <p class="v07-detail-sub">
+              {{ buildOf(current.workflow)?.name }}, edited
+              {{ current.workflow.modified.toLowerCase() }}
+            </p>
+          </template>
+          <template v-else-if="current.type === 'node'">
+            <p class="v07-detail-title">{{ NODE_TYPES[current.node].title }}</p>
+            <p class="v07-detail-line">{{ NODE_TYPES[current.node].description }}.</p>
+          </template>
+          <template v-else>
+            <p class="v07-detail-title">Blank canvas</p>
+            <p class="v07-detail-line">Build it yourself, node by node.</p>
+          </template>
+          <button type="button" class="v07-go" @click="pick(current)">
+            {{
+              current.type === 'template'
+                ? 'Use template'
+                : current.type === 'workflow'
+                  ? 'Open workflow'
+                  : 'Start'
+            }}
+            <CornerDownLeft :size="13" class="opacity-60" />
+          </button>
+        </aside>
       </div>
 
-      <p v-if="!current" class="v07-empty is-hint">Point at a template to preview it here</p>
-      <aside v-if="build" :key="`b-${build.starter.id}`" class="v07-detail" aria-live="polite">
-        <p class="v07-detail-kicker">
-          <AgentChat :size="12" />{{ built ? 'Built for you' : 'Building…' }}
-        </p>
-        <p class="v07-detail-title">{{ build.starter.makes }}</p>
-        <p class="v07-detail-line">
-          {{ build.shown }} of {{ build.total }} nodes{{ built ? ', wired and ready.' : '' }}
-        </p>
-        <template v-if="built">
-          <p class="v07-ready" :class="`is-${readiness(build.starter.template).tone}`">
-            <component
-              :is="readyIcon(readiness(build.starter.template))"
-              v-if="readiness(build.starter.template).tone !== 'off'"
-              :size="13"
+      <div class="v07-dock-wrap">
+        <div class="v07-band">
+          <div class="v07-bar">
+            <CreateComposer
+              ref="composer"
+              v-model="query"
+              class="v07-composer"
+              :mode="createInput.id"
+              :navigated
+              card-at="above"
+              external
+              @key="key"
+              @ask="onAsk"
             />
-            {{ readiness(build.starter.template).label }}
-          </p>
-          <button type="button" class="v07-go" @click="openTemplate(build.starter.template)">
-            Use this workflow
-          </button>
-          <button type="button" class="v07-go is-quiet" @click="tweak">Tweak</button>
-        </template>
-      </aside>
-      <aside v-else-if="current" :key="`d-${current.id}`" class="v07-detail" aria-live="polite">
-        <template v-if="current.type === 'template'">
-          <p class="v07-detail-title">{{ current.starter.makes }}</p>
-          <p class="v07-detail-sub">{{ current.starter.model }}</p>
-          <p class="v07-detail-line">{{ current.starter.line }}.</p>
-          <p class="v07-ready" :class="`is-${readiness(current.starter.template).tone}`">
-            <component
-              :is="readyIcon(readiness(current.starter.template))"
-              v-if="readiness(current.starter.template).tone !== 'off'"
-              :size="13"
-            />
-            {{ readiness(current.starter.template).label }}
-          </p>
-        </template>
-        <template v-else-if="current.type === 'workflow'">
-          <p class="v07-detail-title">{{ current.workflow.name }}</p>
-          <p class="v07-detail-sub">
-            {{ buildOf(current.workflow)?.name }}, edited
-            {{ current.workflow.modified.toLowerCase() }}
-          </p>
-        </template>
-        <template v-else-if="current.type === 'node'">
-          <p class="v07-detail-title">{{ NODE_TYPES[current.node].title }}</p>
-          <p class="v07-detail-line">{{ NODE_TYPES[current.node].description }}.</p>
-        </template>
-        <template v-else>
-          <p class="v07-detail-title">Blank canvas</p>
-          <p class="v07-detail-line">Build it yourself, node by node.</p>
-        </template>
-        <button type="button" class="v07-go" @click="pick(current)">
-          {{
-            current.type === 'template'
-              ? 'Use template'
-              : current.type === 'workflow'
-                ? 'Open workflow'
-                : 'Start'
-          }}
-          <CornerDownLeft :size="13" class="opacity-60" />
-        </button>
-      </aside>
-    </div>
-
-    <div class="v07-dock-wrap">
-      <div class="v07-band">
-        <div class="v07-bar">
-          <CreateComposer
-            ref="composer"
-            v-model="query"
-            class="v07-composer"
-            :mode="createInput.id"
-            :navigated
-            card-at="above"
-            @key="key"
-            @peek="peek = $event"
-            @pin="pickPin = $event"
-            @build="buildIt"
-            @dismiss="forget"
-          />
-          <nav v-if="!q" class="v07-shelves" aria-label="Dock shows">
-            <button
-              v-for="t in TABS"
-              :key="t.id"
-              type="button"
-              class="v07-tab"
-              :class="shelf === t.id && 'is-on'"
-              :aria-pressed="shelf === t.id"
-              @click="shelf = t.id"
-            >
-              {{ t.label }}
-            </button>
-          </nav>
-          <p v-else class="v07-shelves v07-count">
-            {{ items.length - 1 }} matches below, Enter to ask
-          </p>
-          <span v-if="pages > 1" class="v07-pager">
-            <button
-              type="button"
-              class="v07-icon-btn"
-              aria-label="Previous"
-              :disabled="page === 0"
-              @click="page--"
-            >
-              <ChevronLeft :size="15" />
-            </button>
-            <button
-              type="button"
-              class="v07-icon-btn"
-              aria-label="Next"
-              :disabled="page >= pages - 1"
-              @click="page++"
-            >
-              <ChevronRight :size="15" />
-            </button>
-          </span>
-        </div>
-        <div class="v07-dock" aria-label="Starting points">
-          <template v-for="slot in slots" :key="slot.key">
-            <button
-              v-if="slot.item"
-              type="button"
-              class="v07-tile group"
-              :class="[
-                slot.index === hover && 'is-at',
-                slot.index === pinned && 'is-on',
-                `is-${slot.item.type}`
-              ]"
-              :aria-pressed="slot.index === pinned"
-              :data-v07-at="slot.index"
-              @pointerenter="hover = slot.index"
-              @pointerleave="hover = -1"
-              @focus="hover = slot.index"
-              @blur="hover = -1"
-              @click="press(slot.index)"
-            >
-              <span class="v07-tile-pic">
-                <img
-                  v-if="slot.item.type === 'template'"
-                  :src="slot.item.starter.poster"
-                  alt=""
-                  loading="lazy"
-                />
-                <template v-else-if="slot.item.type === 'workflow'">
+            <nav v-if="!q" class="v07-shelves" aria-label="Dock shows">
+              <button
+                v-for="t in TABS"
+                :key="t.id"
+                type="button"
+                class="v07-tab"
+                :class="shelf === t.id && 'is-on'"
+                :aria-pressed="shelf === t.id"
+                @click="shelf = t.id"
+              >
+                {{ t.label }}
+              </button>
+            </nav>
+            <span v-if="pages > 1" class="v07-pager">
+              <button
+                type="button"
+                class="v07-icon-btn"
+                aria-label="Previous"
+                :disabled="page === 0"
+                @click="page--"
+              >
+                <ChevronLeft :size="15" />
+              </button>
+              <button
+                type="button"
+                class="v07-icon-btn"
+                aria-label="Next"
+                :disabled="page >= pages - 1"
+                @click="page++"
+              >
+                <ChevronRight :size="15" />
+              </button>
+            </span>
+          </div>
+          <div class="v07-dock" aria-label="Starting points">
+            <template v-for="slot in slots" :key="slot.key">
+              <button
+                v-if="slot.item"
+                type="button"
+                class="v07-tile group"
+                :class="[
+                  slot.index === hover && 'is-at',
+                  slot.index === pinned && 'is-on',
+                  slot.item.type === 'template' && slot.item.starter.id === recId && 'is-rec',
+                  `is-${slot.item.type}`
+                ]"
+                :aria-pressed="slot.index === pinned"
+                :data-v07-at="slot.index"
+                @pointerenter="hover = slot.index"
+                @pointerleave="hover = -1"
+                @focus="hover = slot.index"
+                @blur="hover = -1"
+                @click="press(slot.index)"
+              >
+                <span class="v07-tile-pic">
                   <img
-                    v-if="lastOutput(slot.item.workflow)"
-                    :src="lastOutput(slot.item.workflow)"
+                    v-if="slot.item.type === 'template'"
+                    :src="slot.item.starter.poster"
                     alt=""
                     loading="lazy"
                   />
-                  <WorkflowCover v-else :name="slot.item.workflow.name" />
-                </template>
-                <component
-                  :is="NODE_ICONS[slot.item.node]"
-                  v-else-if="slot.item.type === 'node'"
-                  :size="18"
-                />
-                <Plus v-else :size="18" />
+                  <template v-else-if="slot.item.type === 'workflow'">
+                    <img
+                      v-if="lastOutput(slot.item.workflow)"
+                      :src="lastOutput(slot.item.workflow)"
+                      alt=""
+                      loading="lazy"
+                    />
+                    <WorkflowCover v-else :name="slot.item.workflow.name" />
+                  </template>
+                  <component
+                    :is="NODE_ICONS[slot.item.node]"
+                    v-else-if="slot.item.type === 'node'"
+                    :size="18"
+                  />
+                  <Plus v-else :size="18" />
+                </span>
+                <span class="v07-tile-name">{{ nameOf(slot.item) }}</span>
+              </button>
+              <span v-else class="v07-tile is-empty" aria-hidden="true">
+                <span class="v07-tile-pic" />
               </span>
-              <span class="v07-tile-name">{{ nameOf(slot.item) }}</span>
-            </button>
-            <span v-else class="v07-tile is-empty" aria-hidden="true">
-              <span class="v07-tile-pic" />
-            </span>
-          </template>
+            </template>
+          </div>
         </div>
       </div>
     </div>
+
+    <aside v-if="panel" class="v07-agent" aria-label="Agent">
+      <header class="v07-agent-head">
+        <AgentChat :size="15" />
+        <span>Agent</span>
+        <button type="button" class="v07-icon-btn" aria-label="Close agent" @click="closePanel">
+          <X :size="14" />
+        </button>
+      </header>
+      <div ref="scroller" class="v07-agent-log" aria-live="polite">
+        <template v-for="(e, i) in talk" :key="e.id">
+          <p class="v07-msg-user">{{ e.prompt }}</p>
+          <div class="v07-msg">
+            <span class="v07-msg-avatar"><AgentChat :size="13" /></span>
+            <div class="v07-msg-body">
+              <p>{{ e.reply.slice(0, e.typed) }}</p>
+              <template v-if="i === talk.length - 1 && build && e.rec">
+                <ol class="v07-steps">
+                  <li
+                    v-for="(label, k) in steps"
+                    :key="label"
+                    :class="k < build.shown ? 'is-done' : k === build.shown ? 'is-active' : ''"
+                  >
+                    <Check v-if="k < build.shown" :size="12" />
+                    <i v-else class="v07-step-dot" />
+                    {{ label }}
+                  </li>
+                </ol>
+                <div v-if="built" class="v07-result">
+                  <p class="v07-result-line">{{ resultLine(e) }}</p>
+                  <div class="v07-acts">
+                    <button
+                      type="button"
+                      class="v07-act is-primary"
+                      @click="openTemplate(e.rec.template)"
+                    >
+                      Use this workflow
+                    </button>
+                    <button type="button" class="v07-act" @click="changeSomething">
+                      Change something
+                    </button>
+                  </div>
+                  <div class="v07-choice">
+                    <span>{{ questionOf(e).label }}</span>
+                    <button
+                      v-for="o in questionOf(e).options"
+                      :key="o"
+                      type="button"
+                      :class="choiceOf(e) === o && 'is-on'"
+                      :aria-pressed="choiceOf(e) === o"
+                      @click="e.choice = o"
+                    >
+                      {{ o }}
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <button
+                v-else-if="!e.rec && e.typed >= e.reply.length"
+                type="button"
+                class="v07-act"
+                @click="startBlank"
+              >
+                Start blank
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+      <form class="v07-agent-foot" @submit.prevent="refine">
+        <input
+          ref="panelField"
+          v-model="followUp"
+          type="text"
+          placeholder="Ask for a change…"
+          aria-label="Ask the agent for a change"
+        />
+        <button type="submit" class="v07-agent-send" aria-label="Send" :disabled="!followUp.trim()">
+          <ArrowUp :size="14" />
+        </button>
+      </form>
+    </aside>
   </section>
 </template>
 
@@ -574,6 +783,275 @@ useEscapeCloses(() => composer.value?.field)
   width: 32px;
   height: 32px;
   border-radius: var(--radius-control);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-stage-wrap.is-agent {
+  padding-right: 48px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-composer + .v07-pager {
+  margin-left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-main {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent {
+  display: flex;
+  width: 380px;
+  flex: none;
+  flex-direction: column;
+  border-left: 1px solid var(--color-border-default);
+  background: color-mix(
+    in oklch,
+    var(--color-base-foreground) 2.5%,
+    var(--color-content-background)
+  );
+  animation: v07-panel 280ms var(--ease-out-expo) both;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-head {
+  display: flex;
+  height: 52px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 18px;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-head > span {
+  flex: 1;
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-log {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 8px 18px 18px;
+  scrollbar-width: thin;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-msg-user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--color-secondary-background-hover);
+  color: var(--color-base-foreground);
+  font-size: var(--text-ui);
+  line-height: 19px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-msg {
+  display: flex;
+  gap: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-msg-avatar {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-secondary-background);
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-msg-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 3px;
+  color: var(--color-base-foreground);
+  font-size: var(--text-ui);
+  line-height: 20px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-steps {
+  display: flex;
+  align-self: stretch;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  background: var(--color-secondary-background);
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-steps li.is-done {
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-steps li.is-done svg {
+  color: var(--color-status-running);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-steps li.is-active {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-step-dot {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  opacity: 0.6;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-steps li.is-active .v07-step-dot {
+  animation: v07-blink 1s ease-in-out infinite;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-result {
+  display: flex;
+  align-self: stretch;
+  flex-direction: column;
+  gap: 12px;
+  animation: v07-fade 300ms ease both;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-result-line {
+  color: var(--color-base-foreground);
+  font-weight: 600;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-choice > span {
+  margin-right: 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-choice button {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--color-secondary-background);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-choice button.is-on {
+  background: var(--color-secondary-background-hover);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-act {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-act:hover {
+  background: var(--color-secondary-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-act.is-primary {
+  background: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+  font-weight: 600;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-act.is-primary:hover {
+  background: var(--color-inverted-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px 16px;
+  padding: 0 6px 0 14px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--color-secondary-background);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-foot:focus-within {
+  box-shadow: inset 0 0 0 1px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-foot input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font: inherit;
+  font-size: var(--text-ui);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-foot input::placeholder {
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-send {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-agent-send:disabled {
+  opacity: 0.3;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-drop {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 6px 6px;
+  border-radius: 8px;
+  outline: 1.5px dashed var(--color-border-strong);
+  outline-offset: -1.5px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-out.is-empty {
+  display: grid;
+  place-items: center;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-out-empty {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-rec .v07-tile-pic {
+  opacity: 1;
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-border-focus);
+}
+@keyframes v07-panel {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+@keyframes v07-blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .v07-agent,
+  :root .proto-ui.proto-ui.proto-ui .v07-result,
+  :root .proto-ui.proto-ui.proto-ui .v07-steps li.is-active .v07-step-dot {
+    animation: none;
+  }
 }
 :root .proto-ui.proto-ui.proto-ui .v07-stage-wrap {
   position: relative;
