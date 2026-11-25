@@ -8,7 +8,12 @@ const electron = vi.hoisted(() => ({
 vi.mock('electron', () => electron)
 
 import { getShellOpenExternalCalls, resetShellOpenExternalCalls } from './e2eOverrides'
-import { isOpenableExternalUrl, openExternalUrl, tryOpenExternalUrl } from './openExternal'
+import {
+  isOpenableExternalUrl,
+  openExternalUrl,
+  tryOpenExternalUrl,
+  tryOpenExternalUrlOrAgentApp
+} from './openExternal'
 
 const handedToTheOs = (): string[] => electron.shell.openExternal.mock.calls.map(([url]) => url)
 
@@ -21,6 +26,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 describe('opening a link outside the app', () => {
@@ -92,5 +98,116 @@ describe('opening a link outside the app', () => {
     expect(await tryOpenExternalUrl('https://comfy.org/docs')).toBe(true)
 
     expect(handedToTheOs()).toEqual(['https://comfy.org/docs'])
+  })
+})
+
+const LONG_PROMPT = 'Deploy "my workflow" & run it: 100% + émoji 🎨\nsecond line #2?'
+
+describe('opening a link from a ComfyUI page', () => {
+  it.each([
+    ['claude://code/new?q=Deploy%20my%20workflow', 'claude://code/new?q=Deploy%20my%20workflow'],
+    ['codex://new?prompt=Deploy%20my%20workflow', 'codex://new?prompt=Deploy%20my%20workflow'],
+    ['claude://code/new?q=', 'claude://code/new?q='],
+    ['CLAUDE://code/new?q=x', 'claude://code/new?q=x'],
+    ['Codex://new?prompt=x', 'codex://new?prompt=x'],
+    ['  claude://code/new?q=x\n', 'claude://code/new?q=x'],
+    ['claude://code/new?q=a+b&', 'claude://code/new?q=a%20b'],
+    ['codex://new?prompt=%3Cscript%3E%22%27%60', "codex://new?prompt=%3Cscript%3E%22'%60"],
+    ['https://comfy.org/docs', 'https://comfy.org/docs'],
+    ['mailto:hello@comfy.org', 'mailto:hello@comfy.org']
+  ])('hands %j to the OS as %j', async (asked, opened) => {
+    expect(await tryOpenExternalUrlOrAgentApp(asked)).toBe(true)
+    expect(handedToTheOs()).toEqual([opened])
+  })
+
+  it.each([
+    ['claude', `claude://code/new?q=${encodeURIComponent(LONG_PROMPT)}`],
+    ['codex', `codex://new?prompt=${encodeURIComponent(LONG_PROMPT)}`]
+  ])('hands the %s link the frontend builds to the OS unchanged', async (_app, link) => {
+    expect(await tryOpenExternalUrlOrAgentApp(link)).toBe(true)
+    expect(handedToTheOs()).toEqual([link])
+  })
+
+  it.each([
+    'claude://CODE/new?q=x',
+    'claude://code/NEW?q=x',
+    'claude://code/new?Q=x',
+    'codex://NEW?prompt=x',
+    'claude://code/new',
+    'claude://code/new?q=x&mode=auto',
+    'claude://code/new?q=x&q=y',
+    'claude://code/new?q=x#fragment',
+    'claude://code/new/extra?q=x',
+    'claude://settings/new?q=x',
+    'claude://code:8080/new?q=x',
+    'claude://user:secret@code/new?q=x',
+    'claude:code/new?q=x',
+    'codex://new/thread?prompt=x',
+    'codex://settings?prompt=x',
+    'codex://new?q=x',
+    'claude-code://code/new?q=x',
+    'vscode://file/etc/passwd',
+    'javascript:claude://code/new?q=x',
+    'file://code/new?q=x',
+    'smb://attacker.example/share',
+    ''
+  ])('hands nothing to the OS for %j', async (asked) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(await tryOpenExternalUrlOrAgentApp(asked)).toBe(false)
+    expect(handedToTheOs()).toEqual([])
+  })
+
+  it('reports an agent app link the OS could not open', async () => {
+    electron.shell.openExternal.mockRejectedValue(new Error('no handler'))
+
+    expect(await tryOpenExternalUrlOrAgentApp('claude://code/new?q=x')).toBe(false)
+  })
+
+  it('records an agent app link for an E2E run of an unpackaged build and opens nothing', async () => {
+    vi.stubEnv('E2E', '1')
+
+    expect(await tryOpenExternalUrlOrAgentApp('codex://new?prompt=x')).toBe(true)
+
+    expect(getShellOpenExternalCalls()).toEqual(['codex://new?prompt=x'])
+    expect(handedToTheOs()).toEqual([])
+  })
+})
+
+describe('agent app links everywhere else in the app', () => {
+  it.each(['claude://code/new?q=x', 'codex://new?prompt=x'])(
+    'hands nothing to the OS for %j',
+    async (asked) => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      expect(isOpenableExternalUrl(asked)).toBe(false)
+      expect(await tryOpenExternalUrl(asked)).toBe(false)
+      await expect(openExternalUrl(asked)).rejects.toThrow(/not http, https or mailto/)
+      expect(handedToTheOs()).toEqual([])
+    }
+  )
+})
+
+describe('a refused link', () => {
+  it.each([
+    ['claude://settings/new?q=my%20secret%20prompt', 'claude:'],
+    ['file:///Users/me/secret.txt', 'file:'],
+    ['not a link with a secret', 'no scheme'],
+    ['my-secret-prompt-as-a-scheme:x', 'long scheme']
+  ])('is logged for %j by its scheme only, as %j', async (asked, scheme) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(await tryOpenExternalUrlOrAgentApp(asked)).toBe(false)
+
+    expect(warn.mock.calls).toEqual([[`Refused to hand the OS a link (${scheme}).`]])
+  })
+
+  it('is not logged when the link opens', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await tryOpenExternalUrlOrAgentApp('claude://code/new?q=x')
+    await tryOpenExternalUrl('https://comfy.org/')
+
+    expect(warn).not.toHaveBeenCalled()
   })
 })
