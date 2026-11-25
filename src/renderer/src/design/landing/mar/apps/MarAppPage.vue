@@ -46,7 +46,7 @@ import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
-import { instances, toast } from '../../useProto'
+import { hostActions, instances, toast } from '../../useProto'
 import AssetDetail from '../assets/AssetDetail.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import CompareSplit from '../assets/CompareSplit.vue'
@@ -54,7 +54,7 @@ import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
 import { PROD_HOOKS, workflowIsPublic } from './prodApps'
-import { extrasOn, newSeed, type AppGraph } from './appToComfy'
+import { errorText, extrasOn, newSeed, type AppGraph } from './appToComfy'
 import {
   buildFor,
   buildLine,
@@ -62,10 +62,11 @@ import {
   openAppInComfy,
   openOnBuild,
   opening,
+  runPlaceOf,
   type OpenWhere
 } from './openAppInComfy'
 import { APP_RUNS } from './appsStage'
-import { flow, installingBehind, showInstall } from '../setup/setupFlow'
+import { BUILD_NAME, flow, installingBehind, showInstall } from '../setup/setupFlow'
 
 /**
  * An app opens straight into its editor, as in the Hub's full-screen apps
@@ -223,7 +224,9 @@ const compareModel = computed({
 // Comfy credits: 211 to the dollar. A run on this computer is free.
 const CREDITS_PER_USD = 211
 const credits = computed(() =>
-  cost ? Math.max(1, Math.round(cost * count.value * CREDITS_PER_USD)) : 0
+  cost && place.value === 'cloud'
+    ? Math.max(1, Math.round(cost * count.value * CREDITS_PER_USD))
+    : 0
 )
 
 // Compare: the before over the result, split where you drag.
@@ -254,14 +257,24 @@ const needsLocal = computed(() => {
   const r = APP_RUNS[appId]
   return Boolean(r && r.kind !== 'cloud')
 })
+const picksPlace = !APP_RUNS[appId]
+const place = computed<OpenWhere>(() => (picksPlace ? runPlaceOf(appId) : runsOn))
+const NEW_BUILD_LABEL = 'Run ComfyUI on this computer'
+const runsHere = computed(() => needsLocal.value || place.value === 'local')
+const hasLocalBuild = computed(() => localBuilds().length > 0)
+const installingName = computed(() =>
+  flow.another && flow.buildName ? flow.buildName : BUILD_NAME
+)
 // Only while there is no local build yet: a second build installing
 // doesn't stop the first from running.
 const waitsForInstall = computed(
-  () =>
-    installingBehind.value && needsLocal.value && !instances.value.some((i) => i.kind === 'local')
+  () => installingBehind.value && runsHere.value && !hasLocalBuild.value
+)
+const noLocalBuild = computed(
+  () => picksPlace && place.value === 'local' && !hasLocalBuild.value && !installingBehind.value
 )
 function run(): void {
-  if (state.value === 'running' || waitsForInstall.value) return
+  if (state.value === 'running' || waitsForInstall.value || noLocalBuild.value) return
   if (gate && !gate()) return
   comparing.value = false
   take.value = 0
@@ -675,12 +688,21 @@ function back(): void {
               v-if="waitsForInstall"
               type="button"
               class="mar-app-editor-wait"
+              data-testid="app-still-installing"
               @click="showInstall"
             >
-              <Loader2 :size="13" class="animate-spin" />
-              <span class="flex-1 text-left">Installing ComfyUI · {{ flow.percent }}%</span>
+              <Loader2 :size="13" class="shrink-0 animate-spin" />
+              <span class="flex-1 text-left">{{
+                errorText('stillInstalling', installingName)
+              }}</span>
               <span class="mar-app-editor-wait-link">View progress</span>
             </button>
+            <div v-else-if="noLocalBuild" class="mar-app-editor-nobuild" data-testid="app-no-build">
+              <p>{{ errorText('noBuilds') }}</p>
+              <Button variant="secondary" size="sm" block @click="hostActions.newInstance()">{{
+                NEW_BUILD_LABEL
+              }}</Button>
+            </div>
             <Transition name="mar-app-editor-note">
               <div v-if="$slots.runNote" class="mar-app-editor-note">
                 <div class="mar-app-editor-note-in"><slot name="runNote" /></div>
@@ -689,7 +711,7 @@ function back(): void {
             <button
               type="button"
               class="mar-app-editor-run"
-              :disabled="state === 'running' || waitsForInstall"
+              :disabled="state === 'running' || waitsForInstall || noLocalBuild"
               :title="payer"
               @click="run"
             >
@@ -1313,6 +1335,18 @@ function back(): void {
 }
 /* The strip above Run while ComfyUI installs: a quiet tab that opens the
  * install's progress. */
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-nobuild {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  text-wrap: pretty;
+}
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-wait {
   display: flex;
   width: 100%;

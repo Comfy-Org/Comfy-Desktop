@@ -8,6 +8,7 @@ export interface PrepTab {
   templateId: string
   instId: string
   ready: boolean
+  install?: { percent: number }
 }
 
 export const prepTabs = reactive<{ list: PrepTab[] }>({ list: [] })
@@ -18,11 +19,13 @@ export const prepOfTab = (tabId: string): PrepTab | undefined =>
 export const prepOfTemplate = (templateId: string): PrepTab | undefined =>
   prepTabs.list.find((p) => p.templateId === templateId)
 
-export function openPrepTab(t: Template, inst: ProtoInstance): void {
-  if (prepOfTemplate(t.id)) return
+export function openPrepTab(t: Template, inst: ProtoInstance): PrepTab {
+  const open = prepOfTemplate(t.id)
+  if (open) return open
   const tabId = `tab-${Date.now()}`
   proto.tabs.push({ id: tabId, title: inst.name, instanceId: inst.id, workflow: t.title })
   prepTabs.list.push({ tabId, templateId: t.id, instId: inst.id, ready: false })
+  return prepOfTab(tabId)!
 }
 
 export function dropPrepTab(tabId: string): void {
@@ -33,7 +36,7 @@ watch(
   () => templateDownloads.list.map((d) => `${d.id}:${d.status}`).join(),
   () => {
     for (const p of [...prepTabs.list]) {
-      if (p.ready) continue
+      if (p.ready || p.install) continue
       const d = downloadFor(p.templateId)
       if (d && d.status !== 'cancelled') continue
       dropPrepTab(p.tabId)

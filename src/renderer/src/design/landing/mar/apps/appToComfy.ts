@@ -36,6 +36,7 @@ export const extrasOn = (): boolean => appToComfy.id === 'on'
 export const OPEN_ERRORS = {
   noBuilds: 'Add a local build in Comfy Desktop to run apps on this computer.',
   couldNotStart: 'Comfy Desktop could not start {name}.',
+  stillInstalling: '{name} is still installing. Try again once it finishes.',
   openNoCloud: 'Add Comfy Cloud in Comfy Desktop first.',
   openCloudFailed: 'Comfy Desktop could not open Comfy Cloud.',
   openNoWindow: 'Comfy Desktop could not show the ComfyUI window.',

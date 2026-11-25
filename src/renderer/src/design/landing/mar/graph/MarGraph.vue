@@ -70,6 +70,8 @@ import ModelBrowser from './panels/ModelBrowser.vue'
 import WorkflowsPanel from './panels/WorkflowsPanel.vue'
 import ShortcutsPanel from './panels/ShortcutsPanel.vue'
 import TemplatesDialog from './panels/TemplatesDialog.vue'
+import MissingModelsDialog from './MissingModelsDialog.vue'
+import { closeMissingModels, downloadMissingModels, missingModelsOn } from './missingModels'
 import SettingsDialog from './panels/SettingsDialog.vue'
 import NodeSearch from './NodeSearch.vue'
 import ScratchSearch from './ScratchSearch.vue'
@@ -1036,6 +1038,19 @@ watch(panel, (id) => {
 })
 /** The workflow on show: the tab's, or one opened from Workflows. */
 const shownWorkflow = ref(workflow)
+const graphTab = computed(() => proto.tabs.find((t) => t.id === proto.activeTab))
+const missingModels = computed(() => {
+  const tab = graphTab.value
+  return tab ? missingModelsOn(tab.id, shownWorkflow.value, tab.instanceId) : undefined
+})
+function closeMissing(): void {
+  if (graphTab.value) closeMissingModels(graphTab.value.id, shownWorkflow.value)
+}
+function downloadMissing(): void {
+  const tab = graphTab.value
+  const m = missingModels.value
+  if (tab && m) downloadMissingModels(tab.id, shownWorkflow.value, tab.instanceId, m.template)
+}
 startFromScratch()
 const agent = ref(false)
 const agentStart = ref<AgentStart | null>(null)
@@ -1874,6 +1889,12 @@ function addFromPanel(kind: NodeKind): void {
       @pick="(t) => ((dialog = ''), (shownWorkflow = t.title))"
     />
     <ModelBrowser v-else-if="dialog === 'models'" @close="dialog = ''" />
+    <MissingModelsDialog
+      v-else-if="missingModels"
+      :missing="missingModels"
+      @close="closeMissing"
+      @download="downloadMissing"
+    />
     <SettingsDialog
       v-else-if="dialog === 'settings'"
       :cloud="onCloud"

@@ -13,6 +13,7 @@ import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { appToComfy, openAnswer } from './apps/appToComfy'
+import { appRunsOn } from './apps/openAppInComfy'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
@@ -82,6 +83,7 @@ export const when = {
   appExamplesAt: computed(() => can.value.exploreApps && !!appsProto.front),
   appToComfy: computed(() => can.value.exploreApps && !!appsProto.front),
   openAnswer: computed(() => can.value.exploreApps && !!appsProto.front),
+  appRunsOn: computed(() => can.value.exploreApps && !!appsProto.front),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
@@ -259,6 +261,7 @@ export const TWEAKS = {
   appExamplesAt: one(appExamplesAt, 'tabs'),
   appToComfy: one(appToComfy, 'off'),
   openAnswer: one(openAnswer, 'auto'),
+  appRunsOn: one(appRunsOn, 'cloud'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),

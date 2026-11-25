@@ -142,6 +142,7 @@ function prepMarks(
   const prep = prepOfTab(tabId)
   if (!prep) return {}
   if (prep.ready) return { ready: true }
+  if (prep.install) return { progress: prep.install.percent / 100 }
   const d = downloadFor(prep.templateId)
   if (!d) return {}
   return {

@@ -48,6 +48,8 @@ import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
 import { runBlock } from '../runCredits'
 import { autoRuns, runAction, runNote, runTemplate } from '../autorun/autorun'
 import { openPrepTab } from '../autorun/prepTabs'
+import { installThenRun } from '../autorun/installThenRun'
+import { isDownloaded, markDownloaded } from '../autorun/installed'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
@@ -62,7 +64,9 @@ import {
   fmtGb,
   hasPack,
   infoFor,
+  managerHint,
   minComfyFor,
+  missingPacks,
   packsFor,
   mediaFor,
   needsFor,
@@ -165,7 +169,10 @@ const INPUT_ICONS: Record<InputKind, typeof Coins> = {
 const targets = computed<Target[]>(() => {
   const t = template.value
   if (!t) return []
-  const gone = saved.value && SAVED_MISSING_MODELS.has(saved.value.name)
+  const gone =
+    saved.value &&
+    SAVED_MISSING_MODELS.has(saved.value.name) &&
+    !(savedIn.value && isDownloaded(t.id, savedIn.value.id))
   return targetsFor(t, {
     modelsGoneOn: gone ? savedIn.value?.id : undefined,
     prefer: saved.value ? null : undefined
@@ -329,8 +336,6 @@ const steps = computed<{ label: string; share: number }[]>(() => {
   if (s.state === 'repair') out.push({ label: `Repairing ${s.inst.name}`, share: 2 })
   if (s.state === 'gated') out.push({ label: 'Waiting for the licence', share: 1 })
   if (versionShort(t, s.inst)) out.push({ label: `Updating ${s.inst.name}`, share: 2 })
-  const p = packs.value.filter((x) => !hasPack(s.inst, x)).length
-  if (p) out.push({ label: `Installing ${p} node ${p === 1 ? 'pack' : 'packs'}`, share: 1 })
   if (s.fetch) out.push({ label: 'download', share: 3 })
   return out
 })
@@ -354,7 +359,6 @@ const busyLabel = computed(() => {
   if (s.state === 'download')
     return `Downloading ${fmtGb(total.value * progress.value)} of ${fmtGb(total.value)}`
   if (s.state === 'update') return `Updating ${s.inst.name}`
-  if (s.state === 'nodes') return 'Installing node packs'
   if (s.inst.kind === 'cloud') return `Opening ${s.inst.name}`
   return START_COPY.title
 })
@@ -370,7 +374,8 @@ function confirm(): void {
     return
   }
   if (s.state === 'new') {
-    hostActions.newInstance()
+    if (autorunOn.value) installThenRun(t)
+    else hostActions.newInstance()
     return
   }
   if (s.inst.kind === 'cloud' && runBlock.value) {
@@ -409,6 +414,7 @@ function confirm(): void {
     progress.value = Math.min(1, (Date.now() - t0) / ms)
     if (progress.value < 1) return
     stop()
+    if (saved.value && s.state === 'download') markDownloaded(t.id, s.inst.id)
     if (autorunOn.value && autoRuns(s)) runTemplate(t, s.inst)
     else hostActions.launch(s.inst, t.title)
   }, 40)
@@ -506,7 +512,12 @@ const packMark = (pack: string): 'here' | 'get' | 'warn' =>
     : selected.value.inst.kind === 'cloud'
       ? 'warn'
       : 'get'
-const PACK_TITLE = { here: 'Installed', get: 'Installs first', warn: 'Not on Cloud yet' }
+const PACK_TITLE = {
+  here: 'Installed',
+  get: 'Install it in ComfyUI with Manager',
+  warn: 'Not on Cloud yet'
+}
+const missingCount = computed(() => packs.value.filter((p) => packMark(p) === 'get').length)
 const caseRows = computed(() => (template.value ? caseNeeds(template.value, shown.value) : []))
 const caseState = computed(() => {
   const s = shown.value
@@ -536,8 +547,8 @@ const needsState = computed(() =>
     ? caseState.value.label
     : comfyMark.value === 'get'
       ? 'Updates first'
-      : packs.value.some((p) => packMark(p) === 'get')
-        ? 'Installs first'
+      : missingCount.value
+        ? 'Install in ComfyUI'
         : !needs.value.length
           ? ''
           : modelState.value === 'cloud'
@@ -550,7 +561,7 @@ const needsState = computed(() =>
 const needsTone = computed(() =>
   caseState.value
     ? caseState.value.tone
-    : needsState.value === 'Updates first' || needsState.value === 'Installs first'
+    : needsState.value === 'Updates first' || needsState.value === 'Install in ComfyUI'
       ? 'get'
       : modelState.value
 )
@@ -879,15 +890,16 @@ const full = computed(() => can.value.onboarding)
                   <li v-for="p in packs" :key="p">
                     <Puzzle :size="14" />
                     <span class="mar-tpl-file">{{ p }}</span>
-                    <span class="mar-tpl-size">Node pack</span>
+                    <span class="mar-tpl-size">{{
+                      packMark(p) === 'get' ? 'Missing' : 'Node pack'
+                    }}</span>
                     <span
                       class="mar-tpl-mark"
                       :data-m="packMark(p)"
                       :title="PACK_TITLE[packMark(p)]"
                     >
                       <Check v-if="packMark(p) === 'here'" :size="12" />
-                      <TriangleAlert v-else-if="packMark(p) === 'warn'" :size="11" />
-                      <ArrowDownToLine v-else :size="12" />
+                      <TriangleAlert v-else :size="11" />
                     </span>
                   </li>
                   <li v-if="minComfy">
@@ -948,6 +960,10 @@ const full = computed(() => can.value.onboarding)
                   </li>
                 </ul>
               </details>
+              <p v-if="missingCount" class="mar-tpl-fit" data-tpl-packs>
+                <Puzzle :size="13" />{{ missingPacks(missingCount) }} ·
+                {{ managerHint(missingCount) }}
+              </p>
               <div v-if="firstResult" class="mar-tpl-eta" data-tpl-eta>
                 <Timer :size="14" class="mar-tpl-eta-icon" />
                 <span class="mar-tpl-eta-label">First result in</span>
