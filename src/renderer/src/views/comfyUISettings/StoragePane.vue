@@ -156,6 +156,15 @@ const foldersFromStartupArgs = computed(
   () => launchInputFolder.value !== null || launchOutputFolder.value !== null
 )
 
+const showInputDirRow = computed(
+  () => !!launchInputFolder.value || !useSharedInputEnabled.value || !!sharedInputField.value
+)
+const showOutputDirRow = computed(
+  () => !!launchOutputFolder.value || !useSharedOutputEnabled.value || !!sharedOutputField.value
+)
+const switchRowClass =
+  'storage-switch-row flex min-h-11 min-w-0 cursor-pointer items-center gap-1.5 rounded-[10px] py-1.5 pr-[3px] pl-3 text-[13px] leading-[18px] text-neutral-100'
+const dividerClass = 'storage-dir-divider -mx-1.5 h-px shrink-0 bg-[var(--chooser-surface-border)]'
 const flagCodeClass =
   'rounded-[3px] bg-[color-mix(in_srgb,currentcolor_14%,transparent)] px-1 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px]'
 
@@ -394,95 +403,101 @@ function handleRevealPath(path: string): void {
     </GlobalSettingsMicroSection>
 
     <GlobalSettingsMicroSection :title="t('settings.inputStorage')">
-      <template v-if="useSharedInputField" #actions>
-        <label
-          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
-        >
-          <span>{{ t('comfyUISettings.useSharedInput') }}</span>
-          <InfoTooltip :text="t('tooltips.useSharedInput')" />
-          <BooleanToggle
-            :field="useSharedInputField"
-            @update="(v) => handleToggleField(useSharedInputField, v)"
-          />
-        </label>
-      </template>
-      <StorageDirRow
-        v-if="launchInputFolder"
-        data-testid="storage-launch-input"
-        list-aligned
-        :path="launchInputFolder.path"
-        :shared="launchInputFolder.shared"
-        :browsable="false"
-        @open="handleOpenPath(launchInputFolder.path)"
-      />
-      <template v-else-if="useSharedInputEnabled">
+      <div class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]">
+        <template v-if="useSharedInputField">
+          <label :class="switchRowClass">
+            <span class="min-w-0 truncate">{{ t('comfyUISettings.useSharedInput') }}</span>
+            <InfoTooltip :text="t('tooltips.useSharedInput')" />
+            <span class="storage-switch-slot ml-auto flex h-8 shrink-0 items-center justify-end">
+              <BooleanToggle
+                :field="useSharedInputField"
+                @update="(v) => handleToggleField(useSharedInputField, v)"
+              />
+            </span>
+          </label>
+          <div v-if="showInputDirRow" :class="dividerClass" aria-hidden="true" />
+        </template>
         <StorageDirRow
-          v-if="sharedInputField"
+          v-if="launchInputFolder"
+          data-testid="storage-launch-input"
           list-aligned
-          :path="sharedFieldPath(sharedInputField)"
-          shared
+          :path="launchInputFolder.path"
+          :shared="launchInputFolder.shared"
           :browsable="false"
-          manageable
-          @open="handleOpenPath(sharedFieldPath(sharedInputField))"
-          @manage="handleManageSharedDirs"
+          @open="handleOpenPath(launchInputFolder.path)"
         />
-      </template>
-      <StorageDirRow
-        v-else
-        list-aligned
-        :path="effectiveInputDir"
-        :tag="!inputOverridden ? t('models.default') : ''"
-        :resettable="inputOverridden"
-        @open="handleOpenPath(effectiveInputDir)"
-        @browse="handleBrowseInputDir"
-        @reset="handleResetInputDir"
-      />
+        <template v-else-if="useSharedInputEnabled">
+          <StorageDirRow
+            v-if="sharedInputField"
+            list-aligned
+            :path="sharedFieldPath(sharedInputField)"
+            shared
+            :browsable="false"
+            manageable
+            @open="handleOpenPath(sharedFieldPath(sharedInputField))"
+            @manage="handleManageSharedDirs"
+          />
+        </template>
+        <StorageDirRow
+          v-else
+          list-aligned
+          :path="effectiveInputDir"
+          :tag="!inputOverridden ? t('models.default') : ''"
+          :resettable="inputOverridden"
+          @open="handleOpenPath(effectiveInputDir)"
+          @browse="handleBrowseInputDir"
+          @reset="handleResetInputDir"
+        />
+      </div>
     </GlobalSettingsMicroSection>
 
     <GlobalSettingsMicroSection :title="t('settings.outputStorage')">
-      <template v-if="useSharedOutputField" #actions>
-        <label
-          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
-        >
-          <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
-          <InfoTooltip :text="t('tooltips.useSharedOutput')" />
-          <BooleanToggle
-            :field="useSharedOutputField"
-            @update="(v) => handleToggleField(useSharedOutputField, v)"
-          />
-        </label>
-      </template>
-      <StorageDirRow
-        v-if="launchOutputFolder"
-        data-testid="storage-launch-output"
-        list-aligned
-        :path="launchOutputFolder.path"
-        :shared="launchOutputFolder.shared"
-        :browsable="false"
-        @open="handleOpenPath(launchOutputFolder.path)"
-      />
-      <template v-else-if="useSharedOutputEnabled">
+      <div class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]">
+        <template v-if="useSharedOutputField">
+          <label :class="switchRowClass">
+            <span class="min-w-0 truncate">{{ t('comfyUISettings.useSharedOutput') }}</span>
+            <InfoTooltip :text="t('tooltips.useSharedOutput')" />
+            <span class="storage-switch-slot ml-auto flex h-8 shrink-0 items-center justify-end">
+              <BooleanToggle
+                :field="useSharedOutputField"
+                @update="(v) => handleToggleField(useSharedOutputField, v)"
+              />
+            </span>
+          </label>
+          <div v-if="showOutputDirRow" :class="dividerClass" aria-hidden="true" />
+        </template>
         <StorageDirRow
-          v-if="sharedOutputField"
+          v-if="launchOutputFolder"
+          data-testid="storage-launch-output"
           list-aligned
-          :path="sharedFieldPath(sharedOutputField)"
-          shared
+          :path="launchOutputFolder.path"
+          :shared="launchOutputFolder.shared"
           :browsable="false"
-          manageable
-          @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
-          @manage="handleManageSharedDirs"
+          @open="handleOpenPath(launchOutputFolder.path)"
         />
-      </template>
-      <StorageDirRow
-        v-else
-        list-aligned
-        :path="effectiveOutputDir"
-        :tag="!outputOverridden ? t('models.default') : ''"
-        :resettable="outputOverridden"
-        @open="handleOpenPath(effectiveOutputDir)"
-        @browse="handleBrowseOutputDir"
-        @reset="handleResetOutputDir"
-      />
+        <template v-else-if="useSharedOutputEnabled">
+          <StorageDirRow
+            v-if="sharedOutputField"
+            list-aligned
+            :path="sharedFieldPath(sharedOutputField)"
+            shared
+            :browsable="false"
+            manageable
+            @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
+            @manage="handleManageSharedDirs"
+          />
+        </template>
+        <StorageDirRow
+          v-else
+          list-aligned
+          :path="effectiveOutputDir"
+          :tag="!outputOverridden ? t('models.default') : ''"
+          :resettable="outputOverridden"
+          @open="handleOpenPath(effectiveOutputDir)"
+          @browse="handleBrowseOutputDir"
+          @reset="handleResetOutputDir"
+        />
+      </div>
     </GlobalSettingsMicroSection>
 
     <I18nT

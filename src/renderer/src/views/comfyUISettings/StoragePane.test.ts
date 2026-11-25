@@ -936,7 +936,7 @@ describe('StoragePane', () => {
         makeSharedIoSnapshot()
       )
       await nextTick()
-      const switches = wrapper.findAll('.storage-header-toggle .bt-switch')
+      const switches = wrapper.findAll('.storage-dir-card .storage-switch-row .bt-switch')
       expect(switches).toHaveLength(2)
       await switches[0]!.trigger('click')
       await switches[1]!.trigger('click')
@@ -1292,6 +1292,7 @@ describe('StoragePane for a build whose input and output come from Startup argum
     expect(output.find('.storage-dir-shared-tag').exists()).toBe(true)
     expect(input.find('.storage-dir-menu').exists()).toBe(false)
     expect(wrapper.findAll('.storage-header-toggle')).toHaveLength(1)
+    expect(wrapper.findAll('.storage-switch-row')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('Use shared input')
     expect(wrapper.text()).not.toContain('Use shared output')
   })
@@ -1353,7 +1354,25 @@ describe('StoragePane for a build whose input and output come from Startup argum
     ])
     await nextTick()
 
-    expect(wrapper.findAll('.storage-header-toggle')).toHaveLength(3)
+    expect(wrapper.findAll('.storage-header-toggle')).toHaveLength(1)
+    expect(wrapper.findAll('.storage-dir-card .storage-switch-row')).toHaveLength(2)
     expect(wrapper.find('[data-testid="storage-startup-arg-note"]').exists()).toBe(false)
+  })
+
+  it('leaves no divider under a switch when no folder row follows it', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections([
+      {
+        fields: [
+          ...makeStorageSections([], { sharedOn: true })[0]!.fields,
+          { id: 'useSharedInput', label: 'In', value: true, editable: true, editType: 'boolean' },
+          { id: 'useSharedOutput', label: 'Out', value: true, editable: true, editType: 'boolean' }
+        ]
+      }
+    ])
+    await nextTick()
+
+    expect(wrapper.findAll('.storage-dir-card .storage-switch-row')).toHaveLength(2)
+    expect(wrapper.findAll('.storage-dir-card .storage-dir-divider')).toHaveLength(0)
   })
 })

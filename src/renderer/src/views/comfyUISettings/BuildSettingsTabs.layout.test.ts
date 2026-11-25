@@ -43,7 +43,30 @@ const STORAGE_SECTIONS = [
   }
 ] as unknown as DetailSection[]
 
-async function mountStorage(width: number): Promise<HTMLElement> {
+const GIT_STORAGE_SECTIONS = [
+  {
+    fields: [
+      field('useSharedModels', 'Use Shared Models', { value: true, editType: 'boolean' }),
+      field('modelDirs', 'Model directories', { value: [SHORT_PATH], editType: 'model-dirs' }),
+      field('installModelsDir', 'installModelsDir', { value: LONG_PATH, editType: 'hidden' }),
+      field('launchInputDir', 'Input', {
+        value: { path: 'D:\\Comfy\\shared\\input', shared: true },
+        editable: false,
+        editType: 'hidden'
+      }),
+      field('launchOutputDir', 'Output', {
+        value: { path: 'D:\\Renders', shared: false },
+        editable: false,
+        editType: 'hidden'
+      })
+    ]
+  }
+] as unknown as DetailSection[]
+
+async function mountStorage(
+  width: number,
+  sections: DetailSection[] = STORAGE_SECTIONS
+): Promise<HTMLElement> {
   ;(window as unknown as { api: Record<string, unknown> }).api = {
     platform: 'win32',
     browseFolder: async () => null,
@@ -58,7 +81,7 @@ async function mountStorage(width: number): Promise<HTMLElement> {
         modelsDirs: [{ path: SHARED_MODELS, isPrimary: true }],
         modelsSystemDefault: SHARED_MODELS
       },
-      sections: STORAGE_SECTIONS,
+      sections,
       pendingRestartFieldIds: new Set<string>()
     },
     attachTo: host(width)
@@ -129,13 +152,77 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('ends every toggle on the right edge of its folder cards', async () => {
+  it('ends the Models header toggle on the right edge of the Models card', async () => {
     const root = await mountStorage(width)
-    for (const section of root.querySelectorAll<HTMLElement>('.gs-micro-section')) {
-      const toggle = section.querySelector('.bt-switch')!.getBoundingClientRect()
-      const box = section.querySelector('.gs-micro-body > *')!.getBoundingClientRect()
-      expect(Math.round(toggle.right), 'toggle ends on the card edge').toBe(Math.round(box.right))
+    const section = root.querySelector<HTMLElement>('.gs-micro-section')!
+    const toggle = section.querySelector('.gs-micro-actions .bt-switch')!.getBoundingClientRect()
+    const box = section.querySelector('.models-dir-card')!.getBoundingClientRect()
+    expect(Math.round(toggle.right), 'toggle ends on the card edge').toBe(Math.round(box.right))
+  })
+
+  it('ends the input and output switches on the trailing action column, inside their cards', async () => {
+    const root = await mountStorage(width)
+    const actionsRight = Math.round(rects(root, '.models-dir-actions')[0]!.right)
+    const switches = [...root.querySelectorAll<HTMLElement>('.storage-switch-row')]
+    expect(switches).toHaveLength(2)
+    for (const row of switches) {
+      expect(row.closest('.storage-dir-card'), 'the switch sits in the folder card').not.toBeNull()
+      const toggle = row.querySelector('.bt-switch')!.getBoundingClientRect()
+      expect(Math.round(toggle.right), 'switch ends on the action column').toBe(actionsRight)
     }
+  })
+
+  it('gives a git build one compact input card and one output card shaped like the Models card', async () => {
+    const root = await mountStorage(width, GIT_STORAGE_SECTIONS)
+    const models = root.querySelector<HTMLElement>('.models-dir-card')!
+    const modelsBox = models.getBoundingClientRect()
+    const firstModelsRow = models.querySelector('.models-dir-row')!.getBoundingClientRect()
+    const cards = [...root.querySelectorAll<HTMLElement>('.storage-dir-card')]
+    expect(cards).toHaveLength(2)
+    for (const card of cards) {
+      expect(getComputedStyle(card).backgroundColor, 'card fill').toBe(
+        getComputedStyle(models).backgroundColor
+      )
+      expect(getComputedStyle(card).borderRadius, 'card radius').toBe('14px')
+      const rows = card.querySelectorAll<HTMLElement>('.storage-dir-row')
+      expect(rows, 'one folder row per card').toHaveLength(1)
+      const box = card.getBoundingClientRect()
+      const row = rows[0]!.getBoundingClientRect()
+      expect(Math.round(row.top - box.top), 'top inset like Models').toBe(
+        Math.round(firstModelsRow.top - modelsBox.top)
+      )
+      expect(Math.round(box.bottom - row.bottom), 'bottom inset like Models').toBe(
+        Math.round(firstModelsRow.top - modelsBox.top)
+      )
+      expect(Math.round(row.height), 'row as tall as a Models row').toBe(44)
+    }
+  })
+
+  it('puts a git build input and output Open buttons in the Models Open button column', async () => {
+    const root = await mountStorage(width, GIT_STORAGE_SECTIONS)
+    const modelsOpen = rects(root, '.models-dir-row .reveal-folder-button').map((r) =>
+      Math.round(r.left)
+    )
+    const folderOpen = rects(root, '.storage-dir-row .reveal-folder-button').map((r) =>
+      Math.round(r.left)
+    )
+    expect(modelsOpen.length).toBeGreaterThan(0)
+    expect(folderOpen).toHaveLength(2)
+    expectSame([...modelsOpen, ...folderOpen], 'Open buttons share one column')
+  })
+
+  it('makes every input and output row as tall as a Models row, path lines aside', async () => {
+    const root = await mountStorage(width)
+    const heightBesidesPath = (row: HTMLElement): number => {
+      const name = row.querySelector('.models-dir-name, .storage-dir-name')
+      const extraLines = name ? name.getBoundingClientRect().height - 18 : 0
+      return Math.round(row.getBoundingClientRect().height - extraLines)
+    }
+    const modelsRow = heightBesidesPath(root.querySelector<HTMLElement>('.models-dir-row')!)
+    const rows = [...root.querySelectorAll<HTMLElement>('.storage-switch-row, .storage-dir-row')]
+    expect(rows.length).toBe(4)
+    expect(modelsRow).toBe(44)
+    for (const row of rows) expect(heightBesidesPath(row), 'row height').toBe(modelsRow)
   })
 
   it('lines badges and actions up in one trailing column across sections', async () => {
@@ -214,17 +301,19 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
 
   it('pads every folder card like the Overview cards', async () => {
     const root = await mountStorage(width)
-    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-card, .storage-dir-row')]
+    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-card, .storage-dir-card')]
     expect(cards.length).toBe(3)
     for (const card of cards) {
       expect(getComputedStyle(card).borderRadius, 'card radius').toBe('14px')
       const box = card.getBoundingClientRect()
       const slots = [
-        ...card.querySelectorAll<HTMLElement>('.models-dir-icon-slot, .storage-dir-icon-slot')
+        ...card.querySelectorAll<HTMLElement>(
+          '.models-dir-icon-slot, .storage-switch-slot, .storage-dir-icon-slot'
+        )
       ].map((el) => el.getBoundingClientRect())
       expect(Math.round(slots[0]!.top - box.top), 'first row starts 16px from the top').toBe(16)
-      const rows = [...card.querySelectorAll<HTMLElement>('.models-dir-row')]
-      const lastRow = rows.length > 0 ? rows[rows.length - 1]! : card
+      const rows = [...card.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
+      const lastRow = rows[rows.length - 1]!
       const contentBottom = Math.max(
         ...[...lastRow.querySelectorAll<HTMLElement>(':scope > *')].map(
           (el) => el.getBoundingClientRect().bottom
@@ -388,7 +477,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     probe.className = CARD_FILL_PROBE
     document.body.appendChild(probe)
     const cardFill = getComputedStyle(probe).backgroundColor
-    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-card, .storage-dir-row')]
+    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-card, .storage-dir-card')]
     expect(cards.length).toBe(3)
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor, 'card fill').toBe(cardFill)
