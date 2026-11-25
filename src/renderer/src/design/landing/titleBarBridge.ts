@@ -59,6 +59,9 @@ export interface TitleBarState {
     build: string
     kind: 'local' | 'cloud'
     fresh?: boolean
+    progress?: number
+    alert?: 'failed' | 'disk'
+    ready?: boolean
   }[]
   tabFront?: string | null
   runsOn?: { name: string; kind: 'local' | 'cloud' }

@@ -1192,7 +1192,7 @@ function autorunEnded(done: boolean): void {
 }
 function takeAutorun(): void {
   const a = graphOpen.autorun
-  if (!a) return
+  if (!a || (a.tabId && a.tabId !== proto.activeTab)) return
   graphOpen.autorun = null
   engine.cancelAll()
   scratch.value = false
@@ -1214,8 +1214,8 @@ function takeAutorun(): void {
 }
 takeAutorun()
 watch(
-  () => graphOpen.autorun,
-  (a) => a && takeAutorun(),
+  () => [graphOpen.autorun, proto.activeTab] as const,
+  ([a]) => a && takeAutorun(),
   { flush: 'post' }
 )
 function changePrompt(): void {

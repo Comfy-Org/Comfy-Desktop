@@ -60,7 +60,6 @@ import NewWorkflowTile from './NewWorkflowTile.vue'
 import { openCreate } from './create/createScreen'
 import { onHome } from './tunerContext'
 import { search } from './search/search'
-import ReadyTemplateCard from './autorun/ReadyTemplateCard.vue'
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -265,7 +264,6 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
 
       <!-- Milestone 2 is apps only: Recently used comes back with Workflows
            (Recents & Assets), apps and workflows together. -->
-      <ReadyTemplateCard v-if="can.onboarding" />
       <section v-if="recent.length && (can.workflows || !can.exploreApps)" class="mt-10">
         <HomeSectionHeader
           v-if="can.onboarding"

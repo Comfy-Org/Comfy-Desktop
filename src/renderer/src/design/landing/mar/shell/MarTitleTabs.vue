@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ChevronDown, Home, Plus, X } from 'lucide-vue-next'
+import { ChevronDown, CircleCheck, Home, Plus, X } from 'lucide-vue-next'
 import { AgentChat } from '../icons/agentChat'
 import { ComfyAssets } from '../icons/comfyIcons'
 import LocationIcon from '../../ui/LocationIcon.vue'
+import DownloadRing from '../downloads/DownloadRing.vue'
 import type { TitleBarCommand, TitleBarState } from '../../titleBarBridge'
 
 /**
@@ -91,6 +92,21 @@ const close = (active: boolean): string =>
         @click="emit('command', { type: 'tab', id: t.id })"
       >
         <Plus v-if="t.fresh" :size="14" class="shrink-0" />
+        <template v-else-if="t.progress !== undefined">
+          <span class="relative inline-flex shrink-0" data-tab-progress>
+            <DownloadRing :progress="t.progress" :size="14" :stroke="1.75" />
+            <i
+              v-if="t.alert"
+              class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full"
+              :class="t.alert === 'failed' ? 'bg-status-danger' : 'bg-comfy-yellow'"
+              data-tab-alert
+            />
+          </span>
+          <span class="shrink-0 text-subtle-foreground tabular-nums"
+            >{{ Math.floor(t.progress * 100) }}%</span
+          >
+        </template>
+        <CircleCheck v-else-if="t.ready" :size="14" class="shrink-0 text-status-running" />
         <LocationIcon v-else :kind="t.kind" :size="14" />
         <span class="truncate">{{ t.name }}</span>
       </button>

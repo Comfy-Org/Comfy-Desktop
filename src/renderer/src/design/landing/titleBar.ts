@@ -26,6 +26,8 @@ import {
   newTabIndex,
   openCreate
 } from './mar/create/createScreen'
+import { prepOfTab } from './mar/autorun/prepTabs'
+import { downloadFor, progressOf } from './mar/downloads/templateDownloads'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
@@ -131,6 +133,20 @@ export const titleBarState = computed<TitleBarState>(() => ({
 const kindOf = (id: string): 'local' | 'cloud' =>
   instanceById(id)?.kind === 'cloud' ? 'cloud' : 'local'
 
+function prepMarks(
+  tabId: string
+): Pick<NonNullable<TitleBarState['tabs']>[number], 'progress' | 'alert' | 'ready'> {
+  const prep = prepOfTab(tabId)
+  if (!prep) return {}
+  if (prep.ready) return { ready: true }
+  const d = downloadFor(prep.templateId)
+  if (!d) return {}
+  return {
+    progress: progressOf(d),
+    alert: d.status === 'failed' || d.status === 'disk' ? d.status : undefined
+  }
+}
+
 /** What Mar's tabs title bar adds: each open workflow as a tab, named
  *  after the workflow (never its build: the pill already says where it
  *  runs). New ones are "Untitled workflow", numbered from the second, its
@@ -148,7 +164,8 @@ function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'
           : t.workflow
         : t.workflow,
     build: t.title,
-    kind: kindOf(t.instanceId)
+    kind: kindOf(t.instanceId),
+    ...prepMarks(t.id)
   }))
   if (createInTab.value && createScreen.open)
     tabs.splice(newTabIndex(), 0, {

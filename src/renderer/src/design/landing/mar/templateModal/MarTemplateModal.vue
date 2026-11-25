@@ -47,6 +47,7 @@ import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
 import { runBlock } from '../runCredits'
 import { autoRuns, runAction, runNote, runTemplate } from '../autorun/autorun'
+import { openPrepTab } from '../autorun/prepTabs'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
@@ -230,11 +231,6 @@ const cloudOffer = computed(() => {
   if (!autorunOn.value || !s || !c || c.disabled || c.state === 'blocked') return false
   return s.inst.kind === 'local' && (s.state === 'download' || Boolean(s.fetch))
 })
-const cloudLeaveNote = computed(() =>
-  cloudOffer.value && selected.value
-    ? `It keeps downloading if you leave, and ${selected.value.inst.name} has it next time. Or try it on Comfy Cloud now.`
-    : undefined
-)
 /** The cost's colour: a warning only for what may fail; a download stays
  *  quiet, even on a build short of memory. */
 const tone = (x: Target): string =>
@@ -387,6 +383,7 @@ function confirm(): void {
   }
   if (s.state === 'download' && s.inst.kind === 'local' && !saved.value) {
     startDownload(t, s.inst)
+    if (autorunOn.value) openPrepTab(t, s.inst)
     return
   }
   phase.value = 'busy'
@@ -1011,11 +1008,7 @@ const full = computed(() => can.value.onboarding)
 
           <!-- At the bottom: what happens, then the one action. -->
           <footer v-if="bgDownload" class="mad-actions">
-            <TplDownloadActions
-              :download="bgDownload"
-              :leave-note="cloudLeaveNote"
-              @close="open = false"
-            />
+            <TplDownloadActions :download="bgDownload" @close="open = false" />
             <button
               v-if="cloudOffer && bgDownload.status !== 'done'"
               type="button"
