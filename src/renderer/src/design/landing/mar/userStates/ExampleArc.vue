@@ -16,7 +16,6 @@ import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion } from './examples'
 import { ARC_APPS, type ArcItem } from './arcItems'
-import ReadinessBadge from '../templateModal/ReadinessBadge.vue'
 
 /**
  * First-time examples · Arc carousel: the examples stand on a wide 3D
@@ -299,11 +298,6 @@ function wheel(e: WheelEvent): void {
         <!-- The badge says what it makes (Image, Video, 3D, Audio); the Home's
              tabs already say whether it's an app or a workflow. -->
         <span class="mar-arc-text">
-          <ReadinessBadge
-            v-if="can.onboarding && x.kind === 'template'"
-            :id="x.id"
-            class="mar-arc-ready"
-          />
           <span class="mar-arc-app"
             ><component :is="badge(x).icon" :size="11" />{{ badge(x).label }}</span
           >
@@ -410,10 +404,6 @@ function wheel(e: WheelEvent): void {
   flex-direction: column;
   gap: 2px;
   text-align: left;
-}
-.mar-arc-ready {
-  align-self: flex-start;
-  height: 22px;
 }
 .mar-arc-title {
   color: #fff;

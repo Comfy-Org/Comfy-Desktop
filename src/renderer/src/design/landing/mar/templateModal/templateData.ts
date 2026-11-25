@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue'
-import { thumb, type ProtoInstance, type Template } from '../../mock'
+import type { ProtoInstance, Template } from '../../mock'
 import { modelsFor, templateAbout, templateById, templateStats, type ModelReq } from '../../fit'
-import { hubById, hubTemplate, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
+import { hubById, hubTemplate, workflowThumb, type HubWorkflow } from '../explore/hubWorkflows'
 import { can } from '../../milestones'
 import heroAngles from './angles-hero.jpg'
 import inputAngles from './angles-input.jpg'
@@ -225,7 +225,7 @@ const MEDIA: Record<string, TplMedia> = {
 }
 
 export function mediaFor(t: Template): TplMedia {
-  const pic = hubThumb(t.id) ?? thumb(t.id)
+  const pic = workflowThumb(t.id)
   return MEDIA[t.id] ?? { hero: pic, output: pic }
 }
 

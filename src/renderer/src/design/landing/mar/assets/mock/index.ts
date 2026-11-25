@@ -35,6 +35,8 @@ const TEMPLATE_THUMBS: Record<string, string> = Object.fromEntries(
   Object.entries(templateFiles).map(([path, url]) => [path.replace(/^.*\/|\.webp$/g, ''), url])
 )
 
+export const bundledThumb = (id: string): string | undefined => TEMPLATE_THUMBS[id]
+
 thumbSource.pick = (id) => {
   const [template, slot] = id.split('~')
   if (template === 'prod' && slot) return PROD_STILLS[slot]

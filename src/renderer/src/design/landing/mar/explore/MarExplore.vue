@@ -33,14 +33,22 @@ import { fieldVariants } from '../../ui/field.variants'
 import Select from '../../ui/Select.vue'
 import { ROUTER_MODELS, TUTORIALS, thumb } from '../../mock'
 import { exploreStart } from './exploreStart'
-import { HUB_USE_CASES, HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from './hubWorkflows'
+import {
+  HUB_USE_CASES,
+  HUB_WORKFLOWS,
+  hubLine,
+  hubTemplate,
+  workflowThumb,
+  type HubWorkflow
+} from './hubWorkflows'
+import { clipFor } from '../create/createStarters'
+import { mediaFor } from '../templateModal/templateData'
 import { EXPLORE, PROD_LIB_APPS, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { PROD_EXAMPLES, prodApp, prodClip, prodStill } from '../apps/prodApps'
 import { goIn, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
-import ReadinessBadge from '../templateModal/ReadinessBadge.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import ExampleTile from '../apps/ExampleTile.vue'
@@ -352,7 +360,6 @@ const picked = computed(() =>
 )
 // Apps and Templates: one grid of cards; Size picks five, four or three
 // across.
-const cardView = ref<AssetView>('grid')
 const cardSize = ref(2)
 const COLS = [0, 5, 4, 3]
 // The Apps tab opens on Rhythm (Firefly's Quick actions): a row of big
@@ -360,17 +367,33 @@ const COLS = [0, 5, 4, 3]
 // fit (the big row is one fewer than the grid's columns). Grid is the same
 // square tile, every one the size of the small row.
 const appView = ref<AssetView>('rhythm')
-type Rhythm = { big: boolean; cols: number; apps: typeof apps.value }
-const rhythm = computed<Rhythm[]>(() => {
+type Rhythm<T> = { big: boolean; cols: number; items: T[] }
+function rhythmOf<T>(list: T[]): Rhythm<T>[] {
   const small = COLS[cardSize.value] ?? 4
-  const rows: Rhythm[] = []
-  for (let i = 0, big = true; i < apps.value.length; big = !big) {
+  const rows: Rhythm<T>[] = []
+  for (let i = 0, big = true; i < list.length; big = !big) {
     const cols = big ? small - 1 : small
-    rows.push({ big, cols, apps: apps.value.slice(i, i + cols) })
+    rows.push({ big, cols, items: list.slice(i, i + cols) })
     i += cols
   }
   return rows
-})
+}
+const rhythm = computed(() => rhythmOf(apps.value))
+const wfRhythm = computed(() => rhythmOf(templates.value))
+interface WorkflowMedia {
+  thumb: string
+  preview?: string
+  video?: string
+}
+const WF_MEDIA = new Map<string, WorkflowMedia>(
+  HUB_WORKFLOWS.map((w) => {
+    const pic = workflowThumb(w.id)
+    const out = mediaFor(hubTemplate(w)).output
+    return [w.id, { thumb: pic, preview: out !== pic ? out : undefined, video: clipFor(w)?.clip }]
+  })
+)
+const wfMedia = (w: HubWorkflow): WorkflowMedia =>
+  WF_MEDIA.get(w.id) ?? { thumb: workflowThumb(w.id) }
 // What each app made, shown on hover: its first example (a clip plays).
 const previewOf = (id: string): Pick<AppExample, 'after' | 'video'> | undefined => {
   const p = prodApp(id)
@@ -555,11 +578,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           />
           <AssetLayoutMenu
             v-else
-            v-model:view="cardView"
+            v-model:view="appView"
             v-model:size="cardSize"
             v-model:sort="wfSort"
             :sorts="WF_SORTS"
-            :views="['grid']"
+            :views="['rhythm', 'grid']"
           />
         </span>
         <span v-if="tab === 'examples'" key="layout" class="inline-flex">
@@ -601,7 +624,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           :style="{ '--cols': row.cols }"
         >
           <AppRhythmTile
-            v-for="a in row.apps"
+            v-for="a in row.items"
             :key="a.id"
             :name="a.name"
             :blurb="a.blurb"
@@ -642,38 +665,50 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 
     <!-- Templates (the Hub's workflows): the same card as an app, its name and the
          first line of the catalog's description. -->
-    <div
-      v-else-if="tab === 'templates'"
-      class="mar-ex-grid is-four"
-      :style="{ '--cols': COLS[cardSize] }"
-    >
-      <div
-        v-for="t in templates"
-        :key="t.id"
-        role="button"
-        tabindex="0"
-        class="mar-ex-card group"
-        :aria-label="`Open ${t.title}`"
-        @click="openDetail('template', t.id)"
-        @keydown.enter="openDetail('template', t.id)"
-        @keydown.space.prevent="openDetail('template', t.id)"
-      >
-        <span class="mar-ex-media"
-          ><img :src="hubThumb(t.id) ?? thumb(t.id)" alt="" loading="lazy" /><ReadinessBadge
-            v-if="can.onboarding"
-            :id="t.id"
-            class="absolute bottom-2 left-2"
-        /></span>
-        <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
-          <span class="block min-w-0 flex-1">
-            <span class="block truncate text-ui font-medium text-base-foreground">{{
-              t.title
-            }}</span>
-            <span class="block truncate text-ui text-subtle-foreground">{{ hubLine(t) }}</span>
-          </span>
-        </span>
+    <template v-else-if="tab === 'templates'">
+      <div v-if="appView === 'rhythm'" class="mar-ex-rhythm">
+        <div
+          v-for="(row, r) in wfRhythm"
+          :key="r"
+          class="mar-ex-rhythm-row"
+          :style="{ '--cols': row.cols }"
+        >
+          <AppRhythmTile
+            v-for="t in row.items"
+            :key="t.id"
+            :name="t.title"
+            :blurb="hubLine(t)"
+            :thumb="wfMedia(t).thumb"
+            :preview="wfMedia(t).preview"
+            :video="wfMedia(t).video"
+            :big="row.big"
+            role="button"
+            tabindex="0"
+            :aria-label="`Open ${t.title}`"
+            @click="openDetail('template', t.id)"
+            @keydown.enter="openDetail('template', t.id)"
+            @keydown.space.prevent="openDetail('template', t.id)"
+          />
+        </div>
       </div>
-    </div>
+      <div v-else class="mar-ex-rhythm-row is-grid" :style="{ '--cols': COLS[cardSize] }">
+        <AppRhythmTile
+          v-for="t in templates"
+          :key="t.id"
+          :name="t.title"
+          :blurb="hubLine(t)"
+          :thumb="wfMedia(t).thumb"
+          :preview="wfMedia(t).preview"
+          :video="wfMedia(t).video"
+          role="button"
+          tabindex="0"
+          :aria-label="`Open ${t.title}`"
+          @click="openDetail('template', t.id)"
+          @keydown.enter="openDetail('template', t.id)"
+          @keydown.space.prevent="openDetail('template', t.id)"
+        />
+      </div>
+    </template>
 
     <!-- Models: what each costs, from whom. -->
     <div v-else-if="tab === 'models'" class="mar-ex-grid is-models">
@@ -784,12 +819,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 10px;
 }
-.mar-ex-grid.is-four {
-  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
-}
 /* Narrow windows: three across, so names and lines still read. */
 @media (max-width: 1100px) {
-  .mar-ex-grid.is-four,
   .mar-ex-rhythm-row.is-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
