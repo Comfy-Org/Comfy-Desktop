@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Play, Plus, Search, X } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
@@ -74,14 +74,25 @@ function key(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
+
+function focusSearch(e: KeyboardEvent): void {
+  if (e.key !== '/' || !(e.metaKey || e.ctrlKey)) return
+  e.preventDefault()
+  field.value?.focus()
+  field.value?.select()
+}
+onMounted(() => window.addEventListener('keydown', focusSearch))
+onBeforeUnmount(() => window.removeEventListener('keydown', focusSearch))
+
 useEscapeCloses(() => field.value)
 </script>
 
 <template>
   <section class="v10 relative min-h-full px-10 pb-16" aria-label="Create">
     <header class="v10-head">
-      <label class="v10-field">
-        <Search :size="16" class="shrink-0 text-subtle-foreground" />
+      <div class="v10-field" @click="field?.focus()">
+        <Search :size="15" class="shrink-0 text-subtle-foreground" />
         <input
           ref="field"
           v-model="query"
@@ -99,7 +110,8 @@ useEscapeCloses(() => field.value)
         >
           <X :size="13" />
         </button>
-      </label>
+        <kbd v-else class="v10-kbd">{{ MOD }} /</kbd>
+      </div>
       <button type="button" class="v10-icon v10-close" aria-label="Close" @click="closeCreate">
         <X :size="16" />
       </button>
@@ -250,26 +262,41 @@ useEscapeCloses(() => field.value)
   isolation: isolate;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-head {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
   max-width: 1200px;
   margin: 0 auto;
-  padding-top: 32px;
+  padding-top: 20px;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-field {
   display: flex;
-  height: 44px;
-  min-width: 0;
-  flex: 1;
+  width: 100%;
+  max-width: 540px;
+  height: 40px;
   align-items: center;
-  gap: 12px;
-  padding: 0 10px 0 16px;
+  gap: 10px;
+  padding: 0 8px 0 14px;
   border-radius: 999px;
   background: var(--color-secondary-background);
+  cursor: text;
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-field:hover {
+  background: var(--color-secondary-background-hover);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-field:focus-within {
-  box-shadow: inset 0 0 0 1px var(--color-border-focus);
+  background: var(--color-secondary-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .v10-kbd {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--color-secondary-background);
+  color: var(--color-subtle-foreground);
+  font: inherit;
+  font-size: 11px;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-field input {
   min-width: 0;
@@ -279,6 +306,10 @@ useEscapeCloses(() => field.value)
   background: transparent;
   color: var(--color-base-foreground);
   font: inherit;
+  font-size: var(--text-ui);
+}
+:root .proto-ui.proto-ui.proto-ui .v10-field input::placeholder {
+  color: var(--color-subtle-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-icon {
   display: grid;
@@ -294,6 +325,9 @@ useEscapeCloses(() => field.value)
   color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-close {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
   width: 36px;
   height: 36px;
 }
@@ -306,7 +340,7 @@ useEscapeCloses(() => field.value)
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: 72px;
   max-width: 1200px;
-  margin: 48px auto 0;
+  margin: 36px auto 0;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-col {
   display: flex;
