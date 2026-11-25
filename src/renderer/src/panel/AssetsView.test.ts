@@ -863,6 +863,34 @@ describe('AssetsView', () => {
     ).toBe(true)
   })
 
+  it("shows a build's new output folder after its launch arguments change, and on Refresh", async () => {
+    let labOutput = '/Volumes/Work/Video Lab/output'
+    const api = window.api as unknown as { listOutputFolders: () => Promise<unknown> }
+    api.listOutputFolders = async () => ({
+      home: '/Users/me',
+      shared: '/Users/me/ComfyUI/output',
+      ofBuild: { lab: labOutput }
+    })
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    const tooltipShows = (text: string) =>
+      wrapper.findAllComponents(Tooltip).some((tip) => tip.props('text') === text)
+
+    labOutput = '/Volumes/Other/renders'
+    useInstallationStore().installations = [
+      { ...localBuild('lab', 'Video Lab'), launchArgs: '--output-directory /Volumes/Other/renders' }
+    ]
+    await flushPromises()
+    await openBuildPicker(wrapper)
+    expect(tooltipShows('/Volumes/Other/renders'), 'new launch arguments').toBe(true)
+
+    labOutput = '/Volumes/Third/out'
+    await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+    await flushPromises()
+    if (wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded') !== 'true')
+      await openBuildPicker(wrapper)
+    expect(tooltipShows('/Volumes/Third/out'), 'Refresh').toBe(true)
+  })
+
   it('moves between rows with the arrow keys and never stops on Show in Finder', async () => {
     const wrapper = await mountAssets([], {
       builds: [localBuild('lab', 'Video Lab'), localBuild('art', 'Art Lab')]
