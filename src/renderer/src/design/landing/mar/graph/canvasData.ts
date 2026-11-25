@@ -78,6 +78,7 @@ export interface SNode {
   body: number
   /** The prompt's or the constructor's template; a text node's result. */
   text?: string
+  hint?: string
   image?: string
   video?: string
   /** A picture with its background removed. */
@@ -493,7 +494,16 @@ export const NODE_TYPES: Record<NodeKind, NodeType> = {
 
 /** A workflow the agent builds: nodes placed relative to each other. */
 export interface Recipe {
-  nodes: { key: string; kind: NodeKind; dx: number; dy: number; text?: string }[]
+  nodes: {
+    key: string
+    kind: NodeKind
+    dx: number
+    dy: number
+    text?: string
+    empty?: boolean
+    hint?: string
+    model?: string
+  }[]
   /** [from key, output, to key, input] */
   links: [string, number, string, number][]
 }

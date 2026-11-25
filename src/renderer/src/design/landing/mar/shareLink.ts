@@ -26,6 +26,7 @@ import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
+import { AGENT_OPENS, agentOpens } from './create/agentOpens'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
@@ -157,6 +158,7 @@ const PARTS: Part[] = [
   one('assetFolders', assetFoldersShown, 'off', OFF_ON),
   one('createLook', createLook, DEFAULT_CREATE_LOOK, CREATE_LOOKS),
   one('createInput', createInput, 'agent', CREATE_INPUTS),
+  one('agentOpens', agentOpens, 'create', AGENT_OPENS),
   one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),

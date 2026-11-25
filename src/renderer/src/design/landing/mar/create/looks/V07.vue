@@ -18,10 +18,18 @@ import { mock, MOCK } from '../../assets/mock'
 import { thumb } from '../../../mock'
 import { NODE_TYPES, type NodeKind } from '../../graph/canvasData'
 import { NODE_ICONS } from '../../graph/nodeIcons'
-import { closeCreate, openTemplate, openWorkflow, startBlank, startWithNode } from '../createScreen'
+import {
+  closeCreate,
+  openTemplate,
+  openWorkflow,
+  startBlank,
+  startWithAgentAsk,
+  startWithNode
+} from '../createScreen'
 import { readiness, searchStarters, SHELVES, type Starter } from '../createStarters'
 import { buildOf, graphFor, readyIcon, reducedMotion, useEscapeCloses } from './lookKitB'
-import { answer, quickPicks, type AgentAnswer } from './v07Agent'
+import { agentStart, answer, quickPicks, type AgentAnswer } from './v07Agent'
+import { agentOpens } from '../agentOpens'
 import CreateComposer from './CreateComposer.vue'
 import { createInput } from '../createInput'
 
@@ -199,6 +207,10 @@ function stream(): void {
 }
 
 function onAsk(a: AgentAnswer): void {
+  if (agentOpens.id === 'comfy') {
+    startWithAgentAsk(agentStart(a.prompt))
+    return
+  }
   const { text, rec } = replyFor(a, last.value?.rec ?? null)
   talk.value.push({
     id: talk.value.length,

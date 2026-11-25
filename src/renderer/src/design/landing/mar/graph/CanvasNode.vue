@@ -258,8 +258,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
               :data-socket-index="i"
               :style="{ height: `${g.slot}px`, '--sg-socket': SOCKETS[s.type] }"
             >
-              <span class="sg-slot-label">{{ typeName(s.type) }}</span
-              ><i class="sg-dot" />
+              <span class="sg-slot-label">{{ typeName(s.type) }}</span><i class="sg-dot" />
             </div>
           </div>
         </div>
@@ -404,7 +403,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
               />
               <p v-else class="sg-empty" :class="showProgress && 'is-working'">
                 <component :is="ICONS[node.kind]" :size="16" />{{
-                  node.ins.length ? 'Run to generate' : 'Drop a file here'
+                  node.hint ?? (node.ins.length ? 'Run to generate' : 'Drop a file here')
                 }}
               </p>
             </Transition>
@@ -572,8 +571,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
                       class="sg-menu-item"
                       @click="choose(c, o.value)"
                     >
-                      <span>{{ o.value }}</span
-                      ><span class="sg-menu-note">{{ o.provider }}</span>
+                      <span>{{ o.value }}</span><span class="sg-menu-note">{{ o.provider }}</span>
                       <Check v-if="o.value === c.value" :size="12" />
                     </button>
                   </template>
@@ -587,8 +585,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
                       class="sg-menu-item"
                       @click="choose(c, o)"
                     >
-                      <span>{{ o }}</span
-                      ><Check v-if="o === c.value" :size="12" />
+                      <span>{{ o }}</span><Check v-if="o === c.value" :size="12" />
                     </button>
                   </template>
                 </div>

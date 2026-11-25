@@ -1,5 +1,7 @@
 import { HUB_WORKFLOWS, type HubWorkflow } from '../../explore/hubWorkflows'
-import { starterOf, type Starter } from '../createStarters'
+import { readiness, starterOf, type Starter } from '../createStarters'
+import type { Recipe } from '../../graph/canvasData'
+import type { AgentStart } from '../../graph/graphOpen'
 
 interface Intent {
   words: RegExp
@@ -116,4 +118,92 @@ export function answer(prompt: string, max = 3): AgentAnswer {
 
 export function quickPicks(prompt: string, max: number): Starter[] {
   return answer(prompt, max).picks
+}
+
+const PLAIN = ['photo', 'image', 'picture', 'pic']
+
+export function subjectOf(prompt: string): string | null {
+  const word = /\bmy ([a-z]+)/i.exec(prompt)?.[1]?.toLowerCase()
+  return word && !PLAIN.includes(word) ? word : null
+}
+
+const needsPhoto = (s: Starter, prompt: string): boolean =>
+  s.media === 'video' ||
+  /\b(edit|background|upscale|sharpen|my|photo|cut ?out|relight|angle)\b/i.test(prompt)
+
+export function agentStart(prompt: string): AgentStart {
+  const reply = answer(prompt)
+  const rec = reply.picks[0]
+  const subject = subjectOf(prompt)
+  const drop = subject ? `Drop your ${subject} photo` : 'Drop your photo'
+  const video = rec?.media === 'video'
+  const model = rec?.model
+  const fill = video
+    ? subject
+      ? `Your ${subject}, gentle camera push-in`
+      : 'Gentle camera push-in, soft natural light'
+    : prompt.charAt(0).toUpperCase() + prompt.slice(1)
+  const photo = rec ? needsPhoto(rec, prompt) : false
+  const recipe: Recipe = video
+    ? {
+        nodes: [
+          { key: 'i', kind: 'image', dx: 0, dy: 300, empty: true, hint: drop },
+          { key: 'p', kind: 'prompt', dx: 0, dy: 0, text: fill },
+          {
+            key: 'v',
+            kind: 'generateVideo',
+            dx: 360,
+            dy: 0,
+            empty: true,
+            hint: 'Your video appears here',
+            model
+          }
+        ],
+        links: [
+          ['p', 0, 'v', 0],
+          ['i', 0, 'v', 1]
+        ]
+      }
+    : {
+        nodes: [
+          ...(photo
+            ? [{ key: 'i', kind: 'image' as const, dx: 0, dy: 300, empty: true, hint: drop }]
+            : []),
+          { key: 'p', kind: 'prompt', dx: 0, dy: 0, text: fill },
+          { key: 'g', kind: 'generate', dx: 360, dy: 0, model },
+          {
+            key: 'o',
+            kind: 'output',
+            dx: 720,
+            dy: 0,
+            empty: true,
+            hint: 'Your image appears here'
+          }
+        ],
+        links: [
+          ['p', 0, 'g', 0],
+          ...(photo ? [['i', 0, 'g', 1] as [string, number, string, number]] : []),
+          ['g', 0, 'o', 0]
+        ]
+      }
+  const label = (k: Recipe['nodes'][number]): string =>
+    k.kind === 'image'
+      ? 'Adding your photo input'
+      : k.kind === 'prompt'
+        ? 'Adding the prompt'
+        : k.kind === 'output'
+          ? 'Wiring to Output'
+          : `Adding ${model ?? 'the model'}`
+  const lead = reply.understood ? `${reply.understood}.` : 'Got it.'
+  return {
+    ask: prompt,
+    reply: rec
+      ? `${lead} I’ll start from ${rec.model} ${rec.makes} and build it here.`
+      : `${lead} I didn’t find a template for that, so I’ll set up a simple image workflow.`,
+    recipe,
+    steps: recipe.nodes.map(label),
+    result: rec
+      ? `${rec.makes} · ${recipe.nodes.length} nodes · ${readiness(rec.template).label}`
+      : `Image workflow · ${recipe.nodes.length} nodes`
+  }
 }

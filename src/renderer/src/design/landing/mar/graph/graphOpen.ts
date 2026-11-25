@@ -1,6 +1,14 @@
 import { reactive } from 'vue'
 import type { NodeKind, Recipe } from './canvasData'
 
+export interface AgentStart {
+  ask: string
+  reply: string
+  recipe: Recipe
+  steps: string[]
+  result: string
+}
+
 export interface GraphAutorun {
   title: string
   model: string
@@ -22,6 +30,7 @@ export const graphOpen = reactive({
   start: null as null | { kind: NodeKind; model?: string },
   recipe: null as null | Recipe,
   agent: false,
+  agentAsk: null as null | AgentStart,
   nodeSearch: false,
   autorun: null as null | GraphAutorun,
   /** Assets › Open workflow: ComfyUI opens with this one on the canvas,

@@ -18,6 +18,7 @@ import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { createLook } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
+import { AGENT_OPENS, agentOpens } from './create/agentOpens'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
@@ -180,6 +181,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeTour', show: () => when.homeTour.value },
   { id: 'createLook', show: () => when.createLook.value },
   { id: 'createInput', show: () => when.createLook.value },
+  { id: 'agentOpens', show: () => when.createLook.value && createInput.id === 'agent' },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -492,6 +494,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('createInput')" label="Create input">
             <Seg v-model="createInput.id" label="Create input" :options="CREATE_INPUTS" />
+          </Row>
+          <Row :show="shows('agentOpens')" label="Agent opens">
+            <Seg v-model="agentOpens.id" label="Agent opens" :options="AGENT_OPENS" />
           </Row>
           <Row :show="shows('assetFolderLayout')" label="Folders layout">
             <Seg

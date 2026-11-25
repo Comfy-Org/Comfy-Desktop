@@ -2,7 +2,7 @@ import { computed, reactive, watch } from 'vue'
 import { activeInstance, hostActions, instanceById, proto } from '../../useProto'
 import type { ProtoInstance, Template } from '../../mock'
 import type { ProjectWorkflow } from '../../gallery'
-import { graphOpen } from '../graph/graphOpen'
+import { graphOpen, type AgentStart } from '../graph/graphOpen'
 import type { NodeKind, Recipe } from '../graph/canvasData'
 import { marTabsOn } from '../shell/titleTabs'
 
@@ -129,6 +129,11 @@ export function startWithRecipe(recipe: Recipe): void {
 
 export function startWithAgent(): void {
   graphOpen.agent = true
+  land(activeInstance.value, 'Untitled workflow', false)
+}
+
+export function startWithAgentAsk(start: AgentStart): void {
+  graphOpen.agentAsk = start
   land(activeInstance.value, 'Untitled workflow', false)
 }
 

@@ -57,7 +57,7 @@ import AssetDetail from '../assets/AssetDetail.vue'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
-import { graphOpen, type GraphAutorun } from './graphOpen'
+import { graphOpen, type AgentStart, type GraphAutorun } from './graphOpen'
 import { addOwnImage, autorunCanvas } from '../autorun/templateCanvas'
 import FirstResult from '../autorun/FirstResult.vue'
 import AssetsPanel from './AssetsPanel.vue'
@@ -576,6 +576,18 @@ function add(kind: NodeKind): void {
   commit()
 }
 
+function dress(n: SNode, r: Recipe['nodes'][number]): void {
+  if (r.text !== undefined) n.text = r.text
+  if (r.empty) {
+    n.image = undefined
+    n.video = undefined
+    n.chip = undefined
+  }
+  if (r.hint) n.hint = r.hint
+  const control = n.controls.find((c) => c.kind === 'model')
+  if (r.model && control?.kind === 'model') control.value = r.model
+}
+
 /** The agent's workflow, placed below what is already there. */
 function build(recipe: Recipe): void {
   const b = bounds.value
@@ -584,7 +596,7 @@ function build(recipe: Recipe): void {
   const ids: Record<string, string> = {}
   for (const r of recipe.nodes) {
     const n = createNode(r.kind, x0 + r.dx, y0 + r.dy)
-    if (r.text !== undefined) n.text = r.text
+    dress(n, r)
     ids[r.key] = n.id
     sNodes.push(n)
   }
@@ -886,8 +898,9 @@ landAsset()
 
 const scratch = ref(false)
 function startFromScratch(): void {
-  const { start, recipe, agent: ask, nodeSearch: find } = graphOpen
-  if (!graphOpen.scratch && !start && !recipe && !ask && !find) return
+  const { start, recipe, agent: ask, nodeSearch: find, agentAsk } = graphOpen
+  if (!graphOpen.scratch && !start && !recipe && !ask && !find && !agentAsk) return
+  graphOpen.agentAsk = null
   graphOpen.scratch = false
   graphOpen.start = null
   graphOpen.recipe = null
@@ -899,6 +912,7 @@ function startFromScratch(): void {
   selection.value = []
   last = freeze()
   if (start) startWith(start.kind, start.model)
+  else if (agentAsk) onMounted(() => nextTick(() => openAgentWith(agentAsk)))
   else if (recipe || ask || find) onMounted(() => nextTick(() => openWith(recipe, ask)))
   else scratch.value = true
 }
@@ -906,6 +920,32 @@ function openWith(recipe: Recipe | null, ask: boolean): void {
   if (recipe) build(recipe)
   else if (ask) agent.value = true
   else addMenuInView()
+}
+function openAgentWith(start: AgentStart): void {
+  agentStart.value = start
+  agent.value = true
+}
+let stepIds: Record<string, string> = {}
+function placeStep(recipe: Recipe, k: number): void {
+  if (k === 0) stepIds = {}
+  const r = recipe.nodes[k]
+  if (!r) return
+  const n = createNode(r.kind, 40 + r.dx, 60 + r.dy)
+  dress(n, r)
+  stepIds[r.key] = n.id
+  sNodes.push(n)
+  for (const [a, ai, b, bi] of recipe.links) {
+    const from = stepIds[a]
+    const to = stepIds[b]
+    if (from && to && !links.some((l) => l.from === from && l.to === to && l.in === bi))
+      links.push({ id: uid('link'), from, out: ai, to, in: bi })
+  }
+  selection.value = [n.id]
+  commit()
+  nextTick(() => {
+    frame(Object.values(stepIds))
+    view.x -= AGENT_DOCK_W / 2
+  })
 }
 function addMenuInView(): void {
   pending = undefined
@@ -993,6 +1033,8 @@ watch(panel, (id) => {
 const shownWorkflow = ref(workflow)
 startFromScratch()
 const agent = ref(false)
+const agentStart = ref<AgentStart | null>(null)
+const AGENT_DOCK_W = 380
 // The Agent and a rail panel share the left edge: one at a time.
 watch(panel, (id) => id && (agent.value = false))
 watch(agent, (on) => on && (panel.value = ''))
@@ -1799,7 +1841,13 @@ function addFromPanel(kind: NodeKind): void {
       :start="settingsAt"
       @close="dialog = ''"
     />
-    <AgentPanel v-if="agent" @build="build" @close="agent = false" />
+    <AgentPanel
+      v-if="agent"
+      :start="agentStart"
+      @build="build"
+      @step="placeStep"
+      @close="((agent = false), (agentStart = null))"
+    />
     <button v-else type="button" class="mg-agent-btn" @click="agent = true">
       <Bot :size="15" />Agent
     </button>

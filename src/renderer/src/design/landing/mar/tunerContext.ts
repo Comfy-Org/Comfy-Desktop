@@ -40,6 +40,7 @@ import { tplCase } from './templateModal/templateData'
 import { homeTour } from './homeTour/homeTour'
 import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { createInput } from './create/createInput'
+import { agentOpens } from './create/agentOpens'
 import { createScreen } from './create/createScreen'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
 import { dlFooter } from './downloads/dlFooter'
@@ -263,6 +264,7 @@ export const TWEAKS = {
   homeTour: one(homeTour, 'auto'),
   createLook: one(createLook, DEFAULT_CREATE_LOOK),
   createInput: one(createInput, 'agent'),
+  agentOpens: one(agentOpens, 'create'),
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),

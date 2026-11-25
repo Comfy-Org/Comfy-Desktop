@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ArrowUp, Bot, Check, X } from 'lucide-vue-next'
 import { NODE_TYPES, type Recipe } from './canvasData'
+import type { AgentStart } from './graphOpen'
 
 /**
  * The agent: describe a workflow in words and it builds it on the canvas
@@ -9,7 +10,12 @@ import { NODE_TYPES, type Recipe } from './canvasData'
  * says what it adds, step by step, and hands the graph a recipe.
  */
 
-const emit = defineEmits<{ build: [recipe: Recipe]; close: [] }>()
+const { start = null } = defineProps<{ start?: AgentStart | null }>()
+const emit = defineEmits<{
+  build: [recipe: Recipe]
+  step: [recipe: Recipe, k: number]
+  close: []
+}>()
 
 const SUGGESTIONS = [
   'Turn a product photo into a 360° video',
@@ -94,6 +100,7 @@ function plan(ask: string): { reply: string; recipe: Recipe } {
 interface Message {
   role: 'you' | 'agent'
   text: string
+  result?: boolean
   steps?: { text: string; done: boolean }[]
 }
 const messages = ref<Message[]>([])
@@ -133,11 +140,50 @@ function send(text = draft.value): void {
   )
   nextTick(() => list.value?.scrollTo({ top: list.value.scrollHeight }))
 }
+const field = ref<HTMLInputElement>()
+const STEP_MS = 700
+
+function play(s: AgentStart): void {
+  const quick = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const wait = quick ? 0 : STEP_MS
+  busy.value = true
+  messages.value.push({ role: 'you', text: s.ask })
+  messages.value.push({
+    role: 'agent',
+    text: s.reply,
+    steps: s.steps.map((text) => ({ text, done: false }))
+  })
+  const live = messages.value[messages.value.length - 1]!
+  s.steps.forEach((_, i) =>
+    timers.push(
+      setTimeout(
+        () => {
+          live.steps![i]!.done = true
+          emit('step', s.recipe, i)
+          nextTick(() => list.value?.scrollTo({ top: list.value.scrollHeight }))
+        },
+        wait * (i + 1)
+      )
+    )
+  )
+  timers.push(
+    setTimeout(
+      () => {
+        messages.value.push({ role: 'agent', text: s.result, result: true })
+        busy.value = false
+        nextTick(() => list.value?.scrollTo({ top: list.value.scrollHeight }))
+      },
+      wait * (s.steps.length + 1)
+    )
+  )
+}
+
+onMounted(() => start && play(start))
 onBeforeUnmount(() => timers.forEach(clearTimeout))
 </script>
 
 <template>
-  <aside class="ag" aria-label="Agent" @pointerdown.stop @wheel.stop>
+  <aside class="ag" :class="start && 'is-docked'" aria-label="Agent" @pointerdown.stop @wheel.stop>
     <header class="ag-head">
       <Bot :size="15" />
       <span class="ag-title">Agent</span>
@@ -152,8 +198,16 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
           {{ s }}
         </button>
       </template>
-      <div v-for="(m, i) in messages" :key="i" class="ag-msg" :class="`is-${m.role}`">
+      <div
+        v-for="(m, i) in messages"
+        :key="i"
+        class="ag-msg"
+        :class="[`is-${m.role}`, m.result && 'is-result']"
+      >
         <p>{{ m.text }}</p>
+        <button v-if="m.result" type="button" class="ag-change" @click="field?.focus()">
+          Change something
+        </button>
         <ul v-if="m.steps" class="ag-steps">
           <li v-for="(s, j) in m.steps" :key="j" :class="s.done && 'is-done'">
             <Check v-if="s.done" :size="11" /><i v-else class="ag-dot" />{{ s.text }}
@@ -162,7 +216,13 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
       </div>
     </div>
     <form class="ag-compose" @submit.prevent="send()">
-      <input v-model="draft" type="text" placeholder="Describe a workflow" :disabled="busy" />
+      <input
+        ref="field"
+        v-model="draft"
+        type="text"
+        :placeholder="start ? 'Ask for a change…' : 'Describe a workflow'"
+        :disabled="busy"
+      />
       <button type="submit" class="ag-send" aria-label="Send" :disabled="!draft.trim() || busy">
         <ArrowUp :size="14" />
       </button>
@@ -328,5 +388,33 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
 }
 .is-current .ag {
   left: 68px;
+}
+:root .proto-ui.proto-ui.proto-ui .ag.is-docked {
+  top: 84px;
+  right: 12px;
+  bottom: 12px;
+  left: auto;
+  z-index: 8;
+  width: 368px;
+  max-height: none;
+  background: var(--mg-chrome-2, var(--color-card-background));
+  box-shadow:
+    0 0 0 1px var(--mg-chrome-line, var(--color-border-default)),
+    0 12px 30px rgb(0 0 0 / 0.35);
+  backdrop-filter: none;
+}
+.ag-msg.is-result p {
+  font-weight: 600;
+}
+:root .proto-ui.proto-ui.proto-ui .ag-change {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--mg-well);
+  color: var(--mg-text);
+  font-size: 12.5px;
+}
+:root .proto-ui.proto-ui.proto-ui .ag-change:hover {
+  background: var(--mg-hover);
 }
 </style>
