@@ -46,15 +46,7 @@ function play(e: MouseEvent, on: boolean): void {
     <span class="mar-rt-pic">
       <img :src="thumb" alt="" loading="lazy" />
       <img v-if="preview" class="mar-rt-after" :src="preview" alt="" loading="lazy" />
-      <video
-        v-if="video"
-        class="mar-rt-after"
-        :src="video"
-        muted
-        loop
-        playsinline
-        preload="none"
-      />
+      <video v-if="video" class="mar-rt-after" :src="video" muted loop playsinline preload="none" />
     </span>
     <span class="mar-rt-go" aria-hidden="true"
       ><ArrowUpRight :size="16" :stroke-width="2.25"
