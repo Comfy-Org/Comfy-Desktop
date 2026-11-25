@@ -44,6 +44,7 @@ import { tplCase } from './templateModal/templateData'
 import { homeTour } from './homeTour/homeTour'
 import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { createInput } from './create/createInput'
+import { composerSearch } from './create/composerSearch'
 import { agentOpens } from './create/agentOpens'
 import { composerPos } from './create/composerPos'
 import { createScreen } from './create/createScreen'
@@ -288,6 +289,7 @@ export const TWEAKS = {
   homeTour: one(homeTour, 'auto'),
   createLook: one(createLook, DEFAULT_CREATE_LOOK),
   createInput: one(createInput, 'agent'),
+  composerSearch: one(composerSearch, 'smart'),
   agentOpens: one(agentOpens, 'create'),
   composerPos: one(composerPos, 'bottom'),
   buildCard: one(buildCard, 'rows'),

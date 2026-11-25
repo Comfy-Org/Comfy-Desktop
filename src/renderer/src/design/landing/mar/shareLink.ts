@@ -29,6 +29,7 @@ import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
+import { COMPOSER_SEARCHES, composerSearch } from './create/composerSearch'
 import { AGENT_OPENS, agentOpens } from './create/agentOpens'
 import { COMPOSER_POSITIONS, composerPos } from './create/composerPos'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
@@ -171,6 +172,7 @@ const PARTS: Part[] = [
   one('assetFolders', assetFoldersShown, 'off', OFF_ON),
   one('createLook', createLook, DEFAULT_CREATE_LOOK, CREATE_LOOKS),
   one('createInput', createInput, 'agent', CREATE_INPUTS),
+  one('composerSearch', composerSearch, 'smart', COMPOSER_SEARCHES),
   one('agentOpens', agentOpens, 'create', AGENT_OPENS),
   one('composer', composerPos, 'bottom', COMPOSER_POSITIONS),
   one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
