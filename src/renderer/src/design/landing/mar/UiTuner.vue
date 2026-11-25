@@ -26,6 +26,7 @@ import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
 import { WF_CASES, tplCase } from './templateModal/templateData'
 import { DOWNLOAD_SCENARIOS, downloadScenario } from './downloads/templateDownloads'
+import { DL_FOOTERS, dlFooter } from './downloads/dlFooter'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
@@ -154,7 +155,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'credits', show: () => when.credits.value },
   { id: 'deployState', show: () => when.deployState.value },
   { id: 'wfCase', show: () => when.wfCase.value },
-  { id: 'downloadScenario', show: () => when.downloadScenario.value }
+  { id: 'downloadScenario', show: () => when.downloadScenario.value },
+  { id: 'dlFooter', show: () => when.dlFooter.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'firstRun', show: () => when.firstRun.value },
@@ -359,6 +361,9 @@ const linkSays = computed(() => {
               class="w-full"
               data-testid="download-scenario"
             />
+          </Row>
+          <Row :show="shows('dlFooter')" label="Download footer">
+            <Seg v-model="dlFooter.id" label="Download footer" :options="DL_FOOTERS" />
           </Row>
           <Row :show="when.tplCases.value" label="Can't-run cases" stack>
             <TplCasesNote />
