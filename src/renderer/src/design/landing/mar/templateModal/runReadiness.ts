@@ -40,9 +40,9 @@ export function targetsFor(t: Template, opts: TargetsOptions = {}): Target[] {
 export const bestTarget = (targets: Target[]): Target | undefined =>
   targets.find((x) => !x.disabled && x.state !== 'login')
 
-const downloadMinutes = (gb: number): number => Math.max(1, Math.round(gb / 5))
+export const downloadMinutes = (gb: number): number => Math.max(1, Math.round(gb / 5))
 
-const needsDownload = (x: Target): boolean =>
+export const needsDownload = (x: Target): boolean =>
   x.state === 'download' ||
   x.state === 'new' ||
   (x.state === 'memory' && x.cost !== 'May fail') ||

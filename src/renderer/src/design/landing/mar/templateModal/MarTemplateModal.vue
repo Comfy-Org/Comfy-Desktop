@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onClickOutside, useElementSize } from '@vueuse/core'
 import {
   ArrowDownToLine,
+  AudioLines,
   BadgeCheck,
   BookOpen,
   Check,
@@ -10,7 +11,9 @@ import {
   Coins,
   Cpu,
   CreditCard,
+  Film,
   HardDrive,
+  Image as ImageIcon,
   ImageOff,
   KeyRound,
   Link2,
@@ -18,7 +21,9 @@ import {
   Puzzle,
   RefreshCw,
   Star,
+  Timer,
   TriangleAlert,
+  Type,
   UserRound,
   WifiOff,
   Wrench,
@@ -69,6 +74,9 @@ import {
 } from './templateData'
 import { bestTarget, targetsFor } from './runReadiness'
 import { graphFor } from './graphSpec'
+import { examplesFor } from './tplExamples'
+import { inputsFor, type InputKind } from './tplInputs'
+import { firstResultFor, fmtDuration } from './firstResult'
 import TplGraph from './TplGraph.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
@@ -128,6 +136,29 @@ const total = computed(() => (template.value ? totalGb(template.value) : 0))
 const graph = computed(() =>
   template.value && media.value ? graphFor(template.value, media.value) : undefined
 )
+const examples = computed(() =>
+  template.value && media.value && !saved.value ? examplesFor(template.value, media.value) : []
+)
+const exampleAt = ref(0)
+const example = computed(() => examples.value[exampleAt.value])
+const stagePic = computed(() => example.value?.pic ?? media.value?.hero ?? '')
+function pickExample(i: number): void {
+  if (i === exampleAt.value) return
+  exampleAt.value = i
+  zoom.value = 100
+}
+function measureClip(e: Event): void {
+  const v = e.target as HTMLVideoElement
+  if (v.videoWidth && v.videoHeight) ratio.value = v.videoWidth / v.videoHeight
+  natural.value = v.videoWidth
+}
+const inputs = computed(() => (template.value && !saved.value ? inputsFor(template.value) : []))
+const INPUT_ICONS: Record<InputKind, typeof Coins> = {
+  image: ImageIcon,
+  text: Type,
+  video: Film,
+  audio: AudioLines
+}
 
 const targets = computed<Target[]>(() => {
   const t = template.value
@@ -255,6 +286,7 @@ watch(
     selectedId.value = (kase ?? home ?? best.value ?? targets.value.find((x) => !x.disabled))?.inst
       .id
     view.value = 'result'
+    exampleAt.value = 0
     buildMenu.value = false
     ratio.value = 16 / 9
     stop()
@@ -526,6 +558,13 @@ const needsPill = computed(() => {
   return { label: DOWNLOAD_NEEDS[d.status] ?? '', tone }
 })
 
+const firstResult = computed(() =>
+  template.value ? firstResultFor(template.value, shown.value, bgDownload.value) : undefined
+)
+const firstResultParts = computed(() =>
+  (firstResult.value?.parts ?? []).map((p) => `${p.label} ${fmtDuration(p.secs)}`).join(' · ')
+)
+
 const aboutEl = ref<HTMLElement>()
 const aboutOpen = ref(false)
 const aboutLong = ref(false)
@@ -574,13 +613,34 @@ const full = computed(() => can.value.onboarding)
         <section class="mad-stage" @pointerdown.self="open = false">
           <header class="mad-bar">
             <MarSeg v-model="view" :options="VIEWS" label="Preview" class="mar-tpl-views" />
+            <span v-if="view === 'result' && example?.madeWith" class="mar-tpl-made-with"
+              >Made with {{ example.madeWith }}</span
+            >
           </header>
           <div v-if="view === 'result'" class="mad-view">
             <!-- The picture fits the stage, like an asset's. -->
             <div class="mad-fit" :style="{ '--r': ratio }">
               <div ref="mediaEl" class="mad-media" :style="{ scale: zoom / 100 }">
-                <img :src="media.hero" alt="" draggable="false" @load="measure" />
-                <template v-if="media.quadrants">
+                <video
+                  v-if="example?.clip"
+                  :key="example.id"
+                  :src="example.clip"
+                  :poster="example.pic"
+                  autoplay
+                  muted
+                  loop
+                  playsinline
+                  @loadedmetadata="measureClip"
+                />
+                <img
+                  v-else
+                  :key="stagePic"
+                  :src="stagePic"
+                  alt=""
+                  draggable="false"
+                  @load="measure"
+                />
+                <template v-if="media.quadrants && exampleAt === 0">
                   <span
                     v-for="(q, i) in media.quadrants"
                     :key="q"
@@ -599,7 +659,27 @@ const full = computed(() => can.value.onboarding)
           <!-- Zoom, where the asset view keeps it, bottom right, for the
                picture and the graph alike. -->
           <footer class="mad-foot">
-            <span />
+            <nav
+              v-if="view === 'result' && examples.length"
+              class="mad-strip mar-tpl-examples"
+              aria-label="Example results"
+            >
+              <button
+                v-for="(x, i) in examples"
+                :key="x.id"
+                type="button"
+                class="mad-thumb"
+                :aria-current="i === exampleAt"
+                :aria-label="`Example ${i + 1} of ${examples.length}`"
+                :title="x.madeWith ? `Made with ${x.madeWith}` : `Example ${i + 1}`"
+                data-tpl-example
+                @click="pickExample(i)"
+              >
+                <img :src="x.pic" alt="" loading="lazy" draggable="false" />
+                <Film v-if="x.clip" :size="11" class="mar-tpl-example-clip" />
+              </button>
+            </nav>
+            <span v-else />
             <ZoomControl
               ref="zoomCtl"
               v-model="zoom"
@@ -688,6 +768,17 @@ const full = computed(() => can.value.onboarding)
                  the picker (the other builds open under it), then why in
                  one line. What blocks it is one line and one action at the
                  bottom, in place of the primary. -->
+            <section v-if="inputs.length" class="mad-sec" data-tpl-inputs>
+              <h3 class="mad-label">What you give it</h3>
+              <ul class="mar-tpl-inputs">
+                <li v-for="x in inputs" :key="x.label">
+                  <component :is="INPUT_ICONS[x.kind]" :size="14" />
+                  <span class="mar-tpl-file is-ui">{{ x.label }}</span>
+                  <span v-if="x.optional" class="mar-tpl-size">Optional</span>
+                </li>
+              </ul>
+            </section>
+
             <section class="mad-sec">
               <h3 class="mad-label">Open in</h3>
               <div v-if="shown" ref="buildBox" class="mad-pick">
@@ -853,6 +944,12 @@ const full = computed(() => can.value.onboarding)
                   </li>
                 </ul>
               </details>
+              <div v-if="firstResult" class="mar-tpl-eta" data-tpl-eta>
+                <Timer :size="14" class="mar-tpl-eta-icon" />
+                <span class="mar-tpl-eta-label">First result in</span>
+                <span class="mar-tpl-eta-time">{{ firstResult.label }}</span>
+                <span class="mar-tpl-eta-parts">{{ firstResultParts }}</span>
+              </div>
             </section>
 
             <section v-if="saved" class="mad-sec">
