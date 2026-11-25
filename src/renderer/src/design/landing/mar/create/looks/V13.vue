@@ -98,15 +98,6 @@ watch([q, shelf], () => {
 })
 
 const current = computed(() => items.value[hover.value])
-const ghostStarter = computed(() =>
-  current.value?.type === 'template' ? current.value.starter : null
-)
-const ghostWorkflow = computed(() =>
-  current.value?.type === 'workflow'
-    ? { name: current.value.workflow.name, cover: lastOutput(current.value.workflow) }
-    : null
-)
-const ghostOn = computed(() => !!ghostStarter.value || !!ghostWorkflow.value)
 
 const line = computed(() => {
   const c = current.value
@@ -167,15 +158,6 @@ useEscapeCloses(() => composer.value?.field)
     <div class="v13-canvas" aria-hidden="true" />
 
     <div class="v13-main">
-      <div class="v13-ghost" :class="ghostOn && !flow.panel.value && 'is-on'" aria-hidden="true">
-        <GhostGraph
-          v-if="ghostStarter || ghostWorkflow"
-          :key="current?.id"
-          :starter="ghostStarter"
-          :workflow="ghostWorkflow"
-        />
-      </div>
-
       <div
         v-if="flow.build.value"
         class="v13-built"
@@ -185,11 +167,7 @@ useEscapeCloses(() => composer.value?.field)
         <GhostGraph :starter="flow.build.value.starter" :agent="flow.ghost.value" />
       </div>
 
-      <div
-        class="v13-col"
-        :class="[ghostOn && 'is-dim', flow.panel.value && 'is-hidden']"
-        :aria-hidden="flow.panel.value"
-      >
+      <div class="v13-col" :class="flow.panel.value && 'is-hidden'" :aria-hidden="flow.panel.value">
         <h1 class="v13-title">What do you want to make?</h1>
         <CreateComposer
           ref="composer"
@@ -302,7 +280,6 @@ useEscapeCloses(() => composer.value?.field)
   justify-content: center;
   padding: 48px 32px;
 }
-:root .proto-ui.proto-ui.proto-ui .v13-ghost,
 :root .proto-ui.proto-ui.proto-ui .v13-built {
   position: absolute;
   inset: 32px 24px;
@@ -310,17 +287,9 @@ useEscapeCloses(() => composer.value?.field)
   place-items: center;
   pointer-events: none;
 }
-:root .proto-ui.proto-ui.proto-ui .v13-ghost .gg-stage,
 :root .proto-ui.proto-ui.proto-ui .v13-built .gg-stage {
   width: min(1240px, 100%);
   max-width: none;
-}
-:root .proto-ui.proto-ui.proto-ui .v13-ghost {
-  opacity: 0;
-  transition: opacity 360ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v13-ghost.is-on {
-  opacity: 0.34;
 }
 :root .proto-ui.proto-ui.proto-ui .v13-built.is-faint {
   opacity: 0.2;
@@ -335,9 +304,6 @@ useEscapeCloses(() => composer.value?.field)
   align-items: center;
   text-align: center;
   transition: opacity 260ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v13-col.is-dim > :not(.v13-row) {
-  opacity: 0.6;
 }
 :root .proto-ui.proto-ui.proto-ui .v13-col.is-hidden {
   opacity: 0;
@@ -453,7 +419,6 @@ useEscapeCloses(() => composer.value?.field)
   font-size: var(--text-ui);
 }
 @media (prefers-reduced-motion: reduce) {
-  :root .proto-ui.proto-ui.proto-ui .v13-ghost,
   :root .proto-ui.proto-ui.proto-ui .v13-col,
   :root .proto-ui.proto-ui.proto-ui .v13-pic,
   :root .proto-ui.proto-ui.proto-ui .v13-canvas {

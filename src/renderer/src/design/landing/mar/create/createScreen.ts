@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { activeInstance, hostActions, instanceById, proto } from '../../useProto'
+import { activeInstance, hostActions, instanceById, openDetail, proto } from '../../useProto'
 import type { ProtoInstance, Template } from '../../mock'
 import type { ProjectWorkflow } from '../../gallery'
 import { graphOpen, type AgentStart } from '../graph/graphOpen'
@@ -148,5 +148,5 @@ export function openWorkflow(w: ProjectWorkflow): void {
 }
 
 export function openTemplate(t: Template): void {
-  land(activeInstance.value, t.title, true)
+  openDetail('template', t.id)
 }

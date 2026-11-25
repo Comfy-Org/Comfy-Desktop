@@ -96,7 +96,7 @@ function pick(c: Card): void {
   if (c.type === 'step') {
     if (c.step.agent) askAgent()
     else if (c.step.recipe) leave(() => startWithRecipe(c.step.recipe!))
-  } else if (c.type === 'template') leave(() => openTemplate(c.starter.template))
+  } else if (c.type === 'template') openTemplate(c.starter.template)
   else if (c.type === 'workflow') leave(() => openWorkflow(c.workflow))
 }
 

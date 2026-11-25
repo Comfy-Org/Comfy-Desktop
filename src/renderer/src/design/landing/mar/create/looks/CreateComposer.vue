@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ArrowUp, Search, X } from 'lucide-vue-next'
 import { AgentChat } from '../../icons/agentChat'
-import { startBlank } from '../createScreen'
+import { openTemplate, startBlank } from '../createScreen'
 import type { Starter } from '../createStarters'
 import type { CreateInput } from '../createInput'
 import { AGENT_CHIPS, answer, type AgentAnswer } from './v07Agent'
@@ -60,11 +60,6 @@ function dismiss(): void {
   emit('pin', null)
   emit('dismiss')
   field.value?.focus()
-}
-
-function pinPick(s: Starter): void {
-  pinId.value = pinId.value === s.id ? null : s.id
-  emit('pin', pinId.value ? s : null)
 }
 
 function build(): void {
@@ -175,7 +170,7 @@ defineExpose({ focus, dismiss, field })
           @pointerleave="emit('peek', null)"
           @focus="emit('peek', s)"
           @blur="emit('peek', null)"
-          @click="pinPick(s)"
+          @click="openTemplate(s.template)"
         >
           <img :src="s.poster" alt="" />
           <span class="flex min-w-0 flex-col">

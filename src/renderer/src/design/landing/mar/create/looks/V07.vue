@@ -1,15 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import {
-  ArrowUp,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  CornerDownLeft,
-  Plus,
-  Upload,
-  X
-} from 'lucide-vue-next'
+import { ArrowUp, Check, ChevronLeft, ChevronRight, Plus, Upload, X } from 'lucide-vue-next'
 import { AgentChat } from '../../icons/agentChat'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
@@ -27,7 +18,7 @@ import {
   startWithNode
 } from '../createScreen'
 import { readiness, searchStarters, SHELVES, type Starter } from '../createStarters'
-import { buildOf, graphFor, readyIcon, reducedMotion, useEscapeCloses } from './lookKitB'
+import { graphFor, reducedMotion, useEscapeCloses } from './lookKitB'
 import { agentStart, answer, quickPicks, type AgentAnswer } from './v07Agent'
 import { agentOpens } from '../agentOpens'
 import CreateComposer from './CreateComposer.vue'
@@ -110,11 +101,11 @@ const items = computed<Item[]>(() => {
     const unique = list.filter((s) => (seen.has(s.poster) ? false : (seen.add(s.poster), true)))
     return [
       BLANK,
-      ...unique.map(tpl),
       ...workflows.value
         .filter((w) => w.name.toLowerCase().includes(q.value))
         .slice(0, 6)
         .map(wf),
+      ...unique.map(tpl),
       ...kinds.slice(0, 4).map((node): Item => ({ id: `n:${node}`, type: 'node', node }))
     ]
   }
@@ -172,7 +163,7 @@ const build = ref<{ starter: Starter; shown: number; total: number; prompt: stri
 const built = computed(() => !!build.value && build.value.shown >= build.value.total)
 const agentGraph = computed(() => !!build.value && hover.value < 0)
 const recId = computed(() => last.value?.rec?.id)
-const heroAway = computed(() => hover.value >= 0 || (agentGraph.value && panel.value))
+const heroAway = computed(() => agentGraph.value && panel.value)
 const heroTop = computed(() => !heroAway.value && !!current.value)
 const bandGone = computed(
   () => center.value && createInput.id === 'agent' && (panel.value || !!build.value)
@@ -184,11 +175,9 @@ function discard(): void {
   composer.value?.focus()
 }
 
-const current = computed<Item | undefined>(() => {
-  if (hover.value >= 0) return items.value[hover.value]
-  if (build.value) return tpl(build.value.starter)
-  return items.value[pinned.value]
-})
+const current = computed<Item | undefined>(() =>
+  build.value ? tpl(build.value.starter) : undefined
+)
 
 function stopBuild(): void {
   clearTimeout(timer)
@@ -345,8 +334,7 @@ function nameOf(item: Item): string {
 }
 
 function press(i: number): void {
-  if (pinned.value === i) pick(items.value[i]!)
-  else pinned.value = i
+  pick(items.value[i]!)
 }
 
 function pick(item: Item): void {
@@ -467,12 +455,16 @@ function key(e: KeyboardEvent): void {
     else if (query.value) query.value = ''
     else closeCreate()
   } else if (e.key === 'Enter') {
-    if (current.value) pick(current.value)
+    const item = items.value[hover.value]
+    if (item) pick(item)
   } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || sideways) {
-    hover.value = -1
     navigated.value = true
+    const first = center.value ? 1 : 0
     const forward = e.key === 'ArrowDown' || e.key === 'ArrowRight'
-    pinned.value = forward ? Math.min(last, at.value + 1) : Math.max(0, at.value - 1)
+    hover.value = forward
+      ? Math.min(last, Math.max(first, hover.value + 1))
+      : Math.max(first, hover.value - 1)
+    if (hover.value > 0) page.value = Math.floor((hover.value - 1) / perPage.value)
   } else return
   e.preventDefault()
 }
@@ -561,7 +553,7 @@ useEscapeCloses(() => composer.value?.field)
         </div>
 
         <p v-if="!current && !center" class="v07-empty is-hint">
-          Point at a template to preview it here
+          Pick a starting point below, or describe what you want to make
         </p>
         <div v-if="center" class="v07-hero" :class="[heroAway && 'is-away', heroTop && 'is-top']">
           <h1 v-if="!heroTop" class="v07-hero-title">What do you want to make?</h1>
@@ -591,51 +583,6 @@ useEscapeCloses(() => composer.value?.field)
             <X :size="14" />Clear the canvas and start over
           </button>
         </div>
-        <aside
-          v-if="current && !agentGraph"
-          :key="`d-${current.id}`"
-          class="v07-detail"
-          aria-live="polite"
-        >
-          <template v-if="current.type === 'template'">
-            <p class="v07-detail-title">{{ current.starter.makes }}</p>
-            <p class="v07-detail-sub">{{ current.starter.model }}</p>
-            <p class="v07-detail-line">{{ current.starter.line }}.</p>
-            <p class="v07-ready" :class="`is-${readiness(current.starter.template).tone}`">
-              <component
-                :is="readyIcon(readiness(current.starter.template))"
-                v-if="readiness(current.starter.template).tone !== 'off'"
-                :size="13"
-              />
-              {{ readiness(current.starter.template).label }}
-            </p>
-          </template>
-          <template v-else-if="current.type === 'workflow'">
-            <p class="v07-detail-title">{{ current.workflow.name }}</p>
-            <p class="v07-detail-sub">
-              {{ buildOf(current.workflow)?.name }}, edited
-              {{ current.workflow.modified.toLowerCase() }}
-            </p>
-          </template>
-          <template v-else-if="current.type === 'node'">
-            <p class="v07-detail-title">{{ NODE_TYPES[current.node].title }}</p>
-            <p class="v07-detail-line">{{ NODE_TYPES[current.node].description }}.</p>
-          </template>
-          <template v-else>
-            <p class="v07-detail-title">Blank canvas</p>
-            <p class="v07-detail-line">Build it yourself, node by node.</p>
-          </template>
-          <button type="button" class="v07-go" @click="pick(current)">
-            {{
-              current.type === 'template'
-                ? 'Use template'
-                : current.type === 'workflow'
-                  ? 'Open workflow'
-                  : 'Start'
-            }}
-            <CornerDownLeft :size="13" class="opacity-60" />
-          </button>
-        </aside>
       </div>
 
       <div class="v07-dock-wrap" :class="bandGone && 'is-gone'" :aria-hidden="bandGone">

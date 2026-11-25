@@ -226,7 +226,7 @@ useEscapeCloses(() => composer.value?.field)
             :aria-pressed="!blankOn && s.id === chosen.id"
             @pointerenter="chosenId = s.id"
             @focus="chosenId = s.id"
-            @click="chosenId === s.id ? openTemplate(s.template) : (chosenId = s.id)"
+            @click="openTemplate(s.template)"
           >
             <span class="v10-tpl-pic"><img :src="s.poster" alt="" loading="lazy" /></span>
             <span class="v10-tpl-name">{{ s.makes }}</span>

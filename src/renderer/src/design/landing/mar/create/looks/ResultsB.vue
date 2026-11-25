@@ -28,6 +28,14 @@ const matches = (text: string): boolean => text.toLowerCase().includes(q.value)
 const sections = computed<{ title: string; hits: Hit[] }[]>(() =>
   [
     {
+      title: 'Your workflows',
+      hits: [...allWorkflows.value]
+        .sort((a, b) => a.age - b.age)
+        .filter((w) => matches(w.name))
+        .slice(0, 5)
+        .map((workflow): Hit => ({ id: `w:${workflow.id}`, type: 'workflow', workflow }))
+    },
+    {
       title: 'Templates',
       hits: (searchStarters(q.value, 6).length
         ? searchStarters(q.value, 6)
@@ -37,14 +45,6 @@ const sections = computed<{ title: string; hits: Hit[] }[]>(() =>
         type: 'template',
         starter
       }))
-    },
-    {
-      title: 'Your workflows',
-      hits: [...allWorkflows.value]
-        .sort((a, b) => a.age - b.age)
-        .filter((w) => matches(w.name))
-        .slice(0, 5)
-        .map((workflow): Hit => ({ id: `w:${workflow.id}`, type: 'workflow', workflow }))
     },
     {
       title: 'Nodes',
