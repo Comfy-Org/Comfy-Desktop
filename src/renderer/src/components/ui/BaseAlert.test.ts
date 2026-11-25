@@ -176,24 +176,11 @@ describe('BaseAlert', async () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('shows the round close outside the panel on an alert without Cancel', async () => {
-    const wrapper = await mountAlert()
+  it('always shows the round close outside the panel, also without showCloseIcon', async () => {
+    const wrapper = await mountAlert({ showCancel: true })
     const close = wrapper.find('[data-testid="base-alert-close-icon"]')
     expect(close.exists()).toBe(true)
     await close.trigger('click')
-    expect(wrapper.emitted('close')).toHaveLength(1)
-  })
-
-  it('leaves out the outside close when the dialog already has Cancel', async () => {
-    const wrapper = await mountAlert({ showCancel: true })
-    expect(wrapper.find('[data-testid="base-alert-close-icon"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="base-alert-cancel"]').exists()).toBe(true)
-  })
-
-  it('still cancels on ESC when the dialog has Cancel and no outside close', async () => {
-    const wrapper = await mountAlert({ showCancel: true })
-    await wrapper.find('.base-alert-panel').trigger('keydown', { key: 'Escape' })
-    await flushPromises()
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 

@@ -81,7 +81,6 @@ const isShortMessage = computed(
     !slots.extra &&
     !!(props.message || props.hint || props.note)
 )
-const showsOutsideClose = computed(() => !props.showCancel)
 const linkifiedMessage = computed(() => linkify(props.message))
 const hasWideActions = computed(() => !!props.secondaryLabel)
 
@@ -117,7 +116,6 @@ const linkClass =
     @close="dismiss"
   >
     <Button
-      v-if="showsOutsideClose"
       type="button"
       variant="muted-textonly"
       size="icon"
@@ -128,10 +126,7 @@ const linkClass =
     >
       <X :size="18" />
     </Button>
-    <header
-      class="base-alert-header relative mb-4"
-      :class="showsOutsideClose && 'max-[860px]:pr-8'"
-    >
+    <header class="base-alert-header relative mb-4 max-[860px]:pr-8">
       <h2 :id="TITLE_ID" class="base-alert-title m-0 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
