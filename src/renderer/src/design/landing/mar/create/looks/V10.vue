@@ -2,8 +2,6 @@
 import { computed, ref } from 'vue'
 import { Play, Plus, Search, X } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
-import CategoryChip from '../../CategoryChip.vue'
-import MarSeg from '../../pages/MarSeg.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance } from '../../../useProto'
 import { thumb } from '../../../mock'
@@ -13,15 +11,27 @@ import { readiness, SHELVES, type Starter } from '../createStarters'
 import { buildOf, hueOf, readyIcon, useEscapeCloses } from './lookKitB'
 import ResultsB from './ResultsB.vue'
 
+const TABS = [
+  { id: 'popular', label: 'Popular' },
+  { id: 'image', label: 'Image' },
+  { id: 'video', label: 'Video' },
+  { id: 'edit', label: 'Edit' },
+  { id: '3d', label: '3D' },
+  { id: 'audio', label: 'Audio' }
+]
+const RECENT_MAX = 5
+const STRIP_MAX = 5
+
 const query = ref('')
 const field = ref<HTMLInputElement>()
 const results = ref<InstanceType<typeof ResultsB>>()
-const shelf = ref(SHELVES[0]!.id)
-const shelfOptions = SHELVES.map((s) => ({ value: s.id, label: s.label }))
+const shelf = ref(TABS[0]!.id)
 
-const recents = computed(() => [...allWorkflows.value].sort((a, b) => a.age - b.age).slice(0, 6))
+const recents = computed(() =>
+  [...allWorkflows.value].sort((a, b) => a.age - b.age).slice(0, RECENT_MAX)
+)
 const starters = computed(() =>
-  (SHELVES.find((s) => s.id === shelf.value) ?? SHELVES[0]!).starters().slice(0, 6)
+  (SHELVES.find((s) => s.id === shelf.value) ?? SHELVES[0]!).starters().slice(0, STRIP_MAX)
 )
 const chosenId = ref<string | null>(null)
 const chosen = computed<Starter>(
@@ -32,6 +42,12 @@ const chosenReady = computed(() => readiness(chosen.value.template))
 const lastOutput = (w: ProjectWorkflow): string | undefined =>
   MOCK[w.name] ?? (w.thumbId ? thumb(w.thumbId) : undefined)
 
+function step(by: number): void {
+  const list = starters.value
+  const i = list.findIndex((s) => s.id === chosen.value.id)
+  chosenId.value = list[Math.min(list.length - 1, Math.max(0, i + by))]!.id
+}
+
 function key(e: KeyboardEvent): void {
   if (e.key === 'Escape') {
     e.preventDefault()
@@ -39,14 +55,22 @@ function key(e: KeyboardEvent): void {
     else closeCreate()
     return
   }
-  if (query.value.trim()) results.value?.key(e)
+  if (query.value.trim()) {
+    results.value?.key(e)
+    return
+  }
+  if (e.key === 'ArrowRight') step(1)
+  else if (e.key === 'ArrowLeft') step(-1)
+  else if (e.key === 'Enter') openTemplate(chosen.value.template)
+  else return
+  e.preventDefault()
 }
 
 useEscapeCloses(() => field.value)
 </script>
 
 <template>
-  <section class="v10 relative min-h-full px-8 pb-12" aria-label="Create">
+  <section class="v10 relative min-h-full px-10 pb-16" aria-label="Create">
     <header class="v10-head">
       <label class="v10-field">
         <Search :size="16" class="shrink-0 text-subtle-foreground" />
@@ -76,9 +100,10 @@ useEscapeCloses(() => field.value)
     <ResultsB v-if="query.trim()" ref="results" :query class="v10-results" />
 
     <div v-else class="v10-split">
-      <section class="v10-col is-yours" aria-labelledby="v10-yours">
-        <h2 id="v10-yours" class="v10-h">Pick up where you left off</h2>
-        <p class="v10-sub">Your latest workflows, with what they made last time.</p>
+      <section class="v10-col" aria-labelledby="v10-yours">
+        <div class="v10-col-head">
+          <h2 id="v10-yours" class="v10-h">Pick up where you left off</h2>
+        </div>
         <ul v-if="recents.length" class="v10-recents">
           <li v-for="w in recents" :key="w.id" class="v10-recent" :style="hueOf(w)">
             <button
@@ -92,9 +117,7 @@ useEscapeCloses(() => field.value)
                 <WorkflowCover v-else :name="w.name" />
               </span>
               <span class="flex min-w-0 flex-1 flex-col">
-                <span class="truncate text-[14px] font-medium text-base-foreground">{{
-                  w.name
-                }}</span>
+                <span class="truncate text-[14px] text-base-foreground">{{ w.name }}</span>
                 <span class="v10-recent-meta">
                   <i class="v10-dot" />
                   <span class="truncate">{{ buildOf(w)?.name }}</span>
@@ -107,21 +130,37 @@ useEscapeCloses(() => field.value)
             </button>
           </li>
         </ul>
-        <p v-else class="v10-none">
-          Nothing yet. What you open or save shows up here, ready to run again.
-        </p>
+        <p v-else class="v10-none">What you open or save shows up here.</p>
       </section>
 
-      <section class="v10-col is-new" aria-labelledby="v10-new">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 id="v10-new" class="v10-h">Start something new</h2>
-            <p class="v10-sub">Templates that already work. Pick one to see what it needs.</p>
-          </div>
+      <section class="v10-col" aria-labelledby="v10-new">
+        <div class="v10-col-head">
+          <h2 id="v10-new" class="v10-h">Start something new</h2>
+          <button
+            type="button"
+            class="v10-scratch"
+            :title="`Empty canvas on ${activeInstance.name}`"
+            @click="startBlank"
+          >
+            <span class="v10-scratch-plus"><Plus :size="14" /></span>
+            <span class="text-base-foreground">Blank canvas</span>
+            <span class="v10-scratch-hint">build node by node</span>
+          </button>
         </div>
-        <div class="v10-shelves">
-          <MarSeg v-model="shelf" :options="shelfOptions" label="Templates for" />
-        </div>
+
+        <nav class="v10-tabs" aria-label="Templates for">
+          <button
+            v-for="t in TABS"
+            :key="t.id"
+            type="button"
+            class="v10-tab"
+            :class="shelf === t.id && 'is-on'"
+            :aria-pressed="shelf === t.id"
+            @click="((shelf = t.id), (chosenId = null))"
+          >
+            {{ t.label }}
+          </button>
+        </nav>
 
         <div class="v10-detail">
           <button
@@ -141,11 +180,9 @@ useEscapeCloses(() => field.value)
               autoplay
               class="motion-reduce:hidden"
             />
-            <span class="absolute top-2.5 left-2.5"><CategoryChip :category="chosen.media" /></span>
           </button>
           <div class="v10-detail-text">
-            <p class="text-heading font-semibold text-base-foreground">{{ chosen.makes }}</p>
-            <p class="text-ui text-subtle-foreground">{{ chosen.model }}</p>
+            <p class="v10-detail-title">{{ chosen.makes }}</p>
             <p class="v10-line">{{ chosen.line }}.</p>
             <p class="v10-ready" :class="`is-${chosenReady.tone}`">
               <component
@@ -161,7 +198,7 @@ useEscapeCloses(() => field.value)
           </div>
         </div>
 
-        <div :key="shelf" class="v10-grid">
+        <div :key="shelf" class="v10-strip">
           <button
             v-for="s in starters"
             :key="s.id"
@@ -177,19 +214,6 @@ useEscapeCloses(() => field.value)
             <span class="v10-tpl-name">{{ s.makes }}</span>
           </button>
         </div>
-
-        <button
-          type="button"
-          class="v10-blank"
-          :title="`Empty canvas on ${activeInstance.name}`"
-          @click="startBlank"
-        >
-          <Plus :size="14" />
-          <span class="font-medium text-base-foreground">Blank canvas</span>
-          <span class="text-subtle-foreground"
-            >Build it node by node on {{ activeInstance.name }}</span
-          >
-        </button>
       </section>
     </div>
   </section>
@@ -203,9 +227,9 @@ useEscapeCloses(() => field.value)
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: 1280px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding-top: 24px;
+  padding-top: 32px;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-field {
   display: flex;
@@ -249,45 +273,37 @@ useEscapeCloses(() => field.value)
 }
 :root .proto-ui.proto-ui.proto-ui .v10-results {
   max-width: 1000px;
-  margin: 28px auto 0;
+  margin: 32px auto 0;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-  gap: 0;
-  max-width: 1280px;
-  margin: 24px auto 0;
-  overflow: hidden;
-  border-radius: 20px;
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 72px;
+  max-width: 1200px;
+  margin: 48px auto 0;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-col {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding: 28px;
 }
-:root .proto-ui.proto-ui.proto-ui .v10-col.is-yours {
-  background: color-mix(in oklch, var(--color-base-foreground) 3%, transparent);
-  box-shadow: inset -1px 0 0 var(--color-border-default);
+:root .proto-ui.proto-ui.proto-ui .v10-col-head {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-h {
-  color: var(--color-base-foreground);
-  font-size: var(--text-title);
-  font-weight: 650;
-  letter-spacing: -0.015em;
-  line-height: var(--text-title--line-height);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-sub {
-  margin-top: 4px;
-  color: var(--color-subtle-foreground);
-  font-size: var(--text-ui);
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+  font-weight: 500;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-recents {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 20px;
+  gap: 2px;
+  margin: 16px -8px 0;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-recent {
   display: flex;
@@ -306,7 +322,7 @@ useEscapeCloses(() => field.value)
   min-width: 0;
   flex: 1;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   padding: 8px;
   border-radius: 14px;
   text-align: left;
@@ -316,8 +332,8 @@ useEscapeCloses(() => field.value)
   box-shadow: inset 0 0 0 2px var(--color-border-focus);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-recent-pic {
-  width: 104px;
-  height: 68px;
+  width: 88px;
+  height: 58px;
   flex: none;
   overflow: hidden;
   border-radius: 10px;
@@ -352,36 +368,91 @@ useEscapeCloses(() => field.value)
   gap: 6px;
   padding: 0 12px;
   border-radius: 999px;
-  background: var(--color-secondary-background);
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 500;
-}
-:root .proto-ui.proto-ui.proto-ui .v10-again:hover {
   background: var(--color-inverted-background);
   color: var(--color-inverted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-recent:hover .v10-again,
+:root .proto-ui.proto-ui.proto-ui .v10-recent:focus-within .v10-again {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-again:hover {
+  background: var(--color-inverted-background-hover);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-none {
-  margin-top: 20px;
+  margin-top: 16px;
   color: var(--color-subtle-foreground);
   font-size: var(--text-ui);
 }
-:root .proto-ui.proto-ui.proto-ui .v10-shelves {
-  margin-top: 16px;
+:root .proto-ui.proto-ui.proto-ui .v10-scratch {
+  display: inline-flex;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 0 4px;
+  border-radius: 999px;
+  background: var(--color-secondary-background);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-scratch:hover {
+  background: var(--color-secondary-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .v10-scratch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui .v10-scratch-plus {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-content-background);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v10-scratch-hint {
+  color: var(--color-subtle-foreground);
+  font-weight: 400;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-tabs {
+  display: flex;
+  gap: 20px;
+  margin-top: 20px;
   overflow-x: auto;
   scrollbar-width: none;
 }
+:root .proto-ui.proto-ui.proto-ui .v10-tab {
+  flex: none;
+  padding: 4px 0;
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  transition: color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-tab:hover,
+:root .proto-ui.proto-ui.proto-ui .v10-tab.is-on {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v10-tab.is-on {
+  box-shadow: inset 0 -2px 0 var(--color-base-foreground);
+}
 :root .proto-ui.proto-ui.proto-ui .v10-detail {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 20px;
-  margin-top: 16px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 28px;
+  margin-top: 20px;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-detail-media {
   position: relative;
   aspect-ratio: 4 / 3;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--radius-panel);
   background: var(--color-card-background);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-detail-media:focus-visible {
@@ -401,35 +472,44 @@ useEscapeCloses(() => field.value)
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  padding: 4px 0;
+  justify-content: flex-end;
+  padding-bottom: 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-detail-title {
+  color: var(--color-base-foreground);
+  font-size: var(--text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: var(--text-title--line-height);
 }
 :root .proto-ui.proto-ui.proto-ui .v10-line {
   display: -webkit-box;
-  margin-top: 10px;
+  margin-top: 8px;
   overflow: hidden;
   color: var(--color-muted-foreground);
   font-size: var(--text-ui);
-  line-height: 19px;
+  line-height: 20px;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-ready {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: auto;
-  padding-top: 12px;
+  margin-top: 16px;
   color: var(--color-base-foreground);
   font-size: var(--text-ui);
-  font-weight: 500;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-ready.is-ready svg {
   color: var(--color-status-running);
 }
+:root .proto-ui.proto-ui.proto-ui .v10-ready.is-off {
+  color: var(--color-muted-foreground);
+}
 :root .proto-ui.proto-ui.proto-ui .v10-use {
-  height: 38px;
-  margin-top: 12px;
-  padding: 0 18px;
+  height: 40px;
+  margin-top: 16px;
+  padding: 0 20px;
   border-radius: 999px;
   background: var(--color-inverted-background);
   color: var(--color-inverted-foreground);
@@ -439,26 +519,26 @@ useEscapeCloses(() => field.value)
 :root .proto-ui.proto-ui.proto-ui .v10-use:hover {
   background: var(--color-inverted-background-hover);
 }
-:root .proto-ui.proto-ui.proto-ui .v10-grid {
+:root .proto-ui.proto-ui.proto-ui .v10-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-tpl {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   text-align: left;
   outline: none;
 }
 :root .proto-ui.proto-ui.proto-ui .v10-tpl-pic {
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   border-radius: 10px;
   background: var(--color-card-background);
-  opacity: 0.62;
+  opacity: 0.55;
   transition:
     opacity 160ms ease,
     box-shadow 160ms ease;
@@ -488,36 +568,37 @@ useEscapeCloses(() => field.value)
 :root .proto-ui.proto-ui.proto-ui .v10-tpl.is-on .v10-tpl-name {
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .v10-blank {
-  display: flex;
-  height: 44px;
-  align-items: center;
-  gap: 10px;
-  margin-top: 20px;
-  padding: 0 14px;
-  border-radius: 12px;
-  outline: 1px dashed var(--color-border-strong);
-  outline-offset: -1px;
-  color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
-  text-align: left;
+@media (max-width: 1240px) {
+  :root .proto-ui.proto-ui.proto-ui .v10-split {
+    gap: 48px;
+  }
+  :root .proto-ui.proto-ui.proto-ui .v10-scratch-hint {
+    display: none;
+  }
+  :root .proto-ui.proto-ui.proto-ui .v10-detail {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 20px;
+  }
 }
-:root .proto-ui.proto-ui.proto-ui .v10-blank:hover {
-  background: var(--color-secondary-background);
-}
-@media (max-width: 1100px) {
+@media (max-width: 980px) {
   :root .proto-ui.proto-ui.proto-ui .v10-split {
     grid-template-columns: 1fr;
   }
-  :root .proto-ui.proto-ui.proto-ui .v10-col.is-yours {
-    box-shadow: inset 0 -1px 0 var(--color-border-default);
+  :root .proto-ui.proto-ui.proto-ui .v10-col:last-child {
+    order: -1;
   }
-  :root .proto-ui.proto-ui.proto-ui .v10-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  :root .proto-ui.proto-ui.proto-ui .v10-scratch-hint {
+    display: inline;
+  }
+}
+@media (hover: none) {
+  :root .proto-ui.proto-ui.proto-ui .v10-again {
+    opacity: 1;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  :root .proto-ui.proto-ui.proto-ui .v10-tpl-pic {
+  :root .proto-ui.proto-ui.proto-ui .v10-tpl-pic,
+  :root .proto-ui.proto-ui.proto-ui .v10-again {
     transition: none;
   }
 }

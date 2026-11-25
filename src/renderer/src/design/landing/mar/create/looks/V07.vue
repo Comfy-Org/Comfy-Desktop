@@ -28,7 +28,9 @@ const YOURS = 'yours'
 const query = ref('')
 const field = ref<HTMLInputElement>()
 const shelf = ref<string>(SHELVES[0]!.id)
-const at = ref(1)
+const hover = ref(-1)
+const pinned = ref(-1)
+const at = computed(() => (hover.value >= 0 ? hover.value : pinned.value))
 const shelfOptions = [
   ...SHELVES.map((s) => ({ value: s.id, label: s.label })),
   { value: YOURS, label: 'Your workflows' }
@@ -61,9 +63,17 @@ const items = computed<Item[]>(() => {
   if (shelf.value === YOURS) return [BLANK, ...workflows.value.slice(0, 10).map(wf)]
   return [BLANK, ...(SHELVES.find((s) => s.id === shelf.value) ?? SHELVES[0]!).starters().map(tpl)]
 })
-watch([q, shelf], () => (at.value = items.value.length > 1 ? 1 : 0))
+watch([q, shelf], () => {
+  hover.value = -1
+  pinned.value = -1
+})
 
-const current = computed(() => items.value[at.value] ?? items.value[0]!)
+const current = computed<Item | undefined>(() => items.value[at.value])
+
+function press(i: number): void {
+  if (pinned.value === i) pick(items.value[i]!)
+  else pinned.value = i
+}
 
 function pick(item: Item): void {
   if (item.type === 'template') openTemplate(item.starter.template)
@@ -88,7 +98,7 @@ const heightOf = (kind: NodeKind, col: number): number =>
 
 const graph = computed(() => {
   const item = current.value
-  if (item.type === 'blank') return { nodes: [] as Placed[], wires: [] as string[] }
+  if (!item || item.type === 'blank') return { nodes: [] as Placed[], wires: [] as string[] }
   if (item.type === 'node') {
     const h = heightOf(item.node, 1)
     return {
@@ -149,7 +159,7 @@ const box = (n: Placed) => ({
 
 const outputOf = computed(() => {
   const item = current.value
-  if (item.type === 'template') return { src: item.starter.poster, clip: item.starter.clip }
+  if (item?.type === 'template') return { src: item.starter.poster, clip: item.starter.clip }
   return undefined
 })
 
@@ -160,14 +170,15 @@ const PROMPTS: Record<string, string> = {
 }
 const promptOf = computed(() => {
   const item = current.value
-  return item.type === 'template' ? (PROMPTS[item.starter.media] ?? PROMPTS.image) : PROMPTS.image
+  return item?.type === 'template' ? (PROMPTS[item.starter.media] ?? PROMPTS.image) : PROMPTS.image
 })
 
 function key(e: KeyboardEvent): void {
   const last = items.value.length - 1
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') at.value = Math.min(last, at.value + 1)
-  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') at.value = Math.max(0, at.value - 1)
-  else if (e.key === 'Enter') pick(current.value)
+  hover.value = -1
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') pinned.value = Math.min(last, at.value + 1)
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') pinned.value = Math.max(0, at.value - 1)
+  else if (e.key === 'Enter' && current.value) pick(current.value)
   else if (e.key === 'Escape') {
     if (query.value) query.value = ''
     else closeCreate()
@@ -195,9 +206,6 @@ useEscapeCloses(() => field.value)
         <h1 class="text-title font-semibold tracking-[-0.01em] text-base-foreground">
           Create a workflow
         </h1>
-        <p class="text-ui text-subtle-foreground">
-          Point at a template to see its graph and what it makes.
-        </p>
       </div>
       <label class="v07-field">
         <Search :size="15" class="shrink-0 text-subtle-foreground" />
@@ -227,7 +235,7 @@ useEscapeCloses(() => field.value)
     <div class="v07-stage-wrap">
       <div class="v07-stage">
         <svg
-          :key="`w-${current.id}`"
+          :key="`w-${current?.id}`"
           class="v07-wires"
           :viewBox="`0 0 ${STAGE_W} ${STAGE_H}`"
           preserveAspectRatio="none"
@@ -238,7 +246,7 @@ useEscapeCloses(() => field.value)
         </svg>
         <div
           v-for="(n, i) in graph.nodes"
-          :key="`${current.id}-${n.key}`"
+          :key="`${current?.id}-${n.key}`"
           class="v07-node"
           :class="[`is-col${n.col}`, `is-${n.kind}`]"
           :style="[box(n), { '--i': i }]"
@@ -261,7 +269,7 @@ useEscapeCloses(() => field.value)
                 class="motion-reduce:hidden"
               />
             </template>
-            <WorkflowCover v-else-if="current.type === 'workflow'" :name="current.workflow.name" />
+            <WorkflowCover v-else-if="current?.type === 'workflow'" :name="current.workflow.name" />
           </div>
           <img
             v-else-if="n.kind === 'image'"
@@ -276,12 +284,13 @@ useEscapeCloses(() => field.value)
             <span><i>seed</i><b>randomize</b></span>
           </div>
         </div>
-        <p v-if="current.type === 'blank'" class="v07-empty">
+        <p v-if="current?.type === 'blank'" class="v07-empty">
           An empty canvas on {{ activeInstance.name }}. Double-click to add your first node.
         </p>
       </div>
 
-      <aside :key="`d-${current.id}`" class="v07-detail" aria-live="polite">
+      <p v-if="!current" class="v07-empty is-hint">Point at a template to preview it here</p>
+      <aside v-if="current" :key="`d-${current.id}`" class="v07-detail" aria-live="polite">
         <template v-if="current.type === 'template'">
           <p class="v07-detail-title">{{ current.starter.makes }}</p>
           <p class="v07-detail-sub">{{ current.starter.model }}</p>
@@ -336,12 +345,14 @@ useEscapeCloses(() => field.value)
           :key="item.id"
           type="button"
           class="v07-tile group"
-          :class="[i === at && 'is-at', `is-${item.type}`]"
-          :aria-current="i === at || undefined"
+          :class="[i === hover && 'is-at', i === pinned && 'is-on', `is-${item.type}`]"
+          :aria-pressed="i === pinned"
           :data-v07-at="i"
-          @pointerenter="at = i"
-          @focus="at = i"
-          @click="pick(item)"
+          @pointerenter="hover = i"
+          @pointerleave="hover = -1"
+          @focus="hover = i"
+          @blur="hover = -1"
+          @click="press(i)"
         >
           <span class="v07-tile-pic">
             <img v-if="item.type === 'template'" :src="item.starter.poster" alt="" loading="lazy" />
@@ -675,8 +686,12 @@ useEscapeCloses(() => field.value)
   outline: none;
   transition: background-color 140ms ease;
 }
-:root .proto-ui.proto-ui.proto-ui .v07-tile.is-at {
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-at,
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on {
   background: var(--color-secondary-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on .v07-tile-pic {
+  box-shadow: 0 0 0 2px var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile:focus-visible {
   box-shadow: 0 0 0 2px var(--color-border-focus);
@@ -712,8 +727,12 @@ useEscapeCloses(() => field.value)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-:root .proto-ui.proto-ui.proto-ui .v07-tile.is-at .v07-tile-name {
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-at .v07-tile-name,
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on .v07-tile-name {
   color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-empty.is-hint {
+  animation: v07-fade 400ms ease both;
 }
 @keyframes v07-ghost {
   from {

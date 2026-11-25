@@ -23,7 +23,7 @@ import { assetsEverywhere } from './assets/assetsEverywhere'
 import { assetLink, holdAssetLink } from './assets/assetLink'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
-import { createLook } from './create/createLook'
+import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
@@ -155,7 +155,7 @@ const PARTS: Part[] = [
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
   one('assetFolders', assetFoldersShown, 'off', OFF_ON),
-  one('createLook', createLook, 'current', CREATE_LOOKS),
+  one('createLook', createLook, DEFAULT_CREATE_LOOK, CREATE_LOOKS),
   one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),

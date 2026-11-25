@@ -39,7 +39,7 @@ import { localSetup } from './setup/setupFlow'
 import { tplCase } from './templateModal/templateData'
 import { homeTour } from './homeTour/homeTour'
 import { returningReady } from './autorun/installed'
-import { createLook } from './create/createLook'
+import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { createScreen } from './create/createScreen'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
 
@@ -261,7 +261,7 @@ export const TWEAKS = {
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),
   readyTemplate: one(returningReady, 'off'),
-  createLook: one(createLook, 'current'),
+  createLook: one(createLook, DEFAULT_CREATE_LOOK),
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
