@@ -318,12 +318,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKey))
               <span v-if="hit.type === 'workflow'" class="shrink-0 text-ui text-subtle-foreground">
                 {{ hit.workflow.modified }}
               </span>
-              <span
-                v-else-if="hit.type === 'template'"
-                class="mcs-row-ready"
-                :class="`is-${readiness(hit.starter.template).tone}`"
-                >{{ readiness(hit.starter.template).label }}</span
-              >
               <CornerDownLeft
                 v-if="indexOf(hit) === at"
                 :size="14"
@@ -788,14 +782,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKey))
 }
 :root .proto-ui.proto-ui.proto-ui .mcs-row.is-at {
   background: var(--color-secondary-background);
-}
-:root .proto-ui.proto-ui.proto-ui .mcs-row-ready {
-  flex: none;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .mcs-row-ready.is-ready {
-  color: var(--color-muted-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mcs-thumb {
   position: relative;

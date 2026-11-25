@@ -41,7 +41,6 @@ import {
   workflowThumb,
   type HubWorkflow
 } from './hubWorkflows'
-import { clipFor } from '../create/createStarters'
 import { mediaFor } from '../templateModal/templateData'
 import { EXPLORE, PROD_LIB_APPS, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
@@ -380,21 +379,12 @@ function rhythmOf<T>(list: T[]): Rhythm<T>[] {
 }
 const rhythm = computed(() => rhythmOf(apps.value))
 const wfRhythm = computed(() => rhythmOf(templates.value))
-interface WorkflowMedia {
-  thumb: string
-  preview?: string
-  video?: string
-}
-const WF_MEDIA = new Map<string, WorkflowMedia>(
-  HUB_WORKFLOWS.map((w) => {
-    const pic = workflowThumb(w.id)
+const WF_PREVIEW = new Map<string, string>(
+  HUB_WORKFLOWS.flatMap((w) => {
     const out = mediaFor(hubTemplate(w)).output
-    return [w.id, { thumb: pic, preview: out !== pic ? out : undefined, video: clipFor(w)?.clip }]
+    return out !== workflowThumb(w.id) ? [[w.id, out] as const] : []
   })
 )
-const wfMedia = (w: HubWorkflow): WorkflowMedia =>
-  WF_MEDIA.get(w.id) ?? { thumb: workflowThumb(w.id) }
-// What each app made, shown on hover: its first example (a clip plays).
 const previewOf = (id: string): Pick<AppExample, 'after' | 'video'> | undefined => {
   const p = prodApp(id)
   if (p) return { after: prodStill(p.slug), video: prodClip(p.slug) }
@@ -678,9 +668,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
             :key="t.id"
             :name="t.title"
             :blurb="hubLine(t)"
-            :thumb="wfMedia(t).thumb"
-            :preview="wfMedia(t).preview"
-            :video="wfMedia(t).video"
+            :thumb="workflowThumb(t.id)"
+            :preview="WF_PREVIEW.get(t.id)"
             :big="row.big"
             role="button"
             tabindex="0"
@@ -697,9 +686,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           :key="t.id"
           :name="t.title"
           :blurb="hubLine(t)"
-          :thumb="wfMedia(t).thumb"
-          :preview="wfMedia(t).preview"
-          :video="wfMedia(t).video"
+          :thumb="workflowThumb(t.id)"
+          :preview="WF_PREVIEW.get(t.id)"
           role="button"
           tabindex="0"
           :aria-label="`Open ${t.title}`"

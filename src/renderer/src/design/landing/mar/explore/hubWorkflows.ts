@@ -12,8 +12,9 @@ import { bundledThumb } from '../assets/mock'
  * group mixes two jobs: Image into generation and editing, the Tools groups
  * into Upscale and editing), `family` (the model family, for Filter),
  * `runs` (partner APIs only on Cloud) and `vramGb` (estimated from the
- * download). Thumbnails are the catalog's, bundled small in ./hub so the
- * published preview shows them (it blocks remote images).
+ * download). Thumbnails are the catalog's, animated, bundled in
+ * ../assets/templates so the published preview shows them (it blocks remote
+ * images).
  */
 export type HubUseCase =
   | 'Image generation'
@@ -1265,14 +1266,7 @@ export const HUB_WORKFLOWS: HubWorkflow[] = [
 const byId = new Map(HUB_WORKFLOWS.map((w) => [w.id, w]))
 export const hubById = (id: string): HubWorkflow | undefined => byId.get(id)
 
-const files = import.meta.glob<string>('./hub/*.webp', { eager: true, import: 'default' })
-const THUMBS: Record<string, string> = Object.fromEntries(
-  Object.entries(files).map(([path, url]) => [path.replace(/^.*\/|\.webp$/g, ''), url])
-)
-/** The bundled thumbnail, if this file has it (the mock's twelve keep theirs). */
-export const hubThumb = (id: string): string | undefined => THUMBS[id]
-
-export const workflowThumb = (id: string): string => bundledThumb(id) ?? hubThumb(id) ?? thumb(id)
+export const workflowThumb = (id: string): string => bundledThumb(id) ?? thumb(id)
 
 /** The card's one line: what it does, from the description's first
  *  sentence, without the "using Model X" tail the name already says. */
