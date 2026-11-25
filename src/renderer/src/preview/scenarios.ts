@@ -88,6 +88,45 @@ export const SCENARIOS: PreviewScenario[] = [
     seed: (machine) => ({ installations: everydayBuilds(machine) })
   },
   {
+    id: 'home-starting',
+    title: 'Home while Auto Start starts a build',
+    ready: '[data-testid="home-build-start-bar"]',
+    seed: (machine) => {
+      const [autoStarted] = everydayBuilds(machine)
+      return {
+        installations: everydayBuilds(machine),
+        settings: { autoLaunchOnStartup: autoStarted!.id },
+        replies: {
+          getLaunchingInstances: async () => [
+            { installationId: autoStarted!.id, installationName: autoStarted!.name }
+          ]
+        }
+      }
+    }
+  },
+  {
+    id: 'home-ready-toast',
+    title: 'Home once the Auto Start build is ready',
+    ready: '[data-testid="home-ready-toast"]',
+    seed: (machine) => {
+      const [autoStarted] = everydayBuilds(machine)
+      return {
+        installations: everydayBuilds(machine),
+        settings: { autoLaunchOnStartup: autoStarted!.id },
+        replies: {
+          getRunningInstances: async () => [
+            {
+              installationId: autoStarted!.id,
+              installationName: autoStarted!.name,
+              mode: 'console'
+            }
+          ],
+          getAutoStartReady: async () => autoStarted!.id
+        }
+      }
+    }
+  },
+  {
     id: 'home-empty',
     title: 'Home with no builds',
     ready: '[data-testid="home-view"]',

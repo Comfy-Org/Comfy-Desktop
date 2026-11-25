@@ -459,11 +459,12 @@ function isLocalSource(inst: InstallationRecord): boolean {
   return sourceMap[inst.sourceId]?.category === 'local'
 }
 
-export async function startWithDesktop(inst: InstallationRecord): Promise<void> {
-  if (!isLocalSource(inst)) return
+export async function startWithDesktop(inst: InstallationRecord): Promise<boolean> {
+  if (!isLocalSource(inst)) return false
   watchSessions()
   const result = await launchOnce(inst.id, true)
-  if (result.ok || result.cancelled) return
+  if (result.ok) return true
+  if (result.cancelled) return false
   const failure = {
     installationId: inst.id,
     installationName: inst.name,
@@ -472,6 +473,7 @@ export async function startWithDesktop(inst: InstallationRecord): Promise<void> 
   }
   recordCrash(failure)
   _broadcastToRenderer('instance-crashed', failure)
+  return false
 }
 
 async function chooseInstalledTarget(

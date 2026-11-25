@@ -140,6 +140,7 @@ import {
   type DraftLinkStartup
 } from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
+import { noteAutoStartReady, registerAutoStartNoticeHandlers } from './apps/autoStartNotice'
 import {
   isRunningForAppsOnly,
   runsWithItsWindowClosed,
@@ -316,7 +317,11 @@ async function openStartupSurface(): Promise<void> {
 
   openOrFocusHomeHostWindow()
 
-  if (explicitInst) void startWithDesktop(explicitInst)
+  if (explicitInst) void announceWhenReady(explicitInst)
+}
+
+async function announceWhenReady(inst: InstallationRecord): Promise<void> {
+  if (await startWithDesktop(inst)) noteAutoStartReady(inst.id)
 }
 
 function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
@@ -1622,6 +1627,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     })
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
+    registerAutoStartNoticeHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     registerTemplateInputAssetHandlers({
       findInstallationIdForWindow,

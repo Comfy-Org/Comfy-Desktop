@@ -1419,7 +1419,7 @@ describe('PanelApp', () => {
     expect(api.claimAttachHost).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
-    expect(wrapper.get('[data-testid="home-build-starting"]').text()).toContain('Starting ComfyUI')
+    expect(wrapper.get('[data-testid="home-build-starting"]').text()).toContain('Starting…')
 
     finishLaunch({ ok: false, message: 'ComfyUI exited with code 1' })
     await flushPromises()

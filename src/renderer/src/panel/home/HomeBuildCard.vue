@@ -9,6 +9,7 @@ import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildMetaLine from './BuildMetaLine.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
+import BuildStartBar from './BuildStartBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import {
   HOME_BUILD_TONES,
@@ -57,6 +58,13 @@ const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
 const updating = computed(() => install.progress.value?.kind === 'update')
 const working = computed(() => install.progress.value?.kind === 'working')
+const startingUp = computed(() => starting.value || (!busy.value && status === 'starting'))
+const startPercent = computed(() => (starting.value ? install.progress.value!.percent : null))
+const startingLabel = computed(() =>
+  startPercent.value === null
+    ? t('home.buildStarting')
+    : t('home.buildStartingPercent', { percent: startPercent.value })
+)
 const changesInPlace = computed(() => updating.value || working.value)
 const showsUpdateLock = computed(() => status === 'updating' && !changesInPlace.value)
 const promoting = computed(() => isPromotingToWorkspace(build))
@@ -93,8 +101,9 @@ const statusLabel = computed(() => {
   if (uninstalling.value) return t('uninstallProgress.status')
   const inPlace = install.progress.value ? inPlaceTaskLabel(install.progress.value, t) : null
   if (inPlace !== null) return inPlace
+  if (starting.value) return startingLabel.value
   if (busy.value) {
-    const phase = t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
+    const phase = t('home.buildInstalling')
     const percent = install.progress.value?.percent
     return percent == null ? phase : t('installProgress.detail', { phase, percent })
   }
@@ -106,13 +115,17 @@ const statusLabel = computed(() => {
     case 'running':
       return t('home.buildRunning')
     case 'starting':
-      return t('home.buildStarting')
+      return startingLabel.value
     case 'update':
     case 'ready':
       return autoStart && !isCloudBuild(build) ? t('home.autoStartOn') : restingLabel.value
     default:
       return status satisfies never
   }
+})
+const statusTone = computed(() => {
+  if (startingUp.value) return 'text-foreground'
+  return canOpen.value && !busy.value && broken.value ? 'text-destructive' : 'text-muted-foreground'
 })
 const detail = computed(() =>
   isCloudBuild(build) ? t('home.cloudHardware') : homeBuildDetail(build, t)
@@ -226,14 +239,18 @@ function openContextMenu(event: MouseEvent): void {
     >
       <span
         class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="canOpen && !busy && broken ? 'text-destructive' : 'text-muted-foreground'"
+        :class="statusTone"
+        :role="startingUp ? 'status' : undefined"
+        :aria-live="startingUp ? 'polite' : undefined"
+        :data-starting="startingUp ? 'true' : undefined"
         data-testid="home-build-status"
       >
         <LoaderCircle
-          v-if="busy || promoting || status === 'updating'"
+          v-if="busy || startingUp || promoting || status === 'updating'"
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
           aria-hidden="true"
+          data-testid="home-build-spinner"
         />
         <OctagonAlert
           v-else-if="canOpen && broken"
@@ -285,8 +302,14 @@ function openContextMenu(event: MouseEvent): void {
     >
       <Ellipsis :size="15" aria-hidden="true" />
     </Button>
+    <BuildStartBar
+      v-if="startingUp"
+      :percent="startPercent"
+      :label="statusLabel"
+      data-testid="home-build-start-bar"
+    />
     <BuildProgressBar
-      v-if="install.progress.value?.percent != null"
+      v-else-if="install.progress.value?.percent != null"
       :percent="install.progress.value.percent"
       :label="statusLabel"
       data-testid="home-build-progress"

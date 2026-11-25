@@ -10,8 +10,10 @@ import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
+import HomeReadyToast from './home/HomeReadyToast.vue'
 import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
+import { useAutoStartReadyNotice } from './home/useAutoStartReadyNotice'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
@@ -124,7 +126,18 @@ const openTarget = computed(
       (build) => build.id === pickedBuildId.value && build.statusTag?.style !== 'danger'
     ) ?? mostRecentBuild.value
 )
+const readyNotice = useAutoStartReadyNotice()
+const readyBuild = computed(() => {
+  const id = readyNotice.buildId.value
+  if (id === null || !sessionStore.isRunning(id)) return null
+  return installationStore.installations.find((build) => build.id === id) ?? null
+})
+function pickBuild(build: Installation): void {
+  readyNotice.dismiss(build.id)
+  emit('pick', build)
+}
 function openBuild(build: Installation): void {
+  readyNotice.dismiss(build.id)
   if (build.statusTag?.style === 'danger') emit('open-build', build)
   else if (launchFailed(progressStore, build.id)) viewBuildLogs(build.id)
   else emit('pick', build)
@@ -156,8 +169,16 @@ onMounted(() => {
       :builds="openableBuilds"
       :target="openTarget"
       :status-of="buildStatus"
-      @open="emit('pick', $event)"
+      @open="pickBuild"
       @pick="pickedBuildId = $event.id"
+    />
+
+    <HomeReadyToast
+      v-if="readyBuild"
+      class="fixed right-6 bottom-6 z-20"
+      :data-build-id="readyBuild.id"
+      @open="openBuild(readyBuild)"
+      @dismiss="readyNotice.dismiss()"
     />
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">

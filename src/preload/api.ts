@@ -237,6 +237,15 @@ export function buildElectronApi(): ElectronApi {
     releaseAttachHostPreview: () => ipcRenderer.invoke('release-attach-host-preview'),
     getRunningInstances: () => ipcRenderer.invoke('get-running-instances'),
     getLaunchingInstances: () => ipcRenderer.invoke('get-launching-instances'),
+    getAutoStartReady: () => ipcRenderer.invoke('get-auto-start-ready'),
+    dismissAutoStartReady: (installationId) =>
+      ipcRenderer.invoke('dismiss-auto-start-ready', installationId),
+    onAutoStartReadyChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, data: unknown) =>
+        callback(data as Parameters<typeof callback>[0])
+      ipcRenderer.on('auto-start-ready-changed', handler)
+      return () => ipcRenderer.removeListener('auto-start-ready-changed', handler)
+    },
     getStoppingInstances: () => ipcRenderer.invoke('get-stopping-instances'),
     getActiveOperations: () => ipcRenderer.invoke('get-active-operations'),
     getLastCrashError: (installationId: string) =>

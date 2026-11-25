@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuRadioGroup } from 'reka-ui'
-import { Cloud, Laptop } from '@lucide/vue'
+import { Cloud, Laptop, LoaderCircle } from '@lucide/vue'
 import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
@@ -30,6 +30,8 @@ const open = ref(false)
 const sessionStore = useSessionStore()
 const progressStore = useProgressStore()
 
+const targetStarting = computed(() => statusOf(target) === 'starting')
+
 function isLive(build: Installation): boolean {
   return statusOf(build) === 'running'
 }
@@ -56,15 +58,36 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     data-testid="home-open-build"
     @run="emit('open', target)"
   >
+    <LoaderCircle
+      v-if="targetStarting"
+      class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+      :size="14"
+      aria-hidden="true"
+      data-testid="home-open-comfyui-spinner"
+    />
     <component
       :is="isCloudBuild(target) ? Cloud : Laptop"
+      v-else
       class="shrink-0"
       :size="14"
       :data-kind="isCloudBuild(target) ? 'cloud' : 'local'"
       aria-hidden="true"
       data-testid="home-open-comfyui-icon"
     />
-    <span>{{ t('home.openComfyUI') }}</span>
+    <span class="grid" data-testid="home-open-comfyui-label">
+      <span
+        class="[grid-area:1/1]"
+        :class="targetStarting && 'invisible'"
+        :aria-hidden="targetStarting ? 'true' : undefined"
+        >{{ t('home.openComfyUI') }}</span
+      >
+      <span
+        class="[grid-area:1/1]"
+        :class="!targetStarting && 'invisible'"
+        :aria-hidden="targetStarting ? undefined : 'true'"
+        >{{ t('home.startingComfyUI') }}</span
+      >
+    </span>
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
     <template v-if="builds.length > 1" #menu>
       <DropdownMenuRadioGroup :model-value="target.id">

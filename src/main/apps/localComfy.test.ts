@@ -1489,6 +1489,25 @@ describe('the Auto start build, started when Desktop opens', () => {
     expect(getAllCrashes()).toEqual([])
   })
 
+  it('reports whether it is ready, so Home is told only about a build that came up', async () => {
+    startsWhenLaunched()
+    expect(await startWithDesktop()).toBe(true)
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+    expect(await startWithDesktop()).toBe(false)
+
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+    expect(await startWithDesktop()).toBe(false)
+
+    expect(
+      await local.startWithDesktop(
+        build({ sourceId: 'remote', installPath: '' }) as unknown as InstallationRecord
+      )
+    ).toBe(false)
+  })
+
   it('says nothing when its start was cancelled', async () => {
     mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
 

@@ -54,6 +54,7 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --animate-pop-in: pop-in 160ms var(--ease-out-expo);
   --animate-fade-in: fade-in 160ms ease-out;
+  --animate-start-bar-slide: start-bar-slide 1.4s ease-in-out infinite;
   --animate-bell-nudge: bell-nudge 600ms ease-out 1;
   --animate-bell-fade: bell-fade 600ms ease-out 1;
   --animate-rail-thumb-bounce: rail-thumb-bounce 650ms 1;
@@ -79,6 +80,14 @@
   @keyframes fade-in {
     from {
       opacity: 0;
+    }
+  }
+  @keyframes start-bar-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(400%);
     }
   }
   @keyframes bell-nudge {
