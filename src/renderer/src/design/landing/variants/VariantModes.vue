@@ -13,6 +13,12 @@ import PublishDialog from '../parts/apps/PublishDialog.vue'
 import ShareDialog from '../parts/apps/ShareDialog.vue'
 import AgentNav from '../parts/agent/AgentNav.vue'
 import ModeNav from '../parts/env/ModeNav.vue'
+import {
+  ComputeNav,
+  ComputeWorkspaceMenu,
+  computeNav,
+  settingsMode
+} from '../mar/pages/__explore__/developer-overview'
 import SidebarGroup from '../parts/env/SidebarGroup.vue'
 import SpacesGroup from '../parts/space/SpacesGroup.vue'
 import ModePages from '../pages/modes/ModePages.vue'
@@ -85,21 +91,26 @@ const MODES = computed(() => [
         </div>
 
         <AgentNav v-if="proto.mode === 'agent'" />
+        <ComputeNav v-else-if="computeNav && can.home" :mode="proto.mode" />
         <ModeNav v-else-if="can.home || proto.mode === 'build'" :mode="proto.mode" />
         <!-- The builds (or projects). New users have none yet (Home walks them
            through). -->
         <!-- Stars arrive with Explore: the first thing there is to star. -->
-        <MarFavoritesGroup
-          v-if="FAVORITES_ON && proto.mode === 'create' && can.exploreApps && !proto.fresh"
-        />
-        <!-- Kept for a new user, each with an empty state, and the builds
+        <template v-if="!settingsMode">
+          <MarFavoritesGroup
+            v-if="FAVORITES_ON && proto.mode === 'create' && can.exploreApps && !proto.fresh"
+          />
+          <!-- Kept for a new user, each with an empty state, and the builds
              show even with no local install. -->
-        <!-- Before Home: Builds and Tools, as Desktop has them today. -->
-        <MarBuildsNav v-if="proto.mode === 'create' && !can.home" />
-        <SidebarGroup v-else-if="proto.mode === 'create'" />
-        <SpacesGroup v-if="proto.mode === 'create' && can.spaces" />
+          <!-- Before Home: Builds and Tools, as Desktop has them today. -->
+          <MarBuildsNav v-if="proto.mode === 'create' && !can.home" />
+          <SidebarGroup v-else-if="proto.mode === 'create'" />
+          <SpacesGroup v-if="proto.mode === 'create' && can.spaces" />
+        </template>
 
-        <div class="mt-auto flex flex-col gap-2 pt-3"><WorkspaceMenu /></div>
+        <div class="mt-auto flex flex-col gap-2 pt-3">
+          <ComputeWorkspaceMenu v-if="computeNav && can.home" /><WorkspaceMenu v-else />
+        </div>
       </div>
     </aside>
     <MarSidebarToggle v-if="!building" />
