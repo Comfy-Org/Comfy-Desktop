@@ -40,6 +40,7 @@ import { fieldVariants } from '../../ui/field.variants'
 import { floatingSurface, menuItem } from '../../ui/menu.styles'
 import { PORTAL_TO } from '../../ui/portal'
 import RangeCalendar from './RangeCalendar.vue'
+import RatingFilterRow from './RatingFilterRow.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import type { AssetBuildRow } from '../assets/assetBuilds'
 import { LABELS } from '../assets/assetLabels'
@@ -58,6 +59,7 @@ import { activeFilters, noFilter, type AssetFilter, type AssetType } from '../as
  * and names its types "More types" since Type sits in the toolbar. There
  * it wears the design system's menu, like Sort and Type beside it.
  */
+type RatingRow = { value: string; label: string; stars?: number; count?: number }
 const {
   types,
   tags,
@@ -90,7 +92,7 @@ const {
   kinds?: readonly { value: string; label: string }[]
   /** Rating › Five stars: how many stars a file has to hold. Empty
    *  keeps every file, rated or not. */
-  ratings?: readonly { value: string; label: string }[]
+  ratings?: readonly RatingRow[]
   /** Desktop: Favorites, which ComfyUI's tab keeps in its sidebar. */
   favorite?: boolean
   builds?: AssetBuildRow[]
@@ -202,7 +204,7 @@ const found = computed(() => ({
   tags: tags.filter(match),
   folders: (folders ?? []).filter((x) => match(x.name)),
   kinds: (kinds ?? []).filter((x) => match(x.label)),
-  ratings: match('Rating') ? (ratings ?? []) : [],
+  ratings: (ratings ?? []).filter((x) => match('Rating') || match(x.label)),
   favorite: favorite && match('Favorites'),
   labels: LABELS.filter((l) => match(l.label)),
   meta: META.map((m) => ({ ...m, values: metaOptions(m.key).filter(match) })).filter(
@@ -289,8 +291,10 @@ const searching = computed(() => !!q.value.trim())
                 :value="x.value"
                 @select.prevent="rating = x.value"
               >
-                <span class="afm-grow">{{ x.label }}</span>
-                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                <RatingFilterRow :label="x.label" :stars="x.stars" :count="x.count" />
+                <span class="afm-check"
+                  ><DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator
+                ></span>
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </template>
@@ -480,20 +484,22 @@ const searching = computed(() => !!q.value.trim())
             <DropdownMenuPortal :to="PORTAL_TO">
               <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
                 <DropdownMenuRadioGroup :model-value="rating">
-                  <DropdownMenuRadioItem :class="item" value="" @select.prevent="rating = ''">
-                    <span class="afm-grow">Any rating</span>
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem
-                    v-for="x in ratings"
-                    :key="x.value"
-                    :class="item"
-                    :value="x.value"
-                    @select.prevent="rating = x.value"
-                  >
-                    <span class="afm-grow">{{ x.label }}</span>
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
-                  </DropdownMenuRadioItem>
+                  <template v-for="(x, i) in ratings" :key="x.value">
+                    <DropdownMenuSeparator
+                      v-if="i > 0 && !x.stars && ratings[i - 1]?.stars"
+                      class="afm-sep"
+                    />
+                    <DropdownMenuRadioItem
+                      :class="item"
+                      :value="x.value"
+                      @select.prevent="rating = x.value"
+                    >
+                      <RatingFilterRow :label="x.label" :stars="x.stars" :count="x.count" />
+                      <span class="afm-check"
+                        ><DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator
+                      ></span>
+                    </DropdownMenuRadioItem>
+                  </template>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
