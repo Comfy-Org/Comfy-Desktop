@@ -44,6 +44,14 @@ describe('createSpeedMeter', () => {
     expect(meter.read(6000)).toBe(0)
   })
 
+  it('measures over the last 5 seconds only when bytes come back after a longer stall', () => {
+    const meter = createSpeedMeter()
+    for (let at = 0; at <= 1000; at += 250) meter.record((at / 250) * MB, at)
+    meter.record(5 * MB, 31_000)
+    meter.record(9 * MB, 32_000)
+    expect(meter.read(32_000)).toBeCloseTo(1 * MB)
+  })
+
   it('averages bursts over the window', () => {
     const meter = createSpeedMeter()
     let bytes = 0

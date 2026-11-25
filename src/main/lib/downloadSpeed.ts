@@ -39,9 +39,20 @@ export function createSpeedMeter(windowMs = SPEED_WINDOW_MS): SpeedMeter {
       const anchor = samples[0]
       const latest = samples.at(-1)
       if (!anchor || !latest) return undefined
-      const span = at - anchor.at
+      const cutoff = at - windowMs
+      let start = anchor
+      if (anchor.at < cutoff) {
+        const next = samples[1]
+        const gap = next ? next.at - anchor.at : 0
+        const bytes =
+          next && gap <= 2 * SAMPLE_SPACING_MS
+            ? anchor.bytes + ((next.bytes - anchor.bytes) * (cutoff - anchor.at)) / gap
+            : anchor.bytes
+        start = { at: cutoff, bytes }
+      }
+      const span = at - start.at
       if (span < MIN_SPAN_MS) return undefined
-      return Math.max(0, ((latest.bytes - anchor.bytes) * 1000) / span)
+      return Math.max(0, ((latest.bytes - start.bytes) * 1000) / span)
     },
     reset() {
       samples = []
