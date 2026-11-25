@@ -65,11 +65,6 @@ function handleClick(): void {
           aria-hidden="true"
         ></span>
         <span
-          v-else-if="updateAvailable"
-          class="picker-row-update-dot absolute -right-0.5 -bottom-0.5 box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[var(--status-update,#f59e0b)]"
-          aria-hidden="true"
-        ></span>
-        <span
           v-else-if="running"
           class="picker-row-running-dot absolute -right-0.5 -bottom-0.5 box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[#38c149]"
           aria-hidden="true"
@@ -81,13 +76,21 @@ function handleClick(): void {
           >{{ installation.name }}</span
         >
         <span
+          v-if="updateAvailable"
+          class="picker-row-update-pill flex-none rounded-[999px] px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-text-muted shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_22%,transparent)] group-aria-selected/instance:text-text group-aria-selected/instance:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_30%,transparent)]"
+          :title="t('chooser.updateAvailable')"
+        >
+          <span aria-hidden="true">{{ t('chooser.updateShort') }}</span>
+          <span class="sr-only">{{ t('chooser.updateAvailable') }}</span>
+        </span>
+        <span
           v-if="isCurrent"
           class="picker-row-current-pill flex-none rounded-[999px] px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-text-muted shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_22%,transparent)] group-aria-selected/instance:text-text group-aria-selected/instance:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_30%,transparent)]"
         >
           {{ t('snapshots.current') }}
         </span>
         <span
-          v-else-if="lastLaunchedShortLabel"
+          v-else-if="lastLaunchedShortLabel && !updateAvailable"
           class="picker-row-recency flex-none text-[12px] leading-4 whitespace-nowrap text-text-muted"
         >
           {{ lastLaunchedShortLabel }}

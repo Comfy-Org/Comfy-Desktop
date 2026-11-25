@@ -306,26 +306,77 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bravoRow.find('.picker-row-recency').exists()).toBe(true)
     })
 
-    it('paints the row dot orange when update available, including when also running', async () => {
+    it('marks a build with an update with a neutral Update pill in place of the orange dot and the last-launched time', async () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({
             id: 'a',
             name: 'Alpha',
+            lastLaunchedAt: Date.now() - 3_600_000,
             statusTag: { style: 'update', label: 'Update' }
           }),
-          makeInstall({ id: 'b', name: 'Bravo' })
+          makeInstall({ id: 'b', name: 'Bravo', lastLaunchedAt: Date.now() - 3_600_000 })
         ],
         activeInstallationId: null,
         runningInstallationIds: ['a']
       })
       const rows = wrapper.findAll('.picker-row')
       const alphaRow = rows.find((c) => c.text().includes('Alpha'))!
-      expect(alphaRow.find('.picker-row-update-dot').exists()).toBe(true)
-      expect(alphaRow.find('.picker-row-running-dot').exists()).toBe(false)
+      const pill = alphaRow.find('.picker-row-update-pill')
+      expect(pill.exists()).toBe(true)
+      expect(pill.find('[aria-hidden="true"]').text()).toBe('Update')
+      expect(pill.find('.sr-only').text()).toBe('Update available')
+      expect(pill.attributes('title')).toBe('Update available')
+      expect(alphaRow.find('.picker-row-update-dot').exists()).toBe(false)
+      expect(alphaRow.find('.picker-row-running-dot').exists()).toBe(true)
+      expect(alphaRow.find('.picker-row-recency').exists()).toBe(false)
       const bravoRow = rows.find((c) => c.text().includes('Bravo'))!
-      expect(bravoRow.find('.picker-row-update-dot').exists()).toBe(false)
+      expect(bravoRow.find('.picker-row-update-pill').exists()).toBe(false)
+      expect(bravoRow.find('.picker-row-recency').exists()).toBe(true)
       expect(bravoRow.find('.picker-row-running-dot').exists()).toBe(false)
+    })
+
+    it('gives the Update pill the exact look of the Current pill', async () => {
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({ id: 'a', name: 'Alpha', statusTag: { style: 'update', label: 'Update' } })
+        ],
+        activeInstallationId: 'a',
+        runningInstallationIds: []
+      })
+      const row = wrapper.find('.picker-row')
+      const styleClasses = (selector: string) =>
+        row
+          .get(selector)
+          .classes()
+          .filter((name) => !name.startsWith('picker-row-'))
+      expect(styleClasses('.picker-row-update-pill')).toEqual(
+        styleClasses('.picker-row-current-pill')
+      )
+    })
+
+    it('shows both Update and Current pills on the current build, Update first', async () => {
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({
+            id: 'a',
+            name: 'Alpha',
+            lastLaunchedAt: Date.now() - 60_000,
+            statusTag: { style: 'update', label: 'Update' }
+          })
+        ],
+        activeInstallationId: 'a',
+        runningInstallationIds: []
+      })
+      const body = wrapper.get('.picker-row .picker-row-body')
+      const pills = Array.from(body.element.children).map((el) => el.className.split(' ')[0])
+      expect(pills).toEqual([
+        'picker-row-name',
+        'picker-row-update-pill',
+        'picker-row-current-pill'
+      ])
+      expect(body.find('.picker-row-recency').exists()).toBe(false)
+      expect(body.find('.picker-row-update-dot').exists()).toBe(false)
     })
   })
 
