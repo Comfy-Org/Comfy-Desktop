@@ -170,7 +170,8 @@ const PICTURES: MarAsset[] = (
     ['relight_mug_00003.png', 'image', '2.1 MB', 2100, 1700, 'local-1', 'mug-morning'],
     ['headphones_ref.jpg', 'image', '1.1 MB', 1100, 2950, 'local-1', 'headphones-ref'],
     ['alpine_lake_00002.png', 'image', '3.4 MB', 3400, 4700, 'local-1', 'alpine-lake'],
-    ['moodboard_citrus.png', 'image', '1.8 MB', 1800, 8200, 'local-1', 'citrus-flatlay']
+    ['moodboard_citrus.png', 'image', '1.8 MB', 1800, 8200, 'local-1', 'citrus-flatlay'],
+    ['harbor_dawn_beauty_00003.exr', 'image', '48.6 MB', 48600, 40, 'local-1', 'harbor-dawn']
   ] as const
 ).map(([name, type, size, sizeMb, age, envId, slot], i) => ({
   id: `pic-${i}`,

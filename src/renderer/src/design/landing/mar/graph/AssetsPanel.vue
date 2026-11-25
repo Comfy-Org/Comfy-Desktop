@@ -31,6 +31,7 @@ import {
 import { go, proto, toast } from '../../useProto'
 import RailPanel from './panels/RailPanel.vue'
 import { PICTURES } from './panels/panelData'
+import exrPreview from '../assets/mock/asset-harbor-dawn.webp'
 import { savedAssets } from './savedAssets'
 import MarSearchField from '../pages/MarSearchField.vue'
 import Tooltip from '../../ui/Tooltip.vue'
@@ -42,7 +43,6 @@ import type { MarAsset } from '../pages/assetsStore'
 import type { MenuLine } from '../pages/menu'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from './AssetFilterMenu.vue'
-import AssetLightbox from './AssetLightbox.vue'
 import AssetSidePanel from './AssetSidePanel.vue'
 import { saveFile } from '../assets/saveFile'
 import BulkTagMenu from './BulkTagMenu.vue'
@@ -248,14 +248,15 @@ const ALL = computed<PanelAsset[]>(() => [
     [
       ['narration_intro.wav', 'audio', '5.1 MB', 'Generated', 1],
       ['ambience_rain_loop.mp3', 'audio', '2.4 MB', 'Imported', 3],
-      ['pyramid_prop.glb', '3d', '7.9 MB', 'Generated', 2]
+      ['pyramid_prop.glb', '3d', '7.9 MB', 'Generated', 2],
+      ['harbor_dawn_beauty_00003.exr', 'image', '48.6 MB', 'Generated', 0]
     ] as const
   ).map(([name, type, size, kind, w], i) => {
     const [when, age] = WHEN[w]!
     return {
       id: `file-${i}`,
       name,
-      src: '',
+      src: type === 'image' ? exrPreview : '',
       type,
       source: 'local' as const,
       size,
@@ -442,10 +443,8 @@ onMounted(() => {
  *  selects, and once something is selected a click selects too.
  *  Inspect asset opens that same view; no second panel. With workflow tabs
  *  (the Current look) it can also open in a tab beside them. */
-const lightbox = ref<PanelAsset | null>(null)
 function look(a: PanelAsset): void {
-  if (prod.value) lightbox.value = a
-  else detail.value = a
+  detail.value = a
 }
 const inspect = (a: PanelAsset): void => (prod.value ? showSide(a) : look(a))
 const tabs = computed(() => graphStyle.id === 'current')
@@ -928,13 +927,6 @@ function upload(files: FileList | null | undefined): void {
       :on-tab="tabs ? (a: MarAsset) => ((detail = null), openFull(a as PanelAsset)) : undefined"
       @go="detail = $event as PanelAsset"
       @close="detail = null"
-    />
-    <AssetLightbox
-      v-if="lightbox"
-      :asset="lightbox"
-      :list="finished"
-      @go="lightbox = $event as PanelAsset"
-      @close="lightbox = null"
     />
   </RailPanel>
   <!-- Show details: on the right of the canvas, outside the panel. -->
