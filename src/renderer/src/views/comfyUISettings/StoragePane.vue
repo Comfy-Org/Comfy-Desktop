@@ -162,9 +162,8 @@ const showInputDirRow = computed(
 const showOutputDirRow = computed(
   () => !!launchOutputFolder.value || !useSharedOutputEnabled.value || !!sharedOutputField.value
 )
-const switchRowClass =
-  'storage-switch-row flex min-h-11 min-w-0 cursor-pointer items-center gap-1.5 rounded-[10px] py-1.5 pr-[3px] pl-3 text-[13px] leading-[18px] text-neutral-100'
-const dividerClass = 'storage-dir-divider -mx-1.5 h-px shrink-0 bg-[var(--chooser-surface-border)]'
+const headerToggleClass =
+  'storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5'
 const flagCodeClass =
   'rounded-[3px] bg-[color-mix(in_srgb,currentcolor_14%,transparent)] px-1 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px]'
 
@@ -378,9 +377,7 @@ function handleRevealPath(path: string): void {
       :tooltip="t('tooltips.instanceModels')"
     >
       <template v-if="useSharedModelsField" #actions>
-        <label
-          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
-        >
+        <label :class="headerToggleClass">
           <span>{{ t('comfyUISettings.includeSharedDirs') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
           <BooleanToggle
@@ -403,20 +400,20 @@ function handleRevealPath(path: string): void {
     </GlobalSettingsMicroSection>
 
     <GlobalSettingsMicroSection :title="t('settings.inputStorage')">
-      <div class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]">
-        <template v-if="useSharedInputField">
-          <label :class="switchRowClass">
-            <span class="min-w-0 truncate">{{ t('comfyUISettings.useSharedInput') }}</span>
-            <InfoTooltip :text="t('tooltips.useSharedInput')" />
-            <span class="storage-switch-slot ml-auto flex h-8 shrink-0 items-center justify-end">
-              <BooleanToggle
-                :field="useSharedInputField"
-                @update="(v) => handleToggleField(useSharedInputField, v)"
-              />
-            </span>
-          </label>
-          <div v-if="showInputDirRow" :class="dividerClass" aria-hidden="true" />
-        </template>
+      <template v-if="useSharedInputField" #actions>
+        <label :class="headerToggleClass">
+          <span>{{ t('comfyUISettings.useSharedInput') }}</span>
+          <InfoTooltip :text="t('tooltips.useSharedInput')" />
+          <BooleanToggle
+            :field="useSharedInputField"
+            @update="(v) => handleToggleField(useSharedInputField, v)"
+          />
+        </label>
+      </template>
+      <div
+        v-if="showInputDirRow"
+        class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]"
+      >
         <StorageDirRow
           v-if="launchInputFolder"
           data-testid="storage-launch-input"
@@ -452,20 +449,20 @@ function handleRevealPath(path: string): void {
     </GlobalSettingsMicroSection>
 
     <GlobalSettingsMicroSection :title="t('settings.outputStorage')">
-      <div class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]">
-        <template v-if="useSharedOutputField">
-          <label :class="switchRowClass">
-            <span class="min-w-0 truncate">{{ t('comfyUISettings.useSharedOutput') }}</span>
-            <InfoTooltip :text="t('tooltips.useSharedOutput')" />
-            <span class="storage-switch-slot ml-auto flex h-8 shrink-0 items-center justify-end">
-              <BooleanToggle
-                :field="useSharedOutputField"
-                @update="(v) => handleToggleField(useSharedOutputField, v)"
-              />
-            </span>
-          </label>
-          <div v-if="showOutputDirRow" :class="dividerClass" aria-hidden="true" />
-        </template>
+      <template v-if="useSharedOutputField" #actions>
+        <label :class="headerToggleClass">
+          <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
+          <InfoTooltip :text="t('tooltips.useSharedOutput')" />
+          <BooleanToggle
+            :field="useSharedOutputField"
+            @update="(v) => handleToggleField(useSharedOutputField, v)"
+          />
+        </label>
+      </template>
+      <div
+        v-if="showOutputDirRow"
+        class="storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]"
+      >
         <StorageDirRow
           v-if="launchOutputFolder"
           data-testid="storage-launch-output"

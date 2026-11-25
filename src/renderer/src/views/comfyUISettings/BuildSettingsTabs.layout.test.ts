@@ -160,15 +160,38 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     expect(Math.round(toggle.right), 'toggle ends on the card edge').toBe(Math.round(box.right))
   })
 
-  it('ends the input and output switches on the trailing action column, inside their cards', async () => {
+  it('puts the input and output switches on their section headers, lined up with Models', async () => {
     const root = await mountStorage(width)
-    const actionsRight = Math.round(rects(root, '.models-dir-actions')[0]!.right)
-    const switches = [...root.querySelectorAll<HTMLElement>('.storage-switch-row')]
-    expect(switches).toHaveLength(2)
-    for (const row of switches) {
-      expect(row.closest('.storage-dir-card'), 'the switch sits in the folder card').not.toBeNull()
-      const toggle = row.querySelector('.bt-switch')!.getBoundingClientRect()
-      expect(Math.round(toggle.right), 'switch ends on the action column').toBe(actionsRight)
+    const sections = [...root.querySelectorAll<HTMLElement>('.gs-micro-section')]
+    expect(sections).toHaveLength(3)
+    const placement = (section: HTMLElement) => {
+      const title = section.querySelector('.gs-micro-title')!.getBoundingClientRect()
+      const toggle = section.querySelector('.gs-micro-title .bt-switch')
+      expect(toggle, 'the switch sits on the header line').not.toBeNull()
+      const box = toggle!.getBoundingClientRect()
+      return {
+        right: Math.round(box.right),
+        middleFromTitleTop: Math.round(box.top + box.height / 2 - title.top)
+      }
+    }
+    const models = placement(sections[0]!)
+    for (const section of sections.slice(1)) {
+      expect(placement(section), 'same place as the Models header switch').toEqual(models)
+    }
+    expect(
+      root.querySelectorAll('.storage-dir-card .bt-switch'),
+      'cards hold no switch'
+    ).toHaveLength(0)
+  })
+
+  it('leaves the git build input and output headers without a switch', async () => {
+    const root = await mountStorage(width, GIT_STORAGE_SECTIONS)
+    const sections = [...root.querySelectorAll<HTMLElement>('.gs-micro-section')]
+    expect(sections).toHaveLength(3)
+    expect(sections[0]!.querySelector('.gs-micro-title .bt-switch')).not.toBeNull()
+    for (const section of sections.slice(1)) {
+      expect(section.querySelector('.gs-micro-actions')).toBeNull()
+      expect(section.querySelector('.bt-switch')).toBeNull()
     }
   })
 
@@ -219,8 +242,8 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
       return Math.round(row.getBoundingClientRect().height - extraLines)
     }
     const modelsRow = heightBesidesPath(root.querySelector<HTMLElement>('.models-dir-row')!)
-    const rows = [...root.querySelectorAll<HTMLElement>('.storage-switch-row, .storage-dir-row')]
-    expect(rows.length).toBe(4)
+    const rows = [...root.querySelectorAll<HTMLElement>('.storage-dir-row')]
+    expect(rows.length).toBe(2)
     expect(modelsRow).toBe(44)
     for (const row of rows) expect(heightBesidesPath(row), 'row height').toBe(modelsRow)
   })
@@ -307,9 +330,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
       expect(getComputedStyle(card).borderRadius, 'card radius').toBe('14px')
       const box = card.getBoundingClientRect()
       const slots = [
-        ...card.querySelectorAll<HTMLElement>(
-          '.models-dir-icon-slot, .storage-switch-slot, .storage-dir-icon-slot'
-        )
+        ...card.querySelectorAll<HTMLElement>('.models-dir-icon-slot, .storage-dir-icon-slot')
       ].map((el) => el.getBoundingClientRect())
       expect(Math.round(slots[0]!.top - box.top), 'first row starts 16px from the top').toBe(16)
       const rows = [...card.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
