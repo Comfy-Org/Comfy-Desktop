@@ -8,6 +8,7 @@ import {
   WEB_SESSION_CREATE_TIMEOUT_MS,
   type InjectWriteOptions
 } from './injectScript'
+import { preemptPartitionCleanup, runOnPartition } from './partitionCoordinator'
 
 export {
   buildIndexedDbInjectScript,
@@ -15,6 +16,8 @@ export {
   WEB_SESSION_CREATE_TIMEOUT_MS
 }
 export type { InjectWriteOptions }
+
+export type InjectOutcome = 'injected' | 'kept' | 'marker_unsaved'
 
 export interface FirebaseSessionInjection {
   contents: WebContents
@@ -70,20 +73,36 @@ export function hasActiveFirebaseSessionInjection(): boolean {
   return activeInjection !== null
 }
 
+function isInjectable(injection: FirebaseSessionInjection, expectedOrigin: string): boolean {
+  return (
+    activeInjection === injection &&
+    !injection.contents.isDestroyed() &&
+    currentOrigin(injection.contents) === expectedOrigin
+  )
+}
+
 export async function injectFirebaseSession(
   injection: FirebaseSessionInjection,
   expectedOrigin: string,
   user: Record<string, unknown>,
   apiKey: string,
   options: InjectWriteOptions = {}
-): Promise<boolean> {
-  if (
-    activeInjection !== injection ||
-    injection.contents.isDestroyed() ||
-    currentOrigin(injection.contents) !== expectedOrigin
-  ) {
-    return false
-  }
+): Promise<InjectOutcome> {
+  if (!isInjectable(injection, expectedOrigin)) return 'kept'
+  if (options.onlyIfSignedOut !== true) preemptPartitionCleanup(injection.contents)
+  return await runOnPartition(injection.contents, () =>
+    injectOnPartition(injection, expectedOrigin, user, apiKey, options)
+  )
+}
+
+async function injectOnPartition(
+  injection: FirebaseSessionInjection,
+  expectedOrigin: string,
+  user: Record<string, unknown>,
+  apiKey: string,
+  options: InjectWriteOptions
+): Promise<InjectOutcome> {
+  if (!isInjectable(injection, expectedOrigin)) return 'kept'
 
   const frame = injection.contents.mainFrame
   injection.frame = frame
@@ -95,12 +114,13 @@ export async function injectFirebaseSession(
     currentOrigin(injection.contents) !== expectedOrigin
   ) {
     invalidateInjection(injection)
-    return false
+    return 'kept'
   }
 
-  const result = await frame.executeJavaScript(
+  const result: unknown = await frame.executeJavaScript(
     buildIndexedDbInjectScript(user, apiKey, expectedOrigin, injection.token, options),
     true
   )
-  return result === true && activeInjection === injection
+  if (result === 'marker_unsaved') return 'marker_unsaved'
+  return result === true && activeInjection === injection ? 'injected' : 'kept'
 }

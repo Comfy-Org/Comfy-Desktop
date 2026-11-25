@@ -65,6 +65,7 @@ vi.mock('../firebaseBridge/flowShared', () => ({ bindSignedInUser: h.bindSignedI
 
 const { CLOUD_VIEW_SESSION_EVENT, decideCloudViewSession, reconcileCloudViewSession } =
   await import('./index')
+const { preemptPartitionCleanup } = await import('../firebaseBridge/partitionCoordinator')
 
 const CLOUD_URL = 'https://cloud.comfy.org/cloud'
 
@@ -120,11 +121,29 @@ function runMarkerWrite(script: string, state: PageState, url: string): unknown 
   return page({ origin: new URL(url).origin }, localStorage)
 }
 
-function fakeView(state: PageState, url = CLOUD_URL): FakeView {
+interface FakeViewOptions {
+  url?: string
+  partition?: object
+  remove?: (script: string) => Promise<unknown>
+  read?: () => Promise<unknown>
+}
+
+function fakeView(state: PageState, options: FakeViewOptions | string = {}): FakeView {
+  const {
+    url = CLOUD_URL,
+    partition = {},
+    remove,
+    read
+  } = typeof options === 'string' ? { url: options } : options
   const markers: (string | null)[] = []
   const executeJavaScript = vi.fn((script: string) => {
-    if (script.includes('expectedUid')) return Promise.resolve(true)
-    if (script.includes('indexedDB.databases')) return Promise.resolve({ ...state })
+    if (script.includes('held.controller.abort')) return Promise.resolve(true)
+    if (script.includes('expectedUid'))
+      return remove ? remove(script) : Promise.resolve('signed_out')
+    if (script.includes('indexedDB.databases')) {
+      const snapshot = { ...state }
+      return read ? read().then(() => snapshot) : Promise.resolve(snapshot)
+    }
     const written = runMarkerWrite(script, state, url)
     markers.push(state.marker)
     return Promise.resolve(written)
@@ -132,6 +151,7 @@ function fakeView(state: PageState, url = CLOUD_URL): FakeView {
   const contents = {
     isDestroyed: () => false,
     getURL: () => url,
+    session: partition,
     executeJavaScript
   } as unknown as WebContents
   return {
@@ -140,6 +160,24 @@ function fakeView(state: PageState, url = CLOUD_URL): FakeView {
     scripts: () => executeJavaScript.mock.calls.map(([script]) => script as string),
     markers: () => [...markers]
   }
+}
+
+function deferred<T = unknown>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+function reads(view: FakeView): string[] {
+  return view
+    .scripts()
+    .filter((script) => script.includes('indexedDB.databases') && !script.includes('expectedUid'))
+}
+
+function removals(view: FakeView): string[] {
+  return view.scripts().filter((script) => script.includes('expectedUid'))
 }
 
 function outcomes(): unknown[] {
@@ -163,7 +201,7 @@ beforeEach(() => {
   })
   h.lookupAccount.mockResolvedValue({ localId: 'desktop-uid' })
   h.buildPersistedUserFromCustomToken.mockReturnValue({ uid: 'desktop-uid' })
-  h.injectFirebaseSession.mockResolvedValue(true)
+  h.injectFirebaseSession.mockResolvedValue('injected')
   h.hasActiveFirebaseSessionInjection.mockReturnValue(false)
   h.keepsTokensInOsKeychain.mockReturnValue(true)
 })
@@ -276,12 +314,21 @@ describe('reconcileCloudViewSession', () => {
   })
 
   it('reports a view that gained its own session in the meantime', async () => {
-    h.injectFirebaseSession.mockResolvedValue(false)
+    h.injectFirebaseSession.mockResolvedValue('kept')
 
     await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
 
     expect(h.bindSignedInUser).not.toHaveBeenCalled()
     expect(outcomes()).toEqual([{ outcome: 'kept_existing' }])
+  })
+
+  it('reports a sign-in it abandoned because the marker could not be saved', async () => {
+    h.injectFirebaseSession.mockResolvedValue('marker_unsaved')
+
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
+    expect(outcomes()).toEqual([{ outcome: 'marker_unsaved' }])
   })
 
   it('does not ask Cloud when the Desktop grant lacks the web-session scope', async () => {
@@ -467,7 +514,117 @@ describe('reconcileCloudViewSession', () => {
     await first
     await second
 
-    const reads = view.scripts().filter((script) => script.includes('indexedDB.databases'))
-    expect(reads).toHaveLength(2)
+    expect(reads(view)).toHaveLength(2)
+  })
+})
+
+describe('reconcileCloudViewSession across views on one partition', () => {
+  it('lets a second view read only after the first finished signing out', async () => {
+    h.session.signedIn = false
+    const partition = {}
+    const removal = deferred()
+    const first = fakeView(
+      { uid: 'desktop-uid', marker: serializeMarker(marker()) },
+      { partition, remove: () => removal.promise }
+    )
+    const second = fakeView({ uid: null, marker: null }, { partition })
+
+    const firstRun = reconcileCloudViewSession(first.contents)
+    await vi.waitFor(() => expect(removals(first)).toHaveLength(1))
+    const secondRun = reconcileCloudViewSession(second.contents)
+    await Promise.resolve()
+    expect(reads(second)).toHaveLength(0)
+
+    removal.resolve('signed_out')
+    await firstRun
+    await secondRun
+    expect(reads(second)).toHaveLength(1)
+  })
+
+  it('cancels a running cleanup when the person signs in, then decides again from what the page holds', async () => {
+    h.session.signedIn = false
+    const state: PageState = { uid: 'desktop-uid', marker: serializeMarker(marker()) }
+    const removal = deferred()
+    const view = fakeView(state, { remove: () => removal.promise })
+
+    const run = reconcileCloudViewSession(view.contents)
+    await vi.waitFor(() => expect(removals(view)).toHaveLength(1))
+    const token = /const cleanupToken = "([^"]+)"/.exec(removals(view)[0]!)?.[1]
+
+    preemptPartitionCleanup(view.contents)
+    expect(view.scripts().at(-1)).toContain(`"${token}"`)
+    state.uid = 'person'
+    state.marker = serializeMarker(marker({ state: 'declined' }))
+    removal.resolve('superseded')
+    await run
+
+    expect(reads(view)).toHaveLength(2)
+    expect(removals(view)).toHaveLength(1)
+    expect(outcomes()).toEqual([])
+  })
+
+  it('never starts a cleanup the person preempted while the view was being read', async () => {
+    h.session.signedIn = false
+    const state: PageState = { uid: 'desktop-uid', marker: serializeMarker(marker()) }
+    const read = deferred()
+    let firstRead = true
+    const view = fakeView(state, {
+      read: () => {
+        if (!firstRead) return Promise.resolve()
+        firstRead = false
+        return read.promise
+      }
+    })
+
+    const run = reconcileCloudViewSession(view.contents)
+    await vi.waitFor(() => expect(reads(view)).toHaveLength(1))
+    preemptPartitionCleanup(view.contents)
+    state.uid = 'person'
+    state.marker = serializeMarker(marker({ state: 'declined' }))
+    read.resolve(undefined)
+    await run
+
+    expect(removals(view)).toHaveLength(0)
+    expect(reads(view)).toHaveLength(2)
+  })
+
+  it('gives up retrying a cleanup that keeps being superseded', async () => {
+    h.session.signedIn = false
+    const view = fakeView(
+      { uid: 'desktop-uid', marker: serializeMarker(marker()) },
+      { remove: () => Promise.resolve('superseded') }
+    )
+
+    await reconcileCloudViewSession(view.contents)
+
+    expect(removals(view)).toHaveLength(4)
+  })
+
+  it('asks Cloud for one web session when two views on the partition load at once', async () => {
+    const partition = {}
+    const exchange = deferred()
+    h.requestWebSessionToken.mockReturnValue(exchange.promise)
+    const first = fakeView({ uid: null, marker: null }, { partition })
+    const second = fakeView({ uid: null, marker: null }, { partition })
+
+    const runs = [
+      reconcileCloudViewSession(first.contents),
+      reconcileCloudViewSession(second.contents)
+    ]
+    await vi.waitFor(() => expect(reads(second)).toHaveLength(1))
+    exchange.resolve({ kind: 'minted', customToken: 'custom-token' })
+    await Promise.all(runs)
+
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(1)
+    expect(h.injectFirebaseSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('signs in views on separate partitions independently', async () => {
+    await Promise.all([
+      reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents),
+      reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+    ])
+
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(2)
   })
 })

@@ -14,7 +14,7 @@ const h = vi.hoisted(() => ({
   bindSignedInUser: vi.fn(),
   capture: vi.fn(),
   emit: vi.fn(),
-  injectSession: vi.fn(() => Promise.resolve(true)),
+  injectSession: vi.fn(() => Promise.resolve('injected')),
   openExternal: vi.fn(() => Promise.resolve()),
   releaseSessionInjection: vi.fn(),
   restoreParentWindow: vi.fn(),
@@ -272,7 +272,7 @@ describe('handleFirebasePopup legacy flow', () => {
 
   it('does not bind when legacy session injection fails', async () => {
     const contents = fakeContents()
-    h.injectSession.mockResolvedValueOnce(false)
+    h.injectSession.mockResolvedValueOnce('kept')
     h.startBridgeServer.mockResolvedValue({
       url: 'http://localhost:9876/',
       signInPromise: Promise.resolve({ user: { uid: 'user-1' }, apiKey: 'api-key' }),

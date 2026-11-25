@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { WebContents } from 'electron'
 
 import { holdsWebSessionScope } from '../../cloud/claims'
@@ -16,8 +17,15 @@ import {
   beginFirebaseSessionInjection,
   hasActiveFirebaseSessionInjection,
   injectFirebaseSession,
+  type InjectOutcome,
   releaseFirebaseSessionInjection
 } from '../firebaseBridge/inject'
+import {
+  claimPartitionSignIn,
+  partitionEpoch,
+  runOnPartition,
+  trackPartitionCleanup
+} from '../firebaseBridge/partitionCoordinator'
 import { requestWebSessionToken } from './client'
 import { keepsTokensInOsKeychain } from './storageStrength'
 import {
@@ -28,12 +36,14 @@ import {
   DESKTOP_SESSION_MARKER_KEY,
   type DesktopSessionMarker,
   parseMarker,
+  type RemoveDesktopSessionOutcome,
   serializeMarker
 } from './pageState'
 
 export const CLOUD_VIEW_SESSION_EVENT = 'comfy.desktop.auth.cloud_view_session'
 
 const PROD_CLOUD_ORIGIN = 'https://cloud.comfy.org'
+const MAX_SUPERSEDED_RETRIES = 3
 
 const REPORTABLE_ERROR_CODES: ReadonlySet<string> = new Set([
   'account_outside_organization',
@@ -153,7 +163,7 @@ async function injectIntoSignedOutView(
   { contents, origin, apiKey }: ViewTarget,
   user: Record<string, unknown>,
   marker: DesktopSessionMarker
-): Promise<boolean> {
+): Promise<InjectOutcome> {
   const injection = beginFirebaseSessionInjection(contents)
   try {
     return await injectFirebaseSession(injection, origin, user, apiKey, {
@@ -166,6 +176,16 @@ async function injectIntoSignedOutView(
 }
 
 async function signInView(target: ViewTarget): Promise<void> {
+  const release = claimPartitionSignIn(target.contents)
+  if (!release) return
+  try {
+    await signInClaimedView(target)
+  } finally {
+    release()
+  }
+}
+
+async function signInClaimedView(target: ViewTarget): Promise<void> {
   const { contents, origin, env } = target
   const session = getCloudSession()
   const generation = session.currentAuthGeneration()
@@ -203,7 +223,11 @@ async function signInView(target: ViewTarget): Promise<void> {
 
   const marker: DesktopSessionMarker = { v: 1, uid: account.localId, sub, fam, state: 'active' }
   const injected = await injectIntoSignedOutView(target, user, marker)
-  if (!injected) {
+  if (injected === 'marker_unsaved') {
+    report('marker_unsaved')
+    return
+  }
+  if (injected !== 'injected') {
     report('kept_existing')
     return
   }
@@ -211,42 +235,64 @@ async function signInView(target: ViewTarget): Promise<void> {
   report('signed_in')
 }
 
-async function reconcileOnce(contents: WebContents): Promise<void> {
-  if (contents.isDestroyed() || !isTrustedCloudUrl(contents.getURL())) return
-  const expected = issuerOrigin()
-  const origin = currentOrigin(contents)
-  if (!expected || origin !== expected) return
-  const env = firebaseEnvForIssuer(expected)
-  const apiKey = getFirebaseConfig(env).apiKey
+type SettledStep = 'done' | 'sign_in' | 'superseded'
 
+async function removeDesktopSession(
+  { contents, origin, apiKey }: ViewTarget,
+  uid: string,
+  marker: DesktopSessionMarker | null,
+  epoch: number
+): Promise<SettledStep> {
+  if (partitionEpoch(contents) !== epoch || currentOrigin(contents) !== origin) return 'superseded'
+  const token = randomUUID()
+  const untrack = trackPartitionCleanup(contents, token)
+  try {
+    const outcome = (await contents
+      .executeJavaScript(buildRemoveDesktopSessionScript(apiKey, origin, uid, marker, token), true)
+      .catch(() => 'kept')) as RemoveDesktopSessionOutcome
+    if (outcome === 'signed_out') report('signed_out')
+    return outcome === 'superseded' ? 'superseded' : 'done'
+  } finally {
+    untrack()
+  }
+}
+
+async function settleOnPartition(target: ViewTarget): Promise<SettledStep> {
+  const { contents, origin, apiKey } = target
+  const epoch = partitionEpoch(contents)
   const raw: unknown = await contents
     .executeJavaScript(buildReadStateScript(apiKey, origin), true)
     .catch(() => null)
   const state = parseState(raw)
-  if (!state || currentOrigin(contents) !== origin) return
+  if (!state || currentOrigin(contents) !== origin) return 'done'
 
   const decision = decideCloudViewSession(state, desktopIdentity())
   switch (decision.kind) {
     case 'none':
-      return
+      return 'done'
     case 'write_marker':
       await contents
         .executeJavaScript(buildWriteMarkerScript(origin, decision.marker, state.marker), true)
         .catch(() => false)
-      return
-    case 'sign_out': {
-      const removed: unknown = await contents
-        .executeJavaScript(
-          buildRemoveDesktopSessionScript(apiKey, origin, decision.uid, state.marker),
-          true
-        )
-        .catch(() => false)
-      if (removed === true) report('signed_out')
-      return
-    }
+      return 'done'
+    case 'sign_out':
+      return await removeDesktopSession(target, decision.uid, state.marker, epoch)
     case 'sign_in':
-      await signInView({ contents, origin, apiKey, env })
+      return 'sign_in'
   }
+}
+
+async function reconcileOnce(contents: WebContents): Promise<SettledStep> {
+  if (contents.isDestroyed() || !isTrustedCloudUrl(contents.getURL())) return 'done'
+  const expected = issuerOrigin()
+  const origin = currentOrigin(contents)
+  if (!expected || origin !== expected) return 'done'
+  const env = firebaseEnvForIssuer(expected)
+  const target: ViewTarget = { contents, origin, apiKey: getFirebaseConfig(env).apiKey, env }
+
+  const step = await runOnPartition(contents, () => settleOnPartition(target))
+  if (step === 'sign_in') await signInView(target)
+  return step
 }
 
 const running = new Map<WebContents, { again: boolean }>()
@@ -259,11 +305,16 @@ export async function reconcileCloudViewSession(contents: WebContents): Promise<
   }
   const run = { again: true }
   running.set(contents, run)
+  let supersededRetries = 0
   try {
     while (run.again && !contents.isDestroyed()) {
       run.again = false
       try {
-        await reconcileOnce(contents)
+        const step = await reconcileOnce(contents)
+        if (step === 'superseded' && supersededRetries < MAX_SUPERSEDED_RETRIES) {
+          supersededRetries += 1
+          run.again = true
+        }
       } catch (err) {
         report('failed', { reason: mainTelemetry.bucketError(String(err)) })
       }

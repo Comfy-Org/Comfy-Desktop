@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { buildIndexedDbInjectScript } from '../firebaseBridge/injectScript'
+import {
+  buildCancelCleanupScript,
+  buildIndexedDbInjectScript
+} from '../firebaseBridge/injectScript'
 import {
   buildReadStateScript,
   buildRemoveDesktopSessionScript,
@@ -24,6 +27,11 @@ const MARKER: DesktopSessionMarker = {
 }
 
 const NEWER_MARKER: DesktopSessionMarker = { ...MARKER, fam: 'fam-2' }
+const CLEANUP_TOKEN = 'cleanup-token'
+
+function removeScript(uid = 'desktop-uid', marker: DesktopSessionMarker | null = MARKER): string {
+  return buildRemoveDesktopSessionScript(API_KEY, ORIGIN, uid, marker, CLEANUP_TOKEN)
+}
 
 let frames: HTMLIFrameElement[] = []
 
@@ -42,10 +50,12 @@ interface FakeWebSession {
   readStatus?: number
   deleteStatus?: number
   deletes: number
+  posts: number
+  duringRead?: () => void
 }
 
 function webSession(uid: string | null, statuses: Partial<FakeWebSession> = {}): FakeWebSession {
-  return { uid, deletes: 0, ...statuses }
+  return { uid, deletes: 0, posts: 0, ...statuses }
 }
 
 function json(status: number, body: unknown): Response {
@@ -61,8 +71,11 @@ function sessionEndpoint(session: FakeWebSession) {
     const method = init.method ?? 'GET'
     if (method === 'GET') {
       if (session.readStatus) return json(session.readStatus, {})
-      return session.uid
-        ? json(200, { user: { id: session.uid } })
+      const uidAtRequest = session.uid
+      session.duringRead?.()
+      if (init.signal?.aborted) throw new DOMException('aborted', 'AbortError')
+      return uidAtRequest
+        ? json(200, { user: { id: uidAtRequest } })
         : json(401, { code: 'no_session' })
     }
     if (method === 'DELETE') {
@@ -71,6 +84,7 @@ function sessionEndpoint(session: FakeWebSession) {
       if (status === 200) session.uid = null
       return json(status, { success: status === 200 })
     }
+    session.posts += 1
     return json(200, { success: true })
   }
 }
@@ -204,30 +218,29 @@ describe('buildReadStateScript', () => {
 })
 
 describe('buildRemoveDesktopSessionScript', () => {
+  function holdMarker(marker: DesktopSessionMarker = MARKER): void {
+    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(marker))
+  }
+
   it('removes the session when it is still the user Desktop added', async () => {
     await seedUser('desktop-uid')
-    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(MARKER))
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER))
-    ).resolves.toBe(true)
+    holdMarker()
+    await expect(run(removeScript())).resolves.toBe('signed_out')
     await expect(storedUid()).resolves.toBe(null)
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(null)
   })
 
   it('keeps a session for any other user', async () => {
     await seedUser('person-uid')
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER))
-    ).resolves.toBe(false)
+    holdMarker()
+    await expect(run(removeScript())).resolves.toBe('kept')
     await expect(storedUid()).resolves.toBe('person-uid')
   })
 
   it("removes Desktop's user once the page has moved it into localStorage", async () => {
     persistUser(localStorage, 'desktop-uid')
-    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(MARKER))
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER))
-    ).resolves.toBe(true)
+    holdMarker()
+    await expect(run(removeScript())).resolves.toBe('signed_out')
     expect(localStorage.getItem(STORAGE_KEY)).toBe(null)
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(null)
     await expect(firebaseDbExists()).resolves.toBe(false)
@@ -235,73 +248,125 @@ describe('buildRemoveDesktopSessionScript', () => {
 
   it('keeps a person the page keeps in localStorage', async () => {
     persistUser(localStorage, 'person-uid')
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER))
-    ).resolves.toBe(false)
+    holdMarker()
+    await expect(run(removeScript())).resolves.toBe('kept')
     expect(localStorage.getItem(STORAGE_KEY)).not.toBe(null)
   })
 
   it('keeps the marker when the stored user could not be removed', async () => {
     persistUser(localStorage, 'desktop-uid')
-    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(MARKER))
+    holdMarker()
     await expect(
-      run(
-        buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER),
-        webSession(null),
-        (win) => {
-          const removeItem = win.Storage.prototype.removeItem
-          win.Storage.prototype.removeItem = function (this: Storage, key: string) {
-            if (key !== STORAGE_KEY) removeItem.call(this, key)
-          }
+      run(removeScript(), webSession(null), (win) => {
+        const removeItem = win.Storage.prototype.removeItem
+        win.Storage.prototype.removeItem = function (this: Storage, key: string) {
+          if (key !== STORAGE_KEY) removeItem.call(this, key)
         }
-      )
-    ).resolves.toBe(false)
+      })
+    ).resolves.toBe('kept')
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(serializeMarker(MARKER))
   })
 
-  it('leaves newer ownership another view recorded', async () => {
+  it('touches no credential once another view recorded newer ownership', async () => {
     await seedUser('desktop-uid')
-    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(NEWER_MARKER))
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER))
-    ).resolves.toBe(true)
+    persistUser(localStorage, 'desktop-uid')
+    persistUser(sessionStorage, 'desktop-uid')
+    holdMarker(NEWER_MARKER)
+    const session = webSession('desktop-uid')
+    await expect(run(removeScript(), session)).resolves.toBe('superseded')
+    await expect(storedUid()).resolves.toBe('desktop-uid')
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBe(null)
+    expect(sessionStorage.getItem(STORAGE_KEY)).not.toBe(null)
+    expect(session).toMatchObject({ uid: 'desktop-uid', deletes: 0 })
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(serializeMarker(NEWER_MARKER))
+  })
+
+  it.each([
+    ['a newer Desktop grant', serializeMarker(NEWER_MARKER)],
+    ["the person's own sign-in", serializeMarker({ ...MARKER, state: 'declined' })]
+  ])(
+    'touches no credential when %s takes the view during the session read',
+    async (_name, next) => {
+      await seedUser('desktop-uid')
+      holdMarker()
+      const session = webSession('desktop-uid', {
+        duringRead: () => localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, next)
+      })
+      await expect(run(removeScript(), session)).resolves.toBe('superseded')
+      await expect(storedUid()).resolves.toBe('desktop-uid')
+      expect(session.deletes).toBe(0)
+      expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(next)
+    }
+  )
+
+  it('never ends a newer login whose cookie lands while a cancelled cleanup reads the session', async () => {
+    await seedUser('desktop-uid')
+    holdMarker()
+    let page: (Window & typeof globalThis) | null = null
+    const session = webSession('desktop-uid', {
+      duringRead: () => {
+        session.uid = 'person-uid'
+        ;(page as unknown as { eval: (code: string) => unknown }).eval(
+          buildCancelCleanupScript(CLEANUP_TOKEN)
+        )
+      }
+    })
+    await expect(
+      run(removeScript(), session, (win) => {
+        page = win
+      })
+    ).resolves.toBe('superseded')
+    expect(session).toMatchObject({ uid: 'person-uid', deletes: 0 })
+    await expect(storedUid()).resolves.toBe('desktop-uid')
+    expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(serializeMarker(MARKER))
+  })
+
+  it('ignores a cancel meant for another cleanup', async () => {
+    await seedUser('desktop-uid')
+    holdMarker()
+    let page: (Window & typeof globalThis) | null = null
+    const session = webSession('desktop-uid', {
+      duringRead: () => {
+        ;(page as unknown as { eval: (code: string) => unknown }).eval(
+          buildCancelCleanupScript('another-cleanup')
+        )
+      }
+    })
+    await expect(
+      run(removeScript(), session, (win) => {
+        page = win
+      })
+    ).resolves.toBe('signed_out')
+    expect(session.deletes).toBe(1)
   })
 
   it("ends the web session cookie when it is Desktop's user", async () => {
     await seedUser('desktop-uid')
-    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(MARKER))
+    holdMarker()
     const session = webSession('desktop-uid')
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER), session)
-    ).resolves.toBe(true)
+    await expect(run(removeScript(), session)).resolves.toBe('signed_out')
     expect(session).toMatchObject({ uid: null, deletes: 1 })
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(null)
   })
 
   it("signs out a view that kept only Desktop's web session cookie", async () => {
-    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(MARKER))
+    holdMarker()
     const session = webSession('desktop-uid')
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER), session)
-    ).resolves.toBe(true)
+    await expect(run(removeScript(), session)).resolves.toBe('signed_out')
     expect(session.deletes).toBe(1)
   })
 
   it("never ends another person's web session", async () => {
+    holdMarker()
     const session = webSession('person-uid')
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER), session)
-    ).resolves.toBe(false)
+    await expect(run(removeScript(), session)).resolves.toBe('kept')
     expect(session).toMatchObject({ uid: 'person-uid', deletes: 0 })
   })
 
   it('keeps the marker when the web session could not be ended, so the next load tries again', async () => {
-    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, serializeMarker(MARKER))
+    holdMarker()
     const session = webSession('desktop-uid', { deleteStatus: 503 })
-    await expect(
-      run(buildRemoveDesktopSessionScript(API_KEY, ORIGIN, 'desktop-uid', MARKER), session)
-    ).resolves.toBe(false)
+    await expect(run(removeScript(), session)).resolves.toBe('kept')
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(serializeMarker(MARKER))
   })
 })
@@ -371,7 +436,8 @@ describe('buildIndexedDbInjectScript with onlyIfSignedOut', () => {
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(null)
   })
 
-  it('takes the sign-in back when its marker cannot be saved', async () => {
+  it('writes no credential when its marker cannot be saved', async () => {
+    let puts = 0
     await expect(
       run(
         buildIndexedDbInjectScript(user, API_KEY, ORIGIN, OWNER, { onlyIfSignedOut: true, marker }),
@@ -380,11 +446,36 @@ describe('buildIndexedDbInjectScript with onlyIfSignedOut', () => {
           win.Storage.prototype.setItem = () => {
             throw new DOMException('quota', 'QuotaExceededError')
           }
+          const put = win.IDBObjectStore.prototype.put
+          win.IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args) {
+            puts += 1
+            return put.apply(this, args)
+          }
+        }
+      )
+    ).resolves.toBe('marker_unsaved')
+    expect(puts).toBe(0)
+    await expect(storedUid()).resolves.toBe(null)
+    expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(null)
+  })
+
+  it('puts back the previous marker when the credential write is abandoned', async () => {
+    const previous = serializeMarker({ ...MARKER, state: 'declined', fam: 'fam-0' })
+    localStorage.setItem(DESKTOP_SESSION_MARKER_KEY, previous)
+    await expect(
+      run(
+        buildIndexedDbInjectScript(user, API_KEY, ORIGIN, OWNER, { onlyIfSignedOut: true, marker }),
+        webSession(null),
+        (win) => {
+          win.IDBObjectStore.prototype.put = function (this: IDBObjectStore) {
+            this.transaction.abort()
+            return {} as IDBRequest<IDBValidKey>
+          }
         }
       )
     ).resolves.toBe(false)
     await expect(storedUid()).resolves.toBe(null)
-    expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(null)
+    expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(previous)
   })
 
   it('stands aside when the web session cannot be read', async () => {

@@ -1,4 +1,5 @@
 import {
+  CLEANUP_OWNER_KEY,
   DESKTOP_SESSION_MARKER_KEY,
   storedFirebaseUidReaderSource,
   webSessionUidReaderSource
@@ -89,22 +90,56 @@ export function buildReadStateScript(apiKey: string, expectedOrigin: string): st
 })()`
 }
 
+export type RemoveDesktopSessionOutcome = 'signed_out' | 'kept' | 'superseded'
+
 export function buildRemoveDesktopSessionScript(
   apiKey: string,
   expectedOrigin: string,
   expectedUid: string,
-  expectedMarker: DesktopSessionMarker | null
+  expectedMarker: DesktopSessionMarker | null,
+  cleanupToken: string
 ): string {
-  const markerKey = JSON.stringify(DESKTOP_SESSION_MARKER_KEY)
   const expectedMarkerJson = JSON.stringify(expectedMarker ? serializeMarker(expectedMarker) : null)
   return `(async () => {
   const expectedOrigin = ${JSON.stringify(expectedOrigin)};
-  if (location.origin !== expectedOrigin) return false;
+  if (location.origin !== expectedOrigin) return 'kept';
   const storageKey = ${JSON.stringify(storageKeyFor(apiKey))};
   const expectedUid = ${JSON.stringify(expectedUid)};
   const expectedMarker = ${expectedMarkerJson};
+  const markerKey = ${JSON.stringify(DESKTOP_SESSION_MARKER_KEY)};
+  const cleanupKey = ${JSON.stringify(CLEANUP_OWNER_KEY)};
+  const cleanupToken = ${JSON.stringify(cleanupToken)};
+  const controller = new AbortController();
+  globalThis[cleanupKey] = { token: cleanupToken, controller };
+  const isCurrent = () => {
+    const held = globalThis[cleanupKey];
+    return location.origin === expectedOrigin && !!held && held.token === cleanupToken;
+  };
+  const stillOwned = () => {
+    if (!isCurrent()) return false;
+    try { return localStorage.getItem(markerKey) === expectedMarker; } catch (_) { return false; }
+  };
+  const release = () => {
+    const held = globalThis[cleanupKey];
+    if (held && held.token === cleanupToken) globalThis[cleanupKey] = null;
+  };
   ${webSessionUidReaderSource()}
   ${firebaseDbExistsSource()}
+  if (!stillOwned()) { release(); return 'superseded'; }
+  const sessionUid = await readSessionUid(controller.signal);
+  if (!stillOwned()) { release(); return 'superseded'; }
+  let sessionEnded = false;
+  if (sessionUid === expectedUid) {
+    try {
+      const response = await fetch('/api/auth/session', {
+        method: 'DELETE',
+        credentials: 'include',
+        signal: AbortSignal.timeout(${WEB_SESSION_DELETE_TIMEOUT_MS})
+      });
+      sessionEnded = response.ok;
+    } catch (_) {}
+  }
+  let superseded = false;
   const dbExists = await firebaseDbExists();
   const dbResult = dbExists === false ? 'kept' : dbExists === undefined ? 'failed' : await new Promise((resolve) => {
     const req = indexedDB.open('firebaseLocalStorageDb');
@@ -121,23 +156,25 @@ export function buildRemoveDesktopSessionScript(
       const get = store.get(storageKey);
       get.onsuccess = () => {
         const value = get.result && get.result.value;
-        if (value && value.uid === expectedUid && location.origin === expectedOrigin) {
-          store.delete(storageKey);
-          deleted = true;
-        }
+        if (!value || value.uid !== expectedUid) return;
+        if (!stillOwned()) { superseded = true; return; }
+        store.delete(storageKey);
+        deleted = true;
       };
     };
   });
   let storedRemoved = false;
   let storedLeft = false;
   for (const storageName of ['localStorage', 'sessionStorage']) {
+    if (superseded) break;
     try {
       const storage = globalThis[storageName];
       const raw = storage.getItem(storageKey);
       if (!raw) continue;
       let uid;
       try { uid = JSON.parse(raw).uid; } catch (_) { storedLeft = true; continue; }
-      if (uid !== expectedUid || location.origin !== expectedOrigin) continue;
+      if (uid !== expectedUid) continue;
+      if (!stillOwned()) { superseded = true; break; }
       storage.removeItem(storageKey);
       if (storage.getItem(storageKey) === null) storedRemoved = true;
       else storedLeft = true;
@@ -145,28 +182,16 @@ export function buildRemoveDesktopSessionScript(
       storedLeft = true;
     }
   }
-  const sessionUid = location.origin === expectedOrigin ? await readSessionUid() : undefined;
-  let sessionEnded = false;
-  if (sessionUid === expectedUid && location.origin === expectedOrigin) {
-    try {
-      const response = await fetch('/api/auth/session', {
-        method: 'DELETE',
-        credentials: 'include',
-        signal: AbortSignal.timeout(${WEB_SESSION_DELETE_TIMEOUT_MS})
-      });
-      sessionEnded = response.ok;
-    } catch (_) {}
-  }
   const sessionLeft = sessionUid === undefined || (sessionUid === expectedUid && !sessionEnded);
-  const desktopSessionLeft = dbResult === 'failed' || storedLeft || sessionLeft;
-  if (!desktopSessionLeft && location.origin === expectedOrigin) {
-    try {
-      if (localStorage.getItem(${markerKey}) === expectedMarker) localStorage.removeItem(${markerKey});
-    } catch (_) {}
+  const desktopSessionLeft = superseded || dbResult === 'failed' || storedLeft || sessionLeft;
+  if (!desktopSessionLeft && stillOwned()) {
+    try { localStorage.removeItem(markerKey); } catch (_) {}
   }
+  release();
   const signedOut = dbResult === 'deleted' || storedRemoved || sessionEnded;
   if (signedOut) location.reload();
-  return signedOut;
+  if (superseded) return 'superseded';
+  return signedOut ? 'signed_out' : 'kept';
 })()`
 }
 

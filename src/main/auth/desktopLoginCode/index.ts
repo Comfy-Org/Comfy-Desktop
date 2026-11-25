@@ -182,7 +182,7 @@ export async function signInViaDesktopLoginCode(
       user,
       firebaseConfig.apiKey
     )
-    if (!injected) return 'handled'
+    if (injected !== 'injected') return 'handled'
     if (controller.signal.aborted) return 'handled'
     bindSignedInUser(user, comfyContents, { via: 'desktop_login_code' })
     restoreParentWindow(opts.parentWindow)

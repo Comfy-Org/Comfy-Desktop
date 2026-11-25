@@ -1,17 +1,19 @@
 export const INJECTION_OWNER_KEY = '__comfyDesktopFirebaseSessionInjectionOwner'
 export const DESKTOP_SESSION_MARKER_KEY = '__comfyDesktopCloudViewSession'
+export const CLEANUP_OWNER_KEY = '__comfyDesktopCloudViewCleanup'
 export const FIREBASE_SESSION_INJECTION_OWNER_FIELD = '__comfyDesktopInjectionOwner'
 export const WEB_SESSION_CREATE_TIMEOUT_MS = 8000
 export const WEB_SESSION_READ_TIMEOUT_MS = 8000
 
 export function webSessionUidReaderSource(): string {
-  return `const readSessionUid = async () => {
+  return `const readSessionUid = async (cancel) => {
     try {
+      const timeout = AbortSignal.timeout(${WEB_SESSION_READ_TIMEOUT_MS});
       const response = await fetch('/api/auth/session', {
         method: 'GET',
         credentials: 'include',
         cache: 'no-store',
-        signal: AbortSignal.timeout(${WEB_SESSION_READ_TIMEOUT_MS})
+        signal: cancel ? AbortSignal.any([cancel, timeout]) : timeout
       });
       if (response.status === 429 || response.status >= 500) return undefined;
       if (!response.ok) return null;
@@ -39,6 +41,17 @@ export function storedFirebaseUidReaderSource(): string {
       return undefined;
     }
   };`
+}
+
+export function buildCancelCleanupScript(token: string): string {
+  return `(() => {
+  const key = ${JSON.stringify(CLEANUP_OWNER_KEY)};
+  const held = globalThis[key];
+  if (!held || held.token !== ${JSON.stringify(token)}) return false;
+  globalThis[key] = null;
+  try { held.controller.abort(); } catch (_) {}
+  return true;
+})()`
 }
 
 function signedInSessionGuardSource(): string {
@@ -84,6 +97,29 @@ export function buildIndexedDbInjectScript(
   const storageKey = 'firebase:authUser:' + apiKey + ':[DEFAULT]';
   ${options.onlyIfSignedOut === true ? signedInSessionGuardSource() : ''}
   const userValue = ${userJson};
+  let markerWritten = false;
+  let markerUnsaved = false;
+  let previousMarker = null;
+  const saveMarker = () => {
+    if (!marker) return true;
+    try {
+      previousMarker = localStorage.getItem(marker.key);
+      localStorage.setItem(marker.key, marker.value);
+      markerWritten = true;
+      return localStorage.getItem(marker.key) === marker.value;
+    } catch (_) {
+      return false;
+    }
+  };
+  const restoreMarker = () => {
+    if (!markerWritten) return;
+    markerWritten = false;
+    try {
+      if (localStorage.getItem(marker.key) !== marker.value) return;
+      if (previousMarker === null) localStorage.removeItem(marker.key);
+      else localStorage.setItem(marker.key, previousMarker);
+    } catch (_) {}
+  };
   const committed = await new Promise((resolve, reject) => {
     const req = indexedDB.open('firebaseLocalStorageDb', 1);
     req.onupgradeneeded = (e) => {
@@ -99,6 +135,7 @@ export function buildIndexedDbInjectScript(
       const tx = db.transaction('firebaseLocalStorage', 'readwrite');
       tx.oncomplete = () => {
         if (isCurrent()) { db.close(); resolve(true); return; }
+        restoreMarker();
         const cleanup = db.transaction('firebaseLocalStorage', 'readwrite');
         cleanup.oncomplete = () => { db.close(); resolve(false); };
         cleanup.onerror = () => { db.close(); resolve(false); };
@@ -110,18 +147,20 @@ export function buildIndexedDbInjectScript(
           }
         };
       };
-      tx.onerror = () => reject(new Error('tx: ' + (tx.error && tx.error.message || 'unknown')));
-      tx.onabort = () => { db.close(); resolve(false); };
+      tx.onerror = () => {
+        restoreMarker();
+        reject(new Error('tx: ' + (tx.error && tx.error.message || 'unknown')));
+      };
+      tx.onabort = () => { restoreMarker(); db.close(); resolve(false); };
       const store = tx.objectStore('firebaseLocalStorage');
       const write = () => {
-        if (isCurrent()) {
-          store.put({
-            fbase_key: storageKey,
-            value: userValue,
-            [recordOwnerKey]: ownerToken
-          });
-        }
-        else { tx.abort(); }
+        if (!isCurrent()) { tx.abort(); return; }
+        if (!saveMarker()) { markerUnsaved = true; tx.abort(); return; }
+        store.put({
+          fbase_key: storageKey,
+          value: userValue,
+          [recordOwnerKey]: ownerToken
+        });
       };
       if (!onlyIfSignedOut) { write(); return; }
       const existing = store.get(storageKey);
@@ -131,34 +170,9 @@ export function buildIndexedDbInjectScript(
       };
     };
   });
+  if (markerUnsaved) return 'marker_unsaved';
   if (!committed || !isCurrent()) return false;
-  if (marker) {
-    let markerSaved = false;
-    try {
-      localStorage.setItem(marker.key, marker.value);
-      markerSaved = localStorage.getItem(marker.key) === marker.value;
-    } catch (_) {}
-    if (!markerSaved) {
-      await new Promise((resolve) => {
-        const req = indexedDB.open('firebaseLocalStorageDb', 1);
-        req.onerror = () => resolve(false);
-        req.onsuccess = () => {
-          const db = req.result;
-          const rollback = db.transaction('firebaseLocalStorage', 'readwrite');
-          rollback.oncomplete = () => { db.close(); resolve(true); };
-          rollback.onerror = () => { db.close(); resolve(false); };
-          const rollbackStore = rollback.objectStore('firebaseLocalStorage');
-          const current = rollbackStore.get(storageKey);
-          current.onsuccess = () => {
-            if (current.result && current.result[recordOwnerKey] === ownerToken) {
-              rollbackStore.delete(storageKey);
-            }
-          };
-        };
-      });
-      return false;
-    }
-  } else {
+  if (!marker) {
     try {
       const desktopMarkerKey = ${desktopMarkerKeyJson};
       const held = JSON.parse(localStorage.getItem(desktopMarkerKey) || 'null');
