@@ -2,7 +2,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { CornerDownLeft, Plus, Search, X } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
-import MarSeg from '../../pages/MarSeg.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance } from '../../../useProto'
 import { mock } from '../../assets/mock'
@@ -31,9 +30,14 @@ const shelf = ref<string>(SHELVES[0]!.id)
 const hover = ref(-1)
 const pinned = ref(-1)
 const at = computed(() => (hover.value >= 0 ? hover.value : pinned.value))
-const shelfOptions = [
-  ...SHELVES.map((s) => ({ value: s.id, label: s.label })),
-  { value: YOURS, label: 'Your workflows' }
+const TABS = [
+  { id: 'popular', label: 'Popular' },
+  { id: 'image', label: 'Image' },
+  { id: 'video', label: 'Video' },
+  { id: 'edit', label: 'Edit' },
+  { id: '3d', label: '3D' },
+  { id: 'audio', label: 'Audio' },
+  { id: YOURS, label: 'Yours' }
 ]
 
 const q = computed(() => query.value.trim().toLowerCase())
@@ -69,6 +73,13 @@ watch([q, shelf], () => {
 })
 
 const current = computed<Item | undefined>(() => items.value[at.value])
+
+function nameOf(item: Item): string {
+  if (item.type === 'template') return item.starter.makes
+  if (item.type === 'workflow') return item.workflow.name
+  if (item.type === 'node') return NODE_TYPES[item.node].title
+  return 'Blank canvas'
+}
 
 function press(i: number): void {
   if (pinned.value === i) pick(items.value[i]!)
@@ -333,9 +344,19 @@ useEscapeCloses(() => field.value)
     </div>
 
     <div class="v07-dock-wrap">
-      <div v-if="!q" class="v07-shelves">
-        <MarSeg v-model="shelf" :options="shelfOptions" label="Dock shows" />
-      </div>
+      <nav v-if="!q" class="v07-shelves" aria-label="Dock shows">
+        <button
+          v-for="t in TABS"
+          :key="t.id"
+          type="button"
+          class="v07-tab"
+          :class="shelf === t.id && 'is-on'"
+          :aria-pressed="shelf === t.id"
+          @click="shelf = t.id"
+        >
+          {{ t.label }}
+        </button>
+      </nav>
       <p v-else class="v07-shelves text-ui text-subtle-foreground">
         {{ items.length - 1 }} results for “{{ query.trim() }}”
       </p>
@@ -345,6 +366,7 @@ useEscapeCloses(() => field.value)
           :key="item.id"
           type="button"
           class="v07-tile group"
+          :aria-label="nameOf(item)"
           :class="[i === hover && 'is-at', i === pinned && 'is-on', `is-${item.type}`]"
           :aria-pressed="i === pinned"
           :data-v07-at="i"
@@ -357,18 +379,10 @@ useEscapeCloses(() => field.value)
           <span class="v07-tile-pic">
             <img v-if="item.type === 'template'" :src="item.starter.poster" alt="" loading="lazy" />
             <WorkflowCover v-else-if="item.type === 'workflow'" :name="item.workflow.name" />
-            <component :is="NODE_ICONS[item.node]" v-else-if="item.type === 'node'" :size="20" />
-            <Plus v-else :size="20" />
+            <component :is="NODE_ICONS[item.node]" v-else-if="item.type === 'node'" :size="16" />
+            <Plus v-else :size="16" />
           </span>
-          <span class="v07-tile-name">{{
-            item.type === 'template'
-              ? item.starter.makes
-              : item.type === 'workflow'
-                ? item.workflow.name
-                : item.type === 'node'
-                  ? NODE_TYPES[item.node].title
-                  : 'Blank canvas'
-          }}</span>
+          <span class="v07-tile-name" aria-hidden="true">{{ nameOf(item) }}</span>
         </button>
       </div>
     </div>
@@ -652,67 +666,87 @@ useEscapeCloses(() => field.value)
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 0 24px 22px;
+  gap: 30px;
+  padding: 0 24px 16px;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-shelves {
+  display: flex;
   max-width: 100%;
+  gap: 18px;
   overflow-x: auto;
   scrollbar-width: none;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tab {
+  flex: none;
+  padding: 3px 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tab:hover,
+:root .proto-ui.proto-ui.proto-ui .v07-tab.is-on {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tab.is-on {
+  box-shadow: inset 0 -2px 0 var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-dock {
   display: flex;
   max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
-  overflow-x: auto;
-  padding: 10px;
-  border-radius: 22px;
-  background: color-mix(in oklch, var(--color-card-background) 80%, transparent);
-  box-shadow:
-    inset 0 0 0 1px var(--color-border-default),
-    var(--shadow-popover);
-  backdrop-filter: blur(var(--blur-glass));
-  scrollbar-width: none;
+  padding: 4px;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile {
-  display: flex;
-  width: 132px;
+  position: relative;
   flex: none;
-  flex-direction: column;
-  gap: 6px;
-  padding: 4px;
-  border-radius: 14px;
-  text-align: left;
+  border-radius: 10px;
   outline: none;
-  transition: background-color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v07-tile.is-at,
-:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on {
-  background: var(--color-secondary-background-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on .v07-tile-pic {
-  box-shadow: 0 0 0 2px var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v07-tile:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-border-focus);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile-pic {
   display: grid;
-  height: 80px;
+  width: 80px;
+  height: 52px;
   place-items: center;
   overflow: hidden;
   border-radius: 10px;
   background: var(--color-secondary-background);
   color: var(--color-muted-foreground);
-  transition: transform 220ms var(--ease-out-expo);
+  opacity: 0.7;
+  transition:
+    opacity 160ms ease,
+    transform 220ms var(--ease-out-expo),
+    box-shadow 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-at .v07-tile-pic,
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on .v07-tile-pic,
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-blank .v07-tile-pic {
+  opacity: 1;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile.is-at .v07-tile-pic {
-  transform: translateY(-4px);
+  transform: translateY(-3px);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on .v07-tile-pic {
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-tile:focus-visible .v07-tile-pic {
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-border-focus);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile.is-blank .v07-tile-pic {
-  background: transparent;
-  outline: 1px dashed var(--color-border-strong);
-  outline-offset: -1px;
+  background:
+    radial-gradient(
+        color-mix(in oklch, var(--color-base-foreground) 16%, transparent) 1px,
+        transparent 1.4px
+      )
+      0 0 / 10px 10px,
+    var(--color-secondary-background);
+  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile-pic img {
   width: 100%;
@@ -720,16 +754,28 @@ useEscapeCloses(() => field.value)
   object-fit: cover;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile-name {
-  overflow: hidden;
-  padding: 0 4px 2px;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  text-overflow: ellipsis;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+  font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 2px);
+  transition:
+    opacity 120ms ease,
+    transform 160ms var(--ease-out-expo);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-tile.is-at .v07-tile-name,
-:root .proto-ui.proto-ui.proto-ui .v07-tile.is-on .v07-tile-name {
-  color: var(--color-base-foreground);
+:root .proto-ui.proto-ui.proto-ui .v07-tile:focus-visible .v07-tile-name {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 :root .proto-ui.proto-ui.proto-ui .v07-empty.is-hint {
   animation: v07-fade 400ms ease both;
@@ -772,7 +818,8 @@ useEscapeCloses(() => field.value)
   :root .proto-ui.proto-ui.proto-ui .v07-pulse {
     display: none;
   }
-  :root .proto-ui.proto-ui.proto-ui .v07-tile-pic {
+  :root .proto-ui.proto-ui.proto-ui .v07-tile-pic,
+  :root .proto-ui.proto-ui.proto-ui .v07-tile-name {
     transition: none;
   }
 }
