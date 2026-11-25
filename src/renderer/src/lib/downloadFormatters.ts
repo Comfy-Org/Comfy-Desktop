@@ -71,7 +71,8 @@ export function statusLine(
     case 'pending':
       return t('downloadsPopup.statusWaiting')
     case 'downloading': {
-      const parts = [bytesSoFar(d, t) ?? `${pct}%`]
+      const parts = [`${pct}%`]
+      if (d.speedBytesPerSec && d.speedBytesPerSec > 0) parts.push(formatSpeed(d.speedBytesPerSec))
       if (d.etaSeconds != null && d.etaSeconds > 0 && isFinite(d.etaSeconds)) {
         parts.push(formatTimeLeft(d.etaSeconds, t))
       }
