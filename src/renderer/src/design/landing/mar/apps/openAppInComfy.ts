@@ -1,4 +1,5 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
+import { appsProto } from '../../appFlow'
 import type { ProtoInstance, Template } from '../../mock'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import { graphOpen } from '../graph/graphOpen'
@@ -32,6 +33,29 @@ export interface OpenAppRequest {
 export const opening = reactive<{ key: string }>({ key: '' })
 
 export const runPlaces = reactive<Record<string, OpenWhere>>({})
+
+export const APP_RUNS_ON: { value: OpenWhere; label: string }[] = [
+  { value: 'cloud', label: 'Cloud' },
+  { value: 'local', label: 'This computer' }
+]
+
+export const appRunsOn = reactive<{ id: OpenWhere }>({ id: 'cloud' })
+
+export const runPlaceOf = (appId: string): OpenWhere => runPlaces[appId] ?? appRunsOn.id
+
+watch(
+  () => appRunsOn.id,
+  (where) => {
+    if (appsProto.front) runPlaces[appsProto.front] = where
+  }
+)
+
+watch(
+  () => appsProto.front,
+  (front) => {
+    if (front) appRunsOn.id = runPlaceOf(front)
+  }
+)
 
 const START_MS = 1800
 const SHOW_MS = 450

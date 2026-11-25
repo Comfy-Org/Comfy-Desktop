@@ -24,6 +24,7 @@ import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { APP_TO_COMFY_EXTRAS, OPEN_ANSWERS, appToComfy, openAnswer } from './apps/appToComfy'
+import { APP_RUNS_ON, appRunsOn } from './apps/openAppInComfy'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -160,7 +161,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'wfCase', show: () => when.wfCase.value },
   { id: 'downloadScenario', show: () => when.downloadScenario.value },
   { id: 'dlFooter', show: () => when.dlFooter.value },
-  { id: 'openAnswer', show: () => when.openAnswer.value }
+  { id: 'openAnswer', show: () => when.openAnswer.value },
+  { id: 'appRunsOn', show: () => when.appRunsOn.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'firstRun', show: () => when.firstRun.value },
@@ -371,6 +373,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('dlFooter')" label="Download footer">
             <Seg v-model="dlFooter.id" label="Download footer" :options="DL_FOOTERS" />
+          </Row>
+          <Row :show="shows('appRunsOn')" label="App runs on">
+            <Seg v-model="appRunsOn.id" label="App runs on" :options="APP_RUNS_ON" />
           </Row>
           <Row :show="shows('openAnswer')" label="Open in ComfyUI answers">
             <Select v-model="openAnswer.id" :options="OPEN_ANSWERS" class="w-full" />

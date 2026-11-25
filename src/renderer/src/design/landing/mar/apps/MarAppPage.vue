@@ -62,7 +62,7 @@ import {
   openAppInComfy,
   openOnBuild,
   opening,
-  runPlaces,
+  runPlaceOf,
   type OpenWhere
 } from './openAppInComfy'
 import { APP_RUNS } from './appsStage'
@@ -258,14 +258,7 @@ const needsLocal = computed(() => {
   return Boolean(r && r.kind !== 'cloud')
 })
 const picksPlace = !APP_RUNS[appId]
-const place = computed<OpenWhere>({
-  get: () => runPlaces[appId] ?? runsOn,
-  set: (where) => (runPlaces[appId] = where)
-})
-const PLACES: { value: OpenWhere; label: string }[] = [
-  { value: 'cloud', label: 'Comfy Cloud' },
-  { value: 'local', label: 'This computer' }
-]
+const place = computed<OpenWhere>(() => (picksPlace ? runPlaceOf(appId) : runsOn))
 const NEW_BUILD_LABEL = 'Run ComfyUI on this computer'
 const runsHere = computed(() => needsLocal.value || place.value === 'local')
 const hasLocalBuild = computed(() => localBuilds().length > 0)
@@ -691,13 +684,6 @@ function back(): void {
           <footer class="mar-app-editor-foot">
             <!-- ComfyUI still installing and no build yet: a strip above
                  Run says so and opens the install; Run waits, disabled. -->
-            <MarSeg
-              v-if="picksPlace"
-              v-model="place"
-              :options="PLACES"
-              label="Run on"
-              class="mar-app-editor-place"
-            />
             <button
               v-if="waitsForInstall"
               type="button"
@@ -1349,9 +1335,6 @@ function back(): void {
 }
 /* The strip above Run while ComfyUI installs: a quiet tab that opens the
  * install's progress. */
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-place {
-  margin-bottom: 8px;
-}
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-nobuild {
   display: flex;
   flex-direction: column;

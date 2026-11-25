@@ -11,6 +11,7 @@ import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { APP_TO_COMFY_EXTRAS, OPEN_ANSWERS, appToComfy, openAnswer } from './apps/appToComfy'
+import { APP_RUNS_ON, appRunsOn } from './apps/openAppInComfy'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
@@ -145,6 +146,7 @@ const PARTS: Part[] = [
   one('appExamplesAt', appExamplesAt, 'tabs', APP_EXAMPLES_AT),
   one('appToComfy', appToComfy, 'off', APP_TO_COMFY_EXTRAS),
   one('openAnswer', openAnswer, 'auto', OPEN_ANSWERS),
+  one('appRunsOn', appRunsOn, 'cloud', APP_RUNS_ON),
   one('firstRun', firstRun, 'original', FIRST_RUNS),
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
   one('arcMix', homeArcMix, 'tabs', HOME_ARC_MIXES),
