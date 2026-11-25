@@ -15,7 +15,7 @@ import {
   X
 } from '@lucide/vue'
 import { fileLabel, statusKindClass, statusLine } from '../lib/downloadFormatters'
-import { revealInFolderLabel } from '../composables/usePlatform'
+import { revealInFolderKey } from '../composables/usePlatform'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 
 const { t } = useI18n()
@@ -63,7 +63,7 @@ interface PopupBridge {
 }
 
 const bridge = (window as unknown as { __comfyTitlePopup?: PopupBridge }).__comfyTitlePopup
-const revealLabel = computed(() => revealInFolderLabel(bridge?.platform))
+const revealLabel = computed(() => t(revealInFolderKey(bridge?.platform)))
 
 const props = defineProps<{ state: DownloadsState }>()
 
@@ -118,7 +118,7 @@ function closeLabel(d: DownloadEntry): string {
 }
 
 function subtitle(d: DownloadEntry): string {
-  return statusLine(d, { completedShowsSize: true })
+  return statusLine(d, t, { completedShowsSize: true })
 }
 
 function keepsActionInView(d: DownloadEntry): boolean {

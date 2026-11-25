@@ -100,8 +100,8 @@ export const desktop: SourcePlugin = {
         tab: 'status',
         title: t('desktop.installInfo'),
         fields: [
-          { label: t('common.installMethod'), value: t('desktop.label') },
-          { label: t('desktop.basePath'), value: installation.installPath || '—' },
+          { key: 'install-method', label: t('common.installMethod'), value: t('desktop.label') },
+          { key: 'location', label: t('desktop.basePath'), value: installation.installPath || '—' },
           ...(execPath ? [{ label: t('desktop.executable'), value: execPath }] : []),
           {
             label: t('desktop.tracked'),

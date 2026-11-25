@@ -953,6 +953,11 @@ export function _runningPortOwner(port: number): string | undefined {
   return sessionsServingLocally().find((session) => session.port === port)?.installationName
 }
 
+export async function stopRunningOnPort(port: number): Promise<void> {
+  const owner = [..._runningSessions].find(([, session]) => session.proc && session.port === port)
+  if (owner) await stopRunning(owner[0])
+}
+
 export {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,
@@ -1043,7 +1048,7 @@ export async function settleStopStamps(timeoutMs: number): Promise<void> {
   clearTimeout(timer)
 }
 
-export function _removeSession(installationId: string): void {
+export function _removeSession(installationId: string, crashed = false): void {
   const session = _runningSessions.get(installationId)
   if (!session) return
   flushOperationOutput(installationId)
@@ -1051,7 +1056,7 @@ export function _removeSession(installationId: string): void {
   _runningSessions.delete(installationId)
   markSessionStopped(installationId, session)
   _broadcastToRenderer('instance-stopped', { installationId })
-  sessionLifecycleEvents.emit('changed')
+  sessionLifecycleEvents.emit('changed', crashed ? installationId : undefined)
 }
 
 export function _getPublicSessions(): Record<string, unknown>[] {

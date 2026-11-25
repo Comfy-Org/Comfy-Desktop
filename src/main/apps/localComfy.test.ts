@@ -1709,6 +1709,43 @@ describe('run_finished, for an app run on this computer', () => {
     expect(comfy.calls(`/history/${RUN}`)).toEqual([])
   })
 
+  it.each([
+    ['crashed', 'comfyui_crashed', STUDIO],
+    ['was stopped', 'comfyui_stopped', undefined],
+    ['was stopped as another build crashed', 'comfyui_stopped', LAB]
+  ])('tells the page why its run was lost when the ComfyUI %s', async (_case, reason, crashed) => {
+    await runFromApp()
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed', crashed)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sentToPage()).toEqual([{ type: 'run_failed', data: { prompt_id: RUN, reason } }])
+  })
+
+  it('tells the page that its run was stopped when the ComfyUI restarts', async () => {
+    await runFromApp()
+
+    sessionLifecycleEvents.emit('restarting', STUDIO)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sentToPage()).toEqual([
+      { type: 'run_failed', data: { prompt_id: RUN, reason: 'comfyui_stopped' } }
+    ])
+  })
+
+  it('tells the page that it does not know why, when the ComfyUI that runs lost the run', async () => {
+    comfy.historyEntry = null
+    await runFromApp()
+
+    mocks.socketOpened()
+    await vi.waitFor(() => expect(sentToPage()).toHaveLength(1))
+
+    expect(sentToPage()).toEqual([
+      { type: 'run_failed', data: { prompt_id: RUN, reason: 'unknown' } }
+    ])
+  })
+
   it('reports a run ComfyUI no longer knows after the socket opens again as failed', async () => {
     comfy.historyEntry = null
     await runFromApp()

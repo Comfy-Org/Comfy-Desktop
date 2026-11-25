@@ -557,7 +557,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     { id: 'exit-window', label: 'Close window', labelKey: 'fileMenu.exitWindow' },
     {
       id: 'close-all-windows',
-      label: 'Quit Desktop',
+      label: 'Quit Comfy Desktop',
       labelKey: 'fileMenu.exitAllWindows'
     }
   )

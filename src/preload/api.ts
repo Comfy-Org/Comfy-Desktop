@@ -129,6 +129,7 @@ export function buildElectronApi(): ElectronApi {
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
     listApps: () => ipcRenderer.invoke('apps:list'),
+    listHiddenApps: () => ipcRenderer.invoke('apps:list-hidden'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
     getAppRuns: () => ipcRenderer.invoke('apps:get-runs'),

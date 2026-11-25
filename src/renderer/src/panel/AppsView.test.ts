@@ -60,6 +60,7 @@ const GENJUTSU: AppCard = {
 }
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
+const listHiddenApps = vi.fn()
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const hideAppPage = vi.fn()
 const closeAppPage = vi.fn()
@@ -147,6 +148,7 @@ beforeEach(() => {
   showAppPage.mockResolvedValue('loading')
   ;(window as unknown as { api: unknown }).api = {
     listApps,
+    listHiddenApps,
     showAppPage,
     captureAppPage: vi.fn().mockResolvedValue(null),
     appSwitchStopsRun: vi.fn().mockResolvedValue(null),
@@ -888,5 +890,25 @@ describe('AppsView', () => {
       'app-card-remove-background'
     ])
     expect(wrapper.emitted('apps-loaded')?.at(-1)).toEqual([[CUTOUT]])
+  })
+
+  it('shows only the published apps, and never asks for the staff list', async () => {
+    listHiddenApps.mockResolvedValue({
+      apps: [
+        {
+          id: 'explore-worlds',
+          title: 'Explore Worlds',
+          description: '',
+          covers: [],
+          reasons: ['hub_only'],
+          page: 'live'
+        }
+      ]
+    })
+    const wrapper = await mountApps()
+
+    expect(listHiddenApps).not.toHaveBeenCalled()
+    expect(wrapper.findAll(APP_CARDS)).toHaveLength(3)
+    expect(wrapper.text()).not.toContain('Explore Worlds')
   })
 })
