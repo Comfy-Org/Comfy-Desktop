@@ -1,6 +1,6 @@
 import type { Template } from '../../mock'
 import { hubById } from '../explore/hubWorkflows'
-import type { TemplateDownload } from '../downloads/templateDownloads'
+import { secsLeft, type TemplateDownload } from '../downloads/templateDownloads'
 import { hasPack, packsFor, totalGb, versionShort, type Target } from './templateData'
 import { downloadMinutes, needsDownload } from './runReadiness'
 
@@ -48,8 +48,7 @@ export function runSecs(t: Template, where: Where): number {
 
 function downloadSecs(t: Template, x: Target, live: TemplateDownload | undefined): number {
   if (live && live.status === 'done') return 0
-  if (live && (live.status === 'downloading' || live.status === 'paused'))
-    return ((live.totalGb - live.doneGb) * 1024) / Math.max(1, live.mbps)
+  if (live && live.status !== 'cancelled') return secsLeft(live)
   if (x.state === 'new') return Math.max(4, downloadMinutes(totalGb(t) + NEW_BUILD_GB) + 3) * 60
   return needsDownload(x) ? downloadMinutes(totalGb(t)) * 60 : 0
 }

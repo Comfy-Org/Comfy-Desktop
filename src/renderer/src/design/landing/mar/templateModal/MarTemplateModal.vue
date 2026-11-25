@@ -83,7 +83,7 @@ import Tooltip from '../../ui/Tooltip.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import TplDownloadActions from '../downloads/TplDownloadActions.vue'
-import { downloadFor, percentOf, startDownload } from '../downloads/templateDownloads'
+import { downloadFor, startDownload } from '../downloads/templateDownloads'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
 // wears them, so the two read as one view. Imported for its styles.
 import '../assets/AssetDetail.vue'
@@ -554,7 +554,7 @@ const needsTone = computed(() =>
 const needsPill = computed(() => {
   const d = bgDownload.value
   if (!d) return { label: needsState.value, tone: needsTone.value }
-  if (d.status === 'downloading') return { label: `Downloading ${percentOf(d)}%`, tone: 'get' }
+  if (d.status === 'downloading') return { label: '', tone: 'get' }
   const tone = d.status === 'done' ? 'here' : d.status === 'paused' ? 'get' : 'warn'
   return { label: DOWNLOAD_NEEDS[d.status] ?? '', tone }
 })

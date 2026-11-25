@@ -41,6 +41,7 @@ import { homeTour } from './homeTour/homeTour'
 import { createLook, DEFAULT_CREATE_LOOK } from './create/createLook'
 import { createScreen } from './create/createScreen'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
+import { dlFooter } from './downloads/dlFooter'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -141,6 +142,7 @@ export const when = {
   deployState: computed(() => Boolean(proto.deploying)),
   // The template modal (templateModal/MarTemplateModal.vue), while it's open.
   wfCase: computed(() => proto.detail?.kind === 'template' && !can.value.onboarding),
+  dlFooter: computed(() => can.value.onboarding && proto.detail?.kind === 'template'),
   downloadScenario: computed(
     () =>
       can.value.onboarding &&
@@ -271,6 +273,7 @@ export const TWEAKS = {
   credits: one(creditsState, 'active'),
   wfCase: one(tplCase, 'catalog'),
   downloadScenario: one(downloadScenario, 'normal'),
+  dlFooter: one(dlFooter, 'button'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
   deployState: {
     isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),

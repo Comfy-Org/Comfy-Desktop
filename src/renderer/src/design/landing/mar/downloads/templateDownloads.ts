@@ -84,8 +84,11 @@ export const progressOf = (d: TemplateDownload): number =>
 
 export const percentOf = (d: TemplateDownload): number => Math.floor(progressOf(d) * 100)
 
+export const secsLeft = (d: TemplateDownload): number =>
+  ((d.totalGb - d.doneGb) * 1024) / Math.max(1, d.mbps)
+
 function timeLeft(d: TemplateDownload): string {
-  const secs = ((d.totalGb - d.doneGb) * 1024) / Math.max(1, d.mbps)
+  const secs = secsLeft(d)
   if (secs < 60) return 'less than a minute left'
   const mins = Math.round(secs / 60)
   if (mins < 60) return `about ${mins} min left`
