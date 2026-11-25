@@ -1600,6 +1600,27 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="app-sidebar-app-cutout"]').exists()).toBe(false)
   })
 
+  it('goes back to the Apps list with the sidebar open when Apps is picked on the folded rail', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+  })
+
   it('asks before a switch from the title bar that would stop a run, and stays on Stay', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listApps).mockResolvedValue([
@@ -1861,6 +1882,19 @@ describe('PanelApp', () => {
     expect(
       wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')
     ).toBeUndefined()
+  })
+
+  it('opens Development with the sidebar open when Development is picked on the folded rail', async () => {
+    const wrapper = await openRelightFromDevelopment()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="staff-apps-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
   })
 
   it('goes back to Development, not Apps, when an app opened from Development goes back', async () => {
