@@ -14,7 +14,9 @@ const {
   external = false,
   hero = false,
   send = false,
-  placeholder
+  placeholder,
+  enterLabel = '',
+  combo
 } = defineProps<{
   mode: CreateInput
   cardAt?: 'above' | 'below'
@@ -23,6 +25,8 @@ const {
   hero?: boolean
   send?: boolean
   placeholder?: string
+  enterLabel?: string
+  combo?: { open: boolean; list: string; active?: string }
 }>()
 const query = defineModel<string>({ required: true })
 const emit = defineEmits<{
@@ -32,6 +36,7 @@ const emit = defineEmits<{
   build: [starter: Starter]
   dismiss: []
   ask: [reply: AgentAnswer]
+  enter: []
 }>()
 
 const field = ref<HTMLInputElement>()
@@ -76,7 +81,7 @@ function key(e: KeyboardEvent): void {
     dismiss()
     return
   }
-  if (e.key === 'Enter' && agent.value && query.value.trim() && !navigated) {
+  if (e.key === 'Enter' && agent.value && query.value.trim() && !navigated && !enterLabel) {
     e.preventDefault()
     ask()
     return
@@ -116,12 +121,29 @@ defineExpose({ focus, dismiss, field })
         :aria-label="
           agent ? 'Describe what you want to make' : 'Search templates, workflows and nodes'
         "
+        :role="combo ? 'combobox' : undefined"
+        :aria-expanded="combo ? combo.open : undefined"
+        :aria-controls="combo?.open ? combo.list : undefined"
+        :aria-autocomplete="combo ? 'list' : undefined"
+        :aria-activedescendant="combo?.open ? combo.active : undefined"
+        :autocomplete="combo ? 'off' : undefined"
+        :spellcheck="combo ? false : undefined"
         @keydown="key"
         @focus="focused = true"
         @blur="focused = false"
       />
       <button
-        v-if="query && agent && external && !send"
+        v-if="enterLabel && query.trim()"
+        type="button"
+        class="cc-enter"
+        :aria-label="enterLabel"
+        @mousedown.prevent
+        @click.stop="emit('enter')"
+      >
+        <kbd>↵</kbd>{{ enterLabel }}
+      </button>
+      <button
+        v-else-if="query && agent && external && !send"
         type="button"
         class="cc-ask"
         aria-label="Ask"
@@ -297,6 +319,33 @@ defineExpose({ focus, dismiss, field })
 }
 :root .proto-ui.proto-ui.proto-ui .cc-ask kbd {
   font: inherit;
+}
+:root .proto-ui.proto-ui.proto-ui .cc-enter {
+  display: inline-flex;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  background: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .cc-enter:hover {
+  background: var(--color-inverted-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .cc-enter:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui .cc-enter kbd {
+  font: inherit;
+  opacity: 0.7;
 }
 :root .proto-ui.proto-ui.proto-ui .cc-clear {
   display: grid;

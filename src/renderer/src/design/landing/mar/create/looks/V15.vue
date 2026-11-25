@@ -3,12 +3,9 @@ import { computed, ref, watch } from 'vue'
 import { ArrowRight, Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
-import { activeInstance, go, proto } from '../../../useProto'
-import { thumb } from '../../../mock'
-import { MOCK } from '../../assets/mock'
+import { go } from '../../../useProto'
+import { openAppPage } from '../../../appFlow'
 import { exploreStart } from '../../explore/exploreStart'
-import { fmtGb, targetFor, totalGb } from '../../templateModal/templateData'
-import { firstResultFor, fmtDuration } from '../../templateModal/firstResult'
 import {
   closeCreate,
   openTemplate,
@@ -16,16 +13,26 @@ import {
   startBlank,
   startWithAgentAsk
 } from '../createScreen'
-import { readiness, SHELVES, type Starter } from '../createStarters'
+import { SHELVES, type Starter } from '../createStarters'
 import { createInput } from '../createInput'
 import { agentOpens } from '../agentOpens'
+import { composerSearch } from '../composerSearch'
+import {
+  edited,
+  lastOutput,
+  remember,
+  templateMeta,
+  useSmartSearch,
+  type Row
+} from '../smartSearch'
 import { buildOf, playIn, reducedMotion, stopIn, useEscapeCloses } from './lookKitB'
-import { agentStart, type AgentAnswer } from './v07Agent'
+import { agentStart, answer, type AgentAnswer } from './v07Agent'
 import { useCreateAgent } from './createAgent'
 import CreateComposer from './CreateComposer.vue'
 import CreateAgentPanel from './CreateAgentPanel.vue'
 import GhostGraph from './GhostGraph.vue'
 import ResultsB from './ResultsB.vue'
+import SmartDrop from './SmartDrop.vue'
 
 interface TemplateCard {
   id: string
@@ -66,34 +73,19 @@ const flow = useCreateAgent()
 watch(query, () => (navigated.value = false))
 watch(useCase, () => (hover.value = ''))
 
-const lastOutput = (w: ProjectWorkflow): string | undefined =>
-  MOCK[w.name] ?? (w.thumbId ? thumb(w.thumbId) : undefined)
+const smart = computed(() => composerSearch.id === 'smart')
+const LIST_ID = 'v15-smart-list'
+const finder = useSmartSearch(query)
+const dropOpen = ref(false)
+let autofocused = true
+watch(query, (q) => q && (dropOpen.value = true))
 
-const edited = (modified: string): string =>
-  `Edited ${modified
-    .toLowerCase()
-    .replace(/ min ago$/, 'm ago')
-    .replace(/ hours? ago$/, 'h ago')
-    .replace(/ days? ago$/, 'd ago')}`
-
-const roughly = (secs: number): string =>
-  secs < 60 ? fmtDuration(secs) : `${Math.round(secs / 60)} min`
-
-function templateMeta(s: Starter): { meta: string; tone: string } {
-  const r = readiness(s.template)
-  if (r.tone === 'ready') {
-    const first = firstResultFor(
-      s.template,
-      targetFor(s.template, activeInstance.value, proto.signedIn)
-    )
-    return {
-      meta: first ? `Ready · first result ~${roughly(first.secs)}` : 'Ready to run',
-      tone: 'ready'
-    }
-  }
-  if (r.tone === 'fetch') return { meta: `Needs ${fmtGb(totalGb(s.template))}`, tone: 'fetch' }
-  return { meta: r.label, tone: 'off' }
-}
+const smartShown = computed(
+  () => smart.value && dropOpen.value && !flow.panel.value && finder.results.value.rows.length > 0
+)
+const activeOption = computed(() =>
+  smartShown.value && finder.current.value ? `${LIST_ID}-opt-${finder.active.value}` : undefined
+)
 
 const modelOf = (s: Starter): string =>
   s.template.title.includes(':') ? s.template.title.split(':')[0]!.trim() : s.model
@@ -163,6 +155,41 @@ function onAsk(a: AgentAnswer): void {
   else flow.ask(a)
 }
 
+function act(row: Row | undefined): void {
+  const text = finder.q.value
+  if (row?.kind === 'suggest') {
+    query.value = row.text
+    dropOpen.value = true
+    composer.value?.field?.focus()
+    return
+  }
+  if (!text) return
+  remember(text)
+  dropOpen.value = false
+  if (!row || row.kind === 'agent') onAsk(answer(text))
+  else if (row.kind === 'template') openTemplate(row.starter.template)
+  else if (row.kind === 'workflow') leave(() => openWorkflow(row.workflow))
+  else openAppPage(row.app.id)
+}
+
+function smartKey(e: KeyboardEvent): boolean {
+  if (e.key === 'Escape' && smartShown.value) dropOpen.value = false
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!smartShown.value && !query.value.trim()) return false
+    if (smartShown.value) finder.move(e.key === 'ArrowDown' ? 1 : -1)
+    dropOpen.value = true
+  } else if (e.key === 'Enter' && (smartShown.value || query.value.trim()))
+    act(smartShown.value ? finder.current.value : undefined)
+  else return false
+  e.preventDefault()
+  return true
+}
+
+function onFocusIn(): void {
+  if (autofocused) autofocused = false
+  else dropOpen.value = true
+}
+
 function moveAcross(step: number): void {
   const ids = cardIds.value
   const now = ids.indexOf(hover.value)
@@ -183,6 +210,7 @@ function moveDown(step: number): void {
 }
 
 function key(e: KeyboardEvent): void {
+  if (smart.value && smartKey(e)) return
   if (e.key === 'Escape') {
     e.preventDefault()
     if (flow.panel.value) flow.close()
@@ -204,13 +232,17 @@ function key(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
+const inputMode = computed(() => (smart.value ? 'agent' : createInput.id))
+
 const placeholder = computed(() =>
-  createInput.id === 'agent'
-    ? 'Describe what you want to make, or search templates'
-    : 'Search templates, workflows and nodes'
+  smart.value
+    ? 'Describe what you want to make, or search templates and apps'
+    : createInput.id === 'agent'
+      ? 'Describe what you want to make, or search templates'
+      : 'Search templates, workflows and nodes'
 )
 
-const dropping = computed(() => createInput.id === 'search' && !!query.value.trim())
+const dropping = computed(() => !smart.value && createInput.id === 'search' && !!query.value.trim())
 
 function enter(id: string, el: EventTarget | null): void {
   hover.value = id
@@ -250,21 +282,41 @@ useEscapeCloses(() => composer.value?.field)
             ref="composer"
             v-model="query"
             class="v15-composer"
-            :mode="createInput.id"
+            :mode="inputMode"
             :navigated
             :placeholder
+            :enter-label="smart ? finder.enterLabel.value : ''"
+            :combo="smart ? { open: smartShown, list: LIST_ID, active: activeOption } : undefined"
             hero
             send
             external
             @key="key"
             @ask="onAsk"
+            @enter="act(smartShown ? finder.current.value : undefined)"
+            @focusin="smart && onFocusIn()"
+            @focusout="dropOpen = false"
+            @pointerdown="smart && (dropOpen = true)"
           />
           <div v-if="dropping" class="v15-drop">
             <ResultsB ref="results" :query />
           </div>
+          <div v-else-if="smartShown" class="v15-drop is-smart">
+            <SmartDrop
+              :results="finder.results.value"
+              :active="finder.active.value"
+              :query="finder.q.value"
+              :list-id="LIST_ID"
+              @hover="finder.active.value = $event"
+              @pick="act"
+            />
+          </div>
         </div>
 
-        <div class="v15-starts" :class="dropping && 'is-under'" @pointerleave="hover = ''">
+        <div
+          class="v15-starts"
+          :class="[dropping && 'is-under', smartShown && 'is-dim']"
+          @pointerleave="hover = ''"
+        >
           <section class="v15-section" aria-labelledby="v15-templates">
             <h2 id="v15-templates" class="sr-only">Templates</h2>
             <header class="v15-head">
@@ -502,6 +554,21 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v15-starts.is-under {
   opacity: 0;
   pointer-events: none;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-starts.is-dim {
+  opacity: 0.28;
+  pointer-events: none;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-title {
+  transition: opacity 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-over:has(.v15-drop.is-smart) .v15-title {
+  opacity: 0.5;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-drop.is-smart {
+  width: 100%;
+  max-height: min(500px, calc(100vh - 300px));
+  padding: 6px;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-head {
   display: flex;

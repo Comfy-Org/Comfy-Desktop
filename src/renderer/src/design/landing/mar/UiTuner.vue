@@ -20,6 +20,7 @@ import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { createLook } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
+import { COMPOSER_SEARCHES, composerSearch } from './create/composerSearch'
 import { AGENT_OPENS, agentOpens } from './create/agentOpens'
 import { COMPOSER_POSITIONS, composerPos } from './create/composerPos'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
@@ -172,6 +173,7 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'openAnswer', show: () => when.openAnswer.value },
   { id: 'appRunsOn', show: () => when.appRunsOn.value }
 ]
+const smartV15 = (): boolean => createLook.id === 'V15' && composerSearch.id === 'smart'
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'firstRun', show: () => when.firstRun.value },
   { id: 'exampleLook', show: () => when.exampleLook.value },
@@ -196,8 +198,12 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'recentsCover', show: () => when.recentsCover.value },
   { id: 'homeTour', show: () => when.homeTour.value },
   { id: 'createLook', show: () => when.createLook.value },
-  { id: 'createInput', show: () => when.createLook.value },
-  { id: 'agentOpens', show: () => when.createLook.value && createInput.id === 'agent' },
+  { id: 'createInput', show: () => when.createLook.value && !smartV15() },
+  { id: 'composerSearch', show: () => when.createLook.value && createLook.id === 'V15' },
+  {
+    id: 'agentOpens',
+    show: () => when.createLook.value && (createInput.id === 'agent' || smartV15())
+  },
   { id: 'composerPos', show: () => when.createLook.value && createLook.id === 'V07' },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
@@ -538,6 +544,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('createInput')" label="Create input">
             <Seg v-model="createInput.id" label="Create input" :options="CREATE_INPUTS" />
+          </Row>
+          <Row :show="shows('composerSearch')" label="Composer search">
+            <Seg v-model="composerSearch.id" label="Composer search" :options="COMPOSER_SEARCHES" />
           </Row>
           <Row :show="shows('agentOpens')" label="Agent opens">
             <Seg v-model="agentOpens.id" label="Agent opens" :options="AGENT_OPENS" />
