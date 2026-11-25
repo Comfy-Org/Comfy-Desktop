@@ -97,8 +97,20 @@ describe('a page file from the apps site', () => {
     expect(response).toBe(kept)
     expect(appsSession.fetch).toHaveBeenCalledWith(PAGE_URL, {
       cache: 'force-cache',
+      redirect: 'error',
       bypassCustomProtocolHandlers: true
     })
+  })
+
+  it('fails the load on a redirect instead of following it where the page guard cannot see', async () => {
+    appsSession.fetch.mockImplementation((_url, init) =>
+      init?.redirect === 'error'
+        ? Promise.reject(new TypeError('net::ERR_FAILED'))
+        : Promise.resolve(new Response('<p>somewhere else</p>'))
+    )
+
+    await expect(answer(new Request(PAGE_URL))).rejects.toThrow('ERR_FAILED')
+    expect(appsSession.fetch.mock.calls[0]?.[1]).toMatchObject({ redirect: 'error' })
   })
 
   it('fails the load when no copy was kept and the network fails', async () => {

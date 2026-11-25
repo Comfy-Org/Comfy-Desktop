@@ -8,6 +8,7 @@ import type { AppBadge, AppBadgeStyle, AppBadgeWords, AppCard, AppCover } from '
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
+import { inTurns, readStill, stillDataUrl } from './stillPictures'
 
 const LIST_FILE = 'apps.json'
 const FETCH_TIMEOUT_MS = 8000
@@ -15,7 +16,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000
 const EMPTY_LIST_TTL_MS = 30 * 1000
 const RETRY_DELAYS_MS = [1000, 3000]
 const SAVED_LIST_FILE = 'apps-catalog.json'
-const SAVED_STILL_TIMEOUT_MS = 2000
+const SAVED_STILLS_TIMEOUT_MS = 2000
+const KEEP_STILLS_TIMEOUT_MS = 60_000
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
 const BADGE_STYLES: readonly AppBadgeStyle[] = ['crown', 'chip', 'label']
@@ -220,40 +222,39 @@ export async function savedListBody(listUrl: string): Promise<string | null> {
   return saved?.listUrl === listUrl ? JSON.stringify(saved.apps) : null
 }
 
-async function savedStill(url: string): Promise<string | null> {
+function firstStillOf(app: ListedApp): string | null {
+  return stillsOf(app.card)[0] ?? null
+}
+
+async function savedStill(url: string, signal: AbortSignal): Promise<string | null> {
   try {
-    const response = await session.defaultSession.fetch(url, {
-      cache: 'force-cache',
-      signal: AbortSignal.timeout(SAVED_STILL_TIMEOUT_MS)
-    })
-    const type = response.headers.get('content-type') ?? ''
-    if (!response.ok || !type.startsWith('image/')) return null
-    const bytes = Buffer.from(await response.arrayBuffer())
-    return `data:${type};base64,${bytes.toString('base64')}`
+    return await stillDataUrl(
+      await session.defaultSession.fetch(url, { cache: 'force-cache', signal })
+    )
   } catch {
     return null
   }
 }
 
-async function withSavedStills(apps: ListedApp[]): Promise<ListedApp[]> {
-  return Promise.all(
-    apps.map(async (app) => {
-      const stills = await Promise.all(stillsOf(app.card).map(savedStill))
-      const covers = stills.flatMap((url) => (url ? [{ url, stillUrl: null }] : []))
-      return { ...app, card: { ...app.card, covers } }
-    })
-  )
+function withSavedStills(apps: ListedApp[]): Promise<ListedApp[]> {
+  const signal = AbortSignal.timeout(SAVED_STILLS_TIMEOUT_MS)
+  return inTurns(apps, async (app) => {
+    const first = firstStillOf(app)
+    const still = first ? await savedStill(first, signal) : null
+    const covers = still ? [{ url: still, stillUrl: still }] : []
+    return { ...app, card: { ...app.card, covers } }
+  })
 }
 
 function keepStills(apps: ListedApp[]): void {
-  for (const app of apps) {
-    for (const url of stillsOf(app.card)) {
-      void session.defaultSession
-        .fetch(url)
-        .then((response) => response.arrayBuffer())
-        .catch(() => {})
-    }
-  }
+  const signal = AbortSignal.timeout(KEEP_STILLS_TIMEOUT_MS)
+  const urls = apps.flatMap((app) => firstStillOf(app) ?? [])
+  void inTurns(urls, (url) =>
+    session.defaultSession
+      .fetch(url, { signal })
+      .then(readStill)
+      .catch(() => null)
+  )
 }
 
 async function saveList(listUrl: string, apps: unknown[]): Promise<void> {

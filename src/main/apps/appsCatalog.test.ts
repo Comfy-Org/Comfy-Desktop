@@ -582,6 +582,33 @@ describe('the apps Desktop lists', () => {
 
 describe('the apps Desktop lists with no internet', () => {
   const STILL_BYTES = new Uint8Array([1, 2, 3])
+  const MEGABYTE = 1024 * 1024
+
+  function oversizedStill(): { response: Response; cancelled: () => boolean } {
+    let sent = 0
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < 5) controller.enqueue(new Uint8Array(MEGABYTE))
+        else controller.close()
+      },
+      cancel() {
+        cancelled = true
+      }
+    })
+    return {
+      response: new Response(body, { headers: { 'content-type': 'image/webp' } }),
+      cancelled: () => cancelled
+    }
+  }
+
+  function appWithStill(n: number): Record<string, unknown> {
+    return websiteApp({
+      id: `app-${n}`,
+      page: `/apps/app-${n}/desktop.html`,
+      still: `/catalog-media/still-${n}/v1`
+    })
+  }
 
   function savedWithStills(): void {
     savedOnDisk(LIST_URL, [
@@ -603,19 +630,45 @@ describe('the apps Desktop lists with no internet', () => {
     return Promise.reject(new Error('offline'))
   }
 
-  it('show only the stills Desktop kept, as pictures it can show without the website', async () => {
+  it('show the first still Desktop kept as both the picture and the still, so an idle card shows it', async () => {
     electron.online = false
     savedWithStills()
     electron.fetchStill.mockImplementation(keptStill)
     mockedFetchJSON.mockRejectedValue(new Error('offline'))
 
     expect((await listApps())[0]?.covers).toEqual([
-      { url: 'data:image/webp;base64,AQID', stillUrl: null }
+      { url: 'data:image/webp;base64,AQID', stillUrl: 'data:image/webp;base64,AQID' }
     ])
     expect(electron.fetchStill).toHaveBeenCalledWith(
       'https://comfy.org/catalog-media/hero-still/v1',
       { cache: 'force-cache', signal: expect.any(AbortSignal) }
     )
+  })
+
+  it('look for only the first still of each app', async () => {
+    electron.online = false
+    savedWithStills()
+    electron.fetchStill.mockImplementation(() =>
+      Promise.resolve(new Response(STILL_BYTES, { headers: { 'content-type': 'image/webp' } }))
+    )
+    mockedFetchJSON.mockRejectedValue(new Error('offline'))
+
+    await listApps()
+
+    expect(electron.fetchStill.mock.calls.map(([url]) => url)).toEqual([
+      'https://comfy.org/catalog-media/hero-still/v1'
+    ])
+  })
+
+  it('leave out a kept still over two megabytes, and stop reading it', async () => {
+    electron.online = false
+    savedWithStills()
+    const still = oversizedStill()
+    electron.fetchStill.mockResolvedValue(still.response)
+    mockedFetchJSON.mockRejectedValue(new Error('offline'))
+
+    expect((await listApps())[0]?.covers).toEqual([])
+    expect(still.cancelled()).toBe(true)
   })
 
   it('show a card without a picture when Desktop kept none of its stills', async () => {
@@ -646,21 +699,46 @@ describe('the apps Desktop lists with no internet', () => {
     expect(mockedFetchJSON).toHaveBeenCalledTimes(1)
   })
 
-  it('keep each still after a good load, so it can show later with no internet', async () => {
+  it('keep the first still of each app after a good load, so it can show later with no internet', async () => {
     mockedFetchJSON.mockResolvedValue([
       websiteApp({
         covers: [
           { cover: '/catalog-media/hero/v1', still: '/catalog-media/hero-still/v1' },
-          { cover: '/catalog-media/dance/v1' }
+          { cover: '/catalog-media/skate/v1', still: '/catalog-media/skate-still/v1' }
         ]
+      }),
+      websiteApp({
+        id: 'sdr-to-hdr',
+        page: '/apps/sdr-to-hdr/desktop.html',
+        covers: [{ cover: '/catalog-media/dance/v1' }, { cover: '/catalog-media/sun.png' }]
       })
     ])
 
     await listApps()
 
     expect(electron.fetchStill.mock.calls).toEqual([
-      ['https://comfy.org/catalog-media/hero-still/v1']
+      ['https://comfy.org/catalog-media/hero-still/v1', { signal: expect.any(AbortSignal) }],
+      ['https://comfy.org/catalog-media/sun.png', { signal: expect.any(AbortSignal) }]
     ])
+  })
+
+  it('keep at most six stills downloading at once after a good load', async () => {
+    mockedFetchJSON.mockResolvedValue(Array.from({ length: 10 }, (_, n) => appWithStill(n)))
+    electron.fetchStill.mockImplementation(() => new Promise<Response>(() => {}))
+
+    await listApps()
+
+    expect(electron.fetchStill).toHaveBeenCalledTimes(6)
+  })
+
+  it('stop keeping a still over two megabytes after a good load', async () => {
+    mockedFetchJSON.mockResolvedValue([appWithStill(1)])
+    const still = oversizedStill()
+    electron.fetchStill.mockResolvedValue(still.response)
+
+    await listApps()
+
+    await vi.waitFor(() => expect(still.cancelled()).toBe(true))
   })
 
   it('give the saved list as the website sent it, for the app pages to read', async () => {

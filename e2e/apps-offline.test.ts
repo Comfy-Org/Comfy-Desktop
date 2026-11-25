@@ -143,9 +143,11 @@ function textOnPage(app: AppContext, selector: string): Promise<string | null> {
     .catch(() => null)
 }
 
-function cardPicture(app: AppContext): Promise<string | null> {
+function shownCardPicture(app: AppContext): Promise<string | null> {
   return app.panel.evaluate<string | null>(
-    `document.querySelector('${CUTOUT_CARD} img[data-loaded="true"]')?.getAttribute('src') ?? null`
+    `[...document.querySelectorAll('${CUTOUT_CARD} img[data-cover="shown"][data-loaded="true"]')]
+      .find((img) => img.naturalWidth > 0 && Number(getComputedStyle(img).opacity) > 0)
+      ?.getAttribute('src') ?? null`
   )
 }
 
@@ -200,7 +202,7 @@ test('An app opened while online runs its script and reads the apps list @macos 
   await expect.poll(() => keptStillStatus(app), LONG_WAIT).toBe(200)
 })
 
-test('With the apps site gone after a restart, the card shows the still Desktop kept @macos @windows @linux', async () => {
+test('With the apps site gone after a restart, the idle card shows the still Desktop kept @macos @windows @linux', async () => {
   await ctx?.cleanup()
   ctx = null
   ctx = await launch()
@@ -210,7 +212,7 @@ test('With the apps site gone after a restart, the card shows the still Desktop 
   await expect
     .poll(() => app.panel.allText(`${APPS_GRID} [data-testid="app-card-name"]`), LONG_WAIT)
     .toEqual(['Remove Background', 'Never Opened'])
-  await expect.poll(() => cardPicture(app), LONG_WAIT).toMatch(/^data:image\/png;base64,/)
+  await expect.poll(() => shownCardPicture(app), LONG_WAIT).toMatch(/^data:image\/png;base64,/)
 })
 
 test('With the apps site gone, the app opened before runs its script and reads the saved list @macos @windows @linux', async () => {

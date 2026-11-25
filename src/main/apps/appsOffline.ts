@@ -44,6 +44,7 @@ export async function answerFromKeptCopy(
   }
   return appsSession.fetch(request.url, {
     cache: 'force-cache',
+    redirect: 'error',
     bypassCustomProtocolHandlers: true
   })
 }
