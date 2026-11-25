@@ -1,0 +1,821 @@
+diff --git a/src/renderer/src/design/landing/mar/templateModal/MarTemplateModal.vue b/src/renderer/src/design/landing/mar/templateModal/MarTemplateModal.vue
+index 44017931d..5fc1aef53 100644
+--- a/src/renderer/src/design/landing/mar/templateModal/MarTemplateModal.vue
++++ b/src/renderer/src/design/landing/mar/templateModal/MarTemplateModal.vue
+@@ -4,7 +4,6 @@ import { onClickOutside, useElementSize } from '@vueuse/core'
+ import {
+   ArrowDownToLine,
+   AudioLines,
+-  BadgeCheck,
+   BookOpen,
+   Check,
+   ChevronDown,
+@@ -17,6 +16,7 @@ import {
+   ImageOff,
+   KeyRound,
+   Link2,
++  MoreHorizontal,
+   Plug,
+   Puzzle,
+   RefreshCw,
+@@ -46,7 +46,7 @@ import { can } from '../../milestones'
+ import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
+ import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
+ import { runBlock } from '../runCredits'
+-import { opensTemplate, openAction, openNote, openWithExample } from '../templateOpen/openTemplate'
++import { opensTemplate, openAction, openWithExample } from '../templateOpen/openTemplate'
+ import { openPrepTab } from '../templateOpen/prepTabs'
+ import { installThenOpen } from '../templateOpen/installThenOpen'
+ import { isDownloaded, markDownloaded } from '../templateOpen/installed'
+@@ -70,7 +70,6 @@ import {
+   packsFor,
+   mediaFor,
+   needsFor,
+-  reasonFor,
+   tplById,
+   totalGb,
+   versionShort,
+@@ -83,7 +82,6 @@ import { examplesFor } from './tplExamples'
+ import { inputsFor, type InputKind } from './tplInputs'
+ import { firstResultFor, fmtDuration } from './firstResult'
+ import TplGraph from './TplGraph.vue'
+-import Tooltip from '../../ui/Tooltip.vue'
+ import ZoomControl from '../assets/ZoomControl.vue'
+ import MarSeg from '../pages/MarSeg.vue'
+ import TplDownloadActions from '../downloads/TplDownloadActions.vue'
+@@ -179,9 +177,6 @@ const targets = computed<Target[]>(() => {
+   })
+ })
+ const best = computed(() => bestTarget(targets.value))
+-const reason = computed(() =>
+-  best.value && template.value ? reasonFor(best.value, targets.value, template.value) : ''
+-)
+ 
+ const selectedId = ref<string>()
+ /** The picture's own shape, so it fits the stage like an asset does. */
+@@ -204,30 +199,6 @@ const picFit = computed(() => (natural.value && mediaW.value ? mediaW.value / na
+ /** What the section and the action show: the pick, or, when nothing can
+  *  be picked (offline, Cloud only), the first build and why it can't. */
+ const shown = computed(() => selected.value ?? targets.value[0])
+-/** Why the default is the default, in one short line: the first sentence
+- *  of the reason. Only while the default is the pick. */
+-const fit = computed(() =>
+-  !saved.value &&
+-  !bgDownload.value &&
+-  reason.value &&
+-  shown.value?.inst.id === best.value?.inst.id &&
+-  shown.value?.state !== 'running' &&
+-  shown.value?.state !== 'ready'
+-    ? reason.value.split(/(?<=\.) /)[0]!
+-    : ''
+-)
+-/** The one line over the action: what happens, or what's in the way. */
+-const line = computed(() => {
+-  const s = shown.value
+-  if (!s) return ''
+-  if (s.state === 'blocked' || s.state === 'platform')
+-    return `${s.status}. Pick another build to open it.`
+-  if (s.state === 'download' && keptGb.value)
+-    return `${fmtGb(keptGb.value)} of ${fmtGb(total.value)} is already here. Downloading picks up where it stopped.`
+-  if (exampleOn.value && template.value && opensTemplate(s)) return openNote(s, template.value)
+-  // The plain cases need no line: the button says it.
+-  return s.state === 'running' || s.state === 'ready' ? '' : s.note
+-})
+ const exampleOn = computed(() => can.value.onboarding && !saved.value)
+ const primaryLabel = computed(() => {
+   const s = shown.value
+@@ -243,10 +214,6 @@ const cloudOffer = computed(() => {
+   if (!exampleOn.value || !s || !c || c.disabled || c.state === 'blocked') return false
+   return s.inst.kind === 'local' && (s.state === 'download' || Boolean(s.fetch))
+ })
+-/** The cost's colour: a warning only for what may fail; a download stays
+- *  quiet, even on a build short of memory. */
+-const tone = (x: Target): string =>
+-  (x.state === 'memory' && x.cost !== 'May fail') || x.state === 'gated' ? 'download' : x.state
+ const buildMenu = ref(false)
+ const buildBox = ref<HTMLElement>()
+ onClickOutside(buildBox, () => (buildMenu.value = false))
+@@ -270,9 +237,6 @@ const bgDownload = computed(() =>
+   tplDownload.value?.status === 'cancelled' ? undefined : tplDownload.value
+ )
+ const downloadBusy = computed(() => Boolean(bgDownload.value && bgDownload.value.status !== 'done'))
+-const keptGb = computed(() =>
+-  tplDownload.value?.status === 'cancelled' ? tplDownload.value.doneGb : 0
+-)
+ const DOWNLOAD_NEEDS: Record<string, string> = {
+   paused: 'Paused',
+   failed: 'Download failed',
+@@ -290,8 +254,12 @@ watch(
+     const t = template.value
+     const kase =
+       t && !saved.value ? targets.value.find((x) => x.inst.id === caseBuild(t)) : undefined
+-    selectedId.value = (kase ?? home ?? best.value ?? targets.value.find((x) => !x.disabled))?.inst
+-      .id
++    selectedId.value = (
++      kase ??
++      home ??
++      best.value ??
++      targets.value.find((x) => !x.disabled)
++    )?.inst.id
+     view.value = 'result'
+     exampleAt.value = 0
+     buildMenu.value = false
+@@ -447,6 +415,87 @@ function creditsResolved(): void {
+   else confirm()
+ }
+ 
++type RunWhere = 'local' | 'cloud'
++const RUN_WHERE: { value: RunWhere; label: string }[] = [
++  { value: 'local', label: 'This computer' },
++  { value: 'cloud', label: 'Cloud' }
++]
++const localTargets = computed(() => targets.value.filter((x) => x.inst.kind === 'local'))
++const bothWays = computed(() =>
++  Boolean(
++    localTargets.value.some((x) => !x.disabled) &&
++    cloudTarget.value &&
++    !cloudTarget.value.disabled &&
++    cloudTarget.value.state !== 'blocked'
++  )
++)
++const lastLocalId = ref<string>()
++const runWhere = computed<RunWhere>({
++  get: () => (selected.value?.inst.kind === 'cloud' ? 'cloud' : 'local'),
++  set: (v) => {
++    if (v === runWhere.value) return
++    if (v === 'cloud') {
++      lastLocalId.value = selectedId.value
++      selectedId.value = cloudTarget.value?.inst.id
++    } else {
++      selectedId.value = lastLocalId.value ?? localTargets.value.find((x) => !x.disabled)?.inst.id
++    }
++    buildMenu.value = false
++  }
++})
++watch(
++  () => proto.detail,
++  () => (lastLocalId.value = undefined)
++)
++const pickable = computed(() =>
++  bothWays.value && runWhere.value === 'local' ? localTargets.value : targets.value
++)
++const needsDownload = computed(
++  () =>
++    selected.value?.inst.kind === 'local' && modelState.value === 'get' && needs.value.length > 0
++)
++const modelsLine = computed(() => {
++  const n = needs.value.length
++  if (!n) return needsLine.value
++  const models = `${n} ${n === 1 ? 'model' : 'models'}`
++  if (needsDownload.value && !bgDownload.value) return `${models} missing · ${fmtGb(total.value)}`
++  return `${models} · ${needsPill.value.label || needsState.value || 'Installed'}`
++})
++const buildLine = (x: Target): string =>
++  x.state === 'download' ? [x.inst.channel, x.inst.version].filter(Boolean).join(' · ') : x.status
++const cloudLine = computed(() => {
++  const c = cloudTarget.value
++  if (!c) return ''
++  if (c.state === 'cloud') return 'Starts now · uses credits'
++  return c.status
++})
++const runLabel = computed(() => {
++  const s = shown.value
++  if (!s) return 'Open'
++  if (s.inst.kind === 'cloud') return s.state === 'cloud' ? 'Open on Cloud' : primaryLabel.value
++  if (needsDownload.value) return 'Download and open'
++  if (s.state === 'running' || s.state === 'ready') return 'Open'
++  return primaryLabel.value
++})
++const IO_LABEL: Record<string, string> = {
++  image: 'Image',
++  text: 'Text',
++  video: 'Video',
++  audio: 'Audio',
++  '3d': '3D'
++}
++const chips = computed(() => {
++  const t = template.value
++  const i = info.value
++  if (!t || !i || saved.value) return []
++  const ins = [...new Set(inputs.value.map((x) => IO_LABEL[x.kind]))].join(' + ')
++  const out = IO_LABEL[t.category] ?? 'Image'
++  return [ins ? `${ins} → ${out}` : out, i.license, `${i.uses} uses`]
++})
++const moreMenu = ref(false)
++const moreBox = ref<HTMLElement>()
++onClickOutside(moreBox, () => (moreMenu.value = false))
++
+ function favorite(): void {
+   if (saved.value) workflows.star(saved.value.id)
+   else if (template.value) toggleFavorite(template.value.id, 'template')
+@@ -721,36 +770,43 @@ const full = computed(() => can.value.onboarding)
+                     info.useCase
+                   }}
+                 </DialogDescription>
++                <div v-if="chips.length" class="mar-tpl-chips">
++                  <span v-for="c in chips" :key="c" class="mad-tag mar-tpl-chip">{{ c }}</span>
++                </div>
+               </div>
+-              <!-- Favorite and the link, out in the open at the top right. -->
+-              <Tooltip :content="favorited ? 'Remove from favorites' : 'Add to favorites'">
++              <div ref="moreBox" class="mad-pick">
+                 <button
+                   type="button"
+-                  class="mad-icon mar-tpl-head-btn"
+-                  :class="favorited && 'is-on'"
+-                  data-tpl-like
+-                  :aria-label="favorited ? 'Remove from favorites' : 'Add to favorites'"
+-                  :aria-pressed="favorited"
+-                  @click="favorite"
+-                >
+-                  <Star
+-                    :key="String(favorited)"
+-                    :size="15"
+-                    :fill="favorited ? 'currentColor' : 'none'"
+-                    :class="favorited && 'mar-tpl-fav'"
+-                  />
+-                </button>
+-              </Tooltip>
+-              <Tooltip v-if="!saved" content="Copy link">
+-                <button
+-                  type="button"
+-                  class="mad-icon mar-tpl-head-btn"
+-                  aria-label="Copy link"
+-                  @click="share"
++                  class="mad-icon mad-head-more"
++                  aria-label="More"
++                  title="More"
++                  aria-haspopup="menu"
++                  :aria-expanded="moreMenu"
++                  @click="moreMenu = !moreMenu"
+                 >
+-                  <Link2 :size="15" />
++                  <MoreHorizontal :size="16" />
+                 </button>
+-              </Tooltip>
++                <div v-if="moreMenu" class="mad-menu is-down is-end is-more" role="menu">
++                  <button
++                    type="button"
++                    role="menuitem"
++                    data-tpl-like
++                    @click="(favorite(), (moreMenu = false))"
++                  >
++                    <Star :size="14" :fill="favorited ? 'currentColor' : 'none'" />{{
++                      favorited ? 'Remove from favorites' : 'Add to favorites'
++                    }}
++                  </button>
++                  <button
++                    v-if="!saved"
++                    type="button"
++                    role="menuitem"
++                    @click="(share(), (moreMenu = false))"
++                  >
++                    <Link2 :size="14" />Copy link
++                  </button>
++                </div>
++              </div>
+               <DialogClose
+                 v-if="full"
+                 class="mad-icon mad-head-close"
+@@ -779,197 +835,181 @@ const full = computed(() => can.value.onboarding)
+               </div>
+             </section>
+ 
+-            <!-- Open in, with What it needs right under it (it follows the pick): the build it opens on, as one filled row that is
+-                 the picker (the other builds open under it), then why in
+-                 one line. What blocks it is one line and one action at the
+-                 bottom, in place of the primary. -->
+             <section v-if="inputs.length" class="mad-sec" data-tpl-inputs>
+-              <h3 class="mad-label">What you give it</h3>
+-              <ul class="mar-tpl-inputs">
+-                <li v-for="x in inputs" :key="x.label">
+-                  <component :is="INPUT_ICONS[x.kind]" :size="14" />
+-                  <span class="mar-tpl-file is-ui">{{ x.label }}</span>
+-                  <span v-if="x.optional" class="mar-tpl-size">Optional</span>
+-                </li>
+-              </ul>
++              <h3 class="mad-label">Input</h3>
++              <div class="mar-tpl-input-chips">
++                <span v-for="x in inputs" :key="x.label" class="mad-tag mar-tpl-input-chip">
++                  <component :is="INPUT_ICONS[x.kind]" :size="13" />{{ x.label
++                  }}<span v-if="x.optional" class="mar-tpl-optional">Optional</span>
++                </span>
++              </div>
+             </section>
+ 
+-            <section class="mad-sec">
+-              <h3 class="mad-label">Open in</h3>
+-              <div v-if="shown" ref="buildBox" class="mad-pick">
+-                <button
+-                  type="button"
+-                  class="mar-tpl-on"
+-                  :data-s="shown.state"
+-                  :aria-label="`Open in ${shown.inst.name}. Change build`"
+-                  aria-haspopup="menu"
+-                  :aria-expanded="buildMenu"
+-                  :disabled="phase === 'busy' || downloadBusy || targets.length < 2"
+-                  @click="buildMenu = !buildMenu"
+-                >
+-                  <span class="mar-tpl-glyph">
+-                    <LocationIcon
+-                      :kind="shown.inst.kind === 'cloud' ? 'cloud' : 'local'"
+-                      :size="18"
+-                    />
+-                    <i v-if="shown.inst.state === 'running' && !shown.disabled" />
+-                  </span>
+-                  <span class="mar-tpl-row-text">
+-                    <span class="mar-tpl-row-name">{{ shown.inst.name }}</span>
+-                    <span class="mar-tpl-row-status">{{ shown.status }}</span>
+-                  </span>
+-                  <span v-if="shown.cost" class="mar-tpl-cost" :data-s="tone(shown)">{{
+-                    shown.cost
+-                  }}</span>
+-                  <ChevronDown v-if="targets.length > 1" :size="14" class="mar-tpl-chev" />
+-                </button>
+-                <div v-if="buildMenu" class="mad-menu is-down mar-tpl-builds" role="menu">
++            <section class="mad-sec" data-tpl-run>
++              <h3 class="mad-label">Run on</h3>
++              <MarSeg
++                v-if="bothWays"
++                v-model="runWhere"
++                :options="RUN_WHERE"
++                label="Run on"
++                class="mar-tpl-where"
++              />
++              <p v-if="bothWays && runWhere === 'cloud'" class="mar-tpl-cloud-line">
++                <LocationIcon kind="cloud" :size="14" />{{ cloudLine }}
++              </p>
++              <template v-else>
++                <div v-if="shown" ref="buildBox" class="mad-pick">
+                   <button
+-                    v-for="x in targets"
+-                    :key="x.inst.id"
+                     type="button"
+-                    role="menuitemradio"
+-                    :aria-checked="x.inst.id === selectedId"
+-                    :class="x.inst.id === selectedId && 'is-on'"
+-                    :disabled="x.disabled"
+-                    :data-s="x.state"
+-                    @click="pickBuild(x)"
++                    class="mar-tpl-on"
++                    :data-s="shown.state"
++                    :aria-label="`Run on ${shown.inst.name}. Change build`"
++                    aria-haspopup="menu"
++                    :aria-expanded="buildMenu"
++                    :disabled="phase === 'busy' || downloadBusy || pickable.length < 2"
++                    @click="buildMenu = !buildMenu"
+                   >
+-                    <LocationIcon :kind="x.inst.kind === 'cloud' ? 'cloud' : 'local'" :size="15" />
++                    <span class="mar-tpl-glyph">
++                      <LocationIcon
++                        :kind="shown.inst.kind === 'cloud' ? 'cloud' : 'local'"
++                        :size="18"
++                      />
++                      <i v-if="shown.inst.state === 'running' && !shown.disabled" />
++                    </span>
+                     <span class="mar-tpl-row-text">
+-                      <span class="mar-tpl-row-name">{{ x.inst.name }}</span>
+-                      <span class="mar-tpl-row-status">{{ x.status }}</span>
++                      <span class="mar-tpl-row-name">{{ shown.inst.name }}</span>
++                      <span class="mar-tpl-row-status">{{ buildLine(shown) }}</span>
+                     </span>
+-                    <span class="mar-tpl-cost" :data-s="tone(x)">{{ x.cost }}</span>
++                    <ChevronDown v-if="pickable.length > 1" :size="14" class="mar-tpl-chev" />
+                   </button>
+-                </div>
+-              </div>
+-              <p v-if="fit" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
+-            </section>
+-
+-            <!-- What it needs, on the build picked above: one box like Open
+-                 in's, its line folding the files open inside it. -->
+-            <section class="mad-sec">
+-              <h3 class="mad-label">What it needs</h3>
+-              <details
+-                class="mar-tpl-needs-box"
+-                @toggle="
+-                  ($event.target as HTMLDetailsElement).open &&
+-                  ($event.target as HTMLElement).scrollIntoView({ block: 'nearest' })
+-                "
+-              >
+-                <summary>
+-                  <span class="mar-tpl-total">{{ needsLine }}</span>
+-                  <span v-if="needsPill.label" class="mar-tpl-state" :data-m="needsPill.tone">{{
+-                    needsPill.label
+-                  }}</span>
+-                  <ChevronDown :size="14" class="mar-tpl-fold" />
+-                </summary>
+-                <ul class="mar-tpl-needs">
+-                  <li v-for="m in needs" :key="m.name">
+-                    <ComfyModel :size="14" />
+-                    <span class="mar-tpl-file">{{ m.name.replace('.safetensors', '') }}</span>
+-                    <span class="mar-tpl-size">{{ m.size }}</span>
+-                    <span
+-                      class="mar-tpl-mark"
+-                      :data-m="modelState"
+-                      :title="
+-                        modelState === 'here'
+-                          ? 'Installed'
+-                          : modelState === 'get'
+-                            ? 'Downloads first'
+-                            : modelState === 'cloud'
+-                              ? 'Ready on Cloud'
+-                              : ''
+-                      "
+-                    >
+-                      <Check v-if="modelState === 'here' || modelState === 'cloud'" :size="12" />
+-                      <ArrowDownToLine v-else-if="modelState === 'get'" :size="12" />
+-                    </span>
+-                  </li>
+-                  <li v-for="p in packs" :key="p">
+-                    <Puzzle :size="14" />
+-                    <span class="mar-tpl-file">{{ p }}</span>
+-                    <span class="mar-tpl-size">{{
+-                      packMark(p) === 'get' ? 'Missing' : 'Node pack'
+-                    }}</span>
+-                    <span
+-                      class="mar-tpl-mark"
+-                      :data-m="packMark(p)"
+-                      :title="PACK_TITLE[packMark(p)]"
+-                    >
+-                      <Check v-if="packMark(p) === 'here'" :size="12" />
+-                      <TriangleAlert v-else :size="11" />
+-                    </span>
+-                  </li>
+-                  <li v-if="minComfy">
+-                    <RefreshCw :size="14" />
+-                    <span class="mar-tpl-file">ComfyUI {{ minComfy }} or newer</span>
+-                    <span class="mar-tpl-size">{{
+-                      comfyMark === 'get' ? `has ${selected?.inst.version}` : ''
+-                    }}</span>
+-                    <span
+-                      class="mar-tpl-mark"
+-                      :data-m="comfyMark"
+-                      :title="comfyMark === 'here' ? 'Up to date' : 'Updates first'"
++                  <div v-if="buildMenu" class="mad-menu is-down mar-tpl-builds" role="menu">
++                    <button
++                      v-for="x in pickable"
++                      :key="x.inst.id"
++                      type="button"
++                      role="menuitemradio"
++                      :aria-checked="x.inst.id === selectedId"
++                      :class="x.inst.id === selectedId && 'is-on'"
++                      :disabled="x.disabled"
++                      :data-s="x.state"
++                      @click="pickBuild(x)"
+                     >
+-                      <Check v-if="comfyMark === 'here'" :size="12" />
+-                      <ArrowDownToLine v-else :size="12" />
+-                    </span>
+-                  </li>
+-                  <li v-for="r in caseRows" :key="r.kind" :data-need="r.kind">
+-                    <component :is="NEED_ICONS[r.kind]" :size="14" />
+-                    <span class="mar-tpl-file is-ui">{{ r.label }}</span>
+-                    <span class="mar-tpl-size">{{ r.size }}</span>
+-                    <span class="mar-tpl-mark" :data-m="r.mark" :title="r.title">
+-                      <Check v-if="r.mark === 'here'" :size="12" />
+-                      <TriangleAlert v-else-if="r.mark === 'warn'" :size="11" />
+-                      <ArrowDownToLine v-else :size="12" />
+-                    </span>
+-                  </li>
+-                  <li v-if="template.runs === 'cloud'">
+-                    <Plug :size="14" />
+-                    <span class="mar-tpl-file">Partner model API</span>
+-                    <span class="mar-tpl-size">Comfy Cloud</span>
+-                    <span class="mar-tpl-mark" />
+-                  </li>
+-                  <li v-if="info.vramGb">
+-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+-                      <rect
+-                        x="2.5"
+-                        y="4"
+-                        width="11"
+-                        height="8"
+-                        rx="1.5"
+-                        stroke="currentColor"
+-                        stroke-width="1.3"
+-                      />
+-                      <path
+-                        d="M5 4V2.5M8 4V2.5M11 4V2.5M5 13.5V12M8 13.5V12M11 13.5V12"
+-                        stroke="currentColor"
+-                        stroke-width="1.3"
+-                        stroke-linecap="round"
++                      <LocationIcon
++                        :kind="x.inst.kind === 'cloud' ? 'cloud' : 'local'"
++                        :size="15"
+                       />
+-                    </svg>
+-                    <span class="mar-tpl-file is-ui">GPU memory</span>
+-                    <span class="mar-tpl-size">{{ info.vramGb }} GB</span>
+-                    <span class="mar-tpl-mark" :data-m="memoryOk ? 'here' : 'warn'">
+-                      <Check v-if="memoryOk" :size="12" />
+-                      <TriangleAlert v-else :size="11" />
+-                    </span>
+-                  </li>
+-                </ul>
+-              </details>
+-              <p v-if="missingCount" class="mar-tpl-fit" data-tpl-packs>
+-                <Puzzle :size="13" />{{ missingPacks(missingCount) }} ·
+-                {{ managerHint(missingCount) }}
+-              </p>
+-              <div v-if="firstResult" class="mar-tpl-eta" data-tpl-eta>
+-                <Timer :size="14" class="mar-tpl-eta-icon" />
+-                <span class="mar-tpl-eta-label">First result in</span>
+-                <span class="mar-tpl-eta-time">{{ firstResult.label }}</span>
+-                <span class="mar-tpl-eta-parts">{{ firstResultParts }}</span>
+-              </div>
++                      <span class="mar-tpl-row-text">
++                        <span class="mar-tpl-row-name">{{ x.inst.name }}</span>
++                        <span class="mar-tpl-row-status">{{ x.status }}</span>
++                      </span>
++                    </button>
++                  </div>
++                </div>
++                <details
++                  class="mar-tpl-models"
++                  @toggle="
++                    ($event.target as HTMLDetailsElement).open &&
++                    ($event.target as HTMLElement).scrollIntoView({ block: 'nearest' })
++                  "
++                >
++                  <summary>
++                    <ComfyModel :size="14" />
++                    <span class="mar-tpl-models-line">{{ modelsLine }}</span>
++                    <ChevronDown :size="14" class="mar-tpl-fold" />
++                  </summary>
++                  <ul class="mar-tpl-needs">
++                    <li v-for="m in needs" :key="m.name">
++                      <ComfyModel :size="14" />
++                      <span class="mar-tpl-file">{{ m.name.replace('.safetensors', '') }}</span>
++                      <span class="mar-tpl-size">{{ m.size }}</span>
++                      <span
++                        class="mar-tpl-mark"
++                        :data-m="modelState"
++                        :title="
++                          modelState === 'here'
++                            ? 'Installed'
++                            : modelState === 'get'
++                              ? 'Downloads first'
++                              : modelState === 'cloud'
++                                ? 'Ready on Cloud'
++                                : ''
++                        "
++                      >
++                        <Check v-if="modelState === 'here' || modelState === 'cloud'" :size="12" />
++                        <ArrowDownToLine v-else-if="modelState === 'get'" :size="12" />
++                      </span>
++                    </li>
++                    <li v-for="p in packs" :key="p">
++                      <Puzzle :size="14" />
++                      <span class="mar-tpl-file">{{ p }}</span>
++                      <span class="mar-tpl-size">{{
++                        packMark(p) === 'get' ? 'Missing' : 'Node pack'
++                      }}</span>
++                      <span
++                        class="mar-tpl-mark"
++                        :data-m="packMark(p)"
++                        :title="PACK_TITLE[packMark(p)]"
++                      >
++                        <Check v-if="packMark(p) === 'here'" :size="12" />
++                        <TriangleAlert v-else :size="11" />
++                      </span>
++                    </li>
++                    <li v-if="minComfy">
++                      <RefreshCw :size="14" />
++                      <span class="mar-tpl-file">ComfyUI {{ minComfy }} or newer</span>
++                      <span class="mar-tpl-size">{{
++                        comfyMark === 'get' ? `has ${selected?.inst.version}` : ''
++                      }}</span>
++                      <span
++                        class="mar-tpl-mark"
++                        :data-m="comfyMark"
++                        :title="comfyMark === 'here' ? 'Up to date' : 'Updates first'"
++                      >
++                        <Check v-if="comfyMark === 'here'" :size="12" />
++                        <ArrowDownToLine v-else :size="12" />
++                      </span>
++                    </li>
++                    <li v-for="r in caseRows" :key="r.kind" :data-need="r.kind">
++                      <component :is="NEED_ICONS[r.kind]" :size="14" />
++                      <span class="mar-tpl-file is-ui">{{ r.label }}</span>
++                      <span class="mar-tpl-size">{{ r.size }}</span>
++                      <span class="mar-tpl-mark" :data-m="r.mark" :title="r.title">
++                        <Check v-if="r.mark === 'here'" :size="12" />
++                        <TriangleAlert v-else-if="r.mark === 'warn'" :size="11" />
++                        <ArrowDownToLine v-else :size="12" />
++                      </span>
++                    </li>
++                    <li v-if="template.runs === 'cloud'">
++                      <Plug :size="14" />
++                      <span class="mar-tpl-file">Partner model API</span>
++                      <span class="mar-tpl-size">Comfy Cloud</span>
++                      <span class="mar-tpl-mark" />
++                    </li>
++                    <li v-if="info.vramGb">
++                      <Cpu :size="14" />
++                      <span class="mar-tpl-file is-ui">GPU memory</span>
++                      <span class="mar-tpl-size">{{ info.vramGb }} GB</span>
++                      <span class="mar-tpl-mark" :data-m="memoryOk ? 'here' : 'warn'">
++                        <Check v-if="memoryOk" :size="12" />
++                        <TriangleAlert v-else :size="11" />
++                      </span>
++                    </li>
++                  </ul>
++                </details>
++                <p v-if="missingCount" class="mar-tpl-fit" data-tpl-packs>
++                  <Puzzle :size="13" />{{ missingPacks(missingCount) }} ·
++                  {{ managerHint(missingCount) }}
++                </p>
++                <div v-if="firstResult" class="mar-tpl-eta-line" data-tpl-eta>
++                  <Timer :size="14" />
++                  <span
++                    >First result in <b>{{ firstResult.label }}</b></span
++                  >
++                  <span v-if="firstResultParts" class="mar-tpl-eta-sub">{{
++                    firstResultParts
++                  }}</span>
++                </div>
++              </template>
+             </section>
+ 
+             <section v-if="saved" class="mad-sec">
+@@ -1004,14 +1044,6 @@ const full = computed(() => can.value.onboarding)
+                   <dt>Model</dt>
+                   <dd>{{ info.model }}</dd>
+                 </div>
+-                <div>
+-                  <dt>Uses</dt>
+-                  <dd>{{ info.uses }}</dd>
+-                </div>
+-                <div>
+-                  <dt>License</dt>
+-                  <dd :title="info.license">{{ info.license }}</dd>
+-                </div>
+                 <!-- Only when the catalog has one: no row pointing nowhere. -->
+                 <div v-if="info.tutorial">
+                   <dt>Tutorial</dt>
+@@ -1049,22 +1081,6 @@ const full = computed(() => can.value.onboarding)
+             </button>
+           </footer>
+           <footer v-else class="mad-actions">
+-            <p v-if="line" class="mar-tpl-note">{{ line }}</p>
+-            <button
+-              v-if="cloudOffer"
+-              type="button"
+-              class="mad-btn"
+-              data-tpl-cloud
+-              :disabled="browserSignIn.pending"
+-              @click="tryCloud"
+-            >
+-              <LocationIcon kind="cloud" :size="15" />
+-              <span>{{
+-                browserSignIn.pending && cloudTarget?.state === 'login'
+-                  ? SIGN_IN_COPY.waiting
+-                  : 'Try it now on Cloud'
+-              }}</span>
+-            </button>
+             <button
+               type="button"
+               class="mad-btn is-primary mar-tpl-go"
+@@ -1079,9 +1095,18 @@ const full = computed(() => can.value.onboarding)
+                   ? busyLabel
+                   : browserSignIn.pending && shown?.state === 'login'
+                     ? SIGN_IN_COPY.waiting
+-                    : primaryLabel
++                    : runLabel
+               }}</span>
+-              <kbd v-if="phase === 'idle' && selected && !selected.disabled">↵</kbd>
++            </button>
++            <button
++              v-if="bothWays && phase === 'idle'"
++              type="button"
++              class="mad-btn"
++              data-tpl-cloud
++              @click="runWhere = runWhere === 'cloud' ? 'local' : 'cloud'"
++            >
++              <LocationIcon :kind="runWhere === 'cloud' ? 'local' : 'cloud'" :size="15" />
++              <span>{{ runWhere === 'cloud' ? 'Use this computer' : 'Use Cloud instead' }}</span>
+             </button>
+           </footer>
+         </aside>
+diff --git a/src/renderer/src/design/landing/mar/templateModal/templateModal.css b/src/renderer/src/design/landing/mar/templateModal/templateModal.css
+index 98fb1df34..42267ccfd 100644
+--- a/src/renderer/src/design/landing/mar/templateModal/templateModal.css
++++ b/src/renderer/src/design/landing/mar/templateModal/templateModal.css
+@@ -803,3 +803,116 @@
+   font-size: 12px;
+   font-variant-numeric: tabular-nums;
+ }
++
++.mar-tpl .mad-body {
++  gap: 4px;
++}
++.mar-tpl-chips {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 6px;
++  margin-top: 12px;
++}
++.mar-tpl-chip {
++  border-radius: 6px;
++  font-variant-numeric: tabular-nums;
++}
++.mar-tpl .mar-tpl-about {
++  padding: 0;
++  border-radius: 0;
++  background: transparent;
++}
++.mar-tpl-input-chips {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 6px;
++}
++.mar-tpl-input-chip {
++  gap: 6px;
++  height: 28px;
++  padding: 0 10px;
++  border-radius: 8px;
++  font-size: 13px;
++}
++.mar-tpl-input-chip svg {
++  flex: none;
++  color: var(--color-muted-foreground);
++}
++.mar-tpl-optional {
++  color: var(--color-muted-foreground);
++  font-size: 12px;
++}
++:root .proto-ui.proto-ui.proto-ui .mar-tpl-where {
++  display: flex;
++}
++:root .proto-ui.proto-ui.proto-ui .mar-tpl-where .mar-pseg-btn {
++  flex: 1;
++}
++.mar-tpl-cloud-line {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  min-height: 40px;
++  padding: 0 12px;
++  border-radius: 10px;
++  background: var(--mad-fill);
++  font-size: 13px;
++}
++.mar-tpl-cloud-line svg {
++  color: var(--color-muted-foreground);
++}
++.mar-tpl-models > summary {
++  display: flex;
++  min-height: 28px;
++  align-items: center;
++  gap: 8px;
++  padding: 0 2px;
++  color: var(--color-base-foreground);
++  font-size: 13px;
++  cursor: default;
++  list-style: none;
++}
++.mar-tpl-models > summary::-webkit-details-marker {
++  display: none;
++}
++.mar-tpl-models > summary > svg:first-child {
++  color: var(--color-muted-foreground);
++}
++.mar-tpl-models > summary:focus-visible {
++  border-radius: 6px;
++  outline: 2px solid var(--color-border-focus);
++}
++.mar-tpl-models[open] .mar-tpl-fold {
++  transform: rotate(180deg);
++}
++.mar-tpl-models .mar-tpl-needs {
++  margin-top: 6px;
++  border-radius: 10px;
++  background: var(--mad-fill);
++}
++.mar-tpl-eta-line {
++  display: grid;
++  grid-template-columns: 14px minmax(0, 1fr);
++  align-items: center;
++  column-gap: 8px;
++  row-gap: 2px;
++  padding: 0 2px;
++  font-size: 13px;
++}
++.mar-tpl-eta-line > svg {
++  color: var(--color-muted-foreground);
++}
++.mar-tpl-eta-line b {
++  font-weight: 600;
++}
++.mar-tpl-eta-sub {
++  grid-column: 2;
++  color: var(--color-muted-foreground);
++  font-size: 12px;
++  font-variant-numeric: tabular-nums;
++}
++@media (prefers-reduced-motion: reduce) {
++  .mar-tpl-models .mar-tpl-fold {
++    transition: none;
++  }
++}
