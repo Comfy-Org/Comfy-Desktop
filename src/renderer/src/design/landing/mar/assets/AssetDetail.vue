@@ -29,7 +29,6 @@ import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import { assets as desktopAssets, type MarAsset } from '../pages/assetsStore'
 import { graphLibrary } from '../graph/comfyLook'
-import { can } from '../../milestones'
 import { createdAt, factsFor } from './assetFacts'
 import { saveFile } from './saveFile'
 import AssetCover from './AssetCover.vue'
@@ -88,7 +87,7 @@ const {
 const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
 const facts = computed(() => factsFor(asset))
-const full = computed(() => can.value.onboarding && !tab)
+const full = computed(() => true)
 const embedded = computed(() => facts.value.embedded)
 const copiedPrompt = ref(-1)
 let copiedTimer = 0
