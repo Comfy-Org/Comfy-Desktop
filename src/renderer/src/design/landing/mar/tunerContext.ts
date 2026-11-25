@@ -12,6 +12,7 @@ import { cover, recentsCover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
+import { appToComfy, openAnswer } from './apps/appToComfy'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
@@ -77,6 +78,8 @@ export const when = {
   ),
   // Where its examples sit: on the app's own screen, in the Hub editor.
   appExamplesAt: computed(() => can.value.exploreApps && !!appsProto.front),
+  appToComfy: computed(() => can.value.exploreApps && !!appsProto.front),
+  openAnswer: computed(() => can.value.exploreApps && !!appsProto.front),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
@@ -250,6 +253,8 @@ export const TWEAKS = {
   appsStage: one(appsStage, 'm1'),
   appPage: one(appPage, 'hub'),
   appExamplesAt: one(appExamplesAt, 'tabs'),
+  appToComfy: one(appToComfy, 'off'),
+  openAnswer: one(openAnswer, 'auto'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),

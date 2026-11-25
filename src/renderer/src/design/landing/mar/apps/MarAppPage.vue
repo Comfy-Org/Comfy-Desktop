@@ -20,11 +20,16 @@ import {
   Plus,
   RectangleHorizontal,
   Share2,
-  Volume2
+  ChevronDown,
+  SquareArrowOutUpRight,
+  Volume2,
+  Workflow
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
+import DropdownMenuLabel from '../../ui/DropdownMenuLabel.vue'
+import Tooltip from '../../ui/Tooltip.vue'
 import Badge from '../../ui/Badge.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
@@ -48,7 +53,17 @@ import CompareSplit from '../assets/CompareSplit.vue'
 import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
-import { PROD_HOOKS } from './prodApps'
+import { PROD_HOOKS, workflowIsPublic } from './prodApps'
+import { extrasOn, newSeed, type AppGraph } from './appToComfy'
+import {
+  buildFor,
+  buildLine,
+  localBuilds,
+  openAppInComfy,
+  openOnBuild,
+  opening,
+  type OpenWhere
+} from './openAppInComfy'
 import { APP_RUNS } from './appsStage'
 import { flow, installingBehind, showInstall } from '../setup/setupFlow'
 
@@ -71,7 +86,8 @@ const {
   cost,
   payer,
   gate,
-  output = 'image'
+  output = 'image',
+  runsOn = 'cloud'
 } = defineProps<{
   appId: string
   name: string
@@ -81,6 +97,7 @@ const {
   payer: string
   gate?: () => boolean
   output?: string
+  runsOn?: OpenWhere
 }>()
 const emit = defineEmits<{ done: [] }>()
 // The themed page's props (author, layout, theme) come along; they don't
@@ -169,9 +186,9 @@ const LOOKS = [
 const takes = computed(() => LOOKS.slice(0, count.value))
 /** Everything you've made here, newest first: each run adds its takes,
  *  so earlier ones stay along the bottom to go back to. */
-const outputs = ref<{ src: string; filter: string; title: string; at: number; asset: MarAsset }[]>(
-  []
-)
+const outputs = ref<
+  { src: string; filter: string; title: string; at: number; asset: MarAsset; graph: AppGraph }[]
+>([])
 let runs = 0
 const take = ref(0)
 const result = computed(
@@ -261,14 +278,19 @@ function run(): void {
       setTimeout(tick, 650)
     } else {
       const src = sample.value ?? input.value
+      const seed = seedNow()
       outputs.value = [
-        ...takes.value.map((_, i) => ({
-          src,
-          filter: LOOKS[(runs + i) % LOOKS.length] ?? 'none',
-          title: example.value?.title ?? name,
-          at: Date.now(),
-          asset: saveToAssets(src, runs + i + 1)
-        })),
+        ...takes.value.map((_, i) => {
+          const filter = LOOKS[(runs + i) % LOOKS.length] ?? 'none'
+          return {
+            src,
+            filter,
+            title: example.value?.title ?? name,
+            at: Date.now(),
+            asset: saveToAssets(src, runs + i + 1),
+            graph: graphNow(seed + i, src, filter)
+          }
+        }),
         ...outputs.value
       ]
       runs += takes.value.length
@@ -379,6 +401,7 @@ function saveToAssets(src: string, n: number): MarAsset {
     src,
     before: input.value,
     envId: 'cloud',
+    noWorkflow: !shared,
     size: video ? '8.4 MB' : '2.1 MB',
     sizeMb: video ? 8.4 : 2.1,
     age: 0,
@@ -388,6 +411,60 @@ function saveToAssets(src: string, n: number): MarAsset {
   return a
 }
 const detail = ref<MarAsset | null>(null)
+
+const shared = workflowIsPublic(appId)
+const seedField = computed(() => fields.find((f) => f.control === 'seed'))
+function seedNow(): number {
+  const typed = seedField.value && Number(values[seedField.value.id])
+  return typed || newSeed()
+}
+function graphNow(seed: number, out?: string, filter?: string): AppGraph {
+  return {
+    appId,
+    name,
+    video: kind.value === 'Video',
+    inputs: shown.value.map((f) => ({
+      label: f.label,
+      node: f.node,
+      kind: f.kind,
+      value: pick(f)
+    })),
+    image: firstImage.value ? input.value : undefined,
+    prompt: firstText.value ? (values[firstText.value] ?? '') : undefined,
+    seed,
+    output: out,
+    filter,
+    badges: extrasOn()
+  }
+}
+const PRIVATE_TIP = 'This app\u2019s workflow isn\u2019t public'
+const showOpen = computed(() => shared || extrasOn())
+const buildName = computed(() => buildFor({ where: runsOn })?.name ?? 'ComfyUI')
+function openHere(graph: AppGraph, key: string): void {
+  if (!shared) return
+  openAppInComfy({ where: runsOn, graph }, key)
+}
+function openCurrent(): void {
+  openHere(graphNow(seedNow()), 'header')
+}
+function openOutputWorkflow(i: number): void {
+  const o = outputs.value[i]
+  if (o) openHere(o.graph, `out-${i}`)
+}
+function openAssetWorkflow(a: MarAsset): void {
+  const i = outputs.value.findIndex((o) => o.asset.id === a.id)
+  if (i < 0) return
+  detail.value = null
+  openOutputWorkflow(i)
+}
+const openBuilds = computed(() => [
+  ...instances.value.filter((i) => i.kind === 'cloud' && !i.deployment),
+  ...localBuilds()
+])
+function openPicked(id: string): void {
+  const inst = openBuilds.value.find((b) => b.id === id)
+  if (inst) openOnBuild(graphNow(seedNow()), inst, 'header')
+}
 function openOutput(i: number): void {
   const o = outputs.value[i]
   if (o) detail.value = o.asset
@@ -657,6 +734,43 @@ function back(): void {
             <Select v-model="histSort" :options="HIST_SORTS" label="Sort" class="w-40" />
           </template>
           <div class="mar-app-editor-actions">
+            <Tooltip v-if="showOpen && !shared" :content="PRIVATE_TIP" side="bottom" wrap>
+              <Button variant="ghost" size="sm" disabled
+                ><SquareArrowOutUpRight :size="14" />Open in ComfyUI</Button
+              >
+            </Tooltip>
+            <div v-else-if="showOpen" class="mar-app-editor-open">
+              <Button
+                variant="ghost"
+                size="sm"
+                :disabled="opening.key === 'header'"
+                :title="`Open this app's workflow in ${buildName}`"
+                @click="openCurrent"
+                ><Loader2
+                  v-if="opening.key === 'header'"
+                  :size="14"
+                  class="animate-spin"
+                /><SquareArrowOutUpRight v-else :size="14" />Open in ComfyUI</Button
+              >
+              <DropdownMenuRoot v-if="extrasOn()">
+                <DropdownMenuTrigger as-child>
+                  <Button variant="ghost" size="icon-sm" aria-label="Open on another build"
+                    ><ChevronDown :size="14"
+                  /></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="w-72">
+                  <DropdownMenuLabel>Open on</DropdownMenuLabel>
+                  <DropdownMenuItem v-for="b in openBuilds" :key="b.id" @select="openPicked(b.id)">
+                    <span class="min-w-0">
+                      <span class="block">{{ b.name }}</span>
+                      <span class="block text-subtle-foreground">{{
+                        b.name === buildName ? 'Ran here' : buildLine(graphNow(0), b)
+                      }}</span>
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenuRoot>
+            </div>
             <!-- More: what you'd do now and then, out of the way. -->
             <DropdownMenuRoot>
               <DropdownMenuTrigger as-child>
@@ -769,6 +883,26 @@ function back(): void {
                   @click.stop="toast('Link copied')"
                 >
                   <Share2 :size="15" />
+                </button>
+                <button
+                  v-if="shared"
+                  type="button"
+                  aria-label="Open workflow"
+                  title="Open workflow"
+                  @click.stop="openOutputWorkflow(i)"
+                >
+                  <Loader2 v-if="opening.key === `out-${i}`" :size="15" class="animate-spin" />
+                  <Workflow v-else :size="15" />
+                </button>
+                <button
+                  v-else-if="extrasOn()"
+                  type="button"
+                  aria-label="Open workflow"
+                  :title="PRIVATE_TIP"
+                  disabled
+                  class="opacity-50"
+                >
+                  <Workflow :size="15" />
                 </button>
                 <button
                   type="button"
@@ -899,6 +1033,14 @@ function back(): void {
               ><Check :size="14" />{{ takes.length }}
               {{ takes.length === 1 ? made : `${made}s` }} in 18 s</span
             >
+            <Button
+              v-if="shared"
+              variant="ghost"
+              size="sm"
+              :disabled="opening.key === `out-${take}`"
+              @click="openOutputWorkflow(take)"
+              ><Workflow :size="14" />Open workflow</Button
+            >
             <span v-if="$slots.saved" class="mar-app-editor-saved"
               ><slot name="saved" /><ArrowRight :size="13"
             /></span>
@@ -919,6 +1061,7 @@ function back(): void {
         :asset="detail"
         :list="outputs.map((o) => o.asset)"
         build="Comfy Cloud"
+        :on-workflow="shared ? openAssetWorkflow : undefined"
         @go="detail = $event"
         @close="detail = null"
       />
@@ -954,6 +1097,11 @@ function back(): void {
   min-width: 0;
   align-items: center;
   gap: 6px;
+}
+.mar-app-editor-open {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 .mar-app-editor-actions {
   flex-shrink: 0;

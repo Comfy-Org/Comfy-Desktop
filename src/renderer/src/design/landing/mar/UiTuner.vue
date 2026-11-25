@@ -23,6 +23,7 @@ import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLay
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
+import { APP_TO_COMFY_EXTRAS, OPEN_ANSWERS, appToComfy, openAnswer } from './apps/appToComfy'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -158,7 +159,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'deployState', show: () => when.deployState.value },
   { id: 'wfCase', show: () => when.wfCase.value },
   { id: 'downloadScenario', show: () => when.downloadScenario.value },
-  { id: 'dlFooter', show: () => when.dlFooter.value }
+  { id: 'dlFooter', show: () => when.dlFooter.value },
+  { id: 'openAnswer', show: () => when.openAnswer.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'firstRun', show: () => when.firstRun.value },
@@ -166,6 +168,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeArcMix', show: () => when.homeArcMix.value },
   { id: 'appPage', show: () => when.appPage.value },
   { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
+  { id: 'appToComfy', show: () => when.appToComfy.value },
   { id: 'editorEntry', show: () => when.editorEntry.value },
   { id: 'templates', show: () => when.templates.value },
   { id: 'buildCard', show: () => when.buildCard.value },
@@ -369,6 +372,9 @@ const linkSays = computed(() => {
           <Row :show="shows('dlFooter')" label="Download footer">
             <Seg v-model="dlFooter.id" label="Download footer" :options="DL_FOOTERS" />
           </Row>
+          <Row :show="shows('openAnswer')" label="Open in ComfyUI answers">
+            <Select v-model="openAnswer.id" :options="OPEN_ANSWERS" class="w-full" />
+          </Row>
           <Row :show="when.tplCases.value" label="Can't-run cases" stack>
             <TplCasesNote />
           </Row>
@@ -437,6 +443,13 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('appExamplesAt')" label="App examples">
             <Select v-model="appExamplesAt.id" :options="APP_EXAMPLES_AT" class="w-full" />
+          </Row>
+          <Row :show="shows('appToComfy')" label="App → ComfyUI extras">
+            <Seg
+              v-model="appToComfy.id"
+              label="App → ComfyUI extras"
+              :options="APP_TO_COMFY_EXTRAS"
+            />
           </Row>
           <Row :show="shows('editorEntry')" label="Node editor entry">
             <Select v-model="editorEntry.id" :options="EDITOR_ENTRIES" class="w-full" />

@@ -211,9 +211,11 @@ export interface TplMedia {
 }
 
 /** A workflow by id: the Hub's (real), else the prototype's mock. */
+const APP_TEMPLATES = new Map<string, Template>()
+
 export function tplById(id: string): Template | undefined {
   const h = hubById(id)
-  return h ? hubTemplate(h) : templateById(id)
+  return h ? hubTemplate(h) : (templateById(id) ?? APP_TEMPLATES.get(id))
 }
 
 const MEDIA: Record<string, TplMedia> = {
@@ -237,6 +239,12 @@ const EXTRA_MODELS: Record<string, ModelReq[]> = {
 
 /** The angles workflow loads 2511's weights. */
 const SAME_MODELS: Record<string, string> = { [ANGLES_ID]: 'image_qwen_image_edit_2511' }
+
+export function addAppTemplate(t: Template, sameModelsAs: string, pic?: string): void {
+  APP_TEMPLATES.set(t.id, t)
+  if (pic) MEDIA[t.id] = { hero: pic, output: pic }
+  SAME_MODELS[t.id] = sameModelsAs
+}
 
 const slug = (s: string): string =>
   s

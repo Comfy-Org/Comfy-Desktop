@@ -177,7 +177,7 @@ export function factsFor(a: MarAsset): AssetFacts {
     }
 
   const kept = recent(a.when)
-  const workflow = a.type === 'audio' ? 'missing' : 'available'
+  const workflow = a.type === 'audio' || a.noWorkflow ? 'missing' : 'available'
   // The template it came from, else the file's stem without its counter.
   const stem = a.name.replace(/\.[^.]+$/, '').replace(/_\d+$/, '')
   const prompt = PROMPTS.find(([re]) => re.test(a.name))?.[1]

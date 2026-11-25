@@ -59,6 +59,8 @@ import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
 import { graphOpen, type AgentStart, type GraphAutorun } from './graphOpen'
 import { addOwnImage, autorunCanvas } from '../autorun/templateCanvas'
+import { appCanvas } from '../apps/appCanvas'
+import { copiedTabs, copyName, extrasOn } from '../apps/appToComfy'
 import FirstResult from '../autorun/FirstResult.vue'
 import AssetsPanel from './AssetsPanel.vue'
 import JobsPanel from './panels/JobsPanel.vue'
@@ -261,6 +263,10 @@ let textTimer: ReturnType<typeof setTimeout> | undefined
 function commit(): void {
   const now = freeze()
   if (now === last) return
+  if (appCopy.value) {
+    appEdited.value = true
+    copiedTabs[proto.activeTab] = true
+  }
   past.push(last)
   if (past.length > 80) past.shift()
   future.length = 0
@@ -268,6 +274,8 @@ function commit(): void {
   canUndo.value = true
   canRedo.value = false
 }
+const appCopy = ref(false)
+const appEdited = ref(false)
 function restore(snap: string): void {
   const s = JSON.parse(snap) as { nodes: SNode[]; links: Link[]; groups: Group[] }
   const runState = new Map(sNodes.map((n) => [n.id, n.state]))
@@ -1277,6 +1285,33 @@ watch(
   ([a]) => a && takeAutorun(),
   { flush: 'post' }
 )
+function takeAppGraph(): void {
+  const g = graphOpen.app
+  if (!g) return
+  graphOpen.app = null
+  engine.cancelAll()
+  scratch.value = false
+  const fresh = appCanvas(g)
+  sNodes.splice(0, sNodes.length, ...fresh.nodes)
+  links.splice(0, links.length, ...fresh.links)
+  groups.splice(0, groups.length, ...fresh.groups)
+  past.length = 0
+  future.length = 0
+  last = freeze()
+  canUndo.value = canRedo.value = false
+  selection.value = []
+  firstResult.value = undefined
+  appCopy.value = extrasOn()
+  appEdited.value = false
+  delete copiedTabs[proto.activeTab]
+  nextTick(fit)
+}
+takeAppGraph()
+watch(
+  () => [graphOpen.app, proto.activeTab] as const,
+  ([g]) => g && takeAppGraph(),
+  { flush: 'post' }
+)
 function changePrompt(): void {
   firstResult.value = undefined
   selection.value = ['prompt']
@@ -1389,6 +1424,9 @@ watch(
   (w) => (shownWorkflow.value = w)
 )
 watch(shownWorkflow, () => {
+  appCopy.value = false
+  appEdited.value = false
+  delete copiedTabs[proto.activeTab]
   engine.cancelAll()
   const fresh = scratch.value ? { nodes: [], links: [], groups: [] } : createCanvas()
   sNodes.splice(0, sNodes.length, ...fresh.nodes)
@@ -1482,7 +1520,7 @@ function addFromPanel(kind: NodeKind): void {
         role="button"
         tabindex="0"
         @click="((assetTab.on = false), (assetsTab.on = false))"
-        >{{ shownWorkflow }}<X :size="12"
+        >{{ appEdited ? copyName(shownWorkflow) : shownWorkflow }}<X :size="12"
       /></span>
       <span class="mg-tab">Untitled<X :size="12" /></span>
       <span

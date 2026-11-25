@@ -364,6 +364,7 @@ function done(): void {
         :theme="app.theme"
         :gate
         :output
+        :runs-on="local ? 'local' : 'cloud'"
         @done="done"
       >
         <template v-if="staged" #place><AppRunPlace :id /></template>

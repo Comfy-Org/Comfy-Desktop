@@ -20,6 +20,7 @@ export interface ProdApp {
   kind: 'Image' | 'Video'
   like: string
   examples: ProdExample[]
+  workflow?: 'private'
 }
 
 export const PROD_APPS: ProdApp[] = [
@@ -131,6 +132,7 @@ export const PROD_APPS: ProdApp[] = [
     hook: 'Your product, in the shot.',
     kind: 'Video',
     like: 'e-reshoot',
+    workflow: 'private',
     examples: [
       { title: 'Swap the suitcase', kind: 'Video', ratio: '640 / 960' },
       { title: 'Swap the cowboy boot', kind: 'Video', ratio: '768 / 768' },
@@ -143,6 +145,7 @@ export const PROD_APPS: ProdApp[] = [
 ]
 
 export const prodId = (slug: string): string => `p-${slug}`
+export const workflowIsPublic = (id: string): boolean => prodApp(id)?.workflow !== 'private'
 export const prodThumbId = (slug: string): string => `prod~${slug}`
 export const prodApp = (id: string): ProdApp | undefined =>
   PROD_APPS.find((p) => prodId(p.slug) === id)

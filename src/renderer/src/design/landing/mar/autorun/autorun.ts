@@ -7,6 +7,7 @@ import { graphOpen } from '../graph/graphOpen'
 import { hubById } from '../explore/hubWorkflows'
 import { infoFor, mediaFor, tplById, type Target } from '../templateModal/templateData'
 import { markDownloaded } from './installed'
+import { takeHeld } from '../apps/appToComfy'
 import { dropPrepTab, prepOfTab, prepOfTemplate } from './prepTabs'
 
 const EXAMPLE_PROMPTS: Record<string, string> = {
@@ -72,15 +73,18 @@ export function runTemplate(t: Template, inst: ProtoInstance): void {
   const media = mediaFor(t)
   const prep = prepOfTemplate(t.id)
   const inTab = prep && prep.instId === inst.id ? prep : undefined
-  graphOpen.autorun = {
-    title: t.title,
-    model: infoFor(t).model ?? shortName(t),
-    prompt: examplePrompt(t),
-    output: media.output,
-    input: takesImage(t) ? (media.input ?? '') : undefined,
-    video: t.category === 'video',
-    tabId: inTab?.tabId
-  }
+  const app = takeHeld(t.id)
+  if (app) graphOpen.app = app
+  else
+    graphOpen.autorun = {
+      title: t.title,
+      model: infoFor(t).model ?? shortName(t),
+      prompt: examplePrompt(t),
+      output: media.output,
+      input: takesImage(t) ? (media.input ?? '') : undefined,
+      video: t.category === 'video',
+      tabId: inTab?.tabId
+    }
   if (downloadFor(t.id)?.status === 'done') remove(t.id)
   if (undoToast.message === readyMessage(t, inst)) dismiss()
   if (!inTab) {
