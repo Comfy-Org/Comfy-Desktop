@@ -47,29 +47,48 @@ describe('SidebarDesktopUpdate', () => {
     expect(wrapper.find(indicator).exists()).toBe(false)
   })
 
-  it('shows the update the app already knows about when the sidebar opens', async () => {
+  it('shows the update the app already knows about as a blue Update pill', async () => {
     const wrapper = await mountIndicator({ kind: 'available', version: '2.3.4', autoUpdate: false })
 
     const button = wrapper.get(indicator)
-    expect(button.text()).toBe('Desktop update')
-    expect(button.attributes('title')).toBe('Desktop update (v2.3.4)')
-    expect(button.classes()).toContain('text-azure-600')
+    expect(button.text()).toBe('Update')
+    expect(button.classes()).toEqual(
+      expect.arrayContaining(['rounded-full', 'bg-azure-600', 'text-white'])
+    )
   })
 
   it.each([
-    ['available', false, 'Desktop update'],
-    ['ready', true, 'Desktop update ready'],
-    ['ready', false, 'Desktop update ready']
+    ['available', false, 'Update to v2.3.4 is available. Click to download it.'],
+    [
+      'ready',
+      true,
+      'Update to v2.3.4 installs the next time Desktop restarts. Click to restart now.'
+    ],
+    ['ready', false, 'Update to v2.3.4 is downloaded. Click to restart and install it.']
   ] as const)(
-    'shows the %s state when there is something to do (auto-update %s): "%s"',
-    async (kind, autoUpdate, label) => {
+    'names the new version for the %s state (auto-update %s)',
+    async (kind, autoUpdate, description) => {
       const wrapper = await mountIndicator()
 
       pushState({ kind, version: '2.3.4', autoUpdate })
       await flushPromises()
 
-      expect(wrapper.get(indicator).text()).toBe(label)
-      expect(wrapper.get(indicator).attributes('data-state')).toBe(kind)
+      const button = wrapper.get(indicator)
+      expect(button.text()).toBe('Update')
+      expect(button.attributes('aria-label')).toBe(description)
+      expect(button.attributes('data-state')).toBe(kind)
+    }
+  )
+
+  it.each([
+    ['available', 'Desktop update'],
+    ['ready', 'Desktop update ready']
+  ] as const)(
+    'falls back to a plain description when the %s update has no version',
+    async (kind, description) => {
+      const wrapper = await mountIndicator({ kind, version: null, autoUpdate: false })
+
+      expect(wrapper.get(indicator).attributes('aria-label')).toBe(description)
     }
   )
 
@@ -111,7 +130,7 @@ describe('SidebarDesktopUpdate', () => {
     resolveFirstRead(NO_UPDATE)
     await flushPromises()
 
-    expect(wrapper.get(indicator).text()).toBe('Desktop update ready')
+    expect(wrapper.get(indicator).attributes('data-state')).toBe('ready')
   })
 
   it('asks to download when an update is available', async () => {
@@ -145,7 +164,7 @@ describe('SidebarDesktopUpdate', () => {
     expect(prompts.showAppUpdateDownloadPrompt).not.toHaveBeenCalled()
   })
 
-  it('shows only the icon when the sidebar is collapsed, with the label as its name', async () => {
+  it('shows only the icon when the sidebar is collapsed, with the description as its name', async () => {
     const wrapper = await mountIndicator(
       { kind: 'ready', version: '2.3.4', autoUpdate: true },
       true
@@ -153,8 +172,9 @@ describe('SidebarDesktopUpdate', () => {
 
     const button = wrapper.get(indicator)
     expect(button.text()).toBe('')
-    expect(button.attributes('aria-label')).toBe('Desktop update ready (v2.3.4)')
-    expect(button.attributes('title')).toBe('Desktop update ready (v2.3.4)')
+    expect(button.attributes('aria-label')).toBe(
+      'Update to v2.3.4 installs the next time Desktop restarts. Click to restart now.'
+    )
   })
 
   it('stops listening when it unmounts', async () => {
