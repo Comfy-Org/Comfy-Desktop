@@ -58,9 +58,9 @@ describe('SidebarDesktopUpdate', () => {
   })
 
   it.each([
-    ['available', false, 'v2.3.4 is ready to download.'],
-    ['ready', true, 'v2.3.4 installs when Desktop restarts.'],
-    ['ready', false, 'v2.3.4 is downloaded and ready to install.']
+    ['available', false, 'v2.3.4 available'],
+    ['ready', true, 'v2.3.4 installs on restart'],
+    ['ready', false, 'v2.3.4 ready to install']
   ] as const)(
     'names the new version for the %s state (auto-update %s)',
     async (kind, autoUpdate, description) => {
@@ -168,7 +168,7 @@ describe('SidebarDesktopUpdate', () => {
 
     const button = wrapper.get(indicator)
     expect(button.text()).toBe('')
-    expect(button.attributes('aria-label')).toBe('v2.3.4 installs when Desktop restarts.')
+    expect(button.attributes('aria-label')).toBe('v2.3.4 installs on restart')
   })
 
   it('stops listening when it unmounts', async () => {
