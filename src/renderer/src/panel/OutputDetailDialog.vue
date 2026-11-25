@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  Ellipsis,
   File,
   Images,
   LoaderCircle,
@@ -20,13 +21,16 @@ import Button from '@comfyorg/design-system/button/Button'
 import Tag from '@comfyorg/design-system/chip/Tag'
 import AudioPreview from '@comfyorg/design-system/media/AudioPreview'
 import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import OutputDetailThumb from './OutputDetailThumb.vue'
 import { formatBytes } from '../lib/downloadFormatters'
 import { revealInFolderKey } from '../composables/usePlatform'
-import type { MenuItem } from '@comfyorg/design-system/lib/menu/types'
+import type { MenuItem as MenuEntry } from '@comfyorg/design-system/lib/menu/types'
 import type { AssetKind } from '../types/ipc'
+import type { ContextMenuItem } from '../types/context-menu'
 
 const ModelViewer = defineAsyncComponent(() => import('./ModelViewer.vue'))
 
@@ -48,6 +52,7 @@ export interface OutputDetailItem {
   workflowBusy?: boolean
   workflowStatus?: string
   mainAction: 'download' | null
+  moreActions?: ContextMenuItem[]
   loadModel?: () => Promise<Uint8Array | null>
 }
 
@@ -67,6 +72,7 @@ const emit = defineEmits<{
   'show-in-folder': [index: number]
   'open-workflow': [index: number, build?: string]
   'view-in-assets': [index: number]
+  action: [index: number, action: string]
 }>()
 
 const { t, locale } = useI18n()
@@ -78,7 +84,8 @@ const natural = ref<{ width: number; height: number } | null>(null)
 const zoom = ref<Zoom>('fit')
 
 const item = computed(() => items[index.value] ?? items[0]!)
-const workflowChoices = computed<MenuItem[]>(() => {
+const moreActions = computed(() => item.value.moreActions ?? [])
+const workflowChoices = computed<MenuEntry[]>(() => {
   const builds = item.value.workflowBuilds ?? []
   if (builds.length < 2) return []
   return builds.map((build) => ({
@@ -305,25 +312,67 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       class="flex w-[clamp(280px,30%,360px)] shrink-0 flex-col gap-6 overflow-y-auto rounded-xl bg-card p-5"
       data-testid="output-detail-panel"
     >
+      <div
+        class="-mx-5 -mt-5 flex shrink-0 items-center gap-1 border-b border-solid border-border py-3 pr-3 pl-5"
+        data-testid="output-detail-header"
+      >
+        <span class="min-w-0 flex-1 truncate text-ui font-semibold text-foreground">
+          {{ t('assets.detail.title') }}
+        </span>
+        <Menu
+          v-if="moreActions.length > 0"
+          :modal="false"
+          align="end"
+          class="z-70 min-w-44"
+          :aria-label="t('assets.moreActions')"
+        >
+          <template #trigger>
+            <Button
+              type="button"
+              variant="muted-textonly"
+              size="icon"
+              class="shrink-0 rounded-full"
+              :aria-label="t('assets.moreActions')"
+              :title="t('assets.moreActions')"
+              data-testid="output-detail-more"
+            >
+              <Ellipsis :size="16" aria-hidden="true" />
+            </Button>
+          </template>
+          <template v-for="action in moreActions" :key="action.id">
+            <MenuSeparator v-if="action.separator" />
+            <MenuItem
+              as="button"
+              type="button"
+              class="w-full gap-2.5"
+              :class="action.style === 'danger' && 'text-destructive'"
+              :data-testid="`output-detail-action-${action.id}`"
+              @select="emit('action', index, action.id)"
+            >
+              <component :is="action.icon" v-if="action.icon" :size="15" aria-hidden="true" />
+              <span class="flex-1 text-left">{{ action.label }}</span>
+            </MenuItem>
+          </template>
+        </Menu>
+        <Button
+          type="button"
+          variant="muted-textonly"
+          size="icon"
+          class="shrink-0 rounded-full"
+          :aria-label="t('common.close')"
+          data-testid="output-detail-close"
+          @click="emit('close')"
+        >
+          <X :size="16" aria-hidden="true" />
+        </Button>
+      </div>
+
       <div class="flex flex-col gap-3">
-        <div class="flex items-start gap-2">
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 class="m-0 line-clamp-2 text-heading font-semibold break-words text-foreground">
-              {{ item.name }}
-            </h2>
-            <p class="m-0 text-ui text-subtle-foreground">{{ subtitle }}</p>
-          </div>
-          <Button
-            type="button"
-            variant="muted-textonly"
-            size="icon"
-            class="-mt-1 -mr-1 shrink-0 rounded-full"
-            :aria-label="t('common.close')"
-            data-testid="output-detail-close"
-            @click="emit('close')"
-          >
-            <X :size="16" aria-hidden="true" />
-          </Button>
+        <div class="flex min-w-0 flex-col gap-1">
+          <h2 class="m-0 line-clamp-2 text-heading font-semibold break-words text-foreground">
+            {{ item.name }}
+          </h2>
+          <p class="m-0 text-ui text-subtle-foreground">{{ subtitle }}</p>
         </div>
         <div v-if="facts.length > 0" class="flex flex-wrap gap-1.5">
           <Tag v-for="fact in facts" :key="fact" :label="fact" />

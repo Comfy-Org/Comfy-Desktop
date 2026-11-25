@@ -1749,6 +1749,53 @@ describe('AssetsView', () => {
     expect(viewerTitle()).toBe('mid.png')
   })
 
+  it('titles the panel Details, with More and Close at its top right', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    const header = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-header"]')!
+    expect(shownText(header)).toBe('Details')
+    const buttons = [...header.querySelectorAll('button')].map((button) =>
+      button.getAttribute('aria-label')
+    )
+    expect(buttons).toEqual(['More actions', 'Close'])
+  })
+
+  it('offers the card actions the panel has no button for under More, and runs them on the shown file', async () => {
+    copyAsset.mockResolvedValue(true)
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', { previewUrl: 'comfy-output://forest' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    viewer()!
+      .querySelector<HTMLElement>('[data-testid="output-detail-more"]')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    const choices = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(choices.map((choice) => choice.textContent?.trim())).toEqual(['Open', 'Copy', 'Delete'])
+    choices[1]!.click()
+    await flushPromises()
+
+    expect(copyAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+  })
+
+  it('shows no More button for a Cloud file whose only action is the Download button', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await signInWith([asset('c', 'clip.mp4', 'video')])
+
+    await wrapper.get('[data-testid="asset-open-c"]').trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-more"]')).toBeNull()
+    expect(viewer()!.querySelector('[data-testid="output-detail-close"]')).not.toBeNull()
+  })
+
   it('plays a video in the viewer with its controls', async () => {
     const wrapper = await mountAssets([
       asset('clip', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://file/surfer' })

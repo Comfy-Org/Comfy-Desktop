@@ -181,6 +181,7 @@
     },
     "inspect": "Inspect {name}",
     "detail": {
+      "title": "Details",
       "prompts": "Prompts",
       "models": "Models",
       "createdAt": "Created {date}",
