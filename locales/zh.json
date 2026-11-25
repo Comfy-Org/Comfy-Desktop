@@ -957,7 +957,7 @@
     "developmentTab": "开发",
     "draftAppsTitle": "草稿应用",
     "draftAppAddress": "应用地址",
-    "draftAppPlaceholder": "https://pr-706.drafts.comfy.org/apps/depth-swap/",
+    "draftAppPlaceholder": "https://comfy-website-preview-pr-759.vercel.app/apps/text-to-image/desktop.html",
     "draftAppFailedTitle": "无法打开此草稿应用",
     "draftAppFailedMessage": "Comfy Desktop 无法检查此地址。请重试。",
     "sharedFolders": "共享文件夹",
