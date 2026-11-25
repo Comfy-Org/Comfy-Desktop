@@ -125,14 +125,15 @@ describe('buildSettingsSections', () => {
     ).toBe(false)
   })
 
-  it('offers hardware acceleration under Advanced with a restart notice', () => {
+  it('offers hardware acceleration under Advanced with its restart notice in the tooltip only', () => {
     const sections = buildSettingsSections()
     const generalFields =
       (sections.find((section) => section.title === 'General')?.fields as
         { id?: string }[] | undefined) ?? []
     const advancedFields =
       (sections.find((section) => section.title === 'Advanced')?.fields as
-        { id?: string; value?: unknown; description?: string }[] | undefined) ?? []
+        { id?: string; value?: unknown; description?: string; tooltip?: string }[] | undefined) ??
+      []
 
     expect(generalFields.map((field) => field.id)).not.toContain('hardwareAcceleration')
     expect(advancedFields).toContainEqual(
@@ -141,11 +142,12 @@ describe('buildSettingsSections', () => {
         label: 'Use hardware acceleration',
         type: 'boolean',
         value: true,
-        description:
+        tooltip:
           'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
       })
     )
     expect(advancedFields.at(-1)?.id).toBe('hardwareAcceleration')
+    expect(advancedFields.at(-1)?.description).toBeUndefined()
 
     mockSettings.hardwareAcceleration = false
     const updatedFields = buildSettingsSections().find((section) => section.title === 'Advanced')
