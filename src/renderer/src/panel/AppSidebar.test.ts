@@ -98,7 +98,12 @@ function tooltipOf(
   wrapper: Awaited<ReturnType<typeof mountSidebar>>,
   testId: string
 ): string | undefined {
-  return wrapper.get(`[data-testid="${testId}"]`).findComponent(Tooltip).props('text')
+  const inner = wrapper.get(`[data-testid="${testId}"]`).findComponent(Tooltip)
+  if (inner.exists()) return inner.props('text')
+  return wrapper
+    .findAllComponents(Tooltip)
+    .find((tooltip) => tooltip.find(`[data-testid="${testId}"]`).exists())
+    ?.props('text')
 }
 
 describe('AppSidebar', () => {
@@ -373,7 +378,11 @@ describe('AppSidebar', () => {
     expect(settings.text()).toBe('Desktop settings')
     expect(settings.attributes('aria-haspopup')).toBe('dialog')
     expect(settings.element.closest('nav')).toBeNull()
-    expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
+    expect(
+      settings.element
+        .closest('.tooltip-wrap')
+        ?.nextElementSibling?.classList.contains('sidebar-account')
+    ).toBe(true)
 
     const events: TelemetryActionEventDetail[] = []
     const record: EventListener = (event) => {
@@ -600,10 +609,34 @@ describe('AppSidebar', () => {
     for (const testId of ['app-sidebar-home', 'app-sidebar-settings']) {
       const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
       const trigger = wrapper
-        .get(`[data-testid="${testId}"] .tooltip-wrap`)
-        .element.getBoundingClientRect()
+        .get(`[data-testid="${testId}"]`)
+        .element.closest('.tooltip-wrap')!
+        .getBoundingClientRect()
       expect([trigger.width, trigger.height], testId).toEqual([row.width, row.height])
     }
+    wrapper.unmount()
+  })
+
+  it('shows the tooltip of a folded row when Tab moves onto it while an app is open', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', makeRoom: true, appInProgress: CHARACTER_SWAP },
+      attachTo: document.body
+    })
+    await flushPromises()
+    const shownTooltips = (): string[] =>
+      Array.from(document.querySelectorAll('[role="tooltip"]'), (el) => el.textContent ?? '')
+
+    wrapper.get<HTMLElement>('[data-testid="app-sidebar-toggle"]').element.focus()
+    const tooltipsOnTheWay: string[][] = []
+    for (const testId of ['app-sidebar-home', 'app-sidebar-apps']) {
+      await userEvent.keyboard('{Tab}')
+      await vi.waitFor(() =>
+        expect(document.activeElement).toBe(wrapper.get(`[data-testid="${testId}"]`).element)
+      )
+      await vi.waitFor(() => expect(shownTooltips()).not.toHaveLength(0))
+      tooltipsOnTheWay.push(shownTooltips())
+    }
+    expect(tooltipsOnTheWay).toEqual([['Home'], ['Apps']])
     wrapper.unmount()
   })
 
@@ -627,10 +660,9 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     wrapper
-      .get('[data-testid="app-sidebar-home"] .tooltip-wrap')
-      .element.dispatchEvent(
-        new PointerEvent('pointermove', { pointerType: 'mouse', bubbles: true })
-      )
+      .get('[data-testid="app-sidebar-home"]')
+      .element.closest('.tooltip-wrap')!
+      .dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', bubbles: true }))
     await vi.advanceTimersByTimeAsync(200)
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
@@ -648,7 +680,9 @@ describe('AppSidebar', () => {
 
     const credits = wrapper.get('[data-testid="app-sidebar-credits"]')
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
-    expect(settings.element.nextElementSibling?.contains(credits.element)).toBe(true)
+    expect(
+      settings.element.closest('.tooltip-wrap')?.nextElementSibling?.contains(credits.element)
+    ).toBe(true)
     expect(credits.element.parentElement?.nextElementSibling?.classList).toContain(
       'sidebar-account'
     )

@@ -369,95 +369,107 @@ function openSettings(): void {
           </div>
         </template>
         <template v-for="row in group.rows" :key="row.page">
-          <Button
-            variant="muted-textonly"
-            size="unset"
-            class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-            :class="[
-              railRowSize,
-              row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
-            ]"
-            :aria-current="row.page === activePage ? 'page' : undefined"
-            :aria-label="row.label"
-            :data-testid="`app-sidebar-${row.page}`"
-            :data-home-tour="
-              row.page === 'home' || row.page === 'staff-apps' ? undefined : row.page
-            "
-            @click="navigate(row.page)"
-            @contextmenu.prevent="openRowMenu($event, row.page)"
-          >
-            <Tooltip
-              :text="collapsed ? row.label : undefined"
-              side="right"
-              class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-              :class="railRowInset"
-            >
-              <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
-              <Transition v-bind="labelTransition">
-                <span
-                  v-if="!collapsed"
-                  class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
-                  >{{ row.label }}</span
-                >
-              </Transition>
-            </Tooltip>
-          </Button>
-          <Button
-            v-if="row.page === appHome && appInProgress && activePage !== appHome"
-            variant="muted-textonly"
-            size="unset"
-            class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+          <Tooltip
+            :text="collapsed ? row.label : undefined"
+            side="right"
+            class="shrink-0 transition-[width,margin] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
             :class="railRowSize"
-            :aria-label="backToAppLabel"
-            data-testid="app-sidebar-app-in-progress"
-            @click="openAppInProgress(appInProgress)"
           >
-            <Tooltip
-              :text="collapsed ? backToAppLabel : undefined"
-              side="right"
-              class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-              :class="railRowInset"
+            <Button
+              variant="muted-textonly"
+              size="unset"
+              class="h-8 w-full justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :class="row.page === activePage && 'bg-accent text-foreground hover:bg-accent'"
+              :aria-current="row.page === activePage ? 'page' : undefined"
+              :aria-label="row.label"
+              :data-testid="`app-sidebar-${row.page}`"
+              :data-home-tour="
+                row.page === 'home' || row.page === 'staff-apps' ? undefined : row.page
+              "
+              @click="navigate(row.page)"
+              @contextmenu.prevent="openRowMenu($event, row.page)"
             >
-              <CornerDownRight :size="15" class="shrink-0" aria-hidden="true" />
-              <Transition v-bind="labelTransition">
-                <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
-                  appInProgress.title
-                }}</span>
-              </Transition>
-            </Tooltip>
-          </Button>
+              <span
+                class="flex size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+                :class="railRowInset"
+              >
+                <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
+                <Transition v-bind="labelTransition">
+                  <span
+                    v-if="!collapsed"
+                    class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
+                    >{{ row.label }}</span
+                  >
+                </Transition>
+              </span>
+            </Button>
+          </Tooltip>
+          <Tooltip
+            v-if="row.page === appHome && appInProgress && activePage !== appHome"
+            :text="collapsed ? backToAppLabel : undefined"
+            side="right"
+            class="shrink-0 transition-[width,margin] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+            :class="railRowSize"
+          >
+            <Button
+              variant="muted-textonly"
+              size="unset"
+              class="h-8 w-full justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :aria-label="backToAppLabel"
+              data-testid="app-sidebar-app-in-progress"
+              @click="openAppInProgress(appInProgress)"
+            >
+              <span
+                class="flex size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+                :class="railRowInset"
+              >
+                <CornerDownRight :size="15" class="shrink-0" aria-hidden="true" />
+                <Transition v-bind="labelTransition">
+                  <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
+                    appInProgress.title
+                  }}</span>
+                </Transition>
+              </span>
+            </Button>
+          </Tooltip>
         </template>
         <div v-if="group.key === 'main'" class="grid shrink-0">
           <Transition v-bind="labelTransition">
-            <Button
+            <div
               v-if="collapsed"
-              variant="muted-textonly"
-              size="unset"
-              class="col-start-1 row-start-1 h-8 shrink-0 justify-start self-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-              :class="[
-                railRowSize,
-                activePage === 'chooser' && 'bg-accent text-foreground hover:bg-accent'
-              ]"
-              :aria-current="activePage === 'chooser' ? 'page' : undefined"
-              :aria-label="railBuildsRow.label"
-              data-testid="app-sidebar-chooser"
-              @click="navigate('chooser')"
-              @contextmenu.prevent="openPageMenu($event, 'chooser')"
+              class="col-start-1 row-start-1 flex shrink-0 self-start transition-[width,margin] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :class="railRowSize"
             >
               <Tooltip
                 :text="collapsed ? railBuildsRow.label : undefined"
                 side="right"
-                class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-                :class="railRowInset"
+                class="w-full"
               >
-                <component
-                  :is="railBuildsRow.icon"
-                  :size="15"
-                  class="shrink-0"
-                  aria-hidden="true"
-                />
+                <Button
+                  variant="muted-textonly"
+                  size="unset"
+                  class="h-8 w-full justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+                  :class="activePage === 'chooser' && 'bg-accent text-foreground hover:bg-accent'"
+                  :aria-current="activePage === 'chooser' ? 'page' : undefined"
+                  :aria-label="railBuildsRow.label"
+                  data-testid="app-sidebar-chooser"
+                  @click="navigate('chooser')"
+                  @contextmenu.prevent="openPageMenu($event, 'chooser')"
+                >
+                  <span
+                    class="flex size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+                    :class="railRowInset"
+                  >
+                    <component
+                      :is="railBuildsRow.icon"
+                      :size="15"
+                      class="shrink-0"
+                      aria-hidden="true"
+                    />
+                  </span>
+                </Button>
               </Tooltip>
-            </Button>
+            </div>
           </Transition>
           <div
             class="col-start-1 row-start-1 grid shrink-0 transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-opacity"
@@ -585,30 +597,36 @@ function openSettings(): void {
 
     <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
       <SidebarDesktopUpdate :collapsed="collapsed" />
-      <Button
-        variant="muted-textonly"
-        size="unset"
-        class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+      <Tooltip
+        :text="collapsed ? t('fileMenu.globalSettings') : undefined"
+        side="right"
+        class="shrink-0 transition-[width,margin] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
         :class="railRowSize"
-        :aria-label="t('fileMenu.globalSettings')"
-        aria-haspopup="dialog"
-        data-testid="app-sidebar-settings"
-        @click="openSettings"
       >
-        <Tooltip
-          :text="collapsed ? t('fileMenu.globalSettings') : undefined"
-          side="right"
-          class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-          :class="railRowInset"
+        <Button
+          variant="muted-textonly"
+          size="unset"
+          class="h-8 w-full justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+          :aria-label="t('fileMenu.globalSettings')"
+          aria-haspopup="dialog"
+          data-testid="app-sidebar-settings"
+          @click="openSettings"
         >
-          <Settings :size="15" class="shrink-0" aria-hidden="true" />
-          <Transition v-bind="labelTransition">
-            <span v-if="!collapsed" class="min-w-0 flex-1 overflow-hidden text-left text-nowrap">{{
-              t('fileMenu.globalSettings')
-            }}</span>
-          </Transition>
-        </Tooltip>
-      </Button>
+          <span
+            class="flex size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+            :class="railRowInset"
+          >
+            <Settings :size="15" class="shrink-0" aria-hidden="true" />
+            <Transition v-bind="labelTransition">
+              <span
+                v-if="!collapsed"
+                class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
+                >{{ t('fileMenu.globalSettings') }}</span
+              >
+            </Transition>
+          </span>
+        </Button>
+      </Tooltip>
       <SidebarCredits :collapsed="collapsed" />
       <SidebarAccount :collapsed="collapsed" />
     </div>
