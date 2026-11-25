@@ -12,6 +12,7 @@ import { t } from '../lib/i18n'
 import { missingModelFiles } from '../lib/modelDownloadPaths'
 import { DISK_SPACE_ERROR, isTerminal } from '../sources/standalone/templateDownloadCore'
 import {
+  cancelTemplateDownload,
   forgetTemplateDownload,
   startTemplateDownloadTask,
   subscribeTemplateDownload
@@ -48,7 +49,7 @@ function readOptions(value: unknown): { downloadMissing: boolean } {
   return { downloadMissing: (options as { downloadMissing?: unknown }).downloadMissing === true }
 }
 
-type DownloadOutcome = { failure: string | null } | 'cancelled'
+type DownloadOutcome = { failure: string | null; downloaded: boolean } | 'cancelled'
 
 const downloadCancels = new Map<string, Set<() => void>>()
 
@@ -76,22 +77,25 @@ async function downloadMissingModels(
   graph: Record<string, unknown>
 ): Promise<DownloadOutcome> {
   const installation = await installations.get(build)
-  if (!installation) return { failure: t('workflowLaunch.openFailed') }
+  if (!installation) return { failure: t('workflowLaunch.openFailed'), downloaded: false }
   const missing = await missingModelFiles(build, catalogWorkflowModels(graph))
-  if (missing.length === 0) return { failure: null }
+  if (missing.length === 0) return { failure: null, downloaded: false }
   const taskId = downloadTaskId(id, build)
   startTemplateDownloadTask(
     taskId,
     installation,
     id,
     await knownDownloadBytes(missing),
-    { sendOutput: () => {}, models: missing },
+    { sendOutput: () => {}, models: missing, skipInputAssets: true },
     graph
   )
   return new Promise((resolve) => {
     const cancels = downloadCancels.get(taskId) ?? new Set<() => void>()
     downloadCancels.set(taskId, cancels)
-    const cancel = (): void => finish('cancelled')
+    const cancel = (): void => {
+      cancelTemplateDownload(taskId)
+      finish('cancelled')
+    }
     const finish = (outcome: DownloadOutcome): void => {
       cancels.delete(cancel)
       if (cancels.size === 0 && downloadCancels.get(taskId) === cancels) {
@@ -115,11 +119,11 @@ async function downloadMissingModels(
         page.send('catalog:workflow-download', progress)
       }
       if (!isTerminal(summary.status)) return
-      if (summary.status === 'done') finish({ failure: null })
+      if (summary.status === 'done') finish({ failure: null, downloaded: true })
       else if (summary.status === 'cancelled') finish('cancelled')
       else if (summary.error === DISK_SPACE_ERROR) {
-        finish({ failure: t('workflowLaunch.noDiskSpace') })
-      } else finish({ failure: t('workflowLaunch.downloadFailed') })
+        finish({ failure: t('workflowLaunch.noDiskSpace'), downloaded: false })
+      } else finish({ failure: t('workflowLaunch.downloadFailed'), downloaded: false })
     })
   })
 }
@@ -163,6 +167,7 @@ export async function launchCatalogWorkflow(
       ? await fetchEditorGraph(workflow.editorGraphUrl).catch(() => null)
       : null
     if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }
+    let refreshModels = false
     if (graph && target.where === 'local' && downloadMissing) {
       const refusal = await refuseModelsInto(target.build, scope)
       if (refusal) return { opened: false, error: refusal }
@@ -172,8 +177,11 @@ export async function launchCatalogWorkflow(
       }
       if (outcome.failure) return { opened: false, error: outcome.failure }
       if (!scope.isCurrent()) return { opened: false, error: t('workflowLaunch.openFailed') }
+      refreshModels = outcome.downloaded
     }
-    if (graph) return await openCatalogInComfy(page, { ...target, graph, name }, scope)
+    if (graph) {
+      return await openCatalogInComfy(page, { ...target, graph, name, refreshModels }, scope)
+    }
     if (target.where === 'cloud' && workflow.cloudPrompt) {
       return await openCatalogInComfy(
         page,

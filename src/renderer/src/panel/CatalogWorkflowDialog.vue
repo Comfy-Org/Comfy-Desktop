@@ -376,8 +376,6 @@ onBeforeUnmount(() => {
   <DesktopDialogSurface
     :open="true"
     :aria-label="workflow.title"
-    :dismiss-on-escape="!pending"
-    :dismiss-on-outside="!pending"
     overlay-class="fixed inset-0 z-50 grid place-items-center bg-[var(--overlay-bg)] px-16 py-6"
     content-class="rounded-[20px] bg-[rgb(9_9_9)] p-0 text-foreground shadow-2xl ring-1 ring-white/10 outline-none"
     data-testid="catalog-workflow-dialog"
@@ -390,7 +388,6 @@ onBeforeUnmount(() => {
         type="button"
         class="absolute top-0 -right-12 grid size-9 place-items-center rounded-full border-0 bg-white/10 text-foreground outline-none hover:bg-white/16 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         :aria-label="t('close')"
-        :disabled="pending"
         data-testid="catalog-workflow-close"
         @click="emit('close')"
       >

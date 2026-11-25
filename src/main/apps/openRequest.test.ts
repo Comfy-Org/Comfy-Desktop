@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { runInNewContext } from 'vm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   COMFY_STATE_SCRIPT,
@@ -349,6 +349,62 @@ describe('the script that loads a saved graph into the ComfyUI page', () => {
 
     expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(true)
     expect(calls).toEqual([[graph, true, true, 'fox (3)']])
+  })
+
+  it('refreshes the model lists before loading when asked, so new downloads are listed', async () => {
+    const order: string[] = []
+    const context = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      refreshComboInNodes: async () => {
+        order.push('refresh')
+      },
+      loadGraphData: () => {
+        order.push('load')
+      }
+    })
+
+    expect(
+      await runInNewContext(openGraphScript(graph, 'fox', { refreshModels: true }), context)
+    ).toBe(true)
+    expect(order).toEqual(['refresh', 'load'])
+  })
+
+  it('still loads the graph when refreshing the model lists fails or is not offered', async () => {
+    const loads: unknown[] = []
+    const failing = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      refreshComboInNodes: () => Promise.reject(new Error('offline')),
+      loadGraphData: () => loads.push('failing')
+    })
+    const older = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      loadGraphData: () => loads.push('older')
+    })
+
+    const script = openGraphScript(graph, 'fox', { refreshModels: true })
+    expect(await runInNewContext(script, failing)).toBe(true)
+    expect(await runInNewContext(script, older)).toBe(true)
+    expect(loads).toEqual(['failing', 'older'])
+  })
+
+  it('does not refresh the model lists unless asked', async () => {
+    const refresh = vi.fn()
+    const context = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      refreshComboInNodes: refresh,
+      loadGraphData: () => undefined
+    })
+
+    expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(true)
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('says it did not open in a ComfyUI that cannot load a graph', async () => {

@@ -9,7 +9,10 @@ const areModelsPresent = vi.fn(async (_id: string, _models: unknown[]) => false)
 vi.mock('./templateModels', () => ({
   resolveTemplateModelsFromJson: (json: unknown) => resolveTemplateModelsFromJson(json)
 }))
-vi.mock('./templateInputAssets', () => ({ downloadTemplateInputAssets: vi.fn(async () => []) }))
+const downloadTemplateInputAssets = vi.fn(async () => [])
+vi.mock('./templateInputAssets', () => ({
+  downloadTemplateInputAssets: () => downloadTemplateInputAssets()
+}))
 vi.mock('../../lib/disk', () => ({ getDiskSpace: (dir: string) => getDiskSpace(dir) }))
 vi.mock('../../lib/comfyDownloadManager', () => ({
   startManagedModelJob: (...a: unknown[]) => startManagedModelJob(...a)
@@ -29,6 +32,7 @@ vi.mock('fs', () => ({
 }))
 
 import {
+  cancelTemplateDownload,
   forgetTemplateDownload,
   startTemplateDownloadTask,
   subscribeTemplateDownload
@@ -108,6 +112,7 @@ function resetMocks(): void {
   getDiskSpace.mockReset().mockResolvedValue({ free: 1e15, total: 1e15 })
   resolveDownloadContextById.mockReset().mockResolvedValue(null)
   areModelsPresent.mockReset().mockResolvedValue(false)
+  downloadTemplateInputAssets.mockClear()
 }
 
 describe('template model download task', () => {
@@ -172,8 +177,55 @@ describe('template model download task', () => {
 
     forgetTemplateDownload('forget-1')
 
-    await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalled())
+    await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalledWith('pause'))
+    expect(jobReleases.get('id-u')).not.toHaveBeenCalledWith('cancel')
     expect(latest('forget-1')).toBeUndefined()
+  })
+
+  it('cancelTemplateDownload releases its model jobs as cancelled, so nothing is left paused', async () => {
+    start('cancel-1')
+    await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
+
+    cancelTemplateDownload('cancel-1')
+
+    await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalledWith('cancel'))
+    expect(jobReleases.get('id-u')).not.toHaveBeenCalledWith('pause')
+    expect(latest('cancel-1')).toBeUndefined()
+  })
+
+  it('cancels a model job that only starts after the task was cancelled', async () => {
+    let admit!: () => void
+    startManagedModelJob.mockImplementation(
+      () => new Promise((resolve) => (admit = () => resolve(hangingJob('late'))))
+    )
+    start('cancel-late')
+    await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
+
+    cancelTemplateDownload('cancel-late')
+    admit()
+
+    await vi.waitFor(() => expect(jobReleases.get('id-late')).toHaveBeenCalledWith('cancel'))
+  })
+
+  it('fetches template input files unless told the workflow is not a template', async () => {
+    start('inputs-1')
+    await flush()
+    expect(downloadTemplateInputAssets).toHaveBeenCalledOnce()
+    forgetTemplateDownload('inputs-1')
+
+    downloadTemplateInputAssets.mockClear()
+    startTemplateDownloadTask(
+      'inputs-2',
+      { id: 'install-1' } as unknown as InstallationRecord,
+      'example',
+      0,
+      { sendOutput, skipInputAssets: true },
+      WORKFLOW
+    )
+    await flush()
+    expect(downloadTemplateInputAssets).not.toHaveBeenCalled()
+    expect(startManagedModelJob).toHaveBeenCalled()
+    forgetTemplateDownload('inputs-2')
   })
 
   it("starts each model as a managed model job owned by the task's installation (issue #1322)", async () => {

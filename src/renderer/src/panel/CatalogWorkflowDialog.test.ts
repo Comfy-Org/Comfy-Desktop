@@ -310,6 +310,20 @@ describe('opening a catalog workflow', () => {
     expect(dialog.get('[role="alert"]').text()).toBe('Could not start Video Lab.')
     expect(dialog.emitted('close')).toBeUndefined()
   })
+
+  it('can be closed while the launch is still opening the build', async () => {
+    launchCatalogWorkflow.mockReturnValue(new Promise(() => {}))
+    const dialog = await mountDialog([LAB, CLOUD])
+
+    await dialog.get('[data-testid="catalog-workflow-action"]').trigger('click')
+    await flushPromises()
+    expect(dialog.get('[data-testid="catalog-workflow-action"]').text()).toContain('Opening')
+
+    const close = dialog.get<HTMLButtonElement>('[data-testid="catalog-workflow-close"]')
+    expect(close.element.disabled).toBe(false)
+    await close.trigger('click')
+    expect(dialog.emitted('close')).toEqual([[]])
+  })
 })
 
 describe('a workflow that only runs on Comfy Cloud', () => {

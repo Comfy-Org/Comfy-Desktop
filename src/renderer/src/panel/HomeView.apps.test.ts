@@ -45,7 +45,18 @@ const UPSCALE_WORKFLOW: CatalogWorkflow = {
   thumbnailUrl: null,
   canOpenLocal: false,
   canOpenCloud: true,
-  minComfyUIVersion: null
+  minComfyUIVersion: null,
+  hubUrl: 'https://comfy.org/hub/workflows/upscale',
+  longDescription: null,
+  author: null,
+  generationType: null,
+  useCases: [],
+  models: [],
+  uses: null,
+  license: null,
+  publishedAt: null,
+  media: [],
+  tutorialUrl: null
 }
 
 beforeEach(() => {

@@ -345,6 +345,36 @@ describe('the dedicated workflow catalog', () => {
     expect(hubUrlForListedWorkflow('last')).toBe('https://comfy.org/hub/workflows/last')
   })
 
+  it('stops when the catalog hands back a cursor it already gave', async () => {
+    mockedFetchJSON
+      .mockResolvedValueOnce({
+        items: [catalogItem({ uid: 'a' })],
+        has_more: true,
+        next_cursor: 'p2'
+      })
+      .mockResolvedValueOnce({
+        items: [catalogItem({ uid: 'b' })],
+        has_more: true,
+        next_cursor: 'p3'
+      })
+      .mockResolvedValue({ items: [catalogItem({ uid: 'c' })], has_more: true, next_cursor: 'p2' })
+
+    await expect(listCatalogWorkflows('en')).rejects.toThrow('did not finish')
+    expect(mockedFetchJSON).toHaveBeenCalledTimes(3)
+  })
+
+  it('stops after a hundred pages when the catalog never says it is done', async () => {
+    let page = 0
+    mockedFetchJSON.mockImplementation(async () => ({
+      items: [catalogItem({ uid: `w${page}` })],
+      has_more: true,
+      next_cursor: `p${++page}`
+    }))
+
+    await expect(listCatalogWorkflows('en')).rejects.toThrow('did not finish')
+    expect(mockedFetchJSON).toHaveBeenCalledTimes(101)
+  })
+
   it('retains the minimum version and exposes only supported launch routes', async () => {
     const prompt = { '1': { class_type: 'SaveImage', inputs: {} } }
     mockedFetchJSON.mockResolvedValue({

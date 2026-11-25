@@ -13,6 +13,7 @@ const SIZE_TIMEOUT_MS = 5000
 const MAX_SIZE_LOOKUPS = 24
 const MAX_SIZE_HOPS = 3
 const LINKED_SIZE = 'x-linked-size'
+const FAILED_SIZE_RETRY_MS = 5 * 60_000
 
 const sizes = new Map<string, Promise<number | null>>()
 
@@ -76,7 +77,11 @@ function sizeOf(url: string): Promise<number | null> {
   const size = lookUpSize(url)
   sizes.set(url, size)
   void size.then((bytes) => {
-    if (bytes === null) sizes.delete(url)
+    if (bytes !== null) return
+    const forget = setTimeout(() => {
+      if (sizes.get(url) === size) sizes.delete(url)
+    }, FAILED_SIZE_RETRY_MS)
+    forget.unref?.()
   })
   return size
 }

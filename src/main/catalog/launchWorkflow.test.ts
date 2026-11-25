@@ -39,7 +39,10 @@ vi.mock('../settings', () => ({ get: () => undefined, defaults: { modelsDirs: []
 vi.mock('../lib/comfyDownloadManager', () => ({ startManagedModelJob: mocks.transfer }))
 vi.mock('../lib/disk', () => ({ getDiskSpace: mocks.diskSpace }))
 vi.mock('../lib/pythonEnv', () => ({ getActiveVenvDir: () => null }))
-vi.mock('../sources/standalone/envPaths', () => ({ findSitePackages: () => null }))
+vi.mock('../sources/standalone/envPaths', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  findSitePackages: () => null
+}))
 vi.mock('../sources/standalone/curatedTemplates', () => ({
   RAW_TEMPLATES_BASE: '',
   TEMPLATE_INPUT_BASE: ''
@@ -210,7 +213,7 @@ describe('launching workflows from the published catalog', () => {
     )
     expect(mocks.open).toHaveBeenCalledWith(
       PAGE,
-      { ...LOCAL, name: 'Example', graph: GRAPH },
+      { ...LOCAL, name: 'Example', graph: GRAPH, refreshModels: false },
       expect.objectContaining({ workspaceId: 'personal', minComfyUIVersion: '0.3.66' })
     )
   })
@@ -319,7 +322,7 @@ describe('launching workflows from the published catalog', () => {
     })
     expect(mocks.open).toHaveBeenCalledWith(
       PAGE,
-      { ...LOCAL, name: 'Example', graph: GRAPH },
+      { ...LOCAL, name: 'Example', graph: GRAPH, refreshModels: true },
       expect.anything()
     )
     expect(hasActiveTemplateDownloads()).toBe(false)
@@ -350,7 +353,10 @@ describe('launching workflows from the published catalog', () => {
     expect(cancelCatalogWorkflowDownload('catalog-id', 'inst-local')).toBe(true)
 
     expect(await launching).toEqual({ opened: false, error: 'workflowLaunch.downloadCancelled' })
-    await vi.waitFor(() => expect(transferStopped).toHaveBeenCalled())
+    expect(
+      transferStopped,
+      'the partial download is cancelled, not left paused'
+    ).toHaveBeenCalledWith('cancel')
     expect(hasActiveTemplateDownloads()).toBe(false)
     expect(await buildIsMissing()).toEqual([MODEL.filename])
     expect(mocks.open).not.toHaveBeenCalled()
@@ -375,6 +381,11 @@ describe('launching workflows from the published catalog', () => {
       await launchCatalogWorkflow(PAGE, 'catalog-id', LOCAL, 'personal', { downloadMissing: true })
     ).toEqual({ opened: true })
     expect(mocks.transfer).not.toHaveBeenCalled()
+    expect(mocks.open).toHaveBeenCalledWith(
+      PAGE,
+      expect.objectContaining({ refreshModels: false }),
+      expect.anything()
+    )
   })
 
   it('downloads nothing into a build from another workspace or one below the workflow’s minimum', async () => {

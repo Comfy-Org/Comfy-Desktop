@@ -788,6 +788,35 @@ describe('managed model-job identity (issue #1322)', () => {
     expect(activeRows().find((r) => r.id === h1.id)).toBeUndefined()
   })
 
+  it('cancels the transfer when the LAST lease is released as a cancel, but not while another caller holds one', async () => {
+    const name = uniqueName()
+    const before = transfers.length
+    const url = `https://host-a.example/${name}`
+    const h1 = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await waitForTransfers(before + 1)
+    const t = transfers[before]!
+    const h2 = await mod.startManagedModelJob({
+      url,
+      filename: name,
+      directory: 'checkpoints'
+    })
+
+    h1.release('cancel')
+    await flush()
+    expect(t.cancel).not.toHaveBeenCalled()
+    expect(activeRows().find((r) => r.id === h1.id)).toBeDefined()
+
+    h2.release('cancel')
+    expect(t.pause).not.toHaveBeenCalled()
+    expect(t.cancel).toHaveBeenCalledTimes(1)
+    await expect(h1.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+  })
+
   it('keeps the UI Cancel control whole-job even when multiple callers hold leases', async () => {
     const name = uniqueName()
     const before = transfers.length

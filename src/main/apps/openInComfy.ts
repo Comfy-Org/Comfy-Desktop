@@ -365,7 +365,7 @@ export async function openEmbeddedWorkflow(
 
 function catalogScript(request: WorkflowRequest): string {
   return 'graph' in request
-    ? openGraphScript(request.graph, request.name)
+    ? openGraphScript(request.graph, request.name, { refreshModels: request.refreshModels })
     : openWorkflowScript(request)
 }
 

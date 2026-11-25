@@ -654,8 +654,10 @@ export interface ModelJobHandle {
   url: string
   savePath: string
   completion: Promise<ModelJobOutcome>
-  release: () => void
+  release: (intent?: ModelJobReleaseIntent) => void
 }
+
+export type ModelJobReleaseIntent = 'pause' | 'cancel'
 
 function settledJobHandle(
   id: string,
@@ -666,18 +668,21 @@ function settledJobHandle(
   return { id, url, savePath, completion: Promise.resolve(outcome), release: () => {} }
 }
 
-function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): () => void {
+function acquireModelJobLease(
+  pending: PendingDownload,
+  cleanup?: () => void
+): (intent?: ModelJobReleaseIntent) => void {
   const leaseId = randomUUID()
   ;(pending.leases ??= new Set()).add(leaseId)
-  return () => {
+  return (intent = 'pause') => {
     const leases = pending.leases
     if (!leases?.delete(leaseId)) return
     cleanup?.()
     if (leases.size > 0) return
     if (quittingModelDownloads || isQuitInProgress()) return
-    if (pendingDownloads.get(pending.id) === pending && !pending.suspended) {
-      pauseModelDownload(pending.id)
-    }
+    if (pendingDownloads.get(pending.id) !== pending) return
+    if (intent === 'cancel') cancelModelDownload(pending.id)
+    else if (!pending.suspended) pauseModelDownload(pending.id)
   }
 }
 

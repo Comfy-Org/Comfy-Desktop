@@ -18,6 +18,7 @@ export interface EditorWorkflowRequest {
   where: 'local' | 'cloud'
   name: string
   build?: string
+  refreshModels?: boolean
 }
 
 export type WorkflowRequest = OpenRequest | EditorWorkflowRequest
@@ -151,12 +152,21 @@ export function openWorkflowScript(request: OpenRequest): string {
   return loadScript('app.loadApiJson(data,name)', request.prompt, request.name)
 }
 
-export function openGraphScript(graph: Record<string, unknown>, name: string): string {
-  return loadScript(
-    `typeof app.loadGraphData==='function'?app.loadGraphData(data,true,true,name):false`,
-    graph,
-    name
-  )
+const LOAD_GRAPH = `typeof app.loadGraphData==='function'?app.loadGraphData(data,true,true,name):false`
+
+const REFRESH_MODEL_LISTS =
+  `Promise.resolve(typeof app.refreshComboInNodes==='function'?app.refreshComboInNodes():null)` +
+  `.catch(function(){})`
+
+export function openGraphScript(
+  graph: Record<string, unknown>,
+  name: string,
+  { refreshModels = false }: { refreshModels?: boolean } = {}
+): string {
+  const call = refreshModels
+    ? `${REFRESH_MODEL_LISTS}.then(function(){return ${LOAD_GRAPH}})`
+    : LOAD_GRAPH
+  return loadScript(call, graph, name)
 }
 
 export function isComfyPage(pageUrl: string, comfyUrl: string): boolean {

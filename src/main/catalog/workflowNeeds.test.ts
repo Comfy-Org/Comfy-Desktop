@@ -169,6 +169,25 @@ describe('what a catalog workflow needs', () => {
     expect(unetLookups).toHaveLength(1)
   })
 
+  it('does not ask again for a size it could not get until a few minutes have passed', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      answers[UNET] = { status: 401 }
+      const lookups = (): number =>
+        mocks.request.mock.calls.filter(([{ url }]) => url === UNET).length
+
+      expect((await catalogWorkflowNeeds('ltx'))?.models[1]?.sizeBytes).toBeNull()
+      await catalogWorkflowNeeds('ltx')
+      expect(lookups(), 'a gated repository is not asked on every page open').toBe(1)
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+      await catalogWorkflowNeeds('ltx')
+      expect(lookups()).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reads the size without following Hugging Face to the file host', async () => {
     await catalogWorkflowNeeds('ltx')
 
