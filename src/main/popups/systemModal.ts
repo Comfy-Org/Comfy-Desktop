@@ -33,6 +33,7 @@ export interface SystemModalEntry {
   currentSpec: SystemModalSpec | null
   currentCallback: SystemModalCallback | null
   pendingSpec: { spec: SystemModalSpec; callback: SystemModalCallback } | null
+  nativeRequest: { callback: SystemModalCallback } | null
 }
 
 const systemModalsByParent = new Map<number, SystemModalEntry>()
@@ -41,14 +42,19 @@ const systemModalsByWebContents = new Map<number, SystemModalEntry>()
 function cancelEntry(entry: SystemModalEntry): void {
   const current = entry.currentCallback
   const pending = entry.pendingSpec?.callback
+  const native = entry.nativeRequest?.callback
   entry.currentSpec = null
   entry.currentCallback = null
   entry.pendingSpec = null
+  entry.nativeRequest = null
   try {
     current?.('cancel')
   } catch {}
   try {
     pending?.('cancel')
+  } catch {}
+  try {
+    native?.('cancel')
   } catch {}
 }
 
@@ -100,10 +106,14 @@ function answerWithNativeDialog(entry: SystemModalEntry): void {
   entry.view.hide()
   if (!spec || !callback) return
   const parent = entry.view.parentWindow
+  const request = { callback }
+  entry.nativeRequest = request
   const answer: Promise<SystemModalAction> = parent.isDestroyed()
     ? Promise.resolve('cancel')
     : askWithNativeDialog(parent, spec)
   void answer.then((action) => {
+    if (entry.nativeRequest !== request) return
+    entry.nativeRequest = null
     try {
       callback(action)
     } catch {}
@@ -145,7 +155,8 @@ export function ensureSystemModal(parent: BrowserWindow): SystemModalEntry {
     view,
     currentSpec: null,
     currentCallback: null,
-    pendingSpec: null
+    pendingSpec: null,
+    nativeRequest: null
   }
   systemModalsByParent.set(view.parentWindowId, entry)
   systemModalsByWebContents.set(view.popupWebContentsId, entry)
@@ -186,6 +197,13 @@ export function openSystemModal(opts: OpenSystemModalOpts): string {
   const spec: SystemModalSpec = { ...opts.spec, id }
   const callback: SystemModalCallback = opts.callback ?? (() => {})
 
+  if (entry.view.popup.webContents.isCrashed()) {
+    entry.currentSpec = spec
+    entry.currentCallback = callback
+    answerWithNativeDialog(entry)
+    return id
+  }
+
   if (!entry.view.rendererReady) {
     entry.pendingSpec = { spec, callback }
     return id
@@ -193,10 +211,6 @@ export function openSystemModal(opts: OpenSystemModalOpts): string {
 
   entry.currentSpec = spec
   entry.currentCallback = callback
-  if (entry.view.popup.webContents.isCrashed()) {
-    answerWithNativeDialog(entry)
-    return id
-  }
   if (!entry.view.popup.webContents.isDestroyed()) {
     entry.view.popup.webContents.send('comfy-systemmodal:set-modal', spec)
   }

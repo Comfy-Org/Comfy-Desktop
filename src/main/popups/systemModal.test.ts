@@ -180,4 +180,47 @@ describe('system modal when its page cannot show the dialog', () => {
     expect(view.isOpen).toBe(true)
     expect(showMessageBox).not.toHaveBeenCalled()
   })
+
+  it('cancels a native dialog request that a newer modal replaces and ignores its late answer', async () => {
+    let answerFirstDialog: (value: { response: number }) => void = () => {}
+    showMessageBox.mockImplementationOnce(
+      () => new Promise((resolve) => (answerFirstDialog = resolve))
+    )
+    const parent = makeParent()
+    const superseded = vi.fn()
+    void openSystemModalAsync({
+      parent,
+      spec: {
+        title: 'Close window',
+        message: '',
+        confirmLabel: 'Close window',
+        cancelLabel: 'Cancel',
+        theme: { bg: '#000000', text: '#ffffff' }
+      },
+      callback: superseded
+    })
+    const view = latestView()
+    sendFromModalPage(view, 'comfy-systemmodal:ready')
+    sendFromModalPage(view, 'comfy-systemmodal:render-failed')
+
+    void askToCloseWindow(parent)
+    answerFirstDialog({ response: 0 })
+    await vi.waitFor(() => expect(superseded).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(superseded.mock.calls).toEqual([['cancel']])
+  })
+
+  it('asks with a native dialog for every request after the page crashes before it is ready', async () => {
+    showMessageBox.mockResolvedValue({ response: 0, checkboxChecked: false })
+    const parent = makeParent()
+    const first = askToCloseWindow(parent)
+    const view = latestView()
+    view.crashed = true
+    view.webContentsListeners.get('render-process-gone')?.()
+    await expect(first).resolves.toBe(true)
+
+    await expect(askToCloseWindow(parent)).resolves.toBe(true)
+    expect(showMessageBox).toHaveBeenCalledTimes(2)
+  })
 })
