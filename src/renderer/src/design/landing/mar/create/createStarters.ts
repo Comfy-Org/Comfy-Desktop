@@ -42,10 +42,7 @@ export interface Readiness {
 
 const seed = (id: string): number => [...id].reduce((n, c) => n + c.charCodeAt(0), 0)
 
-export function clipFor(
-  w: HubWorkflow,
-  pinned?: string
-): { poster: string; clip: string } | undefined {
+function clipFor(w: HubWorkflow, pinned?: string): { poster: string; clip: string } | undefined {
   if (w.media !== 'video') return undefined
   const slot = pinned ?? CLIP_SLOTS[seed(w.id) % CLIP_SLOTS.length]!
   const clip = CLIPS[`../assets/examples/gv-${slot}.mp4`]
