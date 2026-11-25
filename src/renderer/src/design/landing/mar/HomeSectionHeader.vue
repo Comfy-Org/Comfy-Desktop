@@ -52,7 +52,7 @@ const emit = defineEmits<{ open: []; add: [] }>()
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 :root .proto-ui.proto-ui.proto-ui .hsh-link {
   display: inline-flex;
@@ -63,16 +63,19 @@ const emit = defineEmits<{ open: []; add: [] }>()
   padding: 0 8px;
   border-radius: 8px;
   color: var(--color-muted-foreground);
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   outline: none;
   transition:
     background-color 160ms ease,
     color 160ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .hsh-link:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  background: var(--color-secondary-background);
   color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .hsh-link:focus-visible {
