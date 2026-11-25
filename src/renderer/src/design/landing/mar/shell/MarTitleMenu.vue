@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { ChartColumn, Gauge, Menu } from 'lucide-vue-next'
 import { go, proto, toast, type Page } from '../../useProto'
+import TemplateQuitDialog from '../downloads/TemplateQuitDialog.vue'
+import { activeDownloads, pauseAll } from '../downloads/templateDownloads'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import type { MenuLine } from '../pages/menu'
 
@@ -25,10 +27,19 @@ const buildWindow: MenuLine[] = [
   { label: 'Reset Zoom', run: () => toast('Zoom reset') },
   'sep',
   { label: 'Close Window', run: () => toast('Close Window') },
-  { label: 'Quit Desktop', run: () => toast('Quit Desktop') }
+  { label: 'Quit Desktop', run: () => quitDesktop() }
 ]
 const lines = computed(() => (proto.activeTab === 'home' ? desktop : buildWindow))
 const open = ref(false)
+const quitWarning = ref(false)
+function quitDesktop(): void {
+  if (activeDownloads.value.length) quitWarning.value = true
+  else quitNow()
+}
+function quitNow(): void {
+  pauseAll()
+  toast('Quit Desktop')
+}
 </script>
 
 <template>
@@ -49,4 +60,5 @@ const open = ref(false)
       </button>
     </template>
   </MarItemMenu>
+  <TemplateQuitDialog v-model:open="quitWarning" @quit="quitNow" />
 </template>

@@ -3,6 +3,8 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import ExampleArc from './ExampleArc.vue'
+import HomeLoadFailed from '../offline/HomeLoadFailed.vue'
+import { offline } from '../offline/connection'
 import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import WorkflowCard from '../WorkflowCard.vue'
@@ -158,7 +160,12 @@ function scrollRow(by: number): void {
       :class="leaving && 'is-leaving'"
       :data-home-tour="listsApps ? 'apps-carousel' : undefined"
     >
+      <HomeLoadFailed
+        v-if="offline"
+        :kind="mix === 'tabs' && kind === 'templates' ? 'workflows' : 'apps'"
+      />
       <ExampleArc
+        v-else
         :items="shown.items"
         :all-label="shown.label"
         :chip="mix === 'topics-kind' ? 'kind' : 'topic'"

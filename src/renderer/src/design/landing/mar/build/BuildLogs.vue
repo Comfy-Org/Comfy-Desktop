@@ -6,7 +6,16 @@ import DialogContent from '../../ui/DialogContent.vue'
 import { instanceById } from '../../useProto'
 import BuildProgress from '../setup/BuildProgress.vue'
 import '../setup/setup.css'
-import { START_LOG, START_STEPS, UPDATE_LOG, UPDATE_STEPS, cancelRun, logs, runs } from './homeRun'
+import {
+  START_LOG,
+  START_STEPS,
+  UPDATE_LOG,
+  UPDATE_STEPS,
+  cancelRun,
+  cancelStart,
+  logs,
+  runs
+} from './homeRun'
 
 /**
  * A build's View logs (a click on its Home tile, or View logs in its menu).
@@ -46,7 +55,9 @@ const log = computed(() =>
 const logsOpen = ref(true)
 watch(open, (o) => o && (logsOpen.value = true))
 function cancel(): void {
-  if (inst.value) cancelRun(inst.value)
+  if (!inst.value) return
+  if (run.value?.kind === 'start') cancelStart(inst.value)
+  else cancelRun(inst.value)
 }
 
 // Running: the whole output, then a new line now and then.

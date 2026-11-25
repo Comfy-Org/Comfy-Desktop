@@ -48,7 +48,8 @@ export function runSecs(t: Template, where: Where): number {
 
 function downloadSecs(t: Template, x: Target, live: TemplateDownload | undefined): number {
   if (live && live.status === 'done') return 0
-  if (live && live.status !== 'cancelled') return secsLeft(live)
+  if (live && live.status === 'downloading' && live.mbps > 0) return secsLeft(live)
+  if (live && live.status !== 'cancelled') return downloadMinutes(live.totalGb - live.doneGb) * 60
   if (x.state === 'new') return Math.max(4, downloadMinutes(totalGb(t) + NEW_BUILD_GB) + 3) * 60
   return needsDownload(x) ? downloadMinutes(totalGb(t)) * 60 : 0
 }

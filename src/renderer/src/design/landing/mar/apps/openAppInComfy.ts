@@ -31,7 +31,6 @@ export interface OpenAppRequest {
 
 export const opening = reactive<{ key: string }>({ key: '' })
 
-const START_MS = 1800
 const SHOW_MS = 450
 
 export const localBuilds = (): ProtoInstance[] =>
@@ -85,13 +84,10 @@ export function openAppInComfy(req: OpenAppRequest, key: string): void {
     return
   }
   opening.key = key
-  setTimeout(
-    () => {
-      opening.key = ''
-      land(r.inst, req.graph)
-    },
-    isRunning(r.inst) ? SHOW_MS : START_MS
-  )
+  setTimeout(() => {
+    opening.key = ''
+    land(r.inst, req.graph)
+  }, SHOW_MS)
 }
 
 const MODELS_LIKE = { image: 'image_qwen_image_edit_2511', video: 'video_wan2_2_14B_i2v' }

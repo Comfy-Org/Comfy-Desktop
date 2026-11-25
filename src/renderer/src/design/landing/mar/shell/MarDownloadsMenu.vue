@@ -2,108 +2,119 @@
 import { computed, ref, watch } from 'vue'
 import {
   ArrowDownToLine,
+  Ban,
+  CircleAlert,
   CircleCheck,
-  CirclePause,
-  HardDrive,
+  FolderSearch,
   LoaderCircle,
   Pause,
+  PauseCircle,
   Play,
-  TriangleAlert,
-  Undo2,
+  RotateCcw,
   X
 } from 'lucide-vue-next'
 import { PopoverRoot, PopoverTrigger } from 'reka-ui'
 import PopoverContent from '../../ui/PopoverContent.vue'
-import { openDetail, toast } from '../../useProto'
+import { toast } from '../../useProto'
 import {
+  DOWNLOAD_COPY,
   cancel,
-  freeUpSpace,
+  fileRowsOf,
   markSeen,
-  menuLine,
   needsAttention,
-  openAndRun,
   overallProgress,
   pause,
-  progressOf,
   remove as removeDownload,
   resume,
   retry,
   templateDownloads,
+  trayLabel,
   unseenDone,
-  type TemplateDownload
+  type DownloadFileRow
 } from '../downloads/templateDownloads'
 import DownloadRing from '../downloads/DownloadRing.vue'
 
-/**
- * The title bar's downloads popup, as Desktop ships it (Comfy-Desktop#2017,
- * comfyTitlePopup/DownloadsView.vue): an uppercase label on top, no divider
- * lines, rows on a card fill with the progress drawn through them, and
- * View All Downloads as a menu-style row at the foot.
- */
-interface Download {
-  id: string
+type RowStatus = DownloadFileRow['status']
+
+interface Row {
+  key: string
   name: string
-  sub: string
-  progress?: number
+  status: RowStatus
+  progress: number
+  line: string
+  act?: (action: 'pause' | 'resume' | 'retry' | 'close') => void
 }
 
-const items = ref<Download[]>([
+const extras = ref<Row[]>([
   {
-    id: 'flux',
+    key: 'flux',
     name: 'flux1-dev-fp8.safetensors',
-    sub: '6.2 of 11.9 GB · 48 MB/s · 2 min left',
-    progress: 0.52
+    status: 'downloading',
+    progress: 0.52,
+    line: '52% · 48.0 MB/s · 2 min left'
   },
-  { id: 'vae', name: 'ae.safetensors', sub: 'Show in Finder' }
+  {
+    key: 'vae',
+    name: 'ae.safetensors',
+    status: 'done',
+    progress: 1,
+    line: 'Downloaded · 319.4 MB'
+  }
 ])
 const open = ref(false)
 watch(open, (v) => v && markSeen())
 watch(unseenDone, (v) => v && open.value && markSeen())
 
-const tpl = computed(() => templateDownloads.list)
+const tplRows = computed<Row[]>(() =>
+  templateDownloads.list.flatMap(fileRowsOf).map((r) => ({
+    key: r.key,
+    name: r.name,
+    status: r.status,
+    progress: r.progress,
+    line: r.line,
+    act: (action) => {
+      const id = r.download.id
+      if (action === 'pause') pause(id)
+      else if (action === 'resume') resume(id)
+      else if (action === 'retry') retry(id)
+      else if (terminal(r.status)) removeDownload(id)
+      else cancel(id)
+    }
+  }))
+)
+const rows = computed(() => [...tplRows.value, ...extras.value])
 const live = computed(() =>
-  tpl.value.filter((d) => d.status === 'downloading' || d.status === 'paused')
+  templateDownloads.list.filter((d) => d.status === 'downloading' || d.status === 'paused')
 )
 const percent = computed(() => Math.floor(overallProgress.value * 100))
-const triggerLabel = computed(() => {
-  if (needsAttention.value) return 'Downloads, one needs you'
-  if (live.value.length) return `Downloads, ${percent.value}%`
-  if (unseenDone.value) return 'Downloads, ready to run'
-  return 'Downloads'
-})
 
-function remove(d: Download): void {
-  items.value = items.value.filter((x) => x.id !== d.id)
+const terminal = (s: RowStatus): boolean => s === 'done' || s === 'failed' || s === 'cancelled'
+const canRetry = (s: RowStatus): boolean => s === 'failed' || s === 'cancelled'
+const hasPauseToggle = (s: RowStatus): boolean => s === 'downloading' || s === 'paused'
+const keepsActionInView = (s: RowStatus): boolean => hasPauseToggle(s) || s === 'failed'
+const closeLabel = (s: RowStatus): string =>
+  terminal(s) ? DOWNLOAD_COPY.remove : DOWNLOAD_COPY.cancel
+
+function act(r: Row, action: 'pause' | 'resume' | 'retry' | 'close'): void {
+  if (r.act) return r.act(action)
+  if (action === 'close') extras.value = extras.value.filter((x) => x.key !== r.key)
 }
-function fill(pct: number): Record<string, string> {
+function reveal(): void {
+  toast(DOWNLOAD_COPY.showInFolder)
+}
+function fill(r: Row): Record<string, string> | undefined {
+  if (r.status !== 'downloading' && r.status !== 'pending') return undefined
+  const pct = r.status === 'pending' ? 0 : r.progress * 100
   return {
-    background: `linear-gradient(90deg, var(--mar-dl-card) 0%, var(--mar-dl-card) ${pct}%, var(--mar-dl-rest) ${pct + 0.9}%)`
+    background: `linear-gradient(90deg, var(--mar-dl-card) 0%, var(--mar-dl-card) ${pct}%, var(--mar-dl-rest) ${Math.min(100, pct + 0.91)}%)`
   }
 }
-function rowStyle(d: Download): Record<string, string> | undefined {
-  if (d.progress === undefined) return undefined
-  return fill(d.progress * 100)
-}
-function tplStyle(d: TemplateDownload): Record<string, string> | undefined {
-  if (d.status === 'done' || d.status === 'cancelled') return undefined
-  return fill(progressOf(d) * 100)
-}
-function show(d: TemplateDownload): void {
+function viewAll(): void {
   open.value = false
-  openDetail('template', d.id)
+  toast(DOWNLOAD_COPY.viewAllLabel)
 }
-function act(fn: (id: string) => void, d: TemplateDownload): void {
-  open.value = false
-  fn(d.id)
-}
-const TEXT_ACTION: Partial<
-  Record<TemplateDownload['status'], { label: string; run: (id: string) => void; leave?: boolean }>
-> = {
-  failed: { label: 'Retry', run: retry },
-  disk: { label: 'Free up space', run: freeUpSpace, leave: true },
-  cancelled: { label: 'Resume', run: resume },
-  done: { label: 'Open and run', run: openAndRun, leave: true }
-}
+const ICON_BTN =
+  'inline-flex size-8 shrink-0 items-center justify-center rounded-control bg-secondary-background text-base-foreground hover:bg-secondary-background-hover'
 </script>
 
 <template>
@@ -111,8 +122,8 @@ const TEXT_ACTION: Partial<
     <PopoverTrigger as-child>
       <button
         type="button"
-        :aria-label="triggerLabel"
-        :title="triggerLabel"
+        :aria-label="trayLabel"
+        :title="trayLabel"
         data-testid="downloads-trigger"
         :class="[
           'relative inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-control outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
@@ -139,142 +150,110 @@ const TEXT_ACTION: Partial<
     </PopoverTrigger>
     <PopoverContent
       align="end"
-      class="flex w-[380px] flex-col p-0 [--mar-dl-card:var(--color-secondary-background-hover)] [--mar-dl-rest:var(--color-secondary-background)]"
+      class="flex max-h-[520px] w-[380px] flex-col p-0 [--mar-dl-card:var(--color-secondary-background-hover)] [--mar-dl-rest:var(--color-secondary-background)]"
     >
-      <header class="px-4 pt-3.5 pb-1">
+      <header class="flex flex-none items-baseline justify-between gap-2 px-4 pt-4 pb-3">
         <h2 class="m-0 text-[11px] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
-          Downloads
+          {{ DOWNLOAD_COPY.title }}
         </h2>
-      </header>
-      <div
-        v-if="!items.length && !tpl.length"
-        class="px-4 py-6 text-center text-[12px] text-muted-foreground"
-      >
-        No downloads yet
-      </div>
-      <ul v-else class="m-0 flex list-none flex-col gap-2 p-4">
-        <li
-          v-for="d in tpl"
-          :key="`tpl-${d.id}`"
-          class="flex cursor-pointer items-center gap-2 rounded-lg bg-(--mar-dl-card) py-3 pr-2 pl-4"
-          :style="tplStyle(d)"
-          :data-download="d.status"
-          @click="show(d)"
+        <button
+          type="button"
+          class="rounded-sm text-[12px] text-base-foreground hover:underline"
+          :aria-label="DOWNLOAD_COPY.viewAllLabel"
+          @click="viewAll"
         >
-          <LoaderCircle
-            v-if="d.status === 'downloading'"
-            :size="16"
-            class="mt-0.5 shrink-0 self-start animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-          />
-          <CirclePause
-            v-else-if="d.status === 'paused'"
-            :size="16"
-            class="mt-0.5 shrink-0 self-start text-muted-foreground"
-          />
-          <TriangleAlert
-            v-else-if="d.status === 'failed'"
-            :size="16"
-            class="mt-0.5 shrink-0 self-start text-status-danger"
-          />
-          <HardDrive
-            v-else-if="d.status === 'disk'"
-            :size="16"
-            class="mt-0.5 shrink-0 self-start text-comfy-yellow"
-          />
-          <Undo2
-            v-else-if="d.status === 'cancelled'"
-            :size="16"
-            class="mt-0.5 shrink-0 self-start text-muted-foreground"
-          />
-          <CircleCheck v-else :size="16" class="mt-0.5 shrink-0 self-start text-status-running" />
-          <span class="flex min-w-0 flex-auto flex-col">
-            <span class="truncate text-[14px] leading-5 text-base-foreground" :title="d.title">{{
-              d.title
-            }}</span>
-            <span
-              class="line-clamp-2 text-[12px] leading-[1.3] text-muted-foreground tabular-nums"
-              >{{ menuLine(d) }}</span
-            >
+          {{ DOWNLOAD_COPY.viewAll }}
+        </button>
+      </header>
+      <div v-if="!rows.length" class="px-4 pt-4 pb-6 text-center text-[12px] text-muted-foreground">
+        {{ DOWNLOAD_COPY.empty }}
+      </div>
+      <ul
+        v-else
+        class="mx-4 mt-0 mb-4 flex min-h-0 list-none flex-col overflow-y-auto rounded-[14px] bg-(--mar-dl-rest) p-0 [scrollbar-width:none]"
+      >
+        <li
+          v-for="r in rows"
+          :key="r.key"
+          class="group relative flex flex-none items-center gap-2 border-t border-border-default py-3 pr-2.5 pl-[18px] outline-none first:rounded-t-[14px] first:border-t-0 last:rounded-b-[14px] focus-within:bg-(--mar-dl-card) hover:bg-(--mar-dl-card)"
+          :class="r.status === 'done' && 'cursor-pointer'"
+          :style="fill(r)"
+          :data-download="r.status"
+          tabindex="0"
+          @click="r.status === 'done' && reveal()"
+        >
+          <span class="mt-0.5 inline-flex size-4 shrink-0 self-start text-base-foreground">
+            <CircleCheck v-if="r.status === 'done'" :size="16" />
+            <CircleAlert v-else-if="r.status === 'failed'" :size="16" class="text-status-danger" />
+            <Ban v-else-if="r.status === 'cancelled'" :size="16" class="text-muted-foreground" />
+            <PauseCircle v-else-if="r.status === 'paused'" :size="16" />
+            <LoaderCircle
+              v-else
+              :size="16"
+              class="animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+            />
           </span>
-          <button
-            v-if="TEXT_ACTION[d.status]"
-            type="button"
-            class="ml-1 h-7 shrink-0 rounded-control bg-secondary-background px-2.5 text-[12px] font-medium text-base-foreground hover:bg-secondary-background-hover"
-            @click.stop="
-              TEXT_ACTION[d.status]!.leave
-                ? act(TEXT_ACTION[d.status]!.run, d)
-                : TEXT_ACTION[d.status]!.run(d.id)
+          <span class="flex min-w-0 flex-auto flex-col">
+            <span class="truncate text-[14px] leading-5 text-base-foreground" :title="r.name">{{
+              r.name
+            }}</span>
+            <span class="truncate text-[12px] leading-[1.2] text-muted-foreground tabular-nums">{{
+              r.line
+            }}</span>
+          </span>
+          <span
+            v-if="hasPauseToggle(r.status) || canRetry(r.status) || r.status === 'done'"
+            class="shrink-0 items-center"
+            :class="
+              keepsActionInView(r.status)
+                ? 'flex'
+                : 'hidden group-focus-within:flex group-hover:flex'
             "
           >
-            {{ TEXT_ACTION[d.status]!.label }}
-          </button>
-          <button
-            v-else-if="d.status === 'downloading' || d.status === 'paused'"
-            type="button"
-            class="ml-1 inline-flex size-8 shrink-0 items-center justify-center rounded-control text-muted-foreground hover:text-base-foreground"
-            :aria-label="d.status === 'paused' ? 'Resume' : 'Pause'"
-            :title="d.status === 'paused' ? 'Resume' : 'Pause'"
-            @click.stop="d.status === 'paused' ? resume(d.id) : pause(d.id)"
-          >
-            <Play v-if="d.status === 'paused'" :size="15" />
-            <Pause v-else :size="15" />
-          </button>
+            <button
+              v-if="hasPauseToggle(r.status)"
+              type="button"
+              :class="ICON_BTN"
+              :title="r.status === 'paused' ? DOWNLOAD_COPY.resume : DOWNLOAD_COPY.pause"
+              :aria-label="r.status === 'paused' ? DOWNLOAD_COPY.resume : DOWNLOAD_COPY.pause"
+              @click.stop="act(r, r.status === 'paused' ? 'resume' : 'pause')"
+            >
+              <Play v-if="r.status === 'paused'" :size="16" />
+              <Pause v-else :size="16" />
+            </button>
+            <button
+              v-else-if="canRetry(r.status)"
+              type="button"
+              :class="ICON_BTN"
+              :title="DOWNLOAD_COPY.retry"
+              :aria-label="DOWNLOAD_COPY.retry"
+              data-download-retry
+              @click.stop="act(r, 'retry')"
+            >
+              <RotateCcw :size="16" />
+            </button>
+            <button
+              v-else
+              type="button"
+              :class="ICON_BTN"
+              :title="DOWNLOAD_COPY.showInFolder"
+              :aria-label="DOWNLOAD_COPY.showInFolder"
+              @click.stop="reveal"
+            >
+              <FolderSearch :size="16" />
+            </button>
+          </span>
           <button
             type="button"
             class="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-muted-foreground hover:text-base-foreground"
-            :aria-label="
-              d.status === 'done' || d.status === 'cancelled' ? 'Remove from list' : 'Cancel'
-            "
-            :title="d.status === 'done' || d.status === 'cancelled' ? 'Remove from list' : 'Cancel'"
-            @click.stop="
-              d.status === 'done' || d.status === 'cancelled' ? removeDownload(d.id) : cancel(d.id)
-            "
-          >
-            <X :size="16" />
-          </button>
-        </li>
-        <li
-          v-for="d in items"
-          :key="d.id"
-          class="flex items-center gap-2 rounded-lg bg-(--mar-dl-card) px-4 py-3"
-          :class="d.progress === undefined && 'cursor-pointer'"
-          :style="rowStyle(d)"
-          @click="d.progress === undefined && toast('Show in Finder')"
-        >
-          <LoaderCircle
-            v-if="d.progress !== undefined"
-            :size="16"
-            class="mt-0.5 shrink-0 self-start animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-          />
-          <CircleCheck v-else :size="16" class="mt-0.5 shrink-0 self-start" />
-          <span class="flex min-w-0 flex-auto flex-col">
-            <span class="truncate text-[14px] leading-5 text-base-foreground" :title="d.name">{{
-              d.name
-            }}</span>
-            <span class="truncate text-[12px] leading-[1.2] text-muted-foreground">{{
-              d.sub
-            }}</span>
-          </span>
-          <button
-            type="button"
-            class="ml-1 inline-flex size-8 shrink-0 items-center justify-center rounded-control text-muted-foreground hover:text-base-foreground"
-            :aria-label="d.progress === undefined ? 'Remove from list' : 'Cancel'"
-            :title="d.progress === undefined ? 'Remove from list' : 'Cancel'"
-            @click.stop="remove(d)"
+            :title="closeLabel(r.status)"
+            :aria-label="closeLabel(r.status)"
+            @click.stop="act(r, 'close')"
           >
             <X :size="16" />
           </button>
         </li>
       </ul>
-      <footer class="flex p-1">
-        <button
-          type="button"
-          class="h-8 flex-auto rounded-control px-3 text-left text-[13px] text-base-foreground outline-none hover:bg-[oklch(1_0_0/0.07)] focus-visible:bg-[oklch(1_0_0/0.07)]"
-          @click="toast('View All Downloads')"
-        >
-          View All Downloads
-        </button>
-      </footer>
     </PopoverContent>
   </PopoverRoot>
 </template>

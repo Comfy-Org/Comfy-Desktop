@@ -263,6 +263,8 @@ export function toast(message: string): void {
 /** A proposal can take New Instance over (mar/setup): each returns true when it did. */
 export const newInstanceHooks: (() => boolean)[] = []
 
+export const launchHooks: ((inst: ProtoInstance) => void)[] = []
+
 /** Host hooks - LandingPrototypes swaps these for real actions in-app. */
 export const hostActions = {
   launch(inst: ProtoInstance, what?: string): void {
@@ -272,6 +274,7 @@ export const hostActions = {
     }
     proto.detail = null
     proto.activeInstanceId = inst.id
+    for (const hook of launchHooks) hook(inst)
     // The environment opens in its own tab, next to Home - or comes to the
     // front if it's open, loading the workflow there.
     const existing = proto.tabs.find((t) => t.instanceId === inst.id)

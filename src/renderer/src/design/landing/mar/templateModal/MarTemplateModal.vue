@@ -84,6 +84,7 @@ import ZoomControl from '../assets/ZoomControl.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import TplDownloadActions from '../downloads/TplDownloadActions.vue'
 import { downloadFor, startDownload } from '../downloads/templateDownloads'
+import { START_COPY } from '../build/comfyStart'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
 // wears them, so the two read as one view. Imported for its styles.
 import '../assets/AssetDetail.vue'
@@ -267,8 +268,7 @@ const keptGb = computed(() =>
 )
 const DOWNLOAD_NEEDS: Record<string, string> = {
   paused: 'Paused',
-  failed: 'Download stopped',
-  disk: 'Not enough space',
+  failed: 'Download failed',
   done: 'Installed'
 }
 const view = ref<'result' | 'graph'>('result')
@@ -356,8 +356,7 @@ const busyLabel = computed(() => {
   if (s.state === 'update') return `Updating ${s.inst.name}`
   if (s.state === 'nodes') return 'Installing node packs'
   if (s.inst.kind === 'cloud') return `Opening ${s.inst.name}`
-  if (s.state === 'running') return `Opening in ${s.inst.name}`
-  return `Starting ${s.inst.name}`
+  return START_COPY.title
 })
 
 const creditsSheet = ref(false)
@@ -388,6 +387,11 @@ function confirm(): void {
   if (s.state === 'download' && s.inst.kind === 'local' && !saved.value) {
     startDownload(t, s.inst)
     if (autorunOn.value) openPrepTab(t, s.inst)
+    return
+  }
+  if (s.inst.kind === 'local' && !steps.value.length && s.state !== 'download') {
+    if (autorunOn.value && autoRuns(s)) runTemplate(t, s.inst)
+    else hostActions.launch(s.inst, t.title)
     return
   }
   phase.value = 'busy'
@@ -1011,7 +1015,7 @@ const full = computed(() => can.value.onboarding)
 
           <!-- At the bottom: what happens, then the one action. -->
           <footer v-if="bgDownload" class="mad-actions">
-            <TplDownloadActions :download="bgDownload" @close="open = false" />
+            <TplDownloadActions :download="bgDownload" />
             <button
               v-if="cloudOffer && bgDownload.status !== 'done'"
               type="button"

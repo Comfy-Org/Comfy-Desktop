@@ -10,6 +10,9 @@ import MarCloudBar from '../mar/shell/MarCloudBar.vue'
 import { onCloud } from '../mar/shell/surface'
 import PreparingTab from '../mar/autorun/PreparingTab.vue'
 import { prepOfTab } from '../mar/autorun/prepTabs'
+import StartingTab from '../mar/build/StartingTab.vue'
+import { runs } from '../mar/build/homeRun'
+import { START_COPY, startFailures } from '../mar/build/comfyStart'
 
 /**
  * A build's tab, under its ComfyUI. In the app with your real builds, main
@@ -22,6 +25,12 @@ const inst = computed(() => (tab.value ? instanceById(tab.value.instanceId) : un
 const state = computed(() => (inst.value ? buildState[inst.value.id] : undefined))
 const real = computed(() => proto.live && !!inst.value?.source)
 const prep = computed(() => (tab.value ? prepOfTab(tab.value.id) : undefined))
+const starting = computed(
+  () =>
+    !!inst.value &&
+    !real.value &&
+    (runs.get(inst.value.id)?.kind === 'start' || startFailures.has(inst.value.id))
+)
 </script>
 
 <template>
@@ -30,6 +39,7 @@ const prep = computed(() => (tab.value ? prepOfTab(tab.value.id) : undefined))
   <MarCloudBar v-if="onCloud" />
   <!-- A mock of ComfyUI's graph editor (mar/graph). -->
   <PreparingTab v-if="prep && !prep.ready" :prep="prep" />
+  <StartingTab v-else-if="starting && inst" :inst="inst" />
   <MarGraph
     v-else-if="tab && inst && !real && state?.kind !== 'error'"
     :workflow="tab.workflow === 'Untitled workflow' ? undefined : tab.workflow"
@@ -41,16 +51,16 @@ const prep = computed(() => (tab.value ? prepOfTab(tab.value.id) : undefined))
     <InstanceGlyph :inst="inst" size="lg" />
     <template v-if="state?.kind === 'error'">
       <p class="flex items-center gap-2 text-body font-medium">
-        <TriangleAlert :size="15" class="text-status-danger" />{{ inst.name }} couldn't start
+        <TriangleAlert :size="15" class="text-status-danger" />{{ START_COPY.failedTitle }}
       </p>
       <p class="max-w-md text-ui text-muted-foreground">{{ state.message }}</p>
       <Button variant="secondary" size="sm" @click="closeTab(tab.id)">Close tab</Button>
     </template>
     <template v-else-if="real">
       <p class="flex items-center gap-2 text-body font-medium">
-        <Loader2 :size="15" class="animate-spin" />Starting {{ inst.name }}
+        <Loader2 :size="15" class="animate-spin" />{{ START_COPY.title }}
       </p>
-      <p class="text-ui text-muted-foreground">ComfyUI opens here when it's ready.</p>
+      <p class="text-ui text-muted-foreground">{{ inst.name }}</p>
     </template>
     <template v-else>
       <p class="text-body font-medium">{{ inst.name }}</p>

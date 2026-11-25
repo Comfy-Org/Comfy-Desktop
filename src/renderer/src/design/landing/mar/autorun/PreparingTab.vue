@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { HardDrive, Pause, Play, RotateCw, TriangleAlert, X } from 'lucide-vue-next'
+import { Ban, CircleAlert, Pause, Play, RotateCcw, X } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { hostActions, instances, proto, toast } from '../../useProto'
@@ -8,14 +8,16 @@ import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
 import { runBlock } from '../runCredits'
 import {
+  DOWNLOAD_COPY,
   cancel,
-  copyFor,
+  currentFile,
+  detailLine,
   downloadFor,
-  freeUpSpace,
   pause,
   progressOf,
   resume,
-  retry
+  retry,
+  statusLine
 } from '../downloads/templateDownloads'
 import { mediaFor, targetFor, tplById } from '../templateModal/templateData'
 import { runTemplate, shortName } from './autorun'
@@ -25,19 +27,21 @@ const { prep } = defineProps<{ prep: PrepTab }>()
 
 const t = computed(() => tplById(prep.templateId))
 const d = computed(() => downloadFor(prep.templateId))
-const copy = computed(() => (d.value ? copyFor(d.value) : undefined))
-const line = computed(() =>
-  d.value?.status === 'downloading'
-    ? copy.value?.detail.replace(/ · \d+ MB\/s/, '')
-    : copy.value?.detail
-)
+const line = computed(() => {
+  const x = d.value
+  if (!x) return ''
+  if (x.status === 'failed') return x.error ?? ''
+  if (x.status === 'downloading' || x.status === 'paused') return detailLine(x)
+  return statusLine(x)
+})
 const title = computed(() => {
-  const s = d.value?.status
+  const x = d.value
   const name = t.value ? shortName(t.value) : ''
-  if (s === 'failed') return `${name} · download stopped`
-  if (s === 'disk') return `${name} · not enough disk space`
-  if (s === 'paused') return `${name} · paused`
-  return `Preparing ${name}`
+  if (!x) return name
+  if (x.status === 'failed') return `${name} · ${DOWNLOAD_COPY.failed}`
+  if (x.status === 'cancelled') return `${name} · ${DOWNLOAD_COPY.cancelled}`
+  const f = currentFile(x)
+  return f.count > 1 ? `${name} · ${f.name} (${f.index} of ${f.count})` : `${name} · ${f.name}`
 })
 const live = computed(() => d.value?.status === 'downloading' || d.value?.status === 'paused')
 
@@ -86,16 +90,16 @@ function tryCloud(): void {
         />
         <div class="min-w-0">
           <p class="m-0 flex items-center gap-1.5 truncate text-body font-medium">
-            <TriangleAlert
+            <CircleAlert
               v-if="d.status === 'failed'"
               :size="14"
               class="shrink-0 text-status-danger"
             />
-            <HardDrive
-              v-else-if="d.status === 'disk'"
+            <Ban
+              v-else-if="d.status === 'cancelled'"
               :size="14"
-              class="shrink-0 text-comfy-yellow"
-            />{{ title }}
+              class="shrink-0 text-muted-foreground"
+            /><span class="truncate" :title="title">{{ title }}</span>
           </p>
           <p class="m-0 text-ui text-muted-foreground tabular-nums">{{ line }}</p>
         </div>
@@ -109,26 +113,21 @@ function tryCloud(): void {
           :class="
             d.status === 'failed'
               ? 'bg-status-danger'
-              : d.status === 'disk'
-                ? 'bg-comfy-yellow'
-                : d.status === 'paused'
-                  ? 'bg-muted-foreground'
-                  : 'bg-base-foreground'
+              : d.status === 'paused'
+                ? 'bg-muted-foreground'
+                : 'bg-base-foreground'
           "
           :style="{ transform: `scaleX(${progressOf(d)})` }"
         />
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <Button v-if="d.status === 'failed'" variant="primary" size="md" @click="retry(d.id)">
-          <RotateCw :size="14" />Retry
-        </Button>
         <Button
-          v-else-if="d.status === 'disk'"
+          v-if="d.status === 'failed' || d.status === 'cancelled'"
           variant="primary"
           size="md"
-          @click="freeUpSpace(d.id)"
+          @click="retry(d.id)"
         >
-          <HardDrive :size="14" />Free up space
+          <RotateCcw :size="14" />{{ DOWNLOAD_COPY.retry }}
         </Button>
         <Button
           v-else-if="live"
@@ -137,9 +136,13 @@ function tryCloud(): void {
           @click="d.status === 'paused' ? resume(d.id) : pause(d.id)"
         >
           <Play v-if="d.status === 'paused'" :size="14" />
-          <Pause v-else :size="14" />{{ d.status === 'paused' ? 'Resume' : 'Pause' }}
+          <Pause v-else :size="14" />{{
+            d.status === 'paused' ? DOWNLOAD_COPY.resume : DOWNLOAD_COPY.pause
+          }}
         </Button>
-        <Button variant="ghost" size="md" @click="cancel(d.id)"><X :size="14" />Cancel</Button>
+        <Button v-if="d.status !== 'cancelled'" variant="ghost" size="md" @click="cancel(d.id)"
+          ><X :size="14" />{{ DOWNLOAD_COPY.cancel }}</Button
+        >
         <span class="flex-1" />
         <Button
           v-if="cloudOffer"

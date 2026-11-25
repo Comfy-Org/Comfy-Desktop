@@ -48,6 +48,7 @@ import { PROD_EXAMPLES, prodApp, prodClip, prodStill } from '../apps/prodApps'
 import { goIn, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
+import { offline, OFFLINE_COPY } from '../offline/connection'
 import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import ExampleTile from '../apps/ExampleTile.vue'
@@ -426,11 +427,14 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   <MarPage
     :title="asApps ? 'Apps' : 'Explore'"
     :no-results="empty"
-    :error-title="asApps ? `Can't load Apps` : `Can't load Explore`"
+    :state="offline ? 'error' : undefined"
+    :error-title="asApps ? OFFLINE_COPY.appsTitle : `Can't load Explore`"
     :error-text="
-      can.learn
-        ? 'Hub workflows, models and tutorials come from the internet. Your own workflows are still in Workflows.'
-        : 'Apps and workflows come from the internet. Check your connection and try again.'
+      asApps
+        ? OFFLINE_COPY.appsBody
+        : can.learn
+          ? 'Hub workflows, models and tutorials come from the internet. Your own workflows are still in Workflows.'
+          : 'Apps and workflows come from the internet. Check your connection and try again.'
     "
     @clear="clearFilters"
   >

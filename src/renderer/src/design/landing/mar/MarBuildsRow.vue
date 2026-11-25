@@ -25,6 +25,7 @@ import {
   viewLogs
 } from './build/homeRun'
 import type { ProtoInstance } from '../mock'
+import { START_COPY, startFailures } from './build/comfyStart'
 import './setup/setup.css'
 
 /** Home's builds in Mar's proposal (UI Playground › Build on Home): what
@@ -45,15 +46,19 @@ const shown = computed(() =>
 const machine = computed(() => can.value.exploreApps)
 // The drawing says where it runs; the line says on what.
 const detail = (i: ProtoInstance): string => [i.gpu, i.version].filter(Boolean).join(' · ')
-const RUN_LABEL = { start: 'Starting ComfyUI', update: 'Updating', uninstall: 'Uninstalling' }
+const RUN_LABEL = { update: 'Updating', uninstall: 'Uninstalling' }
 // In progress, a tile says what and how far, and the version under the name.
 function status(i: ProtoInstance): { label: string; live?: boolean; busy?: boolean } {
   const run = runs.get(i.id)
+  if (run?.kind === 'start') return { label: START_COPY.homeStatus, busy: true }
   if (run)
     return {
       label: `${RUN_LABEL[run.kind]} · ${run.percent}%`,
       busy: true
     }
+  const failed = startFailures.get(i.id)
+  if (failed && failed.kind !== 'cannot-connect')
+    return { label: failed.kind === 'crashed' ? START_COPY.crashed : START_COPY.didntStart }
   if (nowOf(i) === 'running') return { label: 'Running', live: true }
   // A build that isn't running is ready to: the Home starts, it doesn't
   // manage, so no "Stopped" here. The status always says what it does;
@@ -70,12 +75,14 @@ const note = (i: ProtoInstance): string | undefined =>
 // shows the logs while it is busy. The hover hint names it.
 function hint(i: ProtoInstance): string {
   const run = runs.get(i.id)
-  if (run) return run.kind === 'uninstall' ? '' : 'Click to view logs'
+  if (run) return run.kind === 'uninstall' ? '' : START_COPY.clickToViewLogs
+  if (startFailures.has(i.id)) return START_COPY.clickToViewLogs
   return nowOf(i) === 'running' || i.kind !== 'local' ? 'Click to open' : 'Click to start'
 }
 function open(i: ProtoInstance): void {
   const run = runs.get(i.id)
   if (run?.kind === 'start' || run?.kind === 'update') viewLogs(i)
+  else if (startFailures.has(i.id)) hostActions.launch(i)
   else if (!run) startBuild(i)
 }
 // No build on this computer (all uninstalled, or Cloud only): the row ends
@@ -144,7 +151,7 @@ const count = computed(() => Math.min(ROW_SLOTS, filled.value + (newTile.value ?
             :note="note(i)"
             :hint="hint(i)"
             :status="status(i)"
-            :percent="runs.get(i.id)?.percent ?? null"
+            :percent="runs.get(i.id)?.kind === 'start' ? null : (runs.get(i.id)?.percent ?? null)"
             :openable="runs.get(i.id)?.kind !== 'uninstall'"
             :lines="instanceMenu(i)"
             :data-home-tour="tourAnchor(i)"

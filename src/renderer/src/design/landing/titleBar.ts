@@ -29,6 +29,8 @@ import {
 } from './mar/create/createScreen'
 import { prepOfTab } from './mar/autorun/prepTabs'
 import { downloadFor, progressOf } from './mar/downloads/templateDownloads'
+import { runs } from './mar/build/homeRun'
+import { startFailures } from './mar/build/comfyStart'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
@@ -144,8 +146,15 @@ function prepMarks(
   if (!d) return {}
   return {
     progress: progressOf(d),
-    alert: d.status === 'failed' || d.status === 'disk' ? d.status : undefined
+    alert: d.status === 'failed' ? d.status : undefined
   }
+}
+
+function startMarks(
+  instanceId: string
+): Pick<NonNullable<TitleBarState['tabs']>[number], 'starting' | 'startFailed'> {
+  if (runs.get(instanceId)?.kind === 'start') return { starting: true }
+  return startFailures.has(instanceId) ? { startFailed: true } : {}
 }
 
 /** What Mar's tabs title bar adds: each open workflow as a tab, named
@@ -168,7 +177,8 @@ function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'
           : t.workflow,
     build: t.title,
     kind: kindOf(t.instanceId),
-    ...prepMarks(t.id)
+    ...prepMarks(t.id),
+    ...startMarks(t.instanceId)
   }))
   if (createInTab.value && createScreen.open)
     tabs.splice(newTabIndex(), 0, {

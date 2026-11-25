@@ -30,6 +30,8 @@ import { CREDITS_STATES, creditsState } from './credits'
 import { WF_CASES, tplCase } from './templateModal/templateData'
 import { DOWNLOAD_SCENARIOS, downloadScenario } from './downloads/templateDownloads'
 import { DL_FOOTERS, dlFooter } from './downloads/dlFooter'
+import { CONNECTIONS, connection } from './offline/connection'
+import { BUILD_STARTS, buildStart } from './build/comfyStart'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
@@ -160,6 +162,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'wfCase', show: () => when.wfCase.value },
   { id: 'downloadScenario', show: () => when.downloadScenario.value },
   { id: 'dlFooter', show: () => when.dlFooter.value },
+  { id: 'connection', show: () => when.connection.value },
+  { id: 'buildStart', show: () => when.buildStart.value },
   { id: 'openAnswer', show: () => when.openAnswer.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
@@ -371,6 +375,17 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('dlFooter')" label="Download footer">
             <Seg v-model="dlFooter.id" label="Download footer" :options="DL_FOOTERS" />
+          </Row>
+          <Row :show="shows('connection')" label="Connection">
+            <Seg v-model="connection.id" label="Connection" :options="CONNECTIONS" />
+          </Row>
+          <Row :show="shows('buildStart')" label="Build start">
+            <Select
+              v-model="buildStart.id"
+              :options="BUILD_STARTS"
+              class="w-full"
+              data-testid="build-start"
+            />
           </Row>
           <Row :show="shows('openAnswer')" label="Open in ComfyUI answers">
             <Select v-model="openAnswer.id" :options="OPEN_ANSWERS" class="w-full" />

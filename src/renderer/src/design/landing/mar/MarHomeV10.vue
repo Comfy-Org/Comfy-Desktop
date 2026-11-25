@@ -10,6 +10,8 @@ import StarterCards from '../parts/StarterCards.vue'
 import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
 import ExampleArc from './userStates/ExampleArc.vue'
+import HomeLoadFailed from './offline/HomeLoadFailed.vue'
+import { offline } from './offline/connection'
 import HomeArcMix from './userStates/HomeArcMix.vue'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
@@ -223,6 +225,7 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
            on; from Milestone 3 Apps | Workflows tabs sit over it (layout in
            UI Playground › Apps and templates). -->
       <HomeArcMix v-if="can.explore" class="mt-6" />
+      <HomeLoadFailed v-else-if="can.exploreApps && offline" class="mt-6" />
       <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
       <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the

@@ -25,9 +25,11 @@ import { BUILD_NAME, flow, showInstall } from '../setup/setupFlow'
 import {
   autoStart,
   cancelRun,
+  cancelStart,
   hasUpdate,
   nowOf,
   restartBuild,
+  runs,
   startBuild,
   stopBuild,
   uninstallBuild,
@@ -200,7 +202,7 @@ export function instanceTarget(i: ProtoInstance): BuildMenuTarget {
     toggleAutoStart: () => (autoStart.id = autoStart.id === i.id ? '' : i.id),
     // Starting or updating: its steps and log; running: its ComfyUI log window.
     viewLogs: () => viewLogs(i),
-    cancel: () => cancelRun(i),
+    cancel: () => (runs.get(i.id)?.kind === 'start' ? cancelStart(i) : cancelRun(i)),
     restart: () => restartBuild(i),
     stop: () => stopBuild(i),
     manage: () => openBuild(i.id),

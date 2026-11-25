@@ -44,6 +44,8 @@ import { createInput } from './create/createInput'
 import { agentOpens } from './create/agentOpens'
 import { createScreen } from './create/createScreen'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
+import { connection } from './offline/connection'
+import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
 
 /**
@@ -155,6 +157,8 @@ export const when = {
         (inShell.value && proto.page === 'explore') ||
         templateDownloads.list.length > 0)
   ),
+  connection: computed(() => inShell.value || proto.tabs.length > 0),
+  buildStart: computed(() => inShell.value || proto.tabs.length > 0),
   tplCases: computed(
     () =>
       can.value.onboarding &&
@@ -283,6 +287,8 @@ export const TWEAKS = {
   wfCase: one(tplCase, 'catalog'),
   downloadScenario: one(downloadScenario, 'normal'),
   dlFooter: one(dlFooter, 'button'),
+  connection: one(connection, 'online'),
+  buildStart: one(buildStart, 'starts'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
   deployState: {
     isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),

@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { ChevronDown, CircleCheck, Home, Plus, X } from 'lucide-vue-next'
+import {
+  ChevronDown,
+  CircleCheck,
+  Home,
+  LoaderCircle,
+  Plus,
+  TriangleAlert,
+  X
+} from 'lucide-vue-next'
 import { AgentChat } from '../icons/agentChat'
 import { ComfyAssets } from '../icons/comfyIcons'
 import LocationIcon from '../../ui/LocationIcon.vue'
@@ -102,8 +110,7 @@ const close = (active: boolean): string =>
             <DownloadRing :progress="t.progress" :size="14" :stroke="1.75" />
             <i
               v-if="t.alert"
-              class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full"
-              :class="t.alert === 'failed' ? 'bg-status-danger' : 'bg-comfy-yellow'"
+              class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-status-danger"
               data-tab-alert
             />
           </span>
@@ -112,6 +119,18 @@ const close = (active: boolean): string =>
           >
         </template>
         <CircleCheck v-else-if="t.ready" :size="14" class="shrink-0 text-status-running" />
+        <LoaderCircle
+          v-else-if="t.starting"
+          :size="14"
+          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          data-tab-starting
+        />
+        <TriangleAlert
+          v-else-if="t.startFailed"
+          :size="14"
+          class="shrink-0 text-status-danger"
+          data-tab-start-failed
+        />
         <LocationIcon v-else :kind="t.kind" :size="14" />
         <span class="truncate">{{ t.name }}</span>
       </button>

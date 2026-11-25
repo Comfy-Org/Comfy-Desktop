@@ -1,7 +1,10 @@
 import { reactive } from 'vue'
-import { hostActions } from '../../useProto'
+import { closeTab, hostActions, launchHooks, proto, toast } from '../../useProto'
 import type { ProtoInstance } from '../../mock'
 import { envKind } from '../../parts/env/env'
+import { offline, OFFLINE_COPY } from '../offline/connection'
+import { BUILD_ERRORS, clearError } from './buildErrors'
+import { buildStart, failureFor, START_COPY, START_FAIL_AT, startFailures } from './comfyStart'
 
 /**
  * What a build on the Home is doing now, in memory: starting (with its
@@ -13,6 +16,8 @@ export type BuildNow = 'ready' | 'starting' | 'installing' | 'running' | 'updati
 interface Run {
   kind: 'start' | 'update' | 'uninstall'
   percent: number
+  startedAt?: number
+  connecting?: boolean
 }
 
 export const runs = reactive(new Map<string, Run>())
@@ -107,16 +112,94 @@ function tick(id: string, ms: number, done: () => void): void {
   )
 }
 
-/** Launch: a build on this computer starts on its tile, then opens. */
 export function startBuild(i: ProtoInstance): void {
-  if (runs.has(i.id)) return
-  if (nowOf(i) === 'running' || !local(i)) return hostActions.launch(i)
-  runs.set(i.id, { kind: 'start', percent: 0 })
-  tick(i.id, 70, () => {
-    settled.set(i.id, 'running')
-    if (logs.id === i.id) logs.id = ''
-    hostActions.launch(i)
-  })
+  hostActions.launch(i)
+}
+
+const START_TICK_MS = 80
+const CONNECT_TIMEOUT_MS = 15000
+
+function failStart(i: ProtoInstance, failure: NonNullable<ReturnType<typeof failureFor>>): void {
+  clearInterval(timers.get(i.id))
+  runs.delete(i.id)
+  startFailures.set(i.id, failure)
+  if (failure.kind !== 'cannot-connect') BUILD_ERRORS[i.id] = failure.message
+  if (logs.id === i.id) logs.id = ''
+}
+
+function connectCloud(i: ProtoInstance): void {
+  runs.set(i.id, { kind: 'start', percent: 0, startedAt: Date.now(), connecting: true })
+  clearInterval(timers.get(i.id))
+  timers.set(
+    i.id,
+    setInterval(() => {
+      const run = runs.get(i.id)
+      if (!run) return clearInterval(timers.get(i.id))
+      if (!offline.value) {
+        clearInterval(timers.get(i.id))
+        runs.delete(i.id)
+        return
+      }
+      if (Date.now() - (run.startedAt ?? 0) < CONNECT_TIMEOUT_MS) return
+      failStart(i, {
+        kind: 'cannot-connect',
+        title: START_COPY.failedTitle,
+        message: OFFLINE_COPY.cannotConnect
+      })
+    }, 250)
+  )
+}
+
+export function beginStart(i: ProtoInstance): void {
+  if (proto.live || runs.has(i.id) || startFailures.has(i.id)) return
+  if (!local(i)) {
+    if (offline.value) connectCloud(i)
+    return
+  }
+  if (nowOf(i) === 'running') return
+  const failure = failureFor(buildStart.id)
+  runs.set(i.id, { kind: 'start', percent: 0, startedAt: Date.now() })
+  clearInterval(timers.get(i.id))
+  timers.set(
+    i.id,
+    setInterval(() => {
+      const run = runs.get(i.id)
+      if (!run) return clearInterval(timers.get(i.id))
+      run.percent = Math.min(100, run.percent + 1)
+      if (failure && run.percent >= START_FAIL_AT) return failStart(i, failure)
+      if (run.percent < 100) return
+      clearInterval(timers.get(i.id))
+      runs.delete(i.id)
+      settled.set(i.id, 'running')
+      if (logs.id === i.id) logs.id = ''
+    }, START_TICK_MS)
+  )
+}
+
+export function restartAfterFailure(i: ProtoInstance): void {
+  startFailures.delete(i.id)
+  clearError(i.id)
+  beginStart(i)
+}
+
+export function leaveFailedStart(i: ProtoInstance): void {
+  const tab = proto.tabs.find((t) => t.instanceId === i.id)
+  if (tab) closeTab(tab.id)
+  proto.activeTab = 'home'
+}
+
+export function cancelStart(i: ProtoInstance): void {
+  cancelRun(i)
+  const tab = proto.tabs.find((t) => t.instanceId === i.id)
+  if (tab) closeTab(tab.id)
+  proto.activeTab = 'home'
+  toast(START_COPY.cancelled)
+}
+
+launchHooks.push(beginStart)
+
+export function markRunning(i: ProtoInstance): void {
+  if (local(i)) settled.set(i.id, 'running')
 }
 
 export function stopBuild(i: ProtoInstance): void {
@@ -125,7 +208,9 @@ export function stopBuild(i: ProtoInstance): void {
 
 export function restartBuild(i: ProtoInstance): void {
   stopBuild(i)
-  startBuild(i)
+  startFailures.delete(i.id)
+  clearError(i.id)
+  beginStart(i)
 }
 
 /** Cancel a start or an uninstall: the build is as it was. */
