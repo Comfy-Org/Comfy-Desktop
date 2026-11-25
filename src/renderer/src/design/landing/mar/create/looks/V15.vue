@@ -50,7 +50,8 @@ const USE_CASES: { id: string; label: string }[] = [
   { id: 'upscale', label: 'Upscale' },
   { id: '3d', label: '3D' }
 ]
-const CARDS = 5
+const BLANK = 'blank'
+const CARDS = 4
 const RECENTS = 5
 const LEAVE_MS = 220
 
@@ -121,10 +122,9 @@ const recents = computed<RecentRow[]>(() =>
     }))
 )
 
-const order = computed(() => [
-  ...templates.value.map((c) => c.id),
-  ...recents.value.map((r) => r.id)
-])
+const cardIds = computed(() => [BLANK, ...templates.value.map((c) => c.id)])
+
+const order = computed(() => [...cardIds.value, ...recents.value.map((r) => r.id)])
 
 function leave(then: () => void): void {
   if (reducedMotion()) return then()
@@ -140,7 +140,12 @@ function pickRecent(r: RecentRow): void {
   leave(() => openWorkflow(r.workflow))
 }
 
+function pickBlank(): void {
+  leave(startBlank)
+}
+
 function openAt(id: string): void {
+  if (id === BLANK) return pickBlank()
   const card = templates.value.find((c) => c.id === id)
   if (card) return pickTemplate(card)
   const row = recents.value.find((r) => r.id === id)
@@ -159,7 +164,7 @@ function onAsk(a: AgentAnswer): void {
 }
 
 function moveAcross(step: number): void {
-  const ids = templates.value.map((c) => c.id)
+  const ids = cardIds.value
   const now = ids.indexOf(hover.value)
   if (now < 0 && hover.value) return
   hover.value = ids[now < 0 ? 0 : Math.max(0, Math.min(ids.length - 1, now + step))] ?? ''
@@ -168,11 +173,12 @@ function moveAcross(step: number): void {
 function moveDown(step: number): void {
   const ids = order.value
   const now = ids.indexOf(hover.value)
-  const inCards = now >= 0 && now < templates.value.length
+  const cards = cardIds.value.length
+  const inCards = now >= 0 && now < cards
   if (now < 0) hover.value = ids[0] ?? ''
   else if (inCards && step > 0) hover.value = recents.value[0]?.id ?? hover.value
   else if (inCards) hover.value = ''
-  else if (now + step < templates.value.length) hover.value = templates.value[0]?.id ?? ''
+  else if (now + step < cards) hover.value = ids[0] ?? ''
   else hover.value = ids[Math.min(ids.length - 1, now + step)] ?? hover.value
 }
 
@@ -257,9 +263,6 @@ useEscapeCloses(() => composer.value?.field)
             <ResultsB ref="results" :query />
           </div>
         </div>
-        <button type="button" class="v15-link" @click="leave(startBlank)">
-          <Plus :size="14" />Start with a blank canvas
-        </button>
 
         <div class="v15-starts" :class="dropping && 'is-under'" @pointerleave="hover = ''">
           <section class="v15-section" aria-labelledby="v15-templates">
@@ -283,6 +286,22 @@ useEscapeCloses(() => composer.value?.field)
               </button>
             </header>
             <div :key="useCase" class="v15-row">
+              <button
+                type="button"
+                class="v15-card v15-blank"
+                :class="hover === BLANK && 'is-at'"
+                @pointerenter="hover = BLANK"
+                @focus="hover = BLANK"
+                @click="pickBlank"
+              >
+                <span class="v15-pic">
+                  <Plus :size="22" class="v15-plus" />
+                </span>
+                <span class="v15-text">
+                  <span class="v15-name">Blank canvas</span>
+                  <span class="v15-meta">Start from scratch</span>
+                </span>
+              </button>
               <button
                 v-for="c in templates"
                 :key="c.id"
@@ -465,25 +484,6 @@ useEscapeCloses(() => composer.value?.field)
   scrollbar-width: thin;
   animation: v15-fade 160ms ease both;
 }
-:root .proto-ui.proto-ui.proto-ui .v15-link {
-  display: inline-flex;
-  height: 30px;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 0 14px;
-  border-radius: 999px;
-  color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
-  transition:
-    background-color 140ms ease,
-    color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-link:hover {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-link:focus-visible,
 :root .proto-ui.proto-ui.proto-ui .v15-pill:focus-visible,
 :root .proto-ui.proto-ui.proto-ui .v15-all:focus-visible,
 :root .proto-ui.proto-ui.proto-ui .v15-item:focus-visible {
@@ -603,6 +603,27 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v15-card.is-at .v15-pic {
   transform: translateY(-3px);
   box-shadow: var(--shadow-elev-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .v15-blank .v15-pic {
+  display: grid;
+  place-items: center;
+  border: 1px dashed color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+  background: transparent;
+  box-shadow: none;
+  transition:
+    transform 260ms var(--ease-out-expo),
+    box-shadow 200ms ease,
+    border-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-plus {
+  color: var(--color-muted-foreground);
+  transition: color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-blank.is-at .v15-pic {
+  border-color: color-mix(in oklch, var(--color-base-foreground) 34%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .v15-blank.is-at .v15-plus {
+  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-card:focus-visible .v15-pic {
   box-shadow:
