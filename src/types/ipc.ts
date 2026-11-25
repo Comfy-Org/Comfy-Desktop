@@ -1,5 +1,4 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
-import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 import type { GpuTier } from '../shared/gpuTier'
 import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
@@ -25,6 +24,7 @@ import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
 import type { KnownSettingKey, KnownSettings } from '../main/settings'
+import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 
 export interface CoachmarkBeakPayload {
   beakFraction: number
@@ -254,12 +254,56 @@ export interface AppOutputAction {
   index: number
 }
 
+export interface CatalogWorkflowMedia {
+  url: string
+  kind: 'image' | 'video'
+  width: number | null
+  height: number | null
+}
+
+export type CatalogWorkflowLicense = 'open-source' | 'partner'
+
 export interface CatalogWorkflow {
   id: string
   title: string
   description: string
   thumbnailUrl: string | null
+  canOpenLocal: boolean
+  canOpenCloud: boolean
+  minComfyUIVersion: string | null
+  hubUrl: string
+  longDescription: string | null
+  author: string | null
+  generationType: string | null
+  useCases: string[]
+  models: string[]
+  uses: number | null
+  license: CatalogWorkflowLicense | null
+  publishedAt: string | null
+  media: CatalogWorkflowMedia[]
+  tutorialUrl: string | null
 }
+
+export interface CatalogWorkflowModel {
+  filename: string
+  directory: string
+  sizeBytes: number | null
+}
+
+export interface CatalogWorkflowNeeds {
+  graph: Record<string, unknown> | null
+  models: CatalogWorkflowModel[]
+  missingByBuild: Record<string, string[]>
+}
+
+export interface CatalogWorkflowDownload {
+  id: string
+  build: string
+  receivedBytes: number
+  totalBytes: number
+}
+
+export type CatalogWorkflowTarget = { where: 'cloud' } | { where: 'local'; build: string }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
@@ -1346,7 +1390,18 @@ export interface ElectronApi {
   ): Promise<ComfyDesktopOpenInComfy>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  listCatalogWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  catalogLocalBuildVersions(): Promise<Record<string, string | null>>
+  catalogWorkflowNeeds(id: string): Promise<CatalogWorkflowNeeds | null>
+  launchCatalogWorkflow(
+    id: string,
+    target: CatalogWorkflowTarget,
+    workspaceId: string,
+    options?: { downloadMissing?: boolean }
+  ): Promise<ComfyDesktopOpenInComfy>
+  cancelCatalogWorkflowDownload(id: string, build: string): Promise<boolean>
+  onCatalogWorkflowDownload(callback: (progress: CatalogWorkflowDownload) => void): () => void
   listApps(): Promise<AppCard[]>
   listHiddenApps(): Promise<HiddenAppsList>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>

@@ -21,6 +21,8 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "explore": "Explore",
+    "workflows": "Workflows",
     "backToApp": "Back to {app}",
     "assets": "Assets",
     "development": "Development",
@@ -107,6 +109,75 @@
     "rail": {
       "running": "{app}, making something",
       "finished": "{app}, ready"
+    }
+  },
+  "workflows": {
+    "search": "Search workflows",
+    "failedTitle": "Workflows didn't load",
+    "failedBody": "Check your internet connection, then try again.",
+    "emptyTitle": "No workflows yet",
+    "emptyBody": "New catalog workflows will show up here.",
+    "noMatches": "No workflows match “{query}”",
+    "noFilterMatches": "Try another filter, or clear them to see every workflow.",
+    "filters": {
+      "label": "Filters",
+      "useCase": "Use case",
+      "model": "Model",
+      "runsOn": "Runs on",
+      "all": "All",
+      "clear": "Clear filters",
+      "runsOnOption": {
+        "local": "This computer",
+        "cloud": "Comfy Cloud"
+      }
+    },
+    "layout": {
+      "label": "Layout",
+      "size": "Size",
+      "smaller": "Smaller cards",
+      "larger": "Larger cards",
+      "sizes": {
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large"
+      },
+      "sortBy": "Sort by",
+      "sorts": {
+        "popular": "Popular",
+        "newest": "Newest",
+        "name": "Name"
+      }
+    },
+    "useCase": {
+      "edit-images": "Image editing",
+      "upscale-and-restore": "Upscale & restore",
+      "product-fashion-and-ads": "Product, fashion & ads",
+      "generate-video": "Video generation",
+      "edit-video": "Video editing",
+      "generate-images": "Image generation",
+      "animate-characters": "Character animation",
+      "vfx-and-motion-transfer": "VFX & motion transfer",
+      "storyboards": "Storyboards",
+      "controlnet-and-tools": "ControlNet & tools",
+      "lip-sync-and-avatars": "Lip sync & avatars",
+      "swap-faces-and-characters": "Face & character swap",
+      "sprite-sheets-and-game-assets": "Sprites & game assets",
+      "voice-and-speech": "Voice & speech",
+      "music-and-sound": "Music & sound"
+    },
+    "generation": {
+      "edit-images": "Image editing",
+      "generate-images": "Image generation",
+      "edit-videos": "Video editing",
+      "generate-videos": "Video generation",
+      "animate-images": "Image to video",
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio"
+    },
+    "license": {
+      "open-source": "Open source",
+      "partner": "Partner API"
     }
   },
   "assets": {
@@ -209,6 +280,84 @@
       "file": "File"
     }
   },
+  "workflowLaunch": {
+    "updateBuild": "This workflow needs ComfyUI {version} or newer. Update a local build in Comfy Desktop.",
+    "noLocalBuild": "Add a compatible local build to open this workflow on your computer.",
+    "unavailable": "You can view this workflow on Comfy Hub.",
+    "openHub": "View on Comfy Hub",
+    "opening": "Opening…",
+    "openFailed": "Couldn't open the workflow. Try again.",
+    "hubFailed": "Couldn't open this workflow on Comfy Hub. Try again.",
+    "preview": "Preview",
+    "result": "Result",
+    "graph": "Graph",
+    "zoom": "Zoom",
+    "zoomFit": "Fit",
+    "noPreview": "No preview for this workflow.",
+    "noGraph": "The graph isn't available for this workflow.",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "more": "More",
+    "less": "Less",
+    "openIn": "Open in",
+    "whatItNeeds": "What it needs",
+    "details": "Details",
+    "partnerOnly": "Uses a partner model that only runs on Comfy Cloud.",
+    "noTarget": "Add a build to open this workflow, or view it on Comfy Hub.",
+    "downloadFailed": "Some models didn't download. Check Downloads, then try again.",
+    "noDiskSpace": "There is not enough disk space for this workflow's models. Free up space, then try again.",
+    "downloadCancelled": "Download cancelled.",
+    "status": {
+      "outdated": "Needs ComfyUI {version} or newer",
+      "notOnCloud": "Not on Cloud yet",
+      "offline": "You're offline",
+      "signedOut": "Needs a Comfy account",
+      "cloudReady": "Every model ready",
+      "running": "Running",
+      "stopped": "Stopped",
+      "checking": "checking models",
+      "everyModel": "every model here",
+      "missing": "{count} model missing | {count} models missing",
+      "unchecked": "models not checked"
+    },
+    "needs": {
+      "partner": "Partner API on Comfy Cloud",
+      "checking": "Checking models…",
+      "none": "No model downloads",
+      "models": "{count} model | {count} models",
+      "state": {
+        "installed": "Installed",
+        "downloads": "Downloads first",
+        "cloud": "On Comfy Cloud"
+      },
+      "failed": "Couldn't check the models",
+      "retry": "Try again"
+    },
+    "action": {
+      "logIn": "Log in to Comfy Cloud",
+      "runOnCloud": "Run on Comfy Cloud",
+      "downloadAndLaunch": "Download and launch",
+      "openIn": "Open in {name}",
+      "launch": "Launch {name}",
+      "downloading": "Downloading…",
+      "downloadingBytes": "Downloading {done} of {total}",
+      "cancelDownload": "Cancel download"
+    },
+    "note": {
+      "freeCredits": "New accounts get free credits.",
+      "offline": "Comfy Cloud needs a connection.",
+      "downloadModels": "Downloads {count} model once, then launches {name}. | Downloads {count} models once, then launches {name}.",
+      "downloadBytes": "Downloads {size} once, then launches {name}."
+    },
+    "detail": {
+      "author": "Author",
+      "model": "Model",
+      "uses": "Uses",
+      "license": "License",
+      "comfyui": "ComfyUI",
+      "tutorial": "Tutorial"
+    }
+  },
   "home": {
     "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
@@ -239,9 +388,11 @@
     "buildCrashed": "Crashed",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
+    "carouselTabs": "Browse featured content",
     "seeAllApps": "See all apps",
+    "seeAllWorkflows": "See all workflows",
     "showWorkflow": "Show {title}",
-    "openWorkflow": "Open {title} on Comfy Hub",
+    "openWorkflow": "Open {title}",
     "previousWorkflow": "Previous workflow",
     "nextWorkflow": "Next workflow",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
