@@ -291,7 +291,7 @@ export const TWEAKS = {
   assetsEverywhere: one(assetsEverywhere, 'off'),
   assetFolders: one(assetFoldersShown, 'off'),
   assetFolderLayout: one(assetFolderLayout, 'off'),
-  rating: one(ratingStyle, 'favorite'),
+  rating: one(ratingStyle, 'stars'),
   folderPicker: one(folderPicker, 'filters'),
   folderDepth: one(folderDepth, 'few'),
   fullAssets: one(fullAssets, 'home'),

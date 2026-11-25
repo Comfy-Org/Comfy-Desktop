@@ -29,12 +29,14 @@ import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import { assets as desktopAssets, type MarAsset } from '../pages/assetsStore'
 import { graphLibrary } from '../graph/comfyLook'
-import { can } from '../../milestones'
 import { createdAt, factsFor } from './assetFacts'
 import { saveFile } from './saveFile'
 import AssetCover from './AssetCover.vue'
 import GenerationInfo from './GenerationInfo.vue'
 import { addTag, removeTag, tagsOf } from './assetTags'
+import AssetViewerPanel from './AssetViewerPanel.vue'
+import ModelStage from './ModelStage.vue'
+import { exrView, rememberTab, tabFor, viewerKind, type DetailTab } from './assetViewer'
 import { LABELS, labelColor, labelOf, setLabel } from './assetLabels'
 import { ratingOf, setRating } from './assetRating'
 import { ratingStyle } from './ratingStyle'
@@ -85,7 +87,7 @@ const {
 const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
 const facts = computed(() => factsFor(asset))
-const full = computed(() => can.value.onboarding && !tab)
+const full = computed(() => true)
 const embedded = computed(() => facts.value.embedded)
 const copiedPrompt = ref(-1)
 let copiedTimer = 0
@@ -239,7 +241,6 @@ watch(
 const prev = computed(() => list[at.value - 1])
 const next = computed(() => list[at.value + 1])
 
-// The run's data comes from the build after the file: a beat of loading.
 const loading = ref(true)
 let timer = 0
 watch(
@@ -252,20 +253,44 @@ watch(
   { immediate: true }
 )
 
-const measuredDims = computed(() =>
-  natural.value ? `${natural.value.width} × ${natural.value.height}` : undefined
+const viewer = computed(() => viewerKind(asset))
+const SIDE_TABS: { value: DetailTab; label: string }[] = [
+  { value: 'details', label: 'Details' },
+  { value: 'viewer', label: 'Viewer' }
+]
+const sideTab = ref<DetailTab>('details')
+watch(viewer, (k) => (sideTab.value = k ? tabFor(k) : 'details'), { immediate: true })
+watch(sideTab, (t) => viewer.value && rememberTab(viewer.value, t))
+const showViewer = computed(() => Boolean(viewer.value) && sideTab.value === 'viewer')
+const zoomable = computed(() => asset.type === 'image' || asset.type === 'video')
+const EXR_CHANNEL_FILTER: Record<string, string> = {
+  rgb: '',
+  r: 'url(#mad-ch-r)',
+  g: 'url(#mad-ch-g)',
+  b: 'url(#mad-ch-b)',
+  a: 'brightness(0) invert(1)'
+}
+const exrStyle = computed(() =>
+  full.value && viewer.value === 'exr'
+    ? {
+        filter:
+          `brightness(${(2 ** exrView.exposure).toFixed(3)}) ${EXR_CHANNEL_FILTER[exrView.channel]}`.trim()
+      }
+    : undefined
 )
-const dims = computed(
+const hasRunData = computed(
   () =>
-    measuredDims.value ??
-    (facts.value.width ? `${facts.value.width} × ${facts.value.height}` : undefined)
+    facts.value.metadata !== 'missing' ||
+    facts.value.workflow !== 'missing' ||
+    (!facts.value.imported && facts.value.history !== 'missing')
 )
-const extension = computed(() => {
-  const dot = asset.name.lastIndexOf('.')
-  return dot >= 0 ? asset.name.slice(dot + 1).toUpperCase() : facts.value.format
-})
-const chips = computed(() =>
-  [extension.value, measuredDims.value, asset.size].filter((c): c is string => !!c)
+
+const dims = computed(() =>
+  natural.value && asset.type !== '3d'
+    ? `${natural.value.width} × ${natural.value.height}`
+    : facts.value.width
+      ? `${facts.value.width} × ${facts.value.height}`
+      : undefined
 )
 const KIND: Record<string, string> = {
   image: 'Image',
@@ -282,11 +307,11 @@ const details = computed(() =>
     [
       ['Type', full.value ? undefined : `${KIND[asset.type] ?? 'File'} · ${facts.value.format}`],
       ['Dimensions', full.value ? undefined : dims.value],
-      ['Length', facts.value.duration],
       ['Size', full.value ? undefined : asset.size],
       [facts.value.imported ? 'Date imported' : 'Date created', added.value],
+      ['Length', facts.value.duration],
       ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined],
-      ['Uploaded by', facts.value.uploadedBy ?? build]
+      ['Uploaded by', facts.value.uploadedBy ?? (hasRunData.value ? build : undefined)]
     ] as [string, string | undefined][]
   ).filter((r): r is [string, string] => !!r[1])
 )
@@ -323,8 +348,18 @@ const savedFolder = computed(() => ({
   parent: `~/Documents/ComfyUI/${build}`
 }))
 const savedIn = computed(() => `${savedFolder.value.parent}/${savedFolder.value.name}`)
+const extension = computed(() => {
+  const dot = asset.name.lastIndexOf('.')
+  return dot >= 0 ? asset.name.slice(dot + 1).toUpperCase() : facts.value.format
+})
+const chips = computed(() =>
+  [extension.value, asset.type === '3d' ? undefined : dims.value, asset.size].filter(
+    (c): c is string => !!c
+  )
+)
 const subtitle = computed(
-  () => `${KIND[asset.type] ?? 'File'} · Created ${createdAt(asset).toLocaleString('en-US')}`
+  () =>
+    `${KIND[asset.type] ?? 'File'} · ${facts.value.imported ? 'Imported' : 'Created'} ${createdAt(asset).toLocaleString('en-US')}`
 )
 function reveal(): void {
   toast(`Revealed ${asset.name}`)
@@ -563,8 +598,16 @@ onBeforeUnmount(() => {
                   @ended="playing = false"
                   @timeupdate="cur = vid?.currentTime ?? 0"
                 />
-                <img v-else-if="pic" :key="asset.id" :src="pic" alt="" @load="onImageLoad" />
+                <img
+                  v-else-if="pic"
+                  :key="asset.id"
+                  :src="pic"
+                  alt=""
+                  :style="exrStyle"
+                  @load="onImageLoad"
+                />
                 <CompareSplit v-if="comparing && asset.before && !clip" :before="asset.before" />
+                <ModelStage v-else-if="asset.type === '3d' && !pic" />
                 <AssetCover v-else :name="asset.name" :type="asset.type" />
                 <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
               </div>
@@ -645,6 +688,7 @@ onBeforeUnmount(() => {
             </nav>
             <!-- Zoom: the real-size percentage, as on ComfyUI's canvas. -->
             <ZoomControl
+              v-if="zoomable"
               ref="zoomCtl"
               v-model="zoom"
               v-model:compare="compareModel"
@@ -655,286 +699,310 @@ onBeforeUnmount(() => {
         </section>
 
         <aside v-if="side" class="mad-side" aria-label="Asset details">
-          <div class="mad-body">
+          <div class="mad-body" :class="full && 'has-tabs'">
+            <div v-if="full" class="mad-tabbar">
+              <div
+                v-if="viewer"
+                class="mad-ul-tabs"
+                role="tablist"
+                aria-label="Asset panel"
+                data-no-pill
+              >
+                <button
+                  v-for="t in SIDE_TABS"
+                  :key="t.value"
+                  type="button"
+                  role="tab"
+                  class="mad-ul-tab"
+                  :aria-selected="sideTab === t.value"
+                  @click="sideTab = t.value"
+                >
+                  {{ t.label }}
+                </button>
+              </div>
+              <span v-else class="mad-ul-label">Details</span>
+            </div>
             <header class="mad-head">
               <div class="mad-head-text">
                 <h2 class="mad-name" :class="full && 'is-clamped'" :title="asset.name">
                   {{ asset.name }}
                 </h2>
-                <p v-if="full" class="mad-sub">{{ subtitle }}</p>
-                <div v-if="full && chips.length" class="mad-chips">
+                <p v-if="full && !showViewer" class="mad-sub">{{ subtitle }}</p>
+                <div v-if="full && !showViewer && chips.length" class="mad-chips">
                   <span v-for="c in chips" :key="c" class="mad-tag mad-model">{{ c }}</span>
                 </div>
               </div>
-              <button
-                v-if="full"
-                type="button"
-                class="mad-icon mad-head-x"
-                aria-label="Close"
-                title="Close"
-                @click="emit('close')"
-              >
-                <X :size="16" />
-              </button>
-              <!-- More, at the name's right: everything past the actions below. -->
-              <div ref="moreBox" class="mad-pick">
-                <button
-                  type="button"
-                  class="mad-icon mad-head-more"
-                  aria-label="More"
-                  title="More"
-                  aria-haspopup="menu"
-                  :aria-expanded="moreMenu"
-                  @click="moreMenu = !moreMenu"
-                >
-                  <MoreHorizontal :size="16" />
-                </button>
-                <div v-if="moreMenu" class="mad-menu is-down is-end is-more" role="menu">
-                  <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
-                    <FolderSearch :size="14" />Show in Finder
-                  </button>
+              <div class="mad-head-tools">
+                <div ref="moreBox" class="mad-pick">
                   <button
                     type="button"
-                    role="menuitem"
+                    class="mad-icon mad-head-more"
+                    aria-label="More"
+                    title="More"
                     aria-haspopup="menu"
-                    :aria-expanded="insertOpen"
-                    @click="insertOpen = !insertOpen"
+                    :aria-expanded="moreMenu"
+                    @click="moreMenu = !moreMenu"
                   >
-                    <Plus :size="14" />Insert into workflow<ChevronRight
-                      :size="14"
-                      class="mad-menu-chev"
-                      :class="insertOpen && 'is-open'"
-                    />
+                    <MoreHorizontal :size="16" />
                   </button>
-                  <div v-if="insertOpen" class="mad-menu-sub" role="menu">
-                    <button type="button" role="menuitem" @click="insert('new')">
-                      <Plus :size="14" />As a new {{ loader }} node
+                  <div v-if="moreMenu" class="mad-menu is-down is-end is-more" role="menu">
+                    <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
+                      <FolderSearch :size="14" />Show in Finder
                     </button>
-                    <button type="button" role="menuitem" @click="insert('selected')">
-                      <ImagePlus :size="14" />Into the selected node
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-haspopup="menu"
+                      :aria-expanded="insertOpen"
+                      @click="insertOpen = !insertOpen"
+                    >
+                      <Plus :size="14" />Insert into workflow<ChevronRight
+                        :size="14"
+                        class="mad-menu-chev"
+                        :class="insertOpen && 'is-open'"
+                      />
                     </button>
-                  </div>
-                  <template v-if="facts.workflow === 'available'">
-                    <button type="button" role="menuitem" @click="openWorkflow">
-                      <Workflow :size="14" />Open as workflow in new tab
-                    </button>
-                    <button type="button" role="menuitem" @click="exportWorkflow">
-                      <FileOutput :size="14" />Export workflow
-                    </button>
-                  </template>
-                  <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
-                    <Copy :size="14" />Copy file name
-                  </button>
-                  <button
-                    v-if="facts.prompt"
-                    type="button"
-                    role="menuitem"
-                    @click="copyText(facts.prompt, 'prompt')"
-                  >
-                    <Copy :size="14" />Copy prompt
-                  </button>
-                  <span class="mad-menu-gap" role="separator" />
-                  <button type="button" role="menuitem" class="is-danger" @click="remove">
-                    <Trash2 :size="14" />Delete
-                  </button>
-                </div>
-              </div>
-              <button
-                v-if="full"
-                type="button"
-                class="mad-icon mad-head-close"
-                aria-label="Close"
-                title="Close"
-                @click="emit('close')"
-              >
-                <X :size="16" />
-              </button>
-            </header>
-
-            <section v-if="full && embedded.prompts.length" class="mad-sec" aria-label="Prompts">
-              <h3 class="mad-label">Prompts</h3>
-              <div class="mad-prompts">
-                <div v-for="(text, i) in embedded.prompts" :key="i" class="mad-prompt">
-                  <p>{{ text }}</p>
-                  <button
-                    type="button"
-                    class="mad-prompt-copy"
-                    :aria-label="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
-                    :title="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
-                    @click="copyPrompt(text, i)"
-                  >
-                    <Check v-if="copiedPrompt === i" :size="13" /><Copy v-else :size="13" />
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section v-if="full && embedded.models.length" class="mad-sec" aria-label="Models">
-              <h3 class="mad-label">Models</h3>
-              <div class="mad-tags">
-                <span v-for="m in embedded.models" :key="m" class="mad-tag mad-model" :title="m"
-                  ><span class="mad-tag-t">{{ m }}</span></span
-                >
-              </div>
-            </section>
-
-            <section v-if="full && onDisk" class="mad-sec" aria-label="Saved in">
-              <h3 class="mad-label">Saved in</h3>
-              <div class="mad-saved-in" :title="savedIn">
-                <span class="mad-saved">{{ savedFolder.name }}</span>
-                <span class="mad-saved is-parent">{{ savedFolder.parent }}</span>
-              </div>
-            </section>
-
-            <section class="mad-sec">
-              <h3 class="mad-label">Asset details</h3>
-              <dl class="mad-rows">
-                <div v-for="[k, v] in details" :key="k">
-                  <dt>{{ k }}</dt>
-                  <dd :title="v">{{ v }}</dd>
-                </div>
-              </dl>
-            </section>
-
-            <section v-if="ratingStyle.id === 'stars'" class="mad-sec">
-              <h3 class="mad-label">Rating</h3>
-              <StarRating
-                open
-                class="mad-stars"
-                :value="ratingOf(asset.id)"
-                @set="setRating([asset.id], $event)"
-              />
-            </section>
-
-            <section class="mad-sec">
-              <h3 class="mad-label">Label</h3>
-              <div ref="labelBox" class="mad-pick">
-                <button
-                  type="button"
-                  class="mad-select"
-                  aria-haspopup="menu"
-                  :aria-expanded="labelMenu"
-                  @click="labelMenu = !labelMenu"
-                >
-                  <i
-                    class="mad-dot"
-                    :class="!label && 'is-none'"
-                    :style="label && { background: labelColor(label) }"
-                    aria-hidden="true"
-                  /><span>{{ labelName ?? 'No label' }}</span
-                  ><ChevronDown :size="13" />
-                </button>
-                <div v-if="labelMenu" class="mad-menu is-down is-wide" role="menu">
-                  <button
-                    v-for="l in LABELS"
-                    :key="l.value"
-                    type="button"
-                    role="menuitemradio"
-                    :aria-checked="label === l.value"
-                    @click="pickLabel(l.value)"
-                  >
-                    <i class="mad-dot" :style="{ background: l.color }" aria-hidden="true" />{{
-                      l.label
-                    }}<Check v-if="label === l.value" :size="14" class="mad-menu-check" />
-                  </button>
-                  <button v-if="label" type="button" role="menuitem" @click="pickLabel()">
-                    <i class="mad-dot is-none" aria-hidden="true" />No label
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section v-if="editable || !full" class="mad-sec">
-              <h3 class="mad-label">
-                Tags
-                <span
-                  v-if="!editable"
-                  class="mad-tip"
-                  tabindex="0"
-                  role="note"
-                  aria-label="Tags are edited in ComfyUI."
-                  ><Info :size="12" /><span class="mad-tip-body is-short" aria-hidden="true"
-                    >Tags are edited in ComfyUI.</span
-                  ></span
-                >
-              </h3>
-              <div class="mad-tags">
-                <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
-                  facts.imported ? 'input' : 'output'
-                }}</span>
-                <span v-for="t in tags" :key="t" class="mad-tag" :title="t"
-                  ><span class="mad-tag-t">{{ t }}</span
-                  ><button
-                    v-if="editable"
-                    type="button"
-                    class="mad-tag-x"
-                    :aria-label="`Remove ${t}`"
-                    @click="removeTag(asset, t)"
-                  >
-                    <X :size="11" /></button
-                ></span>
-                <template v-if="editable">
-                  <button
-                    v-if="!adding"
-                    ref="addBtn"
-                    type="button"
-                    class="mad-tag-add"
-                    @click="openAdd"
-                  >
-                    <Plus :size="12" />Add tag
-                  </button>
-                  <div v-else class="mad-tag-pick">
-                    <input
-                      ref="field"
-                      v-model="draft"
-                      class="mad-tag-field"
-                      placeholder="Tag name"
-                      aria-label="Add a tag"
-                      role="combobox"
-                      aria-autocomplete="list"
-                      :aria-expanded="offers.length > 0"
-                      @keydown="tagKey"
-                      @blur="closeAdd"
-                    />
-                    <div v-if="offers.length" class="mad-menu is-down is-wide" role="listbox">
-                      <button
-                        v-for="(o, i) in offers"
-                        :key="o.tag + o.create"
-                        type="button"
-                        role="option"
-                        :aria-selected="i === hi"
-                        :class="i === hi && 'is-hi'"
-                        @mousedown.prevent="add(o.tag)"
-                        @mouseenter="hi = i"
-                      >
-                        <template v-if="o.create"><Plus :size="13" />Create "{{ o.tag }}"</template
-                        ><template v-else>{{ o.tag }}</template>
+                    <div v-if="insertOpen" class="mad-menu-sub" role="menu">
+                      <button type="button" role="menuitem" @click="insert('new')">
+                        <Plus :size="14" />As a new {{ loader }} node
+                      </button>
+                      <button type="button" role="menuitem" @click="insert('selected')">
+                        <ImagePlus :size="14" />Into the selected node
                       </button>
                     </div>
-                  </div>
-                </template>
-              </div>
-            </section>
+                    <template v-if="facts.workflow === 'available'">
+                      <button type="button" role="menuitem" @click="openWorkflow">
+                        <Workflow :size="14" />Open as workflow in new tab
+                      </button>
+                      <button type="button" role="menuitem" @click="exportWorkflow">
+                        <FileOutput :size="14" />Export workflow
+                      </button>
+                    </template>
 
-            <section v-if="!full" class="mad-sec">
-              <h3 class="mad-label">
-                Generation details
-                <span
-                  class="mad-tip"
-                  tabindex="0"
-                  role="note"
-                  aria-label="Inferred from the run’s data. A listed value may not have contributed to this output."
-                  ><Info :size="12" /><span class="mad-tip-body" aria-hidden="true"
-                    >Inferred from the run’s data. A listed value may not have contributed to this
-                    output.</span
-                  ></span
+                    <button
+                      type="button"
+                      role="menuitem"
+                      @click="copyText(asset.name, 'file name')"
+                    >
+                      <Copy :size="14" />Copy file name
+                    </button>
+                    <button
+                      v-if="facts.prompt"
+                      type="button"
+                      role="menuitem"
+                      @click="copyText(facts.prompt, 'prompt')"
+                    >
+                      <Copy :size="14" />Copy prompt
+                    </button>
+                    <span class="mad-menu-gap" role="separator" />
+                    <button type="button" role="menuitem" class="is-danger" @click="remove">
+                      <Trash2 :size="14" />Delete
+                    </button>
+                  </div>
+                </div>
+                <button
+                  v-if="full"
+                  type="button"
+                  class="mad-icon mad-head-close"
+                  aria-label="Close"
+                  title="Close"
+                  @click="emit('close')"
                 >
-              </h3>
-              <GenerationInfo :facts="facts" :loading="loading" />
-            </section>
+                  <X :size="16" />
+                </button>
+              </div>
+            </header>
+
+            <AssetViewerPanel
+              v-if="full && viewer && showViewer"
+              :kind="viewer"
+              :name="asset.name"
+            />
+            <template v-else>
+              <section v-if="full && embedded.prompts.length" class="mad-sec" aria-label="Prompts">
+                <h3 class="mad-label">Prompts</h3>
+                <div class="mad-prompts">
+                  <div v-for="(text, i) in embedded.prompts" :key="i" class="mad-prompt">
+                    <p>{{ text }}</p>
+                    <button
+                      type="button"
+                      class="mad-prompt-copy"
+                      :aria-label="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
+                      :title="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
+                      @click="copyPrompt(text, i)"
+                    >
+                      <Check v-if="copiedPrompt === i" :size="13" /><Copy v-else :size="13" />
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section v-if="full && embedded.models.length" class="mad-sec" aria-label="Models">
+                <h3 class="mad-label">Models</h3>
+                <div class="mad-tags">
+                  <span v-for="m in embedded.models" :key="m" class="mad-tag mad-model" :title="m"
+                    ><span class="mad-tag-t">{{ m }}</span></span
+                  >
+                </div>
+              </section>
+
+              <section v-if="full && onDisk" class="mad-sec" aria-label="Saved in">
+                <h3 class="mad-label">Saved in</h3>
+                <div class="mad-saved-in" :title="savedIn">
+                  <span class="mad-saved">{{ savedFolder.name }}</span>
+                  <span class="mad-saved is-parent">{{ savedFolder.parent }}</span>
+                </div>
+              </section>
+
+              <section v-if="details.length" class="mad-sec">
+                <h3 class="mad-label">Asset details</h3>
+                <dl class="mad-rows">
+                  <div v-for="[k, v] in details" :key="k">
+                    <dt>{{ k }}</dt>
+                    <dd :title="v">{{ v }}</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section v-if="ratingStyle.id === 'stars'" class="mad-sec">
+                <h3 class="mad-label">Rating</h3>
+                <StarRating
+                  open
+                  class="mad-stars"
+                  :value="ratingOf(asset.id)"
+                  @set="setRating([asset.id], $event)"
+                />
+              </section>
+
+              <section class="mad-sec">
+                <h3 class="mad-label">Label</h3>
+                <div ref="labelBox" class="mad-pick">
+                  <button
+                    type="button"
+                    class="mad-select"
+                    aria-haspopup="menu"
+                    :aria-expanded="labelMenu"
+                    @click="labelMenu = !labelMenu"
+                  >
+                    <i
+                      class="mad-dot"
+                      :class="!label && 'is-none'"
+                      :style="label && { background: labelColor(label) }"
+                      aria-hidden="true"
+                    /><span>{{ labelName ?? 'No label' }}</span
+                    ><ChevronDown :size="13" />
+                  </button>
+                  <div v-if="labelMenu" class="mad-menu is-down is-wide" role="menu">
+                    <button
+                      v-for="l in LABELS"
+                      :key="l.value"
+                      type="button"
+                      role="menuitemradio"
+                      :aria-checked="label === l.value"
+                      @click="pickLabel(l.value)"
+                    >
+                      <i class="mad-dot" :style="{ background: l.color }" aria-hidden="true" />{{
+                        l.label
+                      }}<Check v-if="label === l.value" :size="14" class="mad-menu-check" />
+                    </button>
+                    <button v-if="label" type="button" role="menuitem" @click="pickLabel()">
+                      <i class="mad-dot is-none" aria-hidden="true" />No label
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section v-if="editable || !full" class="mad-sec">
+                <h3 class="mad-label">
+                  Tags
+                  <span
+                    v-if="!editable"
+                    class="mad-tip"
+                    tabindex="0"
+                    role="note"
+                    aria-label="Tags are edited in ComfyUI."
+                    ><Info :size="12" /><span class="mad-tip-body is-short" aria-hidden="true"
+                      >Tags are edited in ComfyUI.</span
+                    ></span
+                  >
+                </h3>
+                <div class="mad-tags">
+                  <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
+                    facts.imported ? 'input' : 'output'
+                  }}</span>
+                  <span v-for="t in tags" :key="t" class="mad-tag" :title="t"
+                    ><span class="mad-tag-t">{{ t }}</span
+                    ><button
+                      v-if="editable"
+                      type="button"
+                      class="mad-tag-x"
+                      :aria-label="`Remove ${t}`"
+                      @click="removeTag(asset, t)"
+                    >
+                      <X :size="11" /></button
+                  ></span>
+                  <template v-if="editable">
+                    <button
+                      v-if="!adding"
+                      ref="addBtn"
+                      type="button"
+                      class="mad-tag-add"
+                      @click="openAdd"
+                    >
+                      <Plus :size="12" />Add tag
+                    </button>
+                    <div v-else class="mad-tag-pick">
+                      <input
+                        ref="field"
+                        v-model="draft"
+                        class="mad-tag-field"
+                        placeholder="Tag name"
+                        aria-label="Add a tag"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        :aria-expanded="offers.length > 0"
+                        @keydown="tagKey"
+                        @blur="closeAdd"
+                      />
+                      <div v-if="offers.length" class="mad-menu is-down is-wide" role="listbox">
+                        <button
+                          v-for="(o, i) in offers"
+                          :key="o.tag + o.create"
+                          type="button"
+                          role="option"
+                          :aria-selected="i === hi"
+                          :class="i === hi && 'is-hi'"
+                          @mousedown.prevent="add(o.tag)"
+                          @mouseenter="hi = i"
+                        >
+                          <template v-if="o.create"
+                            ><Plus :size="13" />Create "{{ o.tag }}"</template
+                          ><template v-else>{{ o.tag }}</template>
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </section>
+
+              <section v-if="!full" class="mad-sec">
+                <h3 class="mad-label">
+                  Generation details
+                  <span
+                    class="mad-tip"
+                    tabindex="0"
+                    role="note"
+                    aria-label="Inferred from the run’s data. A listed value may not have contributed to this output."
+                    ><Info :size="12" /><span class="mad-tip-body" aria-hidden="true"
+                      >Inferred from the run’s data. A listed value may not have contributed to this
+                      output.</span
+                    ></span
+                  >
+                </h3>
+                <GenerationInfo :facts="facts" :loading="loading" />
+              </section>
+            </template>
           </div>
-          <!-- At the bottom, labeled: only the actions this file has. Download
-               leads; More is at the top right, by the name. -->
           <footer class="mad-actions">
             <button
               v-if="facts.workflow === 'available'"
@@ -967,6 +1035,17 @@ onBeforeUnmount(() => {
           </footer>
         </aside>
       </div>
+      <svg class="mad-defs" aria-hidden="true" focusable="false">
+        <filter id="mad-ch-r" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 1 0" />
+        </filter>
+        <filter id="mad-ch-g" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values="0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 1 0" />
+        </filter>
+        <filter id="mad-ch-b" color-interpolation-filters="sRGB">
+          <feColorMatrix type="matrix" values="0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1 0" />
+        </filter>
+      </svg>
     </div>
   </Teleport>
 </template>
@@ -1511,6 +1590,100 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 20px 14px 8px 20px;
 }
+.mad-head-tools {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+}
+.mad-body.has-tabs {
+  position: relative;
+}
+.mad-body.has-tabs .mad-head-tools {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  align-items: center;
+  height: 36px;
+}
+.mad-body.has-tabs .mad-head-tools .mad-icon {
+  margin-top: 0;
+}
+.mad-body.has-tabs .mad-head {
+  padding-top: 16px;
+  padding-right: 20px;
+  padding-bottom: 10px;
+}
+.mad-body.has-tabs,
+.mad-body.has-tabs > .mav {
+  gap: 4px;
+}
+.mad-tabbar {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  height: 52px;
+  padding: 0 56px 0 20px;
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-head-tools .mad-head-close {
+  width: 28px;
+  height: 28px;
+  margin-left: -6px;
+  border-radius: 999px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-head-tools .mad-head-close:hover {
+  color: var(--color-base-foreground);
+}
+.mad-ul-label {
+  display: inline-flex;
+  height: 44px;
+  align-items: center;
+  color: var(--color-base-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  user-select: none;
+}
+.mad-ul-tabs {
+  display: flex;
+  gap: 20px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-ul-tab {
+  position: relative;
+  height: 44px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  transition: color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-ul-tab:hover {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-ul-tab[aria-selected='true'] {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-ul-tab[aria-selected='true']::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--color-base-foreground);
+  content: '';
+}
+:root .proto-ui.proto-ui.proto-ui .mad-ul-tab:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.mad-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
 .mad-head-text {
   min-width: 0;
   flex: 1;
@@ -1532,7 +1705,7 @@ onBeforeUnmount(() => {
   flex: none;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 20px;
+  padding: 14px 20px;
 }
 .mad-label {
   display: flex;
@@ -1790,6 +1963,13 @@ onBeforeUnmount(() => {
   right: 24px;
   left: 24px;
 }
+.mad.is-full.is-tab {
+  inset: 0;
+  border-radius: 0;
+}
+.mad.is-full.is-tab .mad-view {
+  inset: 32px 40px 24px;
+}
 .mad-name.is-clamped {
   display: -webkit-box;
   overflow: hidden;
@@ -1810,15 +1990,6 @@ onBeforeUnmount(() => {
 }
 .mad-chips .mad-tag {
   font-variant-numeric: tabular-nums;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-close {
-  width: 28px;
-  height: 28px;
-  margin-left: -6px;
-  border-radius: 999px;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-close:hover {
-  color: var(--color-base-foreground);
 }
 .mad-prompts {
   display: flex;

@@ -11,6 +11,7 @@ import DeployedTo from '../../parts/space/DeployedTo.vue'
 import Select from '../../ui/Select.vue'
 import AssetLayoutMenu from '../assets/AssetLayoutMenu.vue'
 import { GROUPS } from '../assets/assetGroups'
+import type { AssetWall } from '../assets/assetView'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import type { MenuLine } from '../pages/menu'
 
@@ -84,7 +85,7 @@ const SORTS = [
   { value: 'name', label: 'Name (A → Z)' }
 ]
 const layoutMenu = defineComponent(() => {
-  const view = ref<'masonry' | 'rows' | 'grid'>('masonry')
+  const view = ref<AssetWall>('masonry')
   const size = ref(2)
   const sort = ref('newest')
   const group = ref('none')

@@ -173,7 +173,7 @@ const PARTS: Part[] = [
   one('composer', composerPos, 'bottom', COMPOSER_POSITIONS),
   one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
   one('folderPicker', folderPicker, 'filters', FOLDER_PICKERS),
-  one('rating', ratingStyle, 'favorite', RATING_STYLES),
+  one('rating', ratingStyle, 'stars', RATING_STYLES),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),
