@@ -71,7 +71,8 @@ describe('SidebarDesktopUpdate', () => {
 
       const button = wrapper.get(indicator)
       expect(button.text()).toBe('Update')
-      expect(button.attributes('aria-label')).toBe(description)
+      expect(button.attributes('aria-label')).toBe('Update')
+      expect(button.attributes('aria-description')).toBe(description)
       expect(button.attributes('data-state')).toBe(kind)
     }
   )
@@ -84,7 +85,7 @@ describe('SidebarDesktopUpdate', () => {
     async (kind, description) => {
       const wrapper = await mountIndicator({ kind, version: null, autoUpdate: false })
 
-      expect(wrapper.get(indicator).attributes('aria-label')).toBe(description)
+      expect(wrapper.get(indicator).attributes('aria-description')).toBe(description)
     }
   )
 
@@ -160,7 +161,7 @@ describe('SidebarDesktopUpdate', () => {
     expect(prompts.showAppUpdateDownloadPrompt).not.toHaveBeenCalled()
   })
 
-  it('shows only the icon when the sidebar is collapsed, with the description as its name', async () => {
+  it('shows only the icon when the sidebar is collapsed, named Update with the version as its description', async () => {
     const wrapper = await mountIndicator(
       { kind: 'ready', version: '2.3.4', autoUpdate: true },
       true
@@ -168,7 +169,8 @@ describe('SidebarDesktopUpdate', () => {
 
     const button = wrapper.get(indicator)
     expect(button.text()).toBe('')
-    expect(button.attributes('aria-label')).toBe('v2.3.4 installs on restart')
+    expect(button.attributes('aria-label')).toBe('Update')
+    expect(button.attributes('aria-description')).toBe('v2.3.4 installs on restart')
   })
 
   it('stops listening when it unmounts', async () => {
