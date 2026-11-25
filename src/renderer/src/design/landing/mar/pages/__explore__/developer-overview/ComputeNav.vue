@@ -1,40 +1,66 @@
 <script setup lang="ts">
-import { ref, watch, type Component } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 import {
+  AppWindow,
   ArrowLeft,
-  ChartColumn,
   ChevronDown,
   ChevronRight,
+  Compass,
   CreditCard,
   Cpu,
+  GraduationCap,
+  Home,
   KeyRound,
-  Rocket,
-  Server,
+  Search,
   Settings2,
   ShieldAlert,
-  Users
+  Users,
+  Workflow
 } from 'lucide-vue-next'
 import Button from '../../../../ui/Button.vue'
 import { cn } from '../../../../ui/cn'
 import ModeNav from '../../../../parts/env/ModeNav.vue'
-import OptionBar from './OptionBar.vue'
-import { go, proto, type Mode, type Page } from '../../../../useProto'
-import {
-  computeTab,
-  devVariant,
-  leaveSettings,
-  openCompute,
-  settingsMode,
-  type ComputeTab
-} from './variant'
+import { go, goIn, proto, type Mode, type Page } from '../../../../useProto'
+import { can } from '../../../../milestones'
+import { ComfyAssets } from '../../../icons/comfyIcons'
+import { AgentChat } from '../../../icons/agentChat'
+import { search } from '../../../search/search'
+import { computeTab, leaveSettings, openCompute, settingsMode, type ComputeTab } from './variant'
 
 const { mode } = defineProps<{ mode: Mode }>()
 
-const ITEMS: { tab: ComputeTab; label: string; icon: Component; prefix?: string }[] = [
-  { tab: 'builds', label: 'Builds', icon: Server, prefix: 'environment:' },
-  { tab: 'deployments', label: 'Deployments', icon: Rocket, prefix: 'deployment:' },
-  { tab: 'usage', label: 'Usage', icon: ChartColumn },
-  { tab: 'keys', label: 'API keys', icon: KeyRound }
+interface Place {
+  label: string
+  icon: Component
+  page?: Page
+  run?: () => void
+  section?: string
+}
+const PLACES = computed<Place[]>(() => [
+  { label: 'Home', icon: Home, page: 'overview' },
+  ...(can.value.agent
+    ? [{ label: 'Agent', icon: AgentChat, run: () => goIn('agent', 'agent') }]
+    : []),
+  ...(can.value.search ? [{ label: 'Search', icon: Search, run: () => (search.open = true) }] : []),
+  { label: 'Explore', icon: Compass, page: 'explore' },
+  ...(can.value.learn ? [{ label: 'Learn', icon: GraduationCap, page: 'tutorials' as Page }] : []),
+  { label: 'Workflows', icon: Workflow, page: 'workflows', section: 'Libraries' },
+  ...(proto.signedIn ? [{ label: 'Apps', icon: AppWindow, page: 'apps' as Page }] : []),
+  { label: 'Assets', icon: ComfyAssets, page: 'assets' }
+])
+const placeOn = (p: Place): boolean =>
+  proto.activeTab === 'home' && Boolean(p.page && proto.page === p.page)
+function openPlace(p: Place): void {
+  if (p.run) return p.run()
+  proto.mode = 'create'
+  if (p.page) go(p.page)
+}
+
+const ITEMS: { tab: ComputeTab; label: string; prefix?: string }[] = [
+  { tab: 'builds', label: 'Builds', prefix: 'environment:' },
+  { tab: 'deployments', label: 'Deployments', prefix: 'deployment:' },
+  { tab: 'usage', label: 'Usage' },
+  { tab: 'keys', label: 'API keys' }
 ]
 const SETTINGS: { section?: string; page: Page; label: string; icon: Component }[] = [
   { section: 'Workspace', page: 'people', label: 'People', icon: Users },
@@ -62,7 +88,6 @@ const head =
 </script>
 
 <template>
-  <OptionBar />
   <nav v-if="settingsMode" class="flex flex-col gap-px" aria-label="Settings">
     <Button variant="ghost" :class="row" @click="leaveSettings">
       <ArrowLeft :size="15" />
@@ -83,55 +108,49 @@ const head =
       </Button>
     </template>
   </nav>
-  <template v-else>
-    <ModeNav :mode :omit="['Builds']" />
-    <nav
-      v-if="mode === 'create' && proto.signedIn"
-      class="flex flex-col gap-px"
-      aria-label="Compute"
-    >
-      <template v-if="devVariant === 'e'">
-        <div :class="head"><span>Compute</span></div>
+  <ModeNav v-else-if="mode !== 'create'" :mode />
+  <nav v-else class="flex flex-col gap-px" aria-label="Create">
+    <template v-for="p in PLACES" :key="p.label">
+      <div v-if="p.section" :class="head">
+        <span>{{ p.section }}</span>
+      </div>
+      <Button
+        variant="ghost"
+        :aria-current="placeOn(p) ? 'page' : undefined"
+        :class="cn(row, placeOn(p) && on)"
+        @click="openPlace(p)"
+      >
+        <component :is="p.icon" :size="15" />
+        <span class="sidebar-label text-left">{{ p.label }}</span>
+      </Button>
+    </template>
+    <template v-if="proto.signedIn">
+      <Button
+        variant="ghost"
+        :aria-expanded="open"
+        :class="cn(row, 'mt-3', !open && inCompute() && on)"
+        @click="open = !open"
+      >
+        <Cpu :size="15" />
+        <span class="sidebar-label flex-1 text-left">Compute</span>
+        <component
+          :is="open ? ChevronDown : ChevronRight"
+          :size="13"
+          class="text-subtle-foreground"
+        />
+      </Button>
+      <template v-if="open">
         <Button
           v-for="i in ITEMS"
           :key="i.tab"
           variant="ghost"
           :aria-current="active(i) ? 'page' : undefined"
-          :class="cn(row, active(i) && on)"
+          :class="cn(row, 'pl-9.5', active(i) && on)"
           @click="openCompute(i.tab)"
         >
-          <component :is="i.icon" :size="15" />
           <span class="sidebar-label text-left">{{ i.label }}</span>
         </Button>
       </template>
-      <template v-else>
-        <Button
-          variant="ghost"
-          :aria-expanded="open"
-          :class="cn(row, 'mt-3', !open && inCompute() && on)"
-          @click="open = !open"
-        >
-          <Cpu :size="15" />
-          <span class="sidebar-label flex-1 text-left">Compute</span>
-          <component
-            :is="open ? ChevronDown : ChevronRight"
-            :size="13"
-            class="text-subtle-foreground"
-          />
-        </Button>
-        <template v-if="open">
-          <Button
-            v-for="i in ITEMS"
-            :key="i.tab"
-            variant="ghost"
-            :aria-current="active(i) ? 'page' : undefined"
-            :class="cn(row, 'pl-9.5', active(i) && on)"
-            @click="openCompute(i.tab)"
-          >
-            <span class="sidebar-label text-left">{{ i.label }}</span>
-          </Button>
-        </template>
-      </template>
-    </nav>
-  </template>
+    </template>
+  </nav>
 </template>

@@ -18,7 +18,7 @@ import MarKeysPage from './MarKeysPage.vue'
 import MarDeploymentsPage from '../deploy/MarDeploymentsPage.vue'
 import MarLogsPage from '../deploy/MarLogsPage.vue'
 import MarToolPage from './MarToolPage.vue'
-import { DevOverview, devVariant } from './__explore__/developer-overview'
+import { DevOverview, computeNav } from './__explore__/developer-overview'
 
 /**
  * Mar's library pages (Workflows, Apps, Assets, Builds, Projects, Spaces,
@@ -48,7 +48,7 @@ watch(
   <MarExplore v-else-if="page === 'apps' && can.exploreApps" as-apps :library="can.explore" />
   <MarAppsPage v-else-if="page === 'apps'" />
   <MarAssetsPage v-else-if="page === 'assets'" />
-  <DevOverview v-else-if="devVariant && (page === 'environments' || page === 'instances')" />
+  <DevOverview v-else-if="computeNav && (page === 'environments' || page === 'instances')" />
   <MarBuildsPage v-else-if="page === 'environments' || page === 'instances'" />
   <MarProjectsPage v-else-if="page === 'projects'" />
   <MarProjectPage v-else-if="page.startsWith('project:')" :id="page.slice(8)" :key="page" />

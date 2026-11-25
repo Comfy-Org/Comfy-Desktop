@@ -85,7 +85,7 @@ const MODES = computed(() => [
       <div class="flex min-h-full w-55 shrink-0 flex-col">
         <!-- Floating panels: the Comfy mark and the collapse toggle. -->
         <MarPanelsHead />
-        <div v-if="MODES.length > 1" class="mb-3 flex h-8.5 shrink-0 items-center">
+        <div v-if="MODES.length > 1 && !computeNav" class="mb-3 flex h-8.5 shrink-0 items-center">
           <MarModeSeg v-if="marTabsOn" v-model="mode" :options="MODES" show="label" fill />
           <MarModeSwitch v-else v-model="mode" :options="MODES" />
         </div>
