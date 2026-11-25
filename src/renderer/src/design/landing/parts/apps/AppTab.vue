@@ -21,6 +21,8 @@ import MarSignIn from '../../mar/shell/MarSignIn.vue'
 import MarRunCreditsSheet from '../../mar/MarRunCreditsSheet.vue'
 import { runBlock } from '../../mar/runCredits'
 import { browserSignIn, SIGN_IN_COPY } from '../../mar/signIn/browserSignIn'
+import MarSignInWaiting from '../../mar/signIn/MarSignInWaiting.vue'
+import { signInWaiting, WAITING_COPY } from '../../mar/signIn/signInCorner'
 import { appPage } from '../../mar/apps/appPage'
 import { can } from '../../milestones'
 import { APP_RUNS, appsStage, downloaded } from '../../mar/apps/appsStage'
@@ -172,8 +174,23 @@ const payer = computed(() => {
   return `About ${usd(a.cost)} a run, from your credits`
 })
 
+const signInToRun = ref(false)
+const waitingToRun = computed(() => signInToRun.value && signInWaiting.value)
+const needsAccount = computed(() => !as.value && !proto.signedIn)
+function startSignInToRun(): void {
+  signInToRun.value = true
+  hostActions.signIn(() => {
+    signInToRun.value = false
+    signedInThenRun()
+  })
+}
 function gate(): boolean {
   if (local.value) return true
+  if (needsAccount.value) {
+    if (can.value.onboarding) startSignInToRun()
+    else sheet.value = 'signin'
+    return false
+  }
   if (!inTeam.value && !me.signedIn && !me.guest) {
     sheet.value = 'signin'
     return false
@@ -350,6 +367,14 @@ function done(): void {
         @done="done"
       >
         <template v-if="staged" #place><AppRunPlace :id /></template>
+        <template v-if="waitingToRun" #runNote>
+          <MarSignInWaiting
+            class="mt-2"
+            :title="WAITING_COPY.runNote"
+            :body="WAITING_COPY.runBody"
+            @cancel="signInToRun = false"
+          />
+        </template>
         <template v-if="starter" #saved>
           <Button variant="link" size="sm" @click="viewAssets">Saved to Assets</Button>
         </template>

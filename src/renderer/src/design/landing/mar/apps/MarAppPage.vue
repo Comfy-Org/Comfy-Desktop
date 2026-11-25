@@ -620,6 +620,7 @@ function back(): void {
                 <template v-else>Free</template>
               </span>
             </button>
+            <slot name="runNote" />
             <p v-if="payerNote" class="mar-app-editor-payer">{{ payerNote }}</p>
           </footer>
         </div>
