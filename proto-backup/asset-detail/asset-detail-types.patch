@@ -1,0 +1,2329 @@
+diff --git a/src/renderer/src/design/landing/mar/assets/AssetDetail.vue b/src/renderer/src/design/landing/mar/assets/AssetDetail.vue
+index a1ee87d36..2997d4cde 100644
+--- a/src/renderer/src/design/landing/mar/assets/AssetDetail.vue
++++ b/src/renderer/src/design/landing/mar/assets/AssetDetail.vue
+@@ -9,9 +9,8 @@ import {
+   Copy,
+   Download,
+   FileOutput,
+-  FolderOpen,
++  FolderSearch,
+   ImagePlus,
+-  Info,
+   MoreHorizontal,
+   Pause,
+   Play,
+@@ -32,8 +31,10 @@ import { graphLibrary } from '../graph/comfyLook'
+ import { createdAt, factsFor } from './assetFacts'
+ import { saveFile } from './saveFile'
+ import AssetCover from './AssetCover.vue'
+-import GenerationInfo from './GenerationInfo.vue'
+ import { addTag, removeTag, tagsOf } from './assetTags'
++import AssetViewerPanel from './AssetViewerPanel.vue'
++import ModelStage from './ModelStage.vue'
++import { exrView, rememberTab, tabFor, viewerKind, type DetailTab } from './assetViewer'
+ import { LABELS, labelColor, labelOf, setLabel } from './assetLabels'
+ 
+ /**
+@@ -81,6 +82,19 @@ const {
+ const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
+ 
+ const facts = computed(() => factsFor(asset))
++const embedded = computed(() => facts.value.embedded)
++const copiedPrompt = ref(-1)
++let copiedTimer = 0
++function copyPrompt(text: string, index: number): void {
++  navigator.clipboard?.writeText(text).catch(() => {})
++  copiedPrompt.value = index
++  clearTimeout(copiedTimer)
++  copiedTimer = window.setTimeout(() => (copiedPrompt.value = -1), 1400)
++}
++watch(
++  () => asset.id,
++  () => (copiedPrompt.value = -1)
++)
+ const tags = computed(() => tagsOf(asset))
+ /** Adding a tag: "+ Add tag" turns into a chip-sized field in the same
+  *  row, suggesting the tags already in use as you type. Enter adds the
+@@ -153,10 +167,30 @@ function picOf(a: MarAsset): string | undefined {
+ const zoom = ref(100)
+ const media = ref<HTMLElement>()
+ const fit = ref(1)
++const natural = ref<{ width: number; height: number } | null>(null)
+ function measure(): void {
+-  const w = facts.value.width ?? (media.value?.querySelector('img')?.naturalWidth || 0)
++  const w = natural.value?.width ?? facts.value.width ?? 0
+   if (media.value && w) fit.value = media.value.clientWidth / w
+ }
++function onImageLoad(e: Event): void {
++  const img = e.target as HTMLImageElement
++  natural.value = { width: img.naturalWidth, height: img.naturalHeight }
++  void nextTick(measure)
++}
++function onVideoLoad(): void {
++  dur.value = vid.value?.duration || 0
++  const v = vid.value
++  if (v?.videoWidth) natural.value = { width: v.videoWidth, height: v.videoHeight }
++  void nextTick(measure)
++}
++const fitStyle = computed(() =>
++  natural.value
++    ? {
++        '--r': natural.value.width / natural.value.height,
++        '--natural-w': `${natural.value.width}px`
++      }
++    : { '--r': facts.value.ratio }
++)
+ const zoomCtl = ref<InstanceType<typeof ZoomControl>>()
+ /** Compare: only for a picture made from another (an app's output). */
+ const comparing = ref(false)
+@@ -189,6 +223,7 @@ watch(
+   () => asset.id,
+   async () => {
+     zoom.value = 100
++    natural.value = null
+     await nextTick()
+     strip.value
+       ?.querySelector<HTMLElement>('[aria-current="true"]')
+@@ -200,21 +235,44 @@ watch(
+ const prev = computed(() => list[at.value - 1])
+ const next = computed(() => list[at.value + 1])
+ 
+-// The run's data comes from the build after the file: a beat of loading.
+-const loading = ref(true)
+-let timer = 0
+-watch(
+-  () => asset.id,
+-  () => {
+-    loading.value = true
+-    clearTimeout(timer)
+-    timer = window.setTimeout(() => (loading.value = false), 420)
+-  },
+-  { immediate: true }
++const viewer = computed(() => viewerKind(asset))
++const SIDE_TABS: { value: DetailTab; label: string }[] = [
++  { value: 'details', label: 'Details' },
++  { value: 'viewer', label: 'Viewer' }
++]
++const sideTab = ref<DetailTab>('details')
++watch(viewer, (k) => (sideTab.value = k ? tabFor(k) : 'details'), { immediate: true })
++watch(sideTab, (t) => viewer.value && rememberTab(viewer.value, t))
++const showViewer = computed(() => Boolean(viewer.value) && sideTab.value === 'viewer')
++const zoomable = computed(() => asset.type === 'image' || asset.type === 'video')
++const EXR_CHANNEL_FILTER: Record<string, string> = {
++  rgb: '',
++  r: 'url(#mad-ch-r)',
++  g: 'url(#mad-ch-g)',
++  b: 'url(#mad-ch-b)',
++  a: 'brightness(0) invert(1)'
++}
++const exrStyle = computed(() =>
++  viewer.value === 'exr'
++    ? {
++        filter:
++          `brightness(${(2 ** exrView.exposure).toFixed(3)}) ${EXR_CHANNEL_FILTER[exrView.channel]}`.trim()
++      }
++    : undefined
++)
++const hasRunData = computed(
++  () =>
++    facts.value.metadata !== 'missing' ||
++    facts.value.workflow !== 'missing' ||
++    (!facts.value.imported && facts.value.history !== 'missing')
+ )
+ 
+ const dims = computed(() =>
+-  facts.value.width ? `${facts.value.width} × ${facts.value.height}` : undefined
++  natural.value && asset.type !== '3d'
++    ? `${natural.value.width} × ${natural.value.height}`
++    : facts.value.width
++      ? `${facts.value.width} × ${facts.value.height}`
++      : undefined
+ )
+ const KIND: Record<string, string> = {
+   image: 'Image',
+@@ -229,13 +287,10 @@ const KIND: Record<string, string> = {
+ const details = computed(() =>
+   (
+     [
+-      ['Type', `${KIND[asset.type] ?? 'File'} · ${facts.value.format}`],
+-      ['Dimensions', dims.value],
+-      ['Length', facts.value.duration],
+-      ['Size', asset.size],
+       [facts.value.imported ? 'Date imported' : 'Date created', added.value],
++      ['Length', facts.value.duration],
+       ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined],
+-      ['Uploaded by', facts.value.uploadedBy ?? build]
++      ['Uploaded by', facts.value.uploadedBy ?? (hasRunData.value ? build : undefined)]
+     ] as [string, string | undefined][]
+   ).filter((r): r is [string, string] => !!r[1])
+ )
+@@ -267,6 +322,20 @@ function copyText(text: string, what: string): void {
+ }
+ /** Show in Finder: only a file on this computer, never a Comfy Cloud one. */
+ const onDisk = computed(() => asset.source !== 'cloud')
++const savedFolder = computed(() => (facts.value.imported ? 'input' : 'output'))
++const extension = computed(() => {
++  const dot = asset.name.lastIndexOf('.')
++  return dot >= 0 ? asset.name.slice(dot + 1).toUpperCase() : facts.value.format
++})
++const chips = computed(() =>
++  [extension.value, asset.type === '3d' ? undefined : dims.value, asset.size].filter(
++    (c): c is string => !!c
++  )
++)
++const subtitle = computed(
++  () =>
++    `${KIND[asset.type] ?? 'File'} · ${facts.value.imported ? 'Imported' : 'Created'} ${createdAt(asset).toLocaleString('en-US')}`
++)
+ function reveal(): void {
+   toast(`Revealed ${asset.name}`)
+   moreMenu.value = false
+@@ -451,7 +520,7 @@ onMounted(async () => {
+ })
+ onBeforeUnmount(() => {
+   window.removeEventListener('keydown', key, true)
+-  clearTimeout(timer)
++  clearTimeout(copiedTimer)
+   cancelAnimationFrame(raf)
+   if (!tab) opener?.focus?.()
+ })
+@@ -460,26 +529,32 @@ onBeforeUnmount(() => {
+ <template>
+   <Teleport to="body" :disabled="tab">
+     <div :class="tab ? 'mad-host' : 'proto-ui mad-scrim'" @pointerdown.self="emit('close')">
+-      <button v-if="!tab" type="button" class="mad-x" aria-label="Close" @click="emit('close')">
+-        <X :size="18" />
+-      </button>
+       <div
+         ref="root"
+         class="proto-ui mad"
+-        :class="[!side && 'no-side', tab && 'is-tab']"
++        :class="[!side && 'no-side', tab && 'is-tab', 'is-full']"
+         :role="tab ? 'region' : 'dialog'"
+         :aria-modal="tab ? undefined : true"
+         :aria-label="asset.name"
+         tabindex="-1"
+       >
+         <section class="mad-stage" @pointerdown.self="!tab && emit('close')">
++          <button
++            type="button"
++            class="mad-stage-x"
++            aria-label="Close"
++            title="Close"
++            @click="emit('close')"
++          >
++            <X :size="16" />
++          </button>
+           <header class="mad-bar"></header>
+           <!-- The picture is clipped to its own area: zoomed in, it never
+                runs under the bar or the filmstrip. -->
+-          <div class="mad-view">
++          <div class="mad-view" :class="isAudio && 'is-audio'">
+             <!-- The frame holds the player's bar outside the zoom, so it keeps
+                  its size while the picture scales. -->
+-            <div class="mad-fit" :style="{ '--r': facts.ratio }">
++            <div class="mad-fit" :class="natural && 'is-natural'" :style="fitStyle">
+               <div ref="media" class="mad-media" :style="{ scale: zoom / 100 }">
+                 <video
+                   v-if="clip"
+@@ -491,14 +566,22 @@ onBeforeUnmount(() => {
+                   playsinline
+                   preload="metadata"
+                   @click="toggle"
+-                  @loadedmetadata="dur = vid?.duration || 0"
++                  @loadedmetadata="onVideoLoad"
+                   @play="playing = true"
+                   @pause="playing = false"
+                   @ended="playing = false"
+                   @timeupdate="cur = vid?.currentTime ?? 0"
+                 />
+-                <img v-else-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
++                <img
++                  v-else-if="pic"
++                  :key="asset.id"
++                  :src="pic"
++                  alt=""
++                  :style="exrStyle"
++                  @load="onImageLoad"
++                />
+                 <CompareSplit v-if="comparing && asset.before && !clip" :before="asset.before" />
++                <ModelStage v-else-if="asset.type === '3d' && !pic" />
+                 <AssetCover v-else :name="asset.name" :type="asset.type" />
+                 <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
+               </div>
+@@ -579,6 +662,7 @@ onBeforeUnmount(() => {
+             </nav>
+             <!-- Zoom: the real-size percentage, as on ComfyUI's canvas. -->
+             <ZoomControl
++              v-if="zoomable"
+               ref="zoomCtl"
+               v-model="zoom"
+               v-model:compare="compareModel"
+@@ -589,212 +673,256 @@ onBeforeUnmount(() => {
+         </section>
+ 
+         <aside v-if="side" class="mad-side" aria-label="Asset details">
+-          <div class="mad-body">
+-            <header class="mad-head">
+-              <div class="mad-head-text">
+-                <h2 class="mad-name">{{ asset.name }}</h2>
+-              </div>
+-              <!-- More, at the name's right: everything past the actions below. -->
+-              <div ref="moreBox" class="mad-pick">
++          <div class="mad-body has-tabs">
++            <div class="mad-tabbar">
++              <div
++                v-if="viewer"
++                class="mad-ul-tabs"
++                role="tablist"
++                aria-label="Asset panel"
++                data-no-pill
++              >
+                 <button
++                  v-for="t in SIDE_TABS"
++                  :key="t.value"
+                   type="button"
+-                  class="mad-icon mad-head-more"
+-                  aria-label="More"
+-                  title="More"
+-                  aria-haspopup="menu"
+-                  :aria-expanded="moreMenu"
+-                  @click="moreMenu = !moreMenu"
++                  role="tab"
++                  class="mad-ul-tab"
++                  :aria-selected="sideTab === t.value"
++                  @click="sideTab = t.value"
+                 >
+-                  <MoreHorizontal :size="16" />
++                  {{ t.label }}
+                 </button>
+-                <div v-if="moreMenu" class="mad-menu is-down is-end is-more" role="menu">
+-                  <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
+-                    <FolderOpen :size="14" />Show in Finder
+-                  </button>
++              </div>
++              <span v-else class="mad-ul-label">Details</span>
++            </div>
++            <header class="mad-head">
++              <div class="mad-head-text">
++                <h2 class="mad-name is-clamped" :title="asset.name">
++                  {{ asset.name }}
++                </h2>
++                <p v-if="!showViewer" class="mad-sub">{{ subtitle }}</p>
++                <div v-if="!showViewer && chips.length" class="mad-chips">
++                  <span v-for="c in chips" :key="c" class="mad-tag mad-model">{{ c }}</span>
++                </div>
++              </div>
++              <!-- More, at the name's right: everything past the actions below. -->
++              <div class="mad-head-tools">
++                <div ref="moreBox" class="mad-pick">
+                   <button
+                     type="button"
+-                    role="menuitem"
++                    class="mad-icon mad-head-more"
++                    aria-label="More"
++                    title="More"
+                     aria-haspopup="menu"
+-                    :aria-expanded="insertOpen"
+-                    @click="insertOpen = !insertOpen"
++                    :aria-expanded="moreMenu"
++                    @click="moreMenu = !moreMenu"
+                   >
+-                    <Plus :size="14" />Insert into workflow<ChevronRight
+-                      :size="14"
+-                      class="mad-menu-chev"
+-                      :class="insertOpen && 'is-open'"
+-                    />
++                    <MoreHorizontal :size="16" />
+                   </button>
+-                  <div v-if="insertOpen" class="mad-menu-sub" role="menu">
+-                    <button type="button" role="menuitem" @click="insert('new')">
+-                      <Plus :size="14" />As a new {{ loader }} node
++                  <div v-if="moreMenu" class="mad-menu is-down is-end is-more" role="menu">
++                    <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
++                      <FolderSearch :size="14" />Show in Finder
+                     </button>
+-                    <button type="button" role="menuitem" @click="insert('selected')">
+-                      <ImagePlus :size="14" />Into the selected node
++                    <button
++                      type="button"
++                      role="menuitem"
++                      aria-haspopup="menu"
++                      :aria-expanded="insertOpen"
++                      @click="insertOpen = !insertOpen"
++                    >
++                      <Plus :size="14" />Insert into workflow<ChevronRight
++                        :size="14"
++                        class="mad-menu-chev"
++                        :class="insertOpen && 'is-open'"
++                      />
+                     </button>
+-                  </div>
+-                  <template v-if="facts.workflow === 'available'">
+-                    <button type="button" role="menuitem" @click="openWorkflow">
+-                      <Workflow :size="14" />Open as workflow in new tab
++                    <div v-if="insertOpen" class="mad-menu-sub" role="menu">
++                      <button type="button" role="menuitem" @click="insert('new')">
++                        <Plus :size="14" />As a new {{ loader }} node
++                      </button>
++                      <button type="button" role="menuitem" @click="insert('selected')">
++                        <ImagePlus :size="14" />Into the selected node
++                      </button>
++                    </div>
++                    <template v-if="facts.workflow === 'available'">
++                      <button type="button" role="menuitem" @click="openWorkflow">
++                        <Workflow :size="14" />Open as workflow in new tab
++                      </button>
++                      <button type="button" role="menuitem" @click="exportWorkflow">
++                        <FileOutput :size="14" />Export workflow
++                      </button>
++                    </template>
++
++                    <button
++                      type="button"
++                      role="menuitem"
++                      @click="copyText(asset.name, 'file name')"
++                    >
++                      <Copy :size="14" />Copy file name
+                     </button>
+-                    <button type="button" role="menuitem" @click="exportWorkflow">
+-                      <FileOutput :size="14" />Export workflow
++                    <button
++                      v-if="facts.prompt"
++                      type="button"
++                      role="menuitem"
++                      @click="copyText(facts.prompt, 'prompt')"
++                    >
++                      <Copy :size="14" />Copy prompt
+                     </button>
+-                  </template>
+-                  <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
+-                    <Copy :size="14" />Copy file name
+-                  </button>
+-                  <button
+-                    v-if="facts.prompt"
+-                    type="button"
+-                    role="menuitem"
+-                    @click="copyText(facts.prompt, 'prompt')"
+-                  >
+-                    <Copy :size="14" />Copy prompt
+-                  </button>
+-                  <span class="mad-menu-gap" role="separator" />
+-                  <button type="button" role="menuitem" class="is-danger" @click="remove">
+-                    <Trash2 :size="14" />Delete
+-                  </button>
++                    <span class="mad-menu-gap" role="separator" />
++                    <button type="button" role="menuitem" class="is-danger" @click="remove">
++                      <Trash2 :size="14" />Delete
++                    </button>
++                  </div>
+                 </div>
+               </div>
+             </header>
+ 
+-            <section class="mad-sec">
+-              <h3 class="mad-label">Asset details</h3>
+-              <dl class="mad-rows">
+-                <div v-for="[k, v] in details" :key="k">
+-                  <dt>{{ k }}</dt>
+-                  <dd :title="v">{{ v }}</dd>
++            <AssetViewerPanel v-if="viewer && showViewer" :kind="viewer" :name="asset.name" />
++            <template v-else>
++              <section v-if="embedded.prompts.length" class="mad-sec" aria-label="Prompts">
++                <h3 class="mad-label">Prompts</h3>
++                <div class="mad-prompts">
++                  <div v-for="(text, i) in embedded.prompts" :key="i" class="mad-prompt">
++                    <p>{{ text }}</p>
++                    <button
++                      type="button"
++                      class="mad-prompt-copy"
++                      :aria-label="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
++                      :title="copiedPrompt === i ? 'Copied' : 'Copy prompt'"
++                      @click="copyPrompt(text, i)"
++                    >
++                      <Check v-if="copiedPrompt === i" :size="13" /><Copy v-else :size="13" />
++                    </button>
++                  </div>
+                 </div>
+-              </dl>
+-            </section>
++              </section>
+ 
+-            <section class="mad-sec">
+-              <h3 class="mad-label">Label</h3>
+-              <div ref="labelBox" class="mad-pick">
+-                <button
+-                  type="button"
+-                  class="mad-select"
+-                  aria-haspopup="menu"
+-                  :aria-expanded="labelMenu"
+-                  @click="labelMenu = !labelMenu"
+-                >
+-                  <i
+-                    class="mad-dot"
+-                    :class="!label && 'is-none'"
+-                    :style="label && { background: labelColor(label) }"
+-                    aria-hidden="true"
+-                  /><span>{{ labelName ?? 'No label' }}</span
+-                  ><ChevronDown :size="13" />
+-                </button>
+-                <div v-if="labelMenu" class="mad-menu is-down is-wide" role="menu">
+-                  <button
+-                    v-for="l in LABELS"
+-                    :key="l.value"
+-                    type="button"
+-                    role="menuitemradio"
+-                    :aria-checked="label === l.value"
+-                    @click="pickLabel(l.value)"
++              <section v-if="embedded.models.length" class="mad-sec" aria-label="Models">
++                <h3 class="mad-label">Models</h3>
++                <div class="mad-tags">
++                  <span v-for="m in embedded.models" :key="m" class="mad-tag mad-model" :title="m"
++                    ><span class="mad-tag-t">{{ m }}</span></span
+                   >
+-                    <i class="mad-dot" :style="{ background: l.color }" aria-hidden="true" />{{
+-                      l.label
+-                    }}<Check v-if="label === l.value" :size="14" class="mad-menu-check" />
+-                  </button>
+-                  <button v-if="label" type="button" role="menuitem" @click="pickLabel()">
+-                    <i class="mad-dot is-none" aria-hidden="true" />No label
+-                  </button>
+                 </div>
+-              </div>
+-            </section>
++              </section>
+ 
+-            <section class="mad-sec">
+-              <h3 class="mad-label">
+-                Tags
+-                <span
+-                  v-if="!editable"
+-                  class="mad-tip"
+-                  tabindex="0"
+-                  role="note"
+-                  aria-label="Tags are edited in ComfyUI."
+-                  ><Info :size="12" /><span class="mad-tip-body is-short" aria-hidden="true"
+-                    >Tags are edited in ComfyUI.</span
+-                  ></span
+-                >
+-              </h3>
+-              <div class="mad-tags">
+-                <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
+-                  facts.imported ? 'input' : 'output'
+-                }}</span>
+-                <span v-for="t in tags" :key="t" class="mad-tag" :title="t"
+-                  ><span class="mad-tag-t">{{ t }}</span
+-                  ><button
+-                    v-if="editable"
+-                    type="button"
+-                    class="mad-tag-x"
+-                    :aria-label="`Remove ${t}`"
+-                    @click="removeTag(asset, t)"
+-                  >
+-                    <X :size="11" /></button
+-                ></span>
+-                <template v-if="editable">
++              <section v-if="onDisk" class="mad-sec" aria-label="Saved in">
++                <h3 class="mad-label">Saved in</h3>
++                <div class="mad-saved-in">
++                  <span class="mad-saved">{{ savedFolder }}</span>
++                  <span class="mad-saved is-parent">{{ build }}</span>
++                </div>
++              </section>
++
++              <section v-if="details.length" class="mad-sec">
++                <h3 class="mad-label">Asset details</h3>
++                <dl class="mad-rows">
++                  <div v-for="[k, v] in details" :key="k">
++                    <dt>{{ k }}</dt>
++                    <dd :title="v">{{ v }}</dd>
++                  </div>
++                </dl>
++              </section>
++
++              <section class="mad-sec">
++                <h3 class="mad-label">Label</h3>
++                <div ref="labelBox" class="mad-pick">
+                   <button
+-                    v-if="!adding"
+-                    ref="addBtn"
+                     type="button"
+-                    class="mad-tag-add"
+-                    @click="openAdd"
++                    class="mad-select"
++                    aria-haspopup="menu"
++                    :aria-expanded="labelMenu"
++                    @click="labelMenu = !labelMenu"
+                   >
+-                    <Plus :size="12" />Add tag
++                    <i
++                      class="mad-dot"
++                      :class="!label && 'is-none'"
++                      :style="label && { background: labelColor(label) }"
++                      aria-hidden="true"
++                    /><span>{{ labelName ?? 'No label' }}</span
++                    ><ChevronDown :size="13" />
+                   </button>
+-                  <div v-else class="mad-tag-pick">
+-                    <input
+-                      ref="field"
+-                      v-model="draft"
+-                      class="mad-tag-field"
+-                      placeholder="Tag name"
+-                      aria-label="Add a tag"
+-                      role="combobox"
+-                      aria-autocomplete="list"
+-                      :aria-expanded="offers.length > 0"
+-                      @keydown="tagKey"
+-                      @blur="closeAdd"
+-                    />
+-                    <div v-if="offers.length" class="mad-menu is-down is-wide" role="listbox">
+-                      <button
+-                        v-for="(o, i) in offers"
+-                        :key="o.tag + o.create"
+-                        type="button"
+-                        role="option"
+-                        :aria-selected="i === hi"
+-                        :class="i === hi && 'is-hi'"
+-                        @mousedown.prevent="add(o.tag)"
+-                        @mouseenter="hi = i"
+-                      >
+-                        <template v-if="o.create"><Plus :size="13" />Create "{{ o.tag }}"</template
+-                        ><template v-else>{{ o.tag }}</template>
+-                      </button>
+-                    </div>
++                  <div v-if="labelMenu" class="mad-menu is-down is-wide" role="menu">
++                    <button
++                      v-for="l in LABELS"
++                      :key="l.value"
++                      type="button"
++                      role="menuitemradio"
++                      :aria-checked="label === l.value"
++                      @click="pickLabel(l.value)"
++                    >
++                      <i class="mad-dot" :style="{ background: l.color }" aria-hidden="true" />{{
++                        l.label
++                      }}<Check v-if="label === l.value" :size="14" class="mad-menu-check" />
++                    </button>
++                    <button v-if="label" type="button" role="menuitem" @click="pickLabel()">
++                      <i class="mad-dot is-none" aria-hidden="true" />No label
++                    </button>
+                   </div>
+-                </template>
+-              </div>
+-            </section>
++                </div>
++              </section>
+ 
+-            <section class="mad-sec">
+-              <h3 class="mad-label">
+-                Generation details
+-                <span
+-                  class="mad-tip"
+-                  tabindex="0"
+-                  role="note"
+-                  aria-label="Inferred from the run’s data. A listed value may not have contributed to this output."
+-                  ><Info :size="12" /><span class="mad-tip-body" aria-hidden="true"
+-                    >Inferred from the run’s data. A listed value may not have contributed to this
+-                    output.</span
+-                  ></span
+-                >
+-              </h3>
+-              <GenerationInfo :facts="facts" :loading="loading" />
+-            </section>
++              <section v-if="editable" class="mad-sec">
++                <h3 class="mad-label">Tags</h3>
++                <div class="mad-tags">
++                  <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
++                    facts.imported ? 'input' : 'output'
++                  }}</span>
++                  <span v-for="t in tags" :key="t" class="mad-tag" :title="t"
++                    ><span class="mad-tag-t">{{ t }}</span
++                    ><button
++                      type="button"
++                      class="mad-tag-x"
++                      :aria-label="`Remove ${t}`"
++                      @click="removeTag(asset, t)"
++                    >
++                      <X :size="11" /></button
++                  ></span>
++                  <template v-if="editable">
++                    <button
++                      v-if="!adding"
++                      ref="addBtn"
++                      type="button"
++                      class="mad-tag-add"
++                      @click="openAdd"
++                    >
++                      <Plus :size="12" />Add tag
++                    </button>
++                    <div v-else class="mad-tag-pick">
++                      <input
++                        ref="field"
++                        v-model="draft"
++                        class="mad-tag-field"
++                        placeholder="Tag name"
++                        aria-label="Add a tag"
++                        role="combobox"
++                        aria-autocomplete="list"
++                        :aria-expanded="offers.length > 0"
++                        @keydown="tagKey"
++                        @blur="closeAdd"
++                      />
++                      <div v-if="offers.length" class="mad-menu is-down is-wide" role="listbox">
++                        <button
++                          v-for="(o, i) in offers"
++                          :key="o.tag + o.create"
++                          type="button"
++                          role="option"
++                          :aria-selected="i === hi"
++                          :class="i === hi && 'is-hi'"
++                          @mousedown.prevent="add(o.tag)"
++                          @mouseenter="hi = i"
++                        >
++                          <template v-if="o.create"
++                            ><Plus :size="13" />Create "{{ o.tag }}"</template
++                          ><template v-else>{{ o.tag }}</template>
++                        </button>
++                      </div>
++                    </div>
++                  </template>
++                </div>
++              </section>
++            </template>
+           </div>
+           <!-- At the bottom, labeled: only the actions this file has. Download
+                leads; More is at the top right, by the name. -->
+@@ -816,7 +944,11 @@ onBeforeUnmount(() => {
+             <button v-if="saveable" type="button" class="mad-btn" @click="emit('save')">
+               <Plus :size="14" /><span>Save to Assets</span>
+             </button>
++            <button v-if="onDisk" type="button" class="mad-btn is-primary" @click="reveal">
++              <FolderSearch :size="14" /><span>Show in Finder</span>
++            </button>
+             <button
++              v-else
+               type="button"
+               class="mad-btn is-primary"
+               @click="saveFile(picOf(asset), asset.name)"
+@@ -826,6 +958,17 @@ onBeforeUnmount(() => {
+           </footer>
+         </aside>
+       </div>
++      <svg class="mad-defs" aria-hidden="true" focusable="false">
++        <filter id="mad-ch-r" color-interpolation-filters="sRGB">
++          <feColorMatrix type="matrix" values="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 1 0" />
++        </filter>
++        <filter id="mad-ch-g" color-interpolation-filters="sRGB">
++          <feColorMatrix type="matrix" values="0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 1 0" />
++        </filter>
++        <filter id="mad-ch-b" color-interpolation-filters="sRGB">
++          <feColorMatrix type="matrix" values="0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1 0" />
++        </filter>
++      </svg>
+     </div>
+   </Teleport>
+ </template>
+@@ -973,7 +1116,7 @@ onBeforeUnmount(() => {
+ }
+ .mad-fit {
+   position: relative;
+-  width: min(100%, calc(100cqh * var(--r)));
++  width: min(100%, calc(100cqh * var(--r)), var(--natural-w, 100%));
+   min-width: 0;
+   flex: 0 1 auto;
+   aspect-ratio: var(--r);
+@@ -992,7 +1135,13 @@ onBeforeUnmount(() => {
+   display: block;
+   width: 100%;
+   height: 100%;
+-  object-fit: cover;
++  object-fit: contain;
++}
++.mad-fit.is-natural .mad-media {
++  background: transparent;
++}
++.mad-view.is-audio {
++  justify-content: flex-start;
+ }
+ .mad-media video {
+   cursor: pointer;
+@@ -1364,16 +1513,118 @@ onBeforeUnmount(() => {
+   gap: 8px;
+   padding: 20px 14px 8px 20px;
+ }
++.mad-head-tools {
++  display: flex;
++  flex: none;
++  align-items: flex-start;
++  gap: 8px;
++}
++.mad-body.has-tabs {
++  position: relative;
++}
++.mad-body.has-tabs .mad-head-tools {
++  position: absolute;
++  top: 12px;
++  right: 14px;
++  align-items: center;
++  height: 36px;
++}
++.mad-body.has-tabs .mad-head-tools .mad-icon {
++  margin-top: 0;
++}
++.mad-body.has-tabs .mad-head {
++  padding-top: 16px;
++  padding-right: 20px;
++  padding-bottom: 10px;
++}
++.mad-body.has-tabs,
++.mad-body.has-tabs > .mav {
++  gap: 4px;
++}
++.mad-tabbar {
++  display: flex;
++  flex: none;
++  align-items: flex-end;
++  height: 52px;
++  padding: 0 56px 0 20px;
++  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
++}
++:root .proto-ui.proto-ui.proto-ui .mad-stage-x {
++  position: absolute;
++  z-index: 2;
++  top: 16px;
++  right: 16px;
++  display: inline-flex;
++  width: 36px;
++  height: 36px;
++  align-items: center;
++  justify-content: center;
++  padding: 0;
++  border-radius: 999px;
++  background: rgb(255 255 255 / 0.1);
++  color: #fff;
++}
++:root .proto-ui.proto-ui.proto-ui .mad-stage-x:hover {
++  background: rgb(255 255 255 / 0.18);
++}
++.mad-ul-label {
++  display: inline-flex;
++  height: 44px;
++  align-items: center;
++  color: var(--color-base-foreground);
++  font-size: var(--text-ui);
++  font-weight: 500;
++  user-select: none;
++}
++.mad-ul-tabs {
++  display: flex;
++  gap: 20px;
++}
++:root .proto-ui.proto-ui.proto-ui .mad-ul-tab {
++  position: relative;
++  height: 44px;
++  padding: 0;
++  border-radius: 0;
++  background: transparent;
++  color: var(--color-muted-foreground);
++  font-size: var(--text-ui);
++  font-weight: 500;
++  transition: color 140ms ease;
++}
++:root .proto-ui.proto-ui.proto-ui .mad-ul-tab:hover {
++  color: var(--color-base-foreground);
++}
++:root .proto-ui.proto-ui.proto-ui .mad-ul-tab[aria-selected='true'] {
++  color: var(--color-base-foreground);
++}
++:root .proto-ui.proto-ui.proto-ui .mad-ul-tab[aria-selected='true']::after {
++  position: absolute;
++  right: 0;
++  bottom: 0;
++  left: 0;
++  height: 2px;
++  border-radius: 2px 2px 0 0;
++  background: var(--color-base-foreground);
++  content: '';
++}
++:root .proto-ui.proto-ui.proto-ui .mad-ul-tab:focus-visible {
++  outline: 2px solid var(--color-border-focus);
++  outline-offset: 2px;
++}
++.mad-defs {
++  position: absolute;
++  width: 0;
++  height: 0;
++}
+ .mad-head-text {
+   min-width: 0;
+   flex: 1;
+ }
+ .mad-name {
+   overflow-wrap: anywhere;
+-  font-size: 15px;
++  font-size: var(--text-heading);
+   font-weight: 600;
+-  line-height: 1.35;
+-  text-wrap: balance;
++  line-height: var(--text-heading--line-height);
+ }
+ .mad-sec {
+   display: flex;
+@@ -1530,52 +1781,6 @@ onBeforeUnmount(() => {
+ :root .proto-ui.proto-ui.proto-ui .mad-menu button.is-hi {
+   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+ }
+-.mad-tip {
+-  position: relative;
+-  display: inline-flex;
+-  padding: 2px;
+-  border-radius: 999px;
+-  color: var(--color-muted-foreground);
+-  cursor: help;
+-  outline: none;
+-}
+-.mad-tip:hover,
+-.mad-tip:focus-visible {
+-  color: var(--color-base-foreground);
+-}
+-.mad-tip:focus-visible {
+-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
+-}
+-.mad-tip-body {
+-  position: absolute;
+-  top: calc(100% + 6px);
+-  left: -8px;
+-  z-index: 2;
+-  width: 240px;
+-  padding: 8px 10px;
+-  border-radius: 8px;
+-  background: var(--color-base-foreground);
+-  color: var(--color-content-background);
+-  font-size: 12px;
+-  font-weight: 400;
+-  letter-spacing: 0;
+-  line-height: 1.45;
+-  text-transform: none;
+-  opacity: 0;
+-  pointer-events: none;
+-  transform: translateY(-2px);
+-  transition:
+-    opacity 0.12s ease,
+-    transform 0.12s ease;
+-}
+-.mad-tip-body.is-short {
+-  width: max-content;
+-}
+-.mad-tip:hover .mad-tip-body,
+-.mad-tip:focus-visible .mad-tip-body {
+-  opacity: 1;
+-  transform: none;
+-}
+ :root .proto-ui.proto-ui.proto-ui .mad-icon.is-sm {
+   width: 24px;
+   height: 24px;
+@@ -1624,9 +1829,112 @@ onBeforeUnmount(() => {
+   white-space: nowrap;
+ }
+ 
++.mad.is-full {
++  inset: 8px;
++  grid-template-columns: minmax(0, 1fr) clamp(340px, 27vw, 420px);
++  border-radius: 16px;
++}
++.mad.is-full.no-side {
++  grid-template-columns: minmax(0, 1fr);
++}
++.mad.is-full .mad-view {
++  inset: 32px 40px 96px;
++}
++.mad.is-full .mad-foot {
++  right: 24px;
++  left: 24px;
++}
++.mad.is-full.is-tab {
++  inset: 0;
++  border-radius: 0;
++}
++.mad.is-full.is-tab .mad-view {
++  inset: 32px 40px 24px;
++}
++.mad-name.is-clamped {
++  display: -webkit-box;
++  overflow: hidden;
++  -webkit-box-orient: vertical;
++  -webkit-line-clamp: 2;
++}
++.mad-sub {
++  margin-top: 4px;
++  color: var(--color-muted-foreground);
++  font-size: var(--text-ui);
++  line-height: var(--text-ui--line-height);
++}
++.mad-chips {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 6px;
++  margin-top: 12px;
++}
++.mad-chips .mad-tag {
++  font-variant-numeric: tabular-nums;
++}
++.mad-prompts {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++}
++.mad-prompt {
++  position: relative;
++  max-height: 160px;
++  overflow-y: auto;
++  padding: 10px 34px 10px 12px;
++  border-radius: 10px;
++  background: var(--mad-fill);
++  font-size: 13px;
++  line-height: 1.55;
++  overflow-wrap: anywhere;
++  user-select: text;
++}
++:root .proto-ui.proto-ui.proto-ui .mad-prompt-copy {
++  position: absolute;
++  top: 6px;
++  right: 6px;
++  display: inline-flex;
++  width: 24px;
++  height: 24px;
++  align-items: center;
++  justify-content: center;
++  padding: 0;
++  border-radius: 6px;
++  background: transparent;
++  color: var(--color-muted-foreground);
++  opacity: 0;
++  transition: opacity 0.15s;
++}
++.mad-prompt:hover .mad-prompt-copy,
++:root .proto-ui.proto-ui.proto-ui .mad-prompt-copy:focus-visible {
++  opacity: 1;
++}
++:root .proto-ui.proto-ui.proto-ui .mad-prompt-copy:hover {
++  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
++  color: var(--color-base-foreground);
++}
++.mad-model {
++  border-radius: 6px;
++}
++.mad-saved {
++  overflow: hidden;
++  font-size: 13px;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++.mad-saved-in {
++  display: flex;
++  min-width: 0;
++  flex-direction: column;
++  gap: 2px;
++}
++.mad-saved.is-parent {
++  color: var(--color-muted-foreground);
++}
++
+ /* Smaller windows: the frame takes more of them. */
+ @media (max-width: 1280px), (max-height: 760px) {
+-  .mad:not(.is-tab) {
++  .mad:not(.is-tab):not(.is-full) {
+     inset: 24px 64px;
+   }
+   :root .proto-ui.proto-ui.proto-ui .mad-x {
+@@ -1644,6 +1952,14 @@ onBeforeUnmount(() => {
+   .mad.is-tab {
+     inset: 0;
+   }
++  .mad.is-full {
++    inset: 8px;
++    grid-template-columns: minmax(0, 1fr);
++    grid-template-rows: minmax(0, 1fr) minmax(0, 52vh);
++  }
++  .mad.is-full .mad-view {
++    inset: 16px 8px 12px;
++  }
+   :root .proto-ui.proto-ui.proto-ui .mad-x {
+     top: 12px;
+     right: 12px;
+diff --git a/src/renderer/src/design/landing/mar/assets/AssetViewerPanel.vue b/src/renderer/src/design/landing/mar/assets/AssetViewerPanel.vue
+new file mode 100644
+index 000000000..630021bb9
+--- /dev/null
++++ b/src/renderer/src/design/landing/mar/assets/AssetViewerPanel.vue
+@@ -0,0 +1,466 @@
++<script setup lang="ts">
++import { computed, ref } from 'vue'
++import { Check, ChevronDown, Download, Wand2 } from 'lucide-vue-next'
++import { onClickOutside } from '@vueuse/core'
++import MarSeg from '../pages/MarSeg.vue'
++import { toast } from '../../useProto'
++import {
++  AUTO_EXPOSURE,
++  EXR_CHANNELS,
++  EXR_GAMUTS,
++  MODEL_BACKGROUNDS,
++  exrView,
++  modelView,
++  type Camera,
++  type ExportFormat,
++  type ExrChannel,
++  type Material,
++  type ViewerKind
++} from './assetViewer'
++
++const { kind, name } = defineProps<{ kind: ViewerKind; name: string }>()
++
++const MATERIALS: { value: Material; label: string }[] = [
++  { value: 'original', label: 'Original' },
++  { value: 'normal', label: 'Normal' },
++  { value: 'wireframe', label: 'Wireframe' }
++]
++const CAMERAS: { value: Camera; label: string }[] = [
++  { value: 'perspective', label: 'Perspective' },
++  { value: 'orthographic', label: 'Orthographic' }
++]
++const FORMATS: { value: ExportFormat; label: string }[] = [
++  { value: 'glb', label: 'GLB' },
++  { value: 'obj', label: 'OBJ' },
++  { value: 'stl', label: 'STL' }
++]
++const BG_NAMES: Record<string, string> = {
++  '#1c1c1f': 'Charcoal',
++  '#3a3a40': 'Graphite',
++  '#8a8f98': 'Mid grey',
++  '#e8e6e1': 'Paper',
++  '#22303a': 'Slate'
++}
++
++const channel = computed<ExrChannel>({
++  get: () => exrView.channel,
++  set: (v) => (exrView.channel = v)
++})
++const camera = computed<Camera>({
++  get: () => modelView.camera,
++  set: (v) => (modelView.camera = v)
++})
++const material = computed<Material>({
++  get: () => modelView.material,
++  set: (v) => (modelView.material = v)
++})
++const format = computed<ExportFormat>({
++  get: () => modelView.format,
++  set: (v) => (modelView.format = v)
++})
++function exportModel(): void {
++  toast(`Exported ${name.replace(/\.[^.]+$/, '')}.${modelView.format}`)
++}
++
++const ev = computed(
++  () => `${exrView.exposure >= 0 ? '+' : '−'}${Math.abs(exrView.exposure).toFixed(1)} EV`
++)
++const exposureAt = computed(() => `${((exrView.exposure + 5) / 10) * 100}%`)
++const fovAt = computed(() => `${((modelView.fov - 20) / 70) * 100}%`)
++const lightAt = computed(() => `${(modelView.light / 2) * 100}%`)
++
++const gamutMenu = ref(false)
++const gamutBox = ref<HTMLElement>()
++onClickOutside(gamutBox, () => (gamutMenu.value = false))
++function pickGamut(g: (typeof EXR_GAMUTS)[number]): void {
++  exrView.gamut = g
++  gamutMenu.value = false
++}
++
++const TOGGLES = [
++  { key: 'dither', label: 'Dither' },
++  { key: 'clip', label: 'Clip warnings' },
++  { key: 'alpha', label: 'Show transparency' }
++] as const
++
++const seedOf = (s: string): number => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)
++const BINS = 64
++function curve(peak: number, spread: number, lift: number): number[] {
++  return Array.from({ length: BINS }, (_, i) => {
++    const x = i / (BINS - 1)
++    const main = Math.exp(-((x - peak) ** 2) / (2 * spread ** 2))
++    const tail = 0.35 * Math.exp(-((x - lift) ** 2) / (2 * 0.05 ** 2))
++    return main + tail
++  })
++}
++function areaPath(values: number[]): string {
++  const max = Math.max(...values)
++  const pts = values.map(
++    (v, i) => `${((i / (BINS - 1)) * 200).toFixed(1)},${(60 - (v / max) * 54).toFixed(1)}`
++  )
++  return `M0,60 L${pts.join(' L')} L200,60 Z`
++}
++const histogram = computed(() => {
++  const h = seedOf(name)
++  const at = (n: number): number => (((h + n * 2654435761) >>> 0) % 1000) / 1000
++  const shift = exrView.exposure * 0.06
++  return [
++    { id: 'r', d: areaPath(curve(0.42 + at(1) * 0.2 + shift, 0.16, 0.86)) },
++    { id: 'g', d: areaPath(curve(0.38 + at(2) * 0.2 + shift, 0.15, 0.82)) },
++    { id: 'b', d: areaPath(curve(0.3 + at(3) * 0.2 + shift, 0.18, 0.9)) }
++  ].filter((c) => exrView.channel === 'rgb' || exrView.channel === c.id)
++})
++</script>
++
++<template>
++  <div class="mav" :aria-label="kind === 'exr' ? 'EXR viewer' : '3D viewer'">
++    <template v-if="kind === 'exr'">
++      <section class="mad-sec">
++        <div class="mav-head">
++          <h3 class="mad-label">Exposure</h3>
++          <button
++            type="button"
++            class="mav-head-btn"
++            title="Auto exposure"
++            @click="exrView.exposure = AUTO_EXPOSURE"
++          >
++            <Wand2 :size="15" />Auto exposure
++          </button>
++        </div>
++        <div class="mav-slide">
++          <input
++            v-model.number="exrView.exposure"
++            class="mav-range"
++            type="range"
++            min="-5"
++            max="5"
++            step="0.1"
++            aria-label="Exposure"
++            :style="{ '--mav-at': exposureAt }"
++          />
++          <span class="mav-value">{{ ev }}</span>
++        </div>
++      </section>
++
++      <section class="mad-sec">
++        <h3 class="mad-label">Display</h3>
++        <div class="mav-row">
++          <span class="mav-key">Channel</span>
++          <MarSeg v-model="channel" :options="EXR_CHANNELS" label="Channel" />
++        </div>
++        <div class="mav-row">
++          <span class="mav-key">Source gamut</span>
++          <div ref="gamutBox" class="mad-pick">
++            <button
++              type="button"
++              class="mad-select"
++              aria-haspopup="menu"
++              :aria-expanded="gamutMenu"
++              @click="gamutMenu = !gamutMenu"
++            >
++              <span>{{ exrView.gamut }}</span
++              ><ChevronDown :size="13" />
++            </button>
++            <div v-if="gamutMenu" class="mad-menu is-down" role="menu">
++              <button
++                v-for="g in EXR_GAMUTS"
++                :key="g"
++                type="button"
++                role="menuitemradio"
++                :aria-checked="exrView.gamut === g"
++                @click="pickGamut(g)"
++              >
++                {{ g }}<Check v-if="exrView.gamut === g" :size="14" class="mad-menu-check" />
++              </button>
++            </div>
++          </div>
++        </div>
++        <label v-for="t in TOGGLES" :key="t.key" class="mav-check">
++          <input v-model="exrView[t.key]" type="checkbox" />
++          <i class="mav-box" aria-hidden="true"><Check :size="11" /></i>
++          <span>{{ t.label }}</span>
++        </label>
++      </section>
++
++      <section class="mad-sec">
++        <h3 class="mad-label">Histogram</h3>
++        <svg
++          class="mav-histo"
++          viewBox="0 0 200 60"
++          preserveAspectRatio="none"
++          role="img"
++          :aria-label="`Histogram, ${exrView.channel.toUpperCase()}`"
++        >
++          <path v-for="c in histogram" :key="c.id" :d="c.d" :class="`is-${c.id}`" />
++        </svg>
++        <div class="mav-histo-scale"><span>0</span><span>1.0</span><span>Over</span></div>
++      </section>
++    </template>
++
++    <template v-else>
++      <section class="mad-sec">
++        <h3 class="mad-label">Background</h3>
++        <div class="mav-swatches" role="radiogroup" aria-label="Background color" data-no-pill>
++          <button
++            v-for="c in MODEL_BACKGROUNDS"
++            :key="c"
++            type="button"
++            role="radio"
++            class="mav-swatch"
++            :aria-checked="modelView.background === c"
++            :aria-label="BG_NAMES[c]"
++            :title="BG_NAMES[c]"
++            :style="{ background: c }"
++            @click="modelView.background = c"
++          />
++        </div>
++      </section>
++
++      <section class="mad-sec">
++        <h3 class="mad-label">Material</h3>
++        <MarSeg v-model="material" :options="MATERIALS" label="Material" class="mav-full" />
++      </section>
++
++      <section class="mad-sec">
++        <h3 class="mad-label">Camera</h3>
++        <MarSeg v-model="camera" :options="CAMERAS" label="Camera" class="mav-full" />
++        <div class="mav-row is-stack" :class="modelView.camera === 'orthographic' && 'is-off'">
++          <span class="mav-key">Field of view</span>
++          <div class="mav-slide">
++            <input
++              v-model.number="modelView.fov"
++              class="mav-range"
++              type="range"
++              min="20"
++              max="90"
++              step="1"
++              aria-label="Field of view"
++              :disabled="modelView.camera === 'orthographic'"
++              :style="{ '--mav-at': fovAt }"
++            />
++            <span class="mav-value">{{ modelView.fov }}°</span>
++          </div>
++        </div>
++      </section>
++
++      <section class="mad-sec">
++        <h3 class="mad-label">Light</h3>
++        <div class="mav-row is-stack">
++          <span class="mav-key">Intensity</span>
++          <div class="mav-slide">
++            <input
++              v-model.number="modelView.light"
++              class="mav-range"
++              type="range"
++              min="0"
++              max="2"
++              step="0.1"
++              aria-label="Light intensity"
++              :style="{ '--mav-at': lightAt }"
++            />
++            <span class="mav-value">{{ modelView.light.toFixed(1) }}×</span>
++          </div>
++        </div>
++      </section>
++
++      <section class="mad-sec">
++        <h3 class="mad-label">Export</h3>
++        <div class="mav-row">
++          <MarSeg v-model="format" :options="FORMATS" label="Export format" />
++          <button type="button" class="mad-btn mav-export" @click="exportModel">
++            <Download :size="14" /><span>Export {{ modelView.format.toUpperCase() }}</span>
++          </button>
++        </div>
++      </section>
++    </template>
++  </div>
++</template>
++
++<style>
++.mav {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++}
++.mav-row {
++  display: flex;
++  min-width: 0;
++  align-items: center;
++  justify-content: space-between;
++  gap: 12px;
++  font-size: 12px;
++}
++.mav-row.is-stack {
++  flex-direction: column;
++  align-items: stretch;
++  gap: 6px;
++}
++.mav-row.is-off {
++  opacity: 0.4;
++}
++.mav-slide {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++}
++.mav-key {
++  color: var(--color-muted-foreground);
++}
++.mav-value {
++  min-width: 52px;
++  font-size: 12px;
++  font-variant-numeric: tabular-nums;
++  text-align: right;
++}
++:root .proto-ui.proto-ui.proto-ui .mav-range {
++  height: 16px;
++  min-width: 0;
++  flex: 1;
++  margin: 0;
++  appearance: none;
++  background: transparent;
++  cursor: pointer;
++}
++:root .proto-ui.proto-ui.proto-ui .mav-range:focus,
++:root .proto-ui.proto-ui.proto-ui .mav-range:focus-visible {
++  outline: none;
++  box-shadow: none;
++}
++:root .proto-ui.proto-ui.proto-ui .mav-range:disabled {
++  cursor: default;
++}
++.mav-range::-webkit-slider-runnable-track {
++  height: 4px;
++  border-radius: 999px;
++  background: linear-gradient(
++    to right,
++    var(--color-base-foreground) var(--mav-at),
++    color-mix(in oklch, var(--color-base-foreground) 14%, transparent) var(--mav-at)
++  );
++}
++.mav-range::-webkit-slider-thumb {
++  width: 14px;
++  height: 14px;
++  margin-top: -5px;
++  border-radius: 999px;
++  appearance: none;
++  background: var(--color-base-foreground);
++  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
++}
++.mav-range:focus-visible::-webkit-slider-thumb {
++  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
++}
++:root .proto-ui.proto-ui.proto-ui .mav .mad-btn {
++  flex: none;
++  height: 32px;
++  border-radius: 8px;
++  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
++}
++:root .proto-ui.proto-ui.proto-ui .mav .mad-btn:hover {
++  background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
++}
++.mav-head {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 8px;
++}
++:root .proto-ui.proto-ui.proto-ui .mav-head-btn {
++  display: inline-flex;
++  height: 24px;
++  align-items: center;
++  gap: 6px;
++  margin: -4px -8px -4px 0;
++  padding: 0 8px;
++  border-radius: 8px;
++  background: transparent;
++  color: var(--color-muted-foreground);
++  font-size: 12px;
++}
++:root .proto-ui.proto-ui.proto-ui .mav-head-btn:hover {
++  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
++  color: var(--color-base-foreground);
++}
++:root .proto-ui.proto-ui.proto-ui .mav-check {
++  position: relative;
++  display: flex;
++  height: 24px;
++  align-items: center;
++  gap: 10px;
++  color: var(--color-base-foreground);
++  font-size: 12px;
++  cursor: pointer;
++}
++.mav-check input {
++  position: absolute;
++  opacity: 0;
++  pointer-events: none;
++}
++.mav-box {
++  display: inline-flex;
++  width: 16px;
++  height: 16px;
++  flex: none;
++  align-items: center;
++  justify-content: center;
++  border-radius: 5px;
++  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
++  color: transparent;
++}
++.mav-check input:checked + .mav-box {
++  background: var(--color-base-foreground);
++  color: var(--color-content-background);
++}
++.mav-check input:focus-visible + .mav-box {
++  box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
++}
++.mav-histo {
++  width: 100%;
++  height: 64px;
++  border-radius: 8px;
++  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
++}
++.mav-histo path {
++  mix-blend-mode: screen;
++  opacity: 0.7;
++}
++.mav-histo .is-r {
++  fill: oklch(0.65 0.2 25);
++}
++.mav-histo .is-g {
++  fill: oklch(0.72 0.18 145);
++}
++.mav-histo .is-b {
++  fill: oklch(0.62 0.17 255);
++}
++.mav-histo-scale {
++  display: flex;
++  justify-content: space-between;
++  margin-top: -4px;
++  color: var(--color-muted-foreground);
++  font-size: 11px;
++  font-variant-numeric: tabular-nums;
++}
++.mav-swatches {
++  display: flex;
++  gap: 8px;
++}
++:root .proto-ui.proto-ui.proto-ui .mav-swatch {
++  width: 28px;
++  height: 28px;
++  padding: 0;
++  border-radius: 8px;
++  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
++}
++:root .proto-ui.proto-ui.proto-ui .mav-swatch[aria-checked='true'] {
++  box-shadow:
++    0 0 0 2px var(--color-content-background),
++    0 0 0 4px var(--color-base-foreground);
++}
++:root .proto-ui.proto-ui.proto-ui .mav-full {
++  display: flex;
++}
++:root .proto-ui.proto-ui.proto-ui .mav-full .mar-pseg-btn {
++  flex: 1;
++}
++</style>
+diff --git a/src/renderer/src/design/landing/mar/assets/ModelStage.vue b/src/renderer/src/design/landing/mar/assets/ModelStage.vue
+new file mode 100644
+index 000000000..9229b50bc
+--- /dev/null
++++ b/src/renderer/src/design/landing/mar/assets/ModelStage.vue
+@@ -0,0 +1,140 @@
++<script setup lang="ts">
++import { computed } from 'vue'
++import { modelView } from './assetViewer'
++
++const APEX = { x: 200, y: 92 }
++const BASE = {
++  left: { x: 96, y: 268 },
++  front: { x: 214, y: 318 },
++  right: { x: 308, y: 262 },
++  back: { x: 192, y: 226 }
++}
++const pt = (p: { x: number; y: number }): string => `${p.x},${p.y}`
++const face = (...ps: { x: number; y: number }[]): string => ps.map(pt).join(' ')
++
++const leftFace = face(APEX, BASE.left, BASE.front)
++const rightFace = face(APEX, BASE.front, BASE.right)
++const hiddenEdges = [
++  [APEX, BASE.back],
++  [BASE.left, BASE.back],
++  [BASE.back, BASE.right]
++] as const
++const shownEdges = [
++  [APEX, BASE.left],
++  [APEX, BASE.front],
++  [APEX, BASE.right],
++  [BASE.left, BASE.front],
++  [BASE.front, BASE.right]
++] as const
++
++const scale = computed(() =>
++  modelView.camera === 'orthographic' ? 0.9 : 1 + (50 - modelView.fov) / 140
++)
++const light = computed(() => Math.min(2, Math.max(0, modelView.light)))
++const fills = computed(() => {
++  if (modelView.material === 'normal')
++    return { left: 'rgb(118 132 236)', right: 'rgb(196 128 226)' }
++  const l = light.value
++  return {
++    left: `hsl(32 10% ${Math.round(26 + 24 * l)}%)`,
++    right: `hsl(32 8% ${Math.round(14 + 14 * l)}%)`
++  }
++})
++const wire = computed(() => modelView.material === 'wireframe')
++const lightBackground = computed(() => /^#(e|f|d|c|b|a|9|8)/i.test(modelView.background))
++const gridLines = computed(() => {
++  const persp = modelView.camera === 'perspective'
++  return Array.from({ length: 9 }, (_, i) => {
++    const t = i / 8
++    const x1 = 20 + t * 360
++    return { x1, y1: 400, x2: persp ? 200 + (x1 - 200) * 0.35 : x1, y2: 200 }
++  })
++})
++const rows = [232, 262, 300, 348]
++</script>
++
++<template>
++  <div
++    class="ms"
++    :class="lightBackground && 'is-light'"
++    :style="{ background: modelView.background }"
++    aria-hidden="true"
++  >
++    <svg viewBox="0 0 400 400" class="ms-svg">
++      <g class="ms-grid">
++        <line v-for="(g, i) in gridLines" :key="`v${i}`" v-bind="g" />
++        <line v-for="y in rows" :key="`h${y}`" x1="0" :y1="y" x2="400" :y2="y" />
++      </g>
++      <g :style="{ transform: `scale(${scale})`, transformOrigin: '200px 270px' }">
++        <ellipse cx="204" cy="300" rx="128" ry="26" class="ms-shadow" />
++        <template v-if="wire">
++          <line
++            v-for="([a, b], i) in hiddenEdges"
++            :key="`h${i}`"
++            :x1="a.x"
++            :y1="a.y"
++            :x2="b.x"
++            :y2="b.y"
++            class="ms-edge is-hidden"
++          />
++          <line
++            v-for="([a, b], i) in shownEdges"
++            :key="`s${i}`"
++            :x1="a.x"
++            :y1="a.y"
++            :x2="b.x"
++            :y2="b.y"
++            class="ms-edge"
++          />
++        </template>
++        <template v-else>
++          <polygon :points="leftFace" :fill="fills.left" />
++          <polygon :points="rightFace" :fill="fills.right" />
++        </template>
++      </g>
++    </svg>
++  </div>
++</template>
++
++<style>
++.ms {
++  position: absolute;
++  inset: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  transition: background-color 0.18s ease;
++  --ms-ink: rgb(255 255 255 / 0.1);
++  --ms-wire: rgb(255 255 255 / 0.85);
++}
++.ms.is-light {
++  --ms-ink: rgb(0 0 0 / 0.1);
++  --ms-wire: rgb(0 0 0 / 0.75);
++}
++.ms-svg {
++  width: 82%;
++  height: 82%;
++}
++.ms-grid line {
++  stroke: var(--ms-ink);
++  stroke-width: 1;
++}
++.ms-shadow {
++  fill: rgb(0 0 0 / 0.28);
++  filter: blur(6px);
++}
++.ms-edge {
++  stroke: var(--ms-wire);
++  stroke-width: 1.6;
++  stroke-linecap: round;
++}
++.ms-edge.is-hidden {
++  stroke-dasharray: 4 5;
++  opacity: 0.45;
++}
++@media (prefers-reduced-motion: reduce) {
++  .ms {
++    transition: none;
++  }
++}
++</style>
+diff --git a/src/renderer/src/design/landing/mar/assets/assetFacts.ts b/src/renderer/src/design/landing/mar/assets/assetFacts.ts
+index b32ab5979..9aa066fb4 100644
+--- a/src/renderer/src/design/landing/mar/assets/assetFacts.ts
++++ b/src/renderer/src/design/landing/mar/assets/assetFacts.ts
+@@ -36,8 +36,55 @@ export interface AssetFacts {
+   uploadedBy?: string
+   /** The workflow file the run came from, when the file carries it. */
+   workflowName?: string
++  embedded: EmbeddedSummary
+ }
+ 
++export interface EmbeddedSummary {
++  prompts: string[]
++  models: string[]
++}
++
++const NO_EMBEDDED: EmbeddedSummary = { prompts: [], models: [] }
++const MAX_EMBEDDED_PROMPTS = 6
++const MAX_EMBEDDED_MODELS = 10
++
++function embeddedSummary(prompts: (string | undefined)[], models: string[]): EmbeddedSummary {
++  return {
++    prompts: [...new Set(prompts.filter((p): p is string => !!p))].slice(0, MAX_EMBEDDED_PROMPTS),
++    models: [...new Set(models)].slice(0, MAX_EMBEDDED_MODELS)
++  }
++}
++
++const EMBEDDED_PROMPTS: [RegExp, string][] = [
++  [
++    /actor_ref/,
++    'studio portrait of a young woman with short curly hair, grey backdrop, soft key light'
++  ],
++  [
++    /neon_alley/,
++    'dolly shot down a rain-soaked neon alley at night, a woman with a clear umbrella'
++  ],
++  [/alpine_lake/, 'still alpine lake at sunrise, snow peaks mirrored in the water, crisp air'],
++  [
++    /dancer_smoke/,
++    'dancer turning through drifting stage smoke, single hard backlight, slow motion'
++  ],
++  [/desert_drone/, 'aerial drone pass over red desert dunes at golden hour, long shadows'],
++  [/keyframe_astronaut/, 'astronaut standing on a pale moon ridge, earth low on the horizon'],
++  [/keyframe_forest/, 'path through a misty pine forest, shafts of morning light'],
++  [/krea_street/, 'busy city street after rain, reflections on the asphalt, 35mm film grain'],
++  [/lighthouse_storm/, 'lighthouse on a cliff in a storm, waves breaking, lightning in the clouds'],
++  [/minimax_eye/, 'extreme close-up of an eye opening, iris in sharp detail'],
++  [/night_market/, 'handheld walk through a crowded night market, lanterns and steam'],
++  [/surfer_slowmo/, 'surfer cutting through a turquoise wave, spray in slow motion'],
++  [/train_window/, 'view from a train window, countryside passing at dusk'],
++  [/wok_fire/, 'chef tossing a flaming wok, sparks and oil in the air, warm kitchen light'],
++  [/harbor_dawn/, 'fishing harbor at dawn, pink mist over still water, moored boats, gulls']
++]
++const promptFromName = (name: string, stem: string): string =>
++  EMBEDDED_PROMPTS.find(([re]) => re.test(name))?.[1] ??
++  `${stem.replace(/[_-]+/g, ' ').trim()}, natural light, sharp focus, high detail`
++
+ const hash = (s: string): number => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)
+ 
+ const IMAGE_SIZES: [number, number][] = [
+@@ -109,10 +156,23 @@ export function factsFor(a: MarAsset): AssetFacts {
+   else if (a.type === 'video') {
+     ;[width, height] = VIDEO_SIZES[h % VIDEO_SIZES.length]!
+     duration = `0:0${4 + (h % 6)}`
+-  } else if (a.type === '3d') [width, height] = [1024, 1024]
+-  else if (a.type === 'audio') duration = `0:${String(18 + (h % 40)).padStart(2, '0')}`
++  } else if (a.type === 'audio') duration = `0:${String(18 + (h % 40)).padStart(2, '0')}`
+   const ratio = width && height ? width / height : a.type === 'audio' ? 16 / 9 : 4 / 3
+ 
++  if (a.type === 'audio' || a.type === '3d')
++    return {
++      ratio,
++      duration,
++      format: ext,
++      imported,
++      tags: [],
++      workflow: 'missing',
++      history: 'missing',
++      metadata: 'missing',
++      models: [],
++      embedded: NO_EMBEDDED
++    }
++
+   if (imported)
+     return {
+       width,
+@@ -126,11 +186,12 @@ export function factsFor(a: MarAsset): AssetFacts {
+       history: 'missing',
+       metadata: a.type === 'text' || a.type === 'other' ? 'missing' : 'available',
+       models: [],
+-      uploadedBy: PEOPLE[h % PEOPLE.length]
++      uploadedBy: PEOPLE[h % PEOPLE.length],
++      embedded: NO_EMBEDDED
+     }
+ 
+   const kept = recent(a.when)
+-  const workflow = a.type === 'audio' ? 'missing' : 'available'
++  const workflow = 'available'
+   // The template it came from, else the file's stem without its counter.
+   const stem = a.name.replace(/\.[^.]+$/, '').replace(/_\d+$/, '')
+   const prompt = PROMPTS.find(([re]) => re.test(a.name))?.[1]
+@@ -184,7 +245,11 @@ export function factsFor(a: MarAsset): AssetFacts {
+         )
+       : undefined,
+     uploadedBy: h % 3 ? 'You' : undefined,
+-    workflowName: workflow === 'available' ? `${template || stem}.json` : undefined
++    workflowName: workflow === 'available' ? `${template || stem}.json` : undefined,
++    embedded: embeddedSummary(
++      [prompt ?? promptFromName(a.name, stem), negative],
++      models.length ? models : MODELS.image_z_image_turbo!
++    )
+   }
+ }
+ 
+diff --git a/src/renderer/src/design/landing/mar/assets/assetViewer.ts b/src/renderer/src/design/landing/mar/assets/assetViewer.ts
+new file mode 100644
+index 000000000..336403a8f
+--- /dev/null
++++ b/src/renderer/src/design/landing/mar/assets/assetViewer.ts
+@@ -0,0 +1,70 @@
++import { reactive } from 'vue'
++import type { MarAsset } from '../pages/assetsStore'
++
++export type ViewerKind = 'exr' | '3d'
++export type DetailTab = 'details' | 'viewer'
++
++export const viewerKind = (a: Pick<MarAsset, 'name' | 'type'>): ViewerKind | undefined =>
++  a.type === '3d' ? '3d' : /\.exr$/i.test(a.name) ? 'exr' : undefined
++
++const TAB_KEY = 'comfy.design.mar.assetDetailTab'
++
++function loadTabs(): Partial<Record<ViewerKind, DetailTab>> {
++  try {
++    const saved: unknown = JSON.parse(localStorage.getItem(TAB_KEY) ?? '{}')
++    return saved && typeof saved === 'object'
++      ? (saved as Partial<Record<ViewerKind, DetailTab>>)
++      : {}
++  } catch {
++    return {}
++  }
++}
++
++const lastTab = reactive(loadTabs())
++
++export const tabFor = (kind: ViewerKind): DetailTab =>
++  lastTab[kind] === 'viewer' ? 'viewer' : 'details'
++
++export function rememberTab(kind: ViewerKind, tab: DetailTab): void {
++  lastTab[kind] = tab
++  try {
++    localStorage.setItem(TAB_KEY, JSON.stringify(lastTab))
++  } catch {
++    return
++  }
++}
++
++export type ExrChannel = 'rgb' | 'r' | 'g' | 'b' | 'a'
++export const EXR_CHANNELS: { value: ExrChannel; label: string }[] = [
++  { value: 'rgb', label: 'RGB' },
++  { value: 'r', label: 'R' },
++  { value: 'g', label: 'G' },
++  { value: 'b', label: 'B' },
++  { value: 'a', label: 'A' }
++]
++export const EXR_GAMUTS = ['sRGB', 'Display P3', 'Rec. 2020', 'ACEScg', 'Linear sRGB'] as const
++
++export const exrView = reactive({
++  exposure: 0,
++  channel: 'rgb' as ExrChannel,
++  gamut: 'sRGB' as (typeof EXR_GAMUTS)[number],
++  dither: true,
++  clip: false,
++  alpha: false
++})
++
++export const AUTO_EXPOSURE = 0.8
++
++export type Material = 'original' | 'normal' | 'wireframe'
++export type Camera = 'perspective' | 'orthographic'
++export type ExportFormat = 'glb' | 'obj' | 'stl'
++export const MODEL_BACKGROUNDS = ['#1c1c1f', '#3a3a40', '#8a8f98', '#e8e6e1', '#22303a'] as const
++
++export const modelView = reactive({
++  background: MODEL_BACKGROUNDS[0] as string,
++  material: 'original' as Material,
++  camera: 'perspective' as Camera,
++  fov: 50,
++  light: 1,
++  format: 'glb' as ExportFormat
++})
+diff --git a/src/renderer/src/design/landing/mar/graph/AssetLightbox.vue b/src/renderer/src/design/landing/mar/graph/AssetLightbox.vue
+deleted file mode 100644
+index 8ea8ceb51..000000000
+--- a/src/renderer/src/design/landing/mar/graph/AssetLightbox.vue
++++ /dev/null
+@@ -1,129 +0,0 @@
+-<script setup lang="ts">
+-import { computed, onBeforeUnmount, onMounted } from 'vue'
+-import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
+-import { thumb } from '../../mock'
+-import AssetCover from '../assets/AssetCover.vue'
+-import type { MarAsset } from '../pages/assetsStore'
+-
+-/**
+- * Double-click on an asset, as ComfyUI ships it: the file large over the
+- * window, arrows through the list, Escape or X back to where you were.
+- * Nothing else on it; the details are Inspect asset's, in the side panel.
+- */
+-const { asset, list } = defineProps<{ asset: MarAsset; list: MarAsset[] }>()
+-const emit = defineEmits<{ close: []; go: [asset: MarAsset] }>()
+-
+-const at = computed(() => list.findIndex((a) => a.id === asset.id))
+-const prev = computed(() => list[at.value - 1])
+-const next = computed(() => list[at.value + 1])
+-const pic = computed(() => asset.src ?? (asset.thumbId ? thumb(asset.thumbId) : undefined))
+-
+-function key(e: KeyboardEvent): void {
+-  if (e.key === 'Escape') emit('close')
+-  else if (e.key === 'ArrowLeft' && prev.value) emit('go', prev.value)
+-  else if (e.key === 'ArrowRight' && next.value) emit('go', next.value)
+-  else return
+-  e.preventDefault()
+-  e.stopPropagation()
+-}
+-onMounted(() => window.addEventListener('keydown', key, true))
+-onBeforeUnmount(() => window.removeEventListener('keydown', key, true))
+-</script>
+-
+-<template>
+-  <Teleport to="body">
+-    <div
+-      class="proto-ui alb"
+-      role="dialog"
+-      aria-modal="true"
+-      :aria-label="asset.name"
+-      @pointerdown.self="emit('close')"
+-    >
+-      <button type="button" class="alb-btn alb-x" aria-label="Close" @click="emit('close')">
+-        <X :size="18" />
+-      </button>
+-      <button
+-        type="button"
+-        class="alb-btn alb-arrow"
+-        aria-label="Previous asset"
+-        :disabled="!prev"
+-        @click="prev && emit('go', prev)"
+-      >
+-        <ChevronLeft :size="20" />
+-      </button>
+-      <figure class="alb-media" @pointerdown.self="emit('close')">
+-        <img v-if="pic" :key="asset.id" :src="pic" :alt="asset.name" />
+-        <AssetCover v-else :name="asset.name" :type="asset.type" />
+-        <figcaption>{{ asset.name }} · {{ at + 1 }} / {{ list.length }}</figcaption>
+-      </figure>
+-      <button
+-        type="button"
+-        class="alb-btn alb-arrow is-right"
+-        aria-label="Next asset"
+-        :disabled="!next"
+-        @click="next && emit('go', next)"
+-      >
+-        <ChevronRight :size="20" />
+-      </button>
+-    </div>
+-  </Teleport>
+-</template>
+-
+-<style>
+-.alb {
+-  position: fixed;
+-  inset: 0;
+-  z-index: 60;
+-  display: grid;
+-  grid-template-columns: 64px minmax(0, 1fr) 64px;
+-  align-items: center;
+-  background: rgb(0 0 0 / 0.86);
+-  color: #f2f2f2;
+-}
+-.alb-media {
+-  display: grid;
+-  min-width: 0;
+-  height: 100%;
+-  margin: 0;
+-  place-items: center;
+-  align-content: center;
+-  gap: 12px;
+-  padding: 48px 0;
+-}
+-.alb-media img {
+-  max-width: 100%;
+-  max-height: calc(100vh - 140px);
+-  border-radius: 4px;
+-  object-fit: contain;
+-}
+-.alb-media figcaption {
+-  color: rgb(255 255 255 / 0.7);
+-  font-size: 12px;
+-  font-variant-numeric: tabular-nums;
+-}
+-:root .proto-ui.proto-ui.proto-ui .alb-btn {
+-  display: inline-flex;
+-  width: 40px;
+-  height: 40px;
+-  align-items: center;
+-  justify-content: center;
+-  padding: 0;
+-  border-radius: 999px;
+-  background: rgb(255 255 255 / 0.08);
+-  color: #f2f2f2;
+-}
+-:root .proto-ui.proto-ui.proto-ui .alb-btn:hover:not(:disabled) {
+-  background: rgb(255 255 255 / 0.16);
+-}
+-:root .proto-ui.proto-ui.proto-ui .alb-btn:disabled {
+-  opacity: 0.3;
+-}
+-.alb-arrow {
+-  justify-self: center;
+-}
+-.alb-x {
+-  position: absolute;
+-  top: 16px;
+-  right: 16px;
+-}
+-</style>
+diff --git a/src/renderer/src/design/landing/mar/graph/AssetsPanel.vue b/src/renderer/src/design/landing/mar/graph/AssetsPanel.vue
+index 6fa29234f..279202e3c 100644
+--- a/src/renderer/src/design/landing/mar/graph/AssetsPanel.vue
++++ b/src/renderer/src/design/landing/mar/graph/AssetsPanel.vue
+@@ -31,6 +31,7 @@ import {
+ import { go, proto, toast } from '../../useProto'
+ import RailPanel from './panels/RailPanel.vue'
+ import { PICTURES } from './panels/panelData'
++import exrPreview from '../assets/mock/asset-harbor-dawn.webp'
+ import { savedAssets } from './savedAssets'
+ import MarSearchField from '../pages/MarSearchField.vue'
+ import Tooltip from '../../ui/Tooltip.vue'
+@@ -42,7 +43,6 @@ import type { MarAsset } from '../pages/assetsStore'
+ import type { MenuLine } from '../pages/menu'
+ import AssetDetail from '../assets/AssetDetail.vue'
+ import AssetFilterMenu from './AssetFilterMenu.vue'
+-import AssetLightbox from './AssetLightbox.vue'
+ import AssetSidePanel from './AssetSidePanel.vue'
+ import { saveFile } from '../assets/saveFile'
+ import BulkTagMenu from './BulkTagMenu.vue'
+@@ -248,14 +248,15 @@ const ALL = computed<PanelAsset[]>(() => [
+     [
+       ['narration_intro.wav', 'audio', '5.1 MB', 'Generated', 1],
+       ['ambience_rain_loop.mp3', 'audio', '2.4 MB', 'Imported', 3],
+-      ['pyramid_prop.glb', '3d', '7.9 MB', 'Generated', 2]
++      ['pyramid_prop.glb', '3d', '7.9 MB', 'Generated', 2],
++      ['harbor_dawn_beauty_00003.exr', 'image', '48.6 MB', 'Generated', 0]
+     ] as const
+   ).map(([name, type, size, kind, w], i) => {
+     const [when, age] = WHEN[w]!
+     return {
+       id: `file-${i}`,
+       name,
+-      src: '',
++      src: type === 'image' ? exrPreview : '',
+       type,
+       source: 'local' as const,
+       size,
+@@ -442,10 +443,8 @@ onMounted(() => {
+  *  selects, and once something is selected a click selects too.
+  *  Inspect asset opens that same view; no second panel. With workflow tabs
+  *  (the Current look) it can also open in a tab beside them. */
+-const lightbox = ref<PanelAsset | null>(null)
+ function look(a: PanelAsset): void {
+-  if (prod.value) lightbox.value = a
+-  else detail.value = a
++  detail.value = a
+ }
+ const inspect = (a: PanelAsset): void => (prod.value ? showSide(a) : look(a))
+ const tabs = computed(() => graphStyle.id === 'current')
+@@ -929,13 +928,6 @@ function upload(files: FileList | null | undefined): void {
+       @go="detail = $event as PanelAsset"
+       @close="detail = null"
+     />
+-    <AssetLightbox
+-      v-if="lightbox"
+-      :asset="lightbox"
+-      :list="finished"
+-      @go="lightbox = $event as PanelAsset"
+-      @close="lightbox = null"
+-    />
+   </RailPanel>
+   <!-- Show details: on the right of the canvas, outside the panel. -->
+   <AssetSidePanel
+diff --git a/src/renderer/src/design/landing/mar/graph/MarGraph.vue b/src/renderer/src/design/landing/mar/graph/MarGraph.vue
+index 74446d1ff..8511c6898 100644
+--- a/src/renderer/src/design/landing/mar/graph/MarGraph.vue
++++ b/src/renderer/src/design/landing/mar/graph/MarGraph.vue
+@@ -68,7 +68,6 @@ import ShortcutsPanel from './panels/ShortcutsPanel.vue'
+ import TemplatesDialog from './panels/TemplatesDialog.vue'
+ import SettingsDialog from './panels/SettingsDialog.vue'
+ import NodeSearch from './NodeSearch.vue'
+-import MediaViewer from './MediaViewer.vue'
+ import AgentPanel from './AgentPanel.vue'
+ import McpNudge from '../mcp/McpNudge.vue'
+ import McpSetupModal from '../mcp/McpSetupModal.vue'
+@@ -939,8 +938,6 @@ const agent = ref(false)
+ watch(panel, (id) => id && (agent.value = false))
+ watch(agent, (on) => on && (panel.value = ''))
+ const viewing = ref<string>()
+-/** The redesign opens a result in the same asset view as Assets does; as
+- *  today it's ComfyUI's own result viewer (MediaViewer). */
+ const viewNode = computed(() => (viewing.value ? sById.value[viewing.value] : undefined))
+ const viewList = computed<MarAsset[]>(() => {
+   const n = viewNode.value
+@@ -1936,7 +1933,7 @@ function addFromPanel(kind: NodeKind): void {
+       <div class="mg-assets-main"><MarAssetsPage in-graph @collapse="collapseAssets" /></div>
+     </div>
+     <AssetDetail
+-      v-if="viewNode && comfyLook.id !== 'production' && viewList.length"
++      v-if="viewNode && viewList.length"
+       :asset="viewList[Math.min(viewNode.pick, viewList.length - 1)]!"
+       :list="viewList"
+       build="Generated"
+@@ -1946,13 +1943,6 @@ function addFromPanel(kind: NodeKind): void {
+       @save="save(viewNode!)"
+       @close="viewing = undefined"
+     />
+-    <MediaViewer
+-      v-else-if="viewing && sById[viewing]"
+-      :node="sById[viewing]!"
+-      @close="viewing = undefined"
+-      @pick="(index) => pick(sById[viewing!]!, index)"
+-      @save="save(sById[viewing!]!)"
+-    />
+     <!-- Milestone 2 on: a local build offers to connect an agent. -->
+     <McpNudge />
+     <McpSetupModal />
+diff --git a/src/renderer/src/design/landing/mar/graph/MediaViewer.vue b/src/renderer/src/design/landing/mar/graph/MediaViewer.vue
+deleted file mode 100644
+index a609b8db0..000000000
+--- a/src/renderer/src/design/landing/mar/graph/MediaViewer.vue
++++ /dev/null
+@@ -1,203 +0,0 @@
+-<script setup lang="ts">
+-import { computed, onBeforeUnmount, onMounted } from 'vue'
+-import { ChevronLeft, ChevronRight, Download, X } from 'lucide-vue-next'
+-import type { SNode } from './canvasData'
+-
+-/**
+- * A result, large: double-click a node's picture or clip. Its earlier
+- * results run along the bottom, tagged by their run; arrows step through
+- * them and Escape closes.
+- */
+-const { node } = defineProps<{ node: SNode }>()
+-const emit = defineEmits<{ close: []; pick: [index: number]; save: [] }>()
+-
+-const items = computed(() => (node.history.length ? node.history : [{ src: node.image, run: 0 }]))
+-const at = computed(() => Math.min(node.pick, items.value.length - 1))
+-const src = computed(() => items.value[at.value]?.src ?? node.image)
+-const isVideo = computed(() => !!node.video && !node.history.length)
+-
+-function key(e: KeyboardEvent): void {
+-  if (e.key === 'Escape') emit('close')
+-  else if (e.key === 'ArrowLeft' && at.value > 0) emit('pick', at.value - 1)
+-  else if (e.key === 'ArrowRight' && at.value < items.value.length - 1) emit('pick', at.value + 1)
+-  else return
+-  e.preventDefault()
+-  e.stopPropagation()
+-}
+-onMounted(() => window.addEventListener('keydown', key, true))
+-onBeforeUnmount(() => window.removeEventListener('keydown', key, true))
+-</script>
+-
+-<template>
+-  <div
+-    class="mv"
+-    role="dialog"
+-    :aria-label="node.title"
+-    @pointerdown.self="emit('close')"
+-    @wheel.stop
+-  >
+-    <header class="mv-head">
+-      <span class="mv-title">{{ node.title }}</span>
+-      <span v-if="items[at]?.run" class="mv-run">Run {{ items[at]!.run }}</span>
+-      <span class="mv-gap" />
+-      <button type="button" class="mv-btn" @click="emit('save')">
+-        <Download :size="14" />Save to Assets
+-      </button>
+-      <button type="button" class="mv-btn is-icon" aria-label="Close" @click="emit('close')">
+-        <X :size="16" />
+-      </button>
+-    </header>
+-    <div class="mv-stage" @pointerdown.self="emit('close')">
+-      <button
+-        v-if="items.length > 1"
+-        type="button"
+-        class="mv-arrow"
+-        aria-label="Earlier result"
+-        :disabled="at === 0"
+-        @click="emit('pick', at - 1)"
+-      >
+-        <ChevronLeft :size="18" />
+-      </button>
+-      <video v-if="isVideo" :src="node.video" class="mv-media" autoplay muted loop playsinline />
+-      <img v-else :key="src" :src="src" alt="" class="mv-media" draggable="false" />
+-      <button
+-        v-if="items.length > 1"
+-        type="button"
+-        class="mv-arrow is-right"
+-        aria-label="Later result"
+-        :disabled="at === items.length - 1"
+-        @click="emit('pick', at + 1)"
+-      >
+-        <ChevronRight :size="18" />
+-      </button>
+-    </div>
+-    <div v-if="items.length > 1" class="mv-strip">
+-      <button
+-        v-for="(r, i) in items"
+-        :key="i"
+-        type="button"
+-        class="mv-thumb"
+-        :class="i === at && 'is-on'"
+-        :aria-label="`Run ${r.run}`"
+-        @click="emit('pick', i)"
+-      >
+-        <img :src="r.src" alt="" draggable="false" />
+-      </button>
+-    </div>
+-  </div>
+-</template>
+-
+-<style>
+-.mv {
+-  position: absolute;
+-  inset: 0;
+-  z-index: 8;
+-  display: flex;
+-  flex-direction: column;
+-  padding: calc(var(--mg-top) + 16px) 24px 20px;
+-  background: color-mix(in oklch, var(--color-content-background) 88%, transparent);
+-  backdrop-filter: blur(28px);
+-  color: var(--mg-text);
+-  animation: mv-in 0.18s ease-out;
+-}
+-@keyframes mv-in {
+-  from {
+-    opacity: 0;
+-  }
+-}
+-@media (prefers-reduced-motion: reduce) {
+-  .mv {
+-    animation: none;
+-  }
+-}
+-.mv-head {
+-  display: flex;
+-  height: 40px;
+-  flex: none;
+-  align-items: center;
+-  gap: 10px;
+-}
+-.mv-title {
+-  font-size: 14px;
+-  font-weight: 500;
+-}
+-.mv-run {
+-  color: var(--mg-dim);
+-  font-size: 12px;
+-}
+-.mv-gap {
+-  flex: 1;
+-}
+-:root .proto-ui.proto-ui.proto-ui .mv-btn {
+-  display: inline-flex;
+-  height: 32px;
+-  align-items: center;
+-  gap: 6px;
+-  padding: 0 12px;
+-  border-radius: var(--mar-tab-item-radius);
+-  background: var(--mg-hover);
+-  color: var(--mg-text);
+-  font-size: 13px;
+-}
+-:root .proto-ui.proto-ui.proto-ui .mv-btn.is-icon {
+-  width: 32px;
+-  justify-content: center;
+-  padding: 0;
+-  background: transparent;
+-}
+-.mv-stage {
+-  position: relative;
+-  display: flex;
+-  min-height: 0;
+-  flex: 1;
+-  align-items: center;
+-  justify-content: center;
+-  gap: 16px;
+-  padding: 16px 0;
+-}
+-.mv-media {
+-  max-width: calc(100% - 120px);
+-  max-height: 100%;
+-  border-radius: var(--mar-tab-radius);
+-  object-fit: contain;
+-}
+-:root .proto-ui.proto-ui.proto-ui .mv-arrow {
+-  display: inline-flex;
+-  width: 40px;
+-  height: 40px;
+-  flex: none;
+-  align-items: center;
+-  justify-content: center;
+-  padding: 0;
+-  border-radius: 999px;
+-  background: var(--mg-hover);
+-  color: var(--mg-text);
+-}
+-:root .proto-ui.proto-ui.proto-ui .mv-arrow:disabled {
+-  opacity: 0.3;
+-}
+-.mv-strip {
+-  display: flex;
+-  flex: none;
+-  justify-content: center;
+-  gap: 6px;
+-}
+-:root .proto-ui.proto-ui.proto-ui .mv-thumb {
+-  width: 52px;
+-  height: 52px;
+-  padding: 0;
+-  overflow: hidden;
+-  border-radius: var(--mar-tab-item-radius);
+-  background: transparent;
+-  opacity: 0.5;
+-}
+-:root .proto-ui.proto-ui.proto-ui .mv-thumb.is-on {
+-  box-shadow: 0 0 0 2px var(--mg-text);
+-  opacity: 1;
+-}
+-.mv-thumb img {
+-  width: 100%;
+-  height: 100%;
+-  object-fit: cover;
+-}
+-</style>
+diff --git a/src/renderer/src/design/landing/mar/pages/assetsStore.ts b/src/renderer/src/design/landing/mar/pages/assetsStore.ts
+index d87fe899d..33527c70f 100644
+--- a/src/renderer/src/design/landing/mar/pages/assetsStore.ts
++++ b/src/renderer/src/design/landing/mar/pages/assetsStore.ts
+@@ -170,7 +170,8 @@ const PICTURES: MarAsset[] = (
+     ['relight_mug_00003.png', 'image', '2.1 MB', 2100, 1700, 'local-1', 'mug-morning'],
+     ['headphones_ref.jpg', 'image', '1.1 MB', 1100, 2950, 'local-1', 'headphones-ref'],
+     ['alpine_lake_00002.png', 'image', '3.4 MB', 3400, 4700, 'local-1', 'alpine-lake'],
+-    ['moodboard_citrus.png', 'image', '1.8 MB', 1800, 8200, 'local-1', 'citrus-flatlay']
++    ['moodboard_citrus.png', 'image', '1.8 MB', 1800, 8200, 'local-1', 'citrus-flatlay'],
++    ['harbor_dawn_beauty_00003.exr', 'image', '48.6 MB', 48600, 40, 'local-1', 'harbor-dawn']
+   ] as const
+ ).map(([name, type, size, sizeMb, age, envId, slot], i) => ({
+   id: `pic-${i}`,
