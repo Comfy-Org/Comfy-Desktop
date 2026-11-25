@@ -30,7 +30,7 @@ import MarModeSeg from '../mar/modes/MarModeSeg.vue'
 import MarModeSwitch from '../mar/modes/MarModeSwitch.vue'
 import { marTabsOn } from '../mar/shell/titleTabs'
 import MarCreateSquare from '../mar/create/MarCreateSquare.vue'
-import CreateScreen from '../mar/create/CreateScreen.vue'
+import CreateScreen from '../mar/create/CreateHost.vue'
 import { createOverHome } from '../mar/create/createScreen'
 
 /**

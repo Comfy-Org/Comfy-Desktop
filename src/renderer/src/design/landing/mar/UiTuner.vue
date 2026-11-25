@@ -16,6 +16,8 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
+import { createLook } from './create/createLook'
+import { CREATE_LOOKS } from './create/looks'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
@@ -181,6 +183,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'cover', show: () => when.cover.value },
   { id: 'recentsCover', show: () => when.recentsCover.value },
   { id: 'homeTour', show: () => when.homeTour.value },
+  { id: 'createLook', show: () => when.createLook.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -479,6 +482,9 @@ const linkSays = computed(() => {
             <span class="text-ui text-subtle-foreground"
               >Folders in Assets, on Desktop and in ComfyUI's Assets tab.</span
             >
+          </Row>
+          <Row :show="shows('createLook')" label="Create look">
+            <Select v-model="createLook.id" :options="CREATE_LOOKS" class="w-full" />
           </Row>
           <Row :show="shows('assetFolderLayout')" label="Folders layout">
             <Seg
