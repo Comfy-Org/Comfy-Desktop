@@ -6,6 +6,7 @@ import { mock } from '../../assets/mock'
 import { HUB_WORKFLOWS, hubById, type HubUseCase } from '../../explore/hubWorkflows'
 import { NODE_TYPES, type NodeKind } from '../../graph/canvasData'
 import { closeCreate } from '../createScreen'
+import { TEMPLATE_OUTPUTS } from '../../templateModal/templateOutputs'
 import { SHELVES, starterOf, type Readiness, type Starter } from '../createStarters'
 
 export const readyIcon = (r: Readiness): Component => (r.tone === 'fetch' ? Download : Check)
@@ -124,33 +125,6 @@ export interface Output {
   tall: boolean
 }
 
-const OUTPUT_SLOTS: [string, string, string?][] = [
-  ['asset-neon-alley', 'image_z_image_turbo'],
-  ['gv-dove', 'video_ltx2_3_i2v', 'dove'],
-  ['asset-perfume-stone', 'image_qwen_image_2_1_background_removal'],
-  ['asset-fisherman-portrait', 'utility_seedvr2_7b_int8_upscale_image'],
-  ['character-sheet', 'templates-1_click_multiple_character_angles-v1.0'],
-  ['gv-waves', 'video_ltx2_3_i2v', 'waves'],
-  ['asset-sneaker-dust', 'image_qwen_image_2_1_image_edit'],
-  ['asset-forest-deer', 'image_z_image_turbo'],
-  ['axe-model-00001', '3d_hunyuan3d-v2.1'],
-  ['asset-citrus-flatlay', 'image_qwen_image_2_1_image_edit'],
-  ['gv-horse', 'video_ltx2_3_i2v', 'horse'],
-  ['asset-lighthouse-storm', 'image_z_image_turbo'],
-  ['asset-headphones-ref', 'image_qwen_image_2_1_background_removal'],
-  ['asset-dancer-smoke', 'utility_seedvr2_7b_int8_upscale_image'],
-  ['gv-smoke', 'video_ltx2_3_i2v', 'smoke'],
-  ['asset-night-market', 'image_z_image_turbo'],
-  ['asset-mug-morning', 'image_qwen_image_2_1_image_edit'],
-  ['asset-alpine-lake', 'utility_seedvr2_7b_int8_upscale_image'],
-  ['gv-reeds', 'video_ltx2_3_i2v', 'reeds'],
-  ['asset-astronaut-sunflowers', 'image_z_image_turbo'],
-  ['asset-noir-detective', 'image_qwen_image_2_1_image_edit'],
-  ['asset-wok-fire', 'image_z_image_turbo'],
-  ['gv-lake', 'video_ltx2_3_i2v', 'lake'],
-  ['asset-umbrella-crossing', 'utility_seedvr2_7b_int8_upscale_image']
-]
-
 const POPULAR_NAMES: Record<string, string> = {
   video_ltx2_3_i2v: 'Image to video',
   image_z_image_turbo: 'Text to image',
@@ -161,7 +135,7 @@ const POPULAR_NAMES: Record<string, string> = {
   'templates-1_click_multiple_character_angles-v1.0': 'Character from every angle'
 }
 
-export const OUTPUTS: Output[] = OUTPUT_SLOTS.flatMap(([slot, id, clipSlot], i) => {
+export const OUTPUTS: Output[] = TEMPLATE_OUTPUTS.flatMap(([slot, id, clipSlot], i) => {
   const starter = starterById(id, POPULAR_NAMES[id], clipSlot)
   if (!starter) return []
   const video = clipSlot ? starter.clip : undefined

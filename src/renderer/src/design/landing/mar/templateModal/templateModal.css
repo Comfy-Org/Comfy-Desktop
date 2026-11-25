@@ -728,3 +728,72 @@
 .mar-tpl-cost[data-s='disk'] {
   color: var(--tpl-warn);
 }
+
+.mar-tpl-made-with {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-examples .mad-thumb {
+  position: relative;
+}
+.mar-tpl-example-clip {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  color: oklch(1 0 0 / 0.92);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6));
+}
+
+.mar-tpl-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 10px;
+  padding: 7px 12px;
+  background: var(--mad-fill);
+}
+.mar-tpl-inputs > li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-tpl-inputs .mar-tpl-size {
+  color: var(--color-muted-foreground);
+}
+
+.mar-tpl-eta {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--mad-fill);
+  font-size: 13px;
+}
+.mar-tpl-eta-icon {
+  color: var(--color-muted-foreground);
+}
+.mar-tpl-eta-label {
+  color: var(--color-base-foreground);
+}
+.mar-tpl-eta-time {
+  color: var(--color-base-foreground);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mar-tpl-eta-parts {
+  grid-column: 2 / -1;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
