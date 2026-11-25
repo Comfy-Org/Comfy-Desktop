@@ -20,7 +20,6 @@ import {
   RefreshCw,
   ScanSearch,
   Search,
-  Play,
   Trash2,
   Video
 } from '@lucide/vue'
@@ -1174,6 +1173,23 @@ function cardImage(asset: AssetSummary): string | null {
   return asset.kind === '3d' ? asset.thumbnailUrl : null
 }
 
+function cardVideoOf(event: PointerEvent): HTMLVideoElement | null {
+  return (event.currentTarget as HTMLElement).querySelector('video')
+}
+
+function playCardVideo(event: PointerEvent): void {
+  cardVideoOf(event)
+    ?.play()
+    .catch(() => undefined)
+}
+
+function stopCardVideo(event: PointerEvent): void {
+  const video = cardVideoOf(event)
+  if (!video) return
+  video.pause()
+  video.currentTime = 0
+}
+
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.')
   return dot >= 0 ? name.slice(dot) : ''
@@ -1579,6 +1595,8 @@ function extensionOf(name: string): string {
           :style="cardStyle(card)"
           :data-testid="`asset-${asset.id}`"
           @contextmenu.prevent="openAssetMenu(asset, $event)"
+          @pointerenter="playCardVideo"
+          @pointerleave="stopCardVideo"
         >
           <Tooltip
             :text="asset.name"
@@ -1611,6 +1629,9 @@ function extensionOf(name: string): string {
                   :src="asset.previewUrl"
                   preload="metadata"
                   muted
+                  loop
+                  playsinline
+                  data-testid="asset-video"
                   class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   @loadedmetadata="noteDuration(asset, $event)"
                 />
@@ -1623,14 +1644,6 @@ function extensionOf(name: string): string {
                   <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
                   <File v-else :size="40" aria-hidden="true" />
                   <span>{{ extensionOf(asset.name) }}</span>
-                </span>
-                <span
-                  v-if="asset.kind === 'video' && asset.previewUrl"
-                  class="pointer-events-none absolute top-1/2 left-1/2 flex size-10 -translate-1/2 items-center justify-center rounded-full bg-media-overlay text-foreground backdrop-blur-sm"
-                  aria-hidden="true"
-                  data-testid="asset-play"
-                >
-                  <Play :size="18" class="translate-x-px" />
                 </span>
                 <span
                   v-if="(asset.kind === 'video' || asset.kind === 'audio') && asset.durationSeconds"

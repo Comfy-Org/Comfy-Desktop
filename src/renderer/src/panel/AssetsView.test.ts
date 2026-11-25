@@ -318,18 +318,27 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('2 KB')
   })
 
-  it('marks a video with a play button and leaves pictures plain', async () => {
+  it('plays a video card muted while the pointer is on it, and rewinds it when the pointer leaves', async () => {
     const wrapper = await mountAssets([
-      asset('clip', 'clip.mp4', 'video', { previewUrl: 'data:video/mp4,' }),
-      asset('still', 'still.png', 'image', { previewUrl: picture('x', 300).previewUrl })
+      asset('clip', 'clip.mp4', 'video', { previewUrl: 'data:video/mp4,' })
     ])
+    const card = wrapper.get('[data-testid="asset-clip"]')
+    const video = card.get<HTMLVideoElement>('[data-testid="asset-video"]').element
+    const play = vi.spyOn(video, 'play').mockResolvedValue(undefined)
+    const pause = vi.spyOn(video, 'pause').mockImplementation(() => undefined)
 
-    expect(wrapper.find('[data-testid="asset-clip"] [data-testid="asset-play"]').exists()).toBe(
-      true
-    )
-    expect(wrapper.find('[data-testid="asset-still"] [data-testid="asset-play"]').exists()).toBe(
-      false
-    )
+    expect(video.muted).toBe(true)
+    expect(video.loop).toBe(true)
+    expect(card.find('[data-testid="asset-play"]').exists()).toBe(false)
+
+    await card.trigger('pointerenter')
+    expect(play).toHaveBeenCalledOnce()
+
+    const seek = vi.fn()
+    Object.defineProperty(video, 'currentTime', { configurable: true, get: () => 4, set: seek })
+    await card.trigger('pointerleave')
+    expect(pause).toHaveBeenCalledOnce()
+    expect(seek).toHaveBeenCalledExactlyOnceWith(0)
   })
 
   it('shows how long a video runs once its card has read the start of the video', async () => {
