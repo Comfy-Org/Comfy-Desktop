@@ -5,6 +5,7 @@
   "outputDirectory": "dist-design",
   "rewrites": [
     { "source": "/", "destination": "/design-landing.html" },
-    { "source": "/ds", "destination": "/src/design/landing/mar/ds/index.html" }
+    { "source": "/ds", "destination": "/src/design/landing/mar/ds/index.html" },
+    { "source": "/links", "destination": "/design-index.html" }
   ]
 }

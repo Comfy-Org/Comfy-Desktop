@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Comfy Desktop · Design links</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111112;
+        --card: #1a1a1c;
+        --card-hover: #202023;
+        --fg: #f0f0f0;
+        --muted: #a1a1a1;
+        --subtle: #757575;
+        --line: rgb(240 240 240 / 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 56px 24px 96px;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          13px/20px Inter,
+          system-ui,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        line-height: 34px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .lede {
+        margin: 0 0 44px;
+        max-width: 60ch;
+        color: var(--muted);
+      }
+      h2 {
+        margin: 40px 0 4px;
+        font-size: 11px;
+        line-height: 16px;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--subtle);
+      }
+      h2 + p {
+        margin: 0 0 14px;
+        max-width: 60ch;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      }
+      a.card {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 16px 18px;
+        border-radius: 14px;
+        background: var(--card);
+        color: inherit;
+        text-decoration: none;
+        transition: background 140ms ease;
+      }
+      a.card:hover {
+        background: var(--card-hover);
+      }
+      a.card b {
+        font-weight: 600;
+      }
+      a.card span {
+        color: var(--muted);
+      }
+      .rows {
+        display: flex;
+        flex-direction: column;
+        border-radius: 14px;
+        background: var(--card);
+      }
+      .rows a {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 11px 18px;
+        color: inherit;
+        text-decoration: none;
+      }
+      .rows a + a {
+        border-top: 1px solid var(--line);
+      }
+      .rows a:hover {
+        background: var(--card-hover);
+      }
+      .rows a:first-child {
+        border-radius: 14px 14px 0 0;
+      }
+      .rows a:last-child {
+        border-radius: 0 0 14px 14px;
+      }
+      .rows b {
+        min-width: 180px;
+        font-weight: 500;
+      }
+      .rows span {
+        color: var(--muted);
+      }
+      code {
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: rgb(240 240 240 / 0.07);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+      .cmds {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .cmds li {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        color: var(--muted);
+      }
+      footer {
+        margin-top: 48px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+        color: var(--subtle);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Comfy Desktop · Design links</h1>
+      <p class="lede">
+        Everything the New UI work is made of, in one place: the prototype, the design system, the
+        written rules and the checks. Local links work from the preview server; the same addresses
+        work on the deploy.
+      </p>
+
+      <h2>Design system</h2>
+      <p>
+        Every component in its states, rendered from the prototype's real code, so it can't drift.
+      </p>
+      <div class="grid">
+        <a class="card" href="./src/design/landing/mar/ds/index.html">
+          <b>Open the design system</b>
+          <span>43 pages: foundations, components, patterns</span>
+        </a>
+        <a class="card" href="./src/design/landing/mar/ds/index.html#/rules">
+          <b>UI rules</b>
+          <span>The written rules every screen follows</span>
+        </a>
+        <a class="card" href="./src/design/landing/mar/ds/index.html?playground">
+          <b>Theme playground</b>
+          <span>Tokens on the real UI, and the patch for ComfyUI_frontend</span>
+        </a>
+      </div>
+
+      <h2>Foundations</h2>
+      <div class="rows">
+        <a href="./src/design/landing/mar/ds/index.html#/colour"
+          ><b>Colour</b><span>Tokens, surfaces and what each one is for</span></a
+        >
+        <a href="./src/design/landing/mar/ds/index.html#/type"
+          ><b>Type</b><span>The scale and how it is used</span></a
+        >
+        <a href="./src/design/landing/mar/ds/index.html#/radius"
+          ><b>Radius</b><span>Shell, panel, card, control</span></a
+        >
+        <a href="./src/design/landing/mar/ds/index.html#/surfaces"
+          ><b>Surfaces</b><span>How panels sit on the page</span></a
+        >
+        <a href="./src/design/landing/mar/ds/index.html#/materials-blur"
+          ><b>Materials · Blur</b><span>Glass over imagery</span></a
+        >
+        <a href="./src/design/landing/mar/ds/index.html#/motion"
+          ><b>Motion</b><span>Durations, easings and what moves</span></a
+        >
+        <a href="./src/design/landing/mar/ds/index.html#/interactions"
+          ><b>Interactions</b><span>Hover, focus, selection, drag</span></a
+        >
+        <a href="./src/design/landing/mar/ds/index.html#/icons"
+          ><b>Icons</b><span>The production set</span></a
+        >
+      </div>
+
+      <h2>Prototype</h2>
+      <p>The New UI itself. ⌘. opens the UI Playground; Copy link shares the exact variant.</p>
+      <div class="grid">
+        <a class="card" href="./design-landing.html">
+          <b>Open the prototype</b>
+          <span>Every milestone, from today to Agent</span>
+        </a>
+        <a class="card" href="./design-landing.html?share&amp;m=8.5&amp;view=assets">
+          <b>Assets</b>
+          <span>As it stands today</span>
+        </a>
+        <a
+          class="card"
+          href="./design-landing.html?share&amp;m=8.5&amp;view=assets&amp;rating=stars&amp;folderPicker=pill"
+        >
+          <b>Assets · the review's calls</b>
+          <span>Five stars, folder as its own pill, type in Filters</span>
+        </a>
+      </div>
+
+      <h2>Written down</h2>
+      <p>On the <code>mar/ui-tests</code> branch, where the prototype lives.</p>
+      <div class="rows">
+        <a
+          href="https://github.com/Comfy-Org/Comfy-Desktop/blob/mar/ui-tests/src/renderer/src/design/landing/mar/UI-RULES.md"
+          ><b>UI-RULES.md</b><span>The rules, as the DS page renders them</span></a
+        >
+        <a
+          href="https://github.com/Comfy-Org/Comfy-Desktop/blob/mar/ui-tests/src/renderer/src/design/landing/mar/DECISIONS.md"
+          ><b>DECISIONS.md</b><span>Product questions and where each one stands</span></a
+        >
+        <a
+          href="https://github.com/Comfy-Org/Comfy-Desktop/tree/mar/ui-tests/src/renderer/src/design/landing/mar/ds"
+          ><b>ds/</b><span>The design system's own code</span></a
+        >
+        <a
+          href="https://github.com/Comfy-Org/Comfy-Desktop/blob/mar/ui-tests/src/renderer/src/design/landing/mar/ds/theme/integration.ts"
+          ><b>theme/integration.ts</b><span>Where each token lands in ComfyUI_frontend</span></a
+        >
+      </div>
+
+      <h2>Checks</h2>
+      <p>From the repository root.</p>
+      <ul class="cmds">
+        <li><code>pnpm design:preview</code> This page and everything on it</li>
+        <li>
+          <code>pnpm design:contrast</code> WCAG of every text on every surface, from the live
+          tokens
+        </li>
+        <li>
+          <code>pnpm design:shots</code> Screenshots of each direction × theme × milestone, with a
+          diff
+        </li>
+      </ul>
+
+      <footer>
+        Local: <code>http://localhost:5199/design-index.html</code> · Deployed:
+        <code>/links</code>
+      </footer>
+    </main>
+  </body>
+</html>
