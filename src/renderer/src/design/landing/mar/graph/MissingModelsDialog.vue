@@ -72,11 +72,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.mmd-head > .rp-icon {
-  margin-left: auto;
+  margin-right: -6px;
 }
 .mmd-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 16px;
   font-weight: 600;
