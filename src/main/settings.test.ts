@@ -689,6 +689,7 @@ describe('startPage', () => {
   })
 
   it('opens on Home when settings.json holds a page that does not exist', () => {
+    settings.set('startPage', 'apps')
     fs.writeFileSync(settingsPath, JSON.stringify({ startPage: 'library' }), 'utf-8')
     expect(settings.startPage()).toBe('home')
   })
