@@ -676,6 +676,53 @@ describe('the apps Desktop lists with no internet', () => {
     ])
   })
 
+  it('list every app within five seconds when the kept stills all hang', async () => {
+    vi.useFakeTimers()
+    electron.online = false
+    savedOnDisk(
+      LIST_URL,
+      Array.from({ length: 30 }, (_, n) => appWithStill(n))
+    )
+    electron.fetchStill.mockImplementation((_url, init) => {
+      const signal = init?.signal
+      if (signal?.aborted) return Promise.reject(signal.reason)
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason))
+      })
+    })
+    mockedFetchJSON.mockRejectedValue(new Error('offline'))
+    let listed: Awaited<ReturnType<typeof listApps>> | null = null
+    void listApps().then((apps) => {
+      listed = apps
+    })
+
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(listed).toHaveLength(30)
+    expect(listed!.every((app) => app.covers.length === 0)).toBe(true)
+  })
+
+  it('show the kept stills, not the website covers, when the website goes away after a good load', async () => {
+    vi.useFakeTimers()
+    mockedFetchJSON.mockResolvedValueOnce([
+      websiteApp({
+        covers: [
+          { cover: '/catalog-media/hero/v1', still: '/catalog-media/hero-still/v1' },
+          { cover: '/catalog-media/skate/v1', still: '/catalog-media/skate-still/v1' }
+        ]
+      })
+    ])
+    await listApps()
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1)
+    electron.online = false
+    electron.fetchStill.mockImplementation(keptStill)
+    mockedFetchJSON.mockRejectedValue(new Error('offline'))
+
+    expect((await listApps())[0]?.covers).toEqual([
+      { url: 'data:image/webp;base64,AQID', stillUrl: 'data:image/webp;base64,AQID' }
+    ])
+  })
+
   it('look for only the first still of each app', async () => {
     electron.online = false
     savedWithStills()
