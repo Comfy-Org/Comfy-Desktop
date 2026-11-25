@@ -570,16 +570,6 @@ onBeforeUnmount(() => {
         tabindex="-1"
       >
         <section class="mad-stage" @pointerdown.self="!tab && emit('close')">
-          <button
-            v-if="full"
-            type="button"
-            class="mad-stage-x"
-            aria-label="Close"
-            title="Close"
-            @click="emit('close')"
-          >
-            <X :size="16" />
-          </button>
           <header class="mad-bar"></header>
           <!-- The picture is clipped to its own area: zoomed in, it never
                runs under the bar or the filmstrip. -->
@@ -806,6 +796,16 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                 </div>
+                <button
+                  v-if="full"
+                  type="button"
+                  class="mad-icon mad-head-close"
+                  aria-label="Close"
+                  title="Close"
+                  @click="emit('close')"
+                >
+                  <X :size="16" />
+                </button>
               </div>
             </header>
 
@@ -1622,31 +1622,22 @@ onBeforeUnmount(() => {
   padding: 0 56px 0 20px;
   box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-stage-x {
-  position: absolute;
-  z-index: 2;
-  top: 16px;
-  right: 16px;
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
+:root .proto-ui.proto-ui.proto-ui .mad-head-tools .mad-head-close {
+  width: 28px;
+  height: 28px;
+  margin-left: -6px;
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.1);
-  color: #fff;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-stage-x:hover {
-  background: rgb(255 255 255 / 0.18);
+:root .proto-ui.proto-ui.proto-ui .mad-head-tools .mad-head-close:hover {
+  color: var(--color-base-foreground);
 }
 .mad-ul-label {
   display: inline-flex;
   height: 44px;
   align-items: center;
   color: var(--color-base-foreground);
-  font-size: var(--text-ui);
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   user-select: none;
 }
 .mad-ul-tabs {

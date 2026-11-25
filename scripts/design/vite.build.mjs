@@ -11,11 +11,12 @@ export default {
     outDir: resolve(repo, 'dist-design'),
     emptyOutDir: true,
     rollupOptions: {
-      // Two pages ship: the prototype, and the design system beside it
-      // (vercel.json rewrites /ds to it, so it has a short address).
+      // Three pages ship: the prototype, the design system beside it
+      // (/ds) and the index of links to both (/links).
       input: {
         landing: resolve(base.root, 'design-landing.html'),
-        ds: resolve(base.root, 'src/design/landing/mar/ds/index.html')
+        ds: resolve(base.root, 'src/design/landing/mar/ds/index.html'),
+        links: resolve(base.root, 'design-index.html')
       }
     }
   }
