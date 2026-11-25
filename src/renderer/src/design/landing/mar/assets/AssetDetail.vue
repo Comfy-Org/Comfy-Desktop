@@ -168,10 +168,30 @@ function picOf(a: MarAsset): string | undefined {
 const zoom = ref(100)
 const media = ref<HTMLElement>()
 const fit = ref(1)
+const natural = ref<{ width: number; height: number } | null>(null)
 function measure(): void {
-  const w = facts.value.width ?? (media.value?.querySelector('img')?.naturalWidth || 0)
+  const w = natural.value?.width ?? facts.value.width ?? 0
   if (media.value && w) fit.value = media.value.clientWidth / w
 }
+function onImageLoad(e: Event): void {
+  const img = e.target as HTMLImageElement
+  natural.value = { width: img.naturalWidth, height: img.naturalHeight }
+  void nextTick(measure)
+}
+function onVideoLoad(): void {
+  dur.value = vid.value?.duration || 0
+  const v = vid.value
+  if (v?.videoWidth) natural.value = { width: v.videoWidth, height: v.videoHeight }
+  void nextTick(measure)
+}
+const fitStyle = computed(() =>
+  natural.value
+    ? {
+        '--r': natural.value.width / natural.value.height,
+        '--natural-w': `${natural.value.width}px`
+      }
+    : { '--r': facts.value.ratio }
+)
 const zoomCtl = ref<InstanceType<typeof ZoomControl>>()
 /** Compare: only for a picture made from another (an app's output). */
 const comparing = ref(false)
@@ -204,6 +224,7 @@ watch(
   () => asset.id,
   async () => {
     zoom.value = 100
+    natural.value = null
     await nextTick()
     strip.value
       ?.querySelector<HTMLElement>('[aria-current="true"]')
@@ -228,8 +249,20 @@ watch(
   { immediate: true }
 )
 
-const dims = computed(() =>
-  facts.value.width ? `${facts.value.width} × ${facts.value.height}` : undefined
+const measuredDims = computed(() =>
+  natural.value ? `${natural.value.width} × ${natural.value.height}` : undefined
+)
+const dims = computed(
+  () =>
+    measuredDims.value ??
+    (facts.value.width ? `${facts.value.width} × ${facts.value.height}` : undefined)
+)
+const extension = computed(() => {
+  const dot = asset.name.lastIndexOf('.')
+  return dot >= 0 ? asset.name.slice(dot + 1).toUpperCase() : facts.value.format
+})
+const chips = computed(() =>
+  [extension.value, measuredDims.value, asset.size].filter((c): c is string => !!c)
 )
 const KIND: Record<string, string> = {
   image: 'Image',
@@ -244,10 +277,10 @@ const KIND: Record<string, string> = {
 const details = computed(() =>
   (
     [
-      ['Type', `${KIND[asset.type] ?? 'File'} · ${facts.value.format}`],
-      ['Dimensions', dims.value],
+      ['Type', full.value ? undefined : `${KIND[asset.type] ?? 'File'} · ${facts.value.format}`],
+      ['Dimensions', full.value ? undefined : dims.value],
       ['Length', facts.value.duration],
-      ['Size', asset.size],
+      ['Size', full.value ? undefined : asset.size],
       [facts.value.imported ? 'Date imported' : 'Date created', added.value],
       ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined],
       ['Uploaded by', facts.value.uploadedBy ?? build]
@@ -282,12 +315,14 @@ function copyText(text: string, what: string): void {
 }
 /** Show in Finder: only a file on this computer, never a Comfy Cloud one. */
 const onDisk = computed(() => asset.source !== 'cloud')
-const savedIn = computed(() => `${build} / ${facts.value.imported ? 'input' : 'output'}`)
 const savedFolder = computed(() => ({
   name: facts.value.imported ? 'input' : 'output',
-  parent: build
+  parent: `~/Documents/ComfyUI/${build}`
 }))
-const subtitle = computed(() => `${KIND[asset.type] ?? 'File'} · Created ${added.value}`)
+const savedIn = computed(() => `${savedFolder.value.parent}/${savedFolder.value.name}`)
+const subtitle = computed(
+  () => `${KIND[asset.type] ?? 'File'} · Created ${createdAt(asset).toLocaleString('en-US')}`
+)
 function reveal(): void {
   toast(`Revealed ${asset.name}`)
   moreMenu.value = false
@@ -504,10 +539,10 @@ onBeforeUnmount(() => {
           <header class="mad-bar"></header>
           <!-- The picture is clipped to its own area: zoomed in, it never
                runs under the bar or the filmstrip. -->
-          <div class="mad-view">
+          <div class="mad-view" :class="isAudio && 'is-audio'">
             <!-- The frame holds the player's bar outside the zoom, so it keeps
                  its size while the picture scales. -->
-            <div class="mad-fit" :style="{ '--r': facts.ratio }">
+            <div class="mad-fit" :class="natural && 'is-natural'" :style="fitStyle">
               <div ref="media" class="mad-media" :style="{ scale: zoom / 100 }">
                 <video
                   v-if="clip"
@@ -519,13 +554,13 @@ onBeforeUnmount(() => {
                   playsinline
                   preload="metadata"
                   @click="toggle"
-                  @loadedmetadata="dur = vid?.duration || 0"
+                  @loadedmetadata="onVideoLoad"
                   @play="playing = true"
                   @pause="playing = false"
                   @ended="playing = false"
                   @timeupdate="cur = vid?.currentTime ?? 0"
                 />
-                <img v-else-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
+                <img v-else-if="pic" :key="asset.id" :src="pic" alt="" @load="onImageLoad" />
                 <CompareSplit v-if="comparing && asset.before && !clip" :before="asset.before" />
                 <AssetCover v-else :name="asset.name" :type="asset.type" />
                 <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
@@ -624,6 +659,9 @@ onBeforeUnmount(() => {
                   {{ asset.name }}
                 </h2>
                 <p v-if="full" class="mad-sub">{{ subtitle }}</p>
+                <div v-if="full && chips.length" class="mad-chips">
+                  <span v-for="c in chips" :key="c" class="mad-tag mad-model">{{ c }}</span>
+                </div>
               </div>
               <!-- More, at the name's right: everything past the actions below. -->
               <div ref="moreBox" class="mad-pick">
@@ -727,10 +765,9 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section v-if="full" class="mad-sec" aria-label="Saved in">
+            <section v-if="full && onDisk" class="mad-sec" aria-label="Saved in">
               <h3 class="mad-label">Saved in</h3>
-              <p v-if="!onDisk" class="mad-saved">Comfy Cloud assets</p>
-              <div v-else class="mad-saved-in" :title="savedIn">
+              <div class="mad-saved-in" :title="savedIn">
                 <span class="mad-saved">{{ savedFolder.name }}</span>
                 <span class="mad-saved is-parent">{{ savedFolder.parent }}</span>
               </div>
@@ -1054,7 +1091,7 @@ onBeforeUnmount(() => {
 }
 .mad-fit {
   position: relative;
-  width: min(100%, calc(100cqh * var(--r)));
+  width: min(100%, calc(100cqh * var(--r)), var(--natural-w, 100%));
   min-width: 0;
   flex: 0 1 auto;
   aspect-ratio: var(--r);
@@ -1073,7 +1110,13 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+}
+.mad-fit.is-natural .mad-media {
+  background: transparent;
+}
+.mad-view.is-audio {
+  justify-content: flex-start;
 }
 .mad-media video {
   cursor: pointer;
@@ -1451,10 +1494,9 @@ onBeforeUnmount(() => {
 }
 .mad-name {
   overflow-wrap: anywhere;
-  font-size: 15px;
+  font-size: var(--text-heading);
   font-weight: 600;
-  line-height: 1.35;
-  text-wrap: balance;
+  line-height: var(--text-heading--line-height);
 }
 .mad-sec {
   display: flex;
@@ -1729,7 +1771,17 @@ onBeforeUnmount(() => {
 .mad-sub {
   margin-top: 4px;
   color: var(--color-muted-foreground);
-  font-size: 12px;
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.mad-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.mad-chips .mad-tag {
+  font-variant-numeric: tabular-nums;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-close {
   width: 28px;
