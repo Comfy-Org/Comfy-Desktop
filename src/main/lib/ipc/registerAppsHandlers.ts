@@ -7,14 +7,21 @@ import {
   captureAppPage,
   closeAppPage,
   closeDraftPages,
+  closeStaffPagesOfOtherAccounts,
   hideAppPage,
   noteAppPageRunning,
   showAppPage,
+  tellPanelsTheListChanged,
   titleBarApps
 } from '../../apps/appPageView'
 import { listApps, pictureForListedApp } from '../../apps/appsCatalog'
-import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender } from '../../apps/appsPages'
+import {
+  forgetHiddenApps,
+  listHiddenApps,
+  NO_HIDDEN_APPS,
+  pictureForHiddenApp
+} from '../../apps/hiddenApps'
 import { currentDrafts, draftCards } from '../../apps/draftApps'
 import {
   acceptDraft,
@@ -43,6 +50,12 @@ async function closeDraftsNoLongerAllowed(): Promise<void> {
   closeDraftPages(inspected)
 }
 
+function dropHiddenApps(): void {
+  closeStaffPagesOfOtherAccounts()
+  forgetHiddenApps()
+  tellPanelsTheListChanged()
+}
+
 interface MenuAnchor {
   x?: unknown
   y?: unknown
@@ -60,7 +73,7 @@ function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): v
   const { running, ready } = titleBarApps(found.id)
   const withState = (state: 'running' | 'ready') => (app: RunningApp) => ({
     ...app,
-    picture: pictureForListedApp(app.id),
+    picture: pictureForListedApp(app.id) ?? pictureForHiddenApp(app.id),
     state
   })
   const apps = [...running.map(withState('running')), ...ready.map(withState('ready'))]
@@ -77,12 +90,15 @@ function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): v
 }
 
 export function registerAppsHandlers(): void {
-  ipcMain.handle('apps:get-enabled', () => areAppsEnabled())
-
   ipcMain.handle('apps:list', async (event) => {
-    if (!isPanelSender(event.sender) || !(await areAppsEnabled())) return []
+    if (!isPanelSender(event.sender)) return []
     const listed = await listApps()
     return [...draftCards(), ...listed]
+  })
+
+  ipcMain.handle('apps:list-hidden', async (event) => {
+    if (!isPanelSender(event.sender)) return NO_HIDDEN_APPS
+    return listHiddenApps().catch(() => NO_HIDDEN_APPS)
   })
 
   ipcMain.handle('apps:show-page', (event, appId: unknown, placement: unknown) =>
@@ -124,6 +140,7 @@ export function registerAppsHandlers(): void {
   })
 
   cloudAuthEvents.on('changed', () => void closeDraftsNoLongerAllowed())
+  cloudAuthEvents.on('changed', dropHiddenApps)
 
   ipcMain.handle('apps:send-request', async (event, text: unknown) => {
     if (!isPanelSender(event.sender) || typeof text !== 'string') return false

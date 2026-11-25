@@ -22,7 +22,7 @@ import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
 import { useStopAction } from './useStopAction'
 import type { AutoStartBuild } from './useAutoStartBuild'
-import { revealInFolderLabel } from './usePlatform'
+import { revealInFolderKey } from './usePlatform'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import { shareLatestSnapshot } from '../lib/snapshots'
 import { isBuildInstall } from '../devplatform/buildState'
@@ -188,7 +188,7 @@ export function useInstallContextMenu(
     if (hasInstallPath(inst) && isLocalLikeInstall(inst)) {
       items.push({
         id: 'reveal-in-folder',
-        label: revealInFolderLabel(window.api?.platform),
+        label: t(revealInFolderKey(window.api?.platform)),
         icon: FolderSearch
       })
     }
@@ -340,7 +340,7 @@ export function useInstallContextMenu(
       await runInstantActionWithAlert(
         inst,
         'open-folder',
-        revealInFolderLabel(window.api?.platform)
+        t(revealInFolderKey(window.api?.platform))
       )
     } else if (id === 'share') {
       const label = t('chooser.menuExportSnapshot')

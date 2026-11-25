@@ -106,9 +106,9 @@ const VIDEO_WORKFLOW = catalogWorkflow({
   publishedAt: '2026-01-16'
 })
 
-const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const listApps = vi.fn<() => Promise<AppCard[]>>()
 const listCatalogWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
+const listHiddenApps = vi.fn()
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const hideAppPage = vi.fn()
 const closeAppPage = vi.fn()
@@ -194,12 +194,11 @@ beforeEach(() => {
   page.style.cssText = `position: fixed; display: flex; left: 0; top: 0; width: ${WIDE_PAGE_WIDTH}px; height: 840px`
   document.body.append(page)
   showAppPage.mockResolvedValue('loading')
-  getAppsEnabled.mockResolvedValue(true)
   listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW])
   ;(window as unknown as { api: unknown }).api = {
-    getAppsEnabled,
     listApps,
     listCatalogWorkflows,
+    listHiddenApps,
     showAppPage,
     captureAppPage: vi.fn().mockResolvedValue(null),
     appSwitchStopsRun: vi.fn().mockResolvedValue(null),
@@ -942,6 +941,26 @@ describe('AppsView', () => {
     ])
     expect(wrapper.emitted('apps-loaded')?.at(-1)).toEqual([[CUTOUT]])
   })
+
+  it('shows only the published apps, and never asks for the staff list', async () => {
+    listHiddenApps.mockResolvedValue({
+      apps: [
+        {
+          id: 'explore-worlds',
+          title: 'Explore Worlds',
+          description: '',
+          covers: [],
+          reasons: ['hub_only'],
+          page: 'live'
+        }
+      ]
+    })
+    const wrapper = await mountApps()
+
+    expect(listHiddenApps).not.toHaveBeenCalled()
+    expect(wrapper.findAll(APP_CARDS)).toHaveLength(3)
+    expect(wrapper.text()).not.toContain('Explore Worlds')
+  })
 })
 
 describe('Explore Workflows', () => {
@@ -1125,14 +1144,13 @@ describe('Explore Workflows', () => {
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('video')
   })
 
-  it('opens Workflows with a retry when Apps is disabled and the catalog fails', async () => {
-    getAppsEnabled.mockResolvedValue(false)
+  it('offers a retry on Workflows when the catalog fails', async () => {
     listCatalogWorkflows.mockRejectedValueOnce(new Error('offline'))
     const wrapper = await mountApps()
 
-    expect(wrapper.find('[data-testid="explore-apps-tab"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await flushPromises()
     expect(wrapper.get('[data-testid="workflows-failed"]').isVisible()).toBe(true)
-    expect(listApps).not.toHaveBeenCalled()
 
     await wrapper.get('[data-testid="workflows-retry"]').trigger('click')
     await flushPromises()

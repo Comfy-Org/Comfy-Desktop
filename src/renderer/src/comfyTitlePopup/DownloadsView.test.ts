@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import zh from '@locales/zh.json'
+import { resetAppLocale, switchAppLocaleToChinese } from '../lib/switchAppLocale'
 
 interface MockDownloadEntry {
   url: string
@@ -118,6 +121,45 @@ describe('comfyTitlePopup/DownloadsView', () => {
     const sub = item.find('.downloads-item-sub').text()
     expect(sub).toContain('Pause')
     expect(sub).toContain('10%')
+  })
+
+  describe('status lines in the app language', () => {
+    afterEach(resetAppLocale)
+
+    it('writes what has arrived, the time left and the finished state in Chinese', async () => {
+      switchAppLocaleToChinese()
+      const { default: DownloadsView } = await import('./DownloadsView.vue')
+      const state: MockDownloadsState = {
+        active: [
+          {
+            url: 'https://example.com/a.bin',
+            filename: 'a.bin',
+            progress: 0.42,
+            receivedBytes: 4_200_000,
+            totalBytes: 10_000_000,
+            etaSeconds: 30,
+            status: 'downloading'
+          },
+          { url: 'https://example.com/w.bin', filename: 'w.bin', progress: 0, status: 'pending' }
+        ],
+        recent: [
+          {
+            url: 'https://example.com/done.bin',
+            filename: 'done.bin',
+            savePath: '/tmp/done.bin',
+            progress: 1,
+            status: 'completed'
+          }
+        ]
+      }
+      const wrapper = mount(DownloadsView, { props: { state } })
+      await flushPromises()
+
+      const subtitles = wrapper.findAll('.downloads-item-sub').map((sub) => sub.text())
+      expect(subtitles).toContain(`4.0 MB / 9.5 MB · ${zh.downloadsPopup.timeLeftUnderMinute}`)
+      expect(subtitles).toContain(zh.downloadsPopup.statusWaiting)
+      expect(subtitles).toContain(zh.downloadsPopup.statusDownloaded)
+    })
   })
 
   it('renders a completed entry as a clickable row with a Downloaded subtitle, a Show in Finder action and a dismiss X', async () => {
@@ -403,6 +445,28 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(failedIcon.classes()).toContain('text-[#ff5454]')
   })
 
+  it('says Download failed for a failed download with no message, like the full list', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state: MockDownloadsState = {
+      active: [],
+      recent: [
+        { url: 'https://example.com/e.bin', filename: 'e.bin', progress: 0.3, status: 'error' },
+        {
+          url: 'https://example.com/m.bin',
+          filename: 'm.bin',
+          progress: 0.3,
+          status: 'error',
+          error: 'Disk full'
+        }
+      ]
+    }
+    const wrapper = mount(DownloadsView, { props: { state } })
+    await flushPromises()
+
+    const subtitles = wrapper.findAll('.is-error .downloads-item-sub').map((sub) => sub.text())
+    expect(subtitles).toEqual(['Download failed', 'Disk full'])
+  })
+
   describe('keyboard', () => {
     const state: MockDownloadsState = {
       active: [],
@@ -536,6 +600,22 @@ describe('comfyTitlePopup/DownloadsView', () => {
       expect(reveal.text()).toBe('')
       expect(reveal.attributes('aria-label')).toBe(label)
       expect(reveal.attributes('title')).toBe(label)
+    })
+
+    describe('in the app language', () => {
+      afterEach(resetAppLocale)
+
+      it('renames the reveal action in Chinese when the app switches to Chinese while open', async () => {
+        const wrapper = await mountRows()
+        const reveal = wrapper.get('.is-completed .downloads-item-reveal')
+        expect(reveal.attributes('aria-label')).toBe('Show in Finder')
+
+        switchAppLocaleToChinese()
+        await nextTick()
+
+        expect(reveal.attributes('aria-label')).toBe(zh.assets.showInFinder)
+        expect(reveal.attributes('title')).toBe(zh.assets.showInFinder)
+      })
     })
 
     it('runs the action without also opening the row', async () => {

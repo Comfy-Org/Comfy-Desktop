@@ -27,7 +27,8 @@ import {
   diffSnapshots,
   buildInstallationDdContext,
   _operationAborts,
-  _runningSessions
+  _runningSessions,
+  i18n
 } from './shared'
 import si from 'systeminformation'
 import type { RunPerformanceTestWorkflowResult, SystemInfo } from '../../../types/ipc'
@@ -321,16 +322,19 @@ export function registerAppHandlers(): void {
       }
       const exportConfig =
         imageType === 'benchmark-comparison'
-          ? { title: 'Export benchmark comparison', prefix: 'benchmark-comparison' }
+          ? { title: i18n.t('benchmarks.exportDialogTitle'), prefix: 'benchmark-comparison' }
           : imageType === 'performance-test'
-            ? { title: 'Export performance test results', prefix: 'performance-test-results' }
+            ? {
+                title: i18n.t('performanceTest.exportDialogTitle'),
+                prefix: 'performance-test-results'
+              }
             : null
       if (!exportConfig) return { ok: false, message: 'Invalid results image type.' }
       const win = BrowserWindow.fromWebContents(_event.sender)
       if (!win) return { ok: false, message: 'No window.' }
       const { canceled, filePaths } = await dialog.showOpenDialog(win, {
         title: exportConfig.title,
-        buttonLabel: 'Export here',
+        buttonLabel: i18n.t('common.exportHere'),
         defaultPath,
         properties: ['openDirectory', 'createDirectory']
       })

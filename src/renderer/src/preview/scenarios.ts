@@ -3,6 +3,7 @@ import type { ElectronApi } from '../types/ipc'
 import type { BridgeSeed, FakeBridge } from './fakeBridge'
 import {
   EXPLORE_WORKFLOWS,
+  HIDDEN_APP_CARDS,
   INSTALL_STEPS,
   WORKFLOW_NEEDS,
   everydayBuilds,
@@ -268,6 +269,18 @@ export const SCENARIOS: PreviewScenario[] = [
       await stage.click('[data-testid="catalog-workflow-target-local:inst-video-experiments"]')
       stage.bridge.reply({ launchCatalogWorkflow: downloadThatKeepsRunning(stage.bridge) })
       await stage.click('[data-testid="catalog-workflow-action"]')
+    }
+  },
+  {
+    id: 'staff-apps',
+    title: 'Development page for staff',
+    ready: '[data-testid="staff-apps-grid"]',
+    seed: (machine) => ({
+      installations: everydayBuilds(machine),
+      replies: { listHiddenApps: async () => ({ apps: HIDDEN_APP_CARDS }) }
+    }),
+    arrange: async ({ click }) => {
+      await click('[data-testid="app-sidebar-staff-apps"]')
     }
   },
   {

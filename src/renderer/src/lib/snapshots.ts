@@ -1,7 +1,5 @@
 import type { SnapshotDiffResult, SnapshotListData, SnapshotSummary } from '../types/ipc'
-import { formatRelativeFromMs } from './datetime'
-
-type Translator = (key: string, params?: Record<string, unknown>) => string
+import { formatRelativeFromMs, type Translator } from './datetime'
 
 const _snapshotListCache = new Map<string, SnapshotListData>()
 export function getCachedSnapshotList(installationId: string): SnapshotListData | null {

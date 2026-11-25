@@ -95,6 +95,7 @@ interface PendingDownload {
   senderContents?: Electron.WebContents
   subscriberWindows: Set<BrowserWindow>
   subscriberContents: Set<Electron.WebContents>
+  installationSubscribers?: Map<Electron.WebContents, string | null>
   item?: Electron.DownloadItem
   abort?: AbortController
   canPause?: boolean
@@ -538,6 +539,13 @@ function broadcastProgress(progress: DownloadProgress): void {
         contents.send('desktop2-download-progress', progress)
       }
     }
+    for (const [contents, installationId] of pending.installationSubscribers ?? []) {
+      if (contents.isDestroyed() || resolveSenderInstallationId(contents) !== installationId) {
+        pending.installationSubscribers?.delete(contents)
+      } else if (!reachesContentsDirectly(pending, contents, target)) {
+        contents.send('desktop2-download-progress', forNonOwnerView(progress))
+      }
+    }
   }
   _broadcastToRenderer('model-download-progress', progress)
   if (isTerminalStatus(progress.status)) {
@@ -671,10 +679,67 @@ function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): (
   }
 }
 
-function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJobHandle {
-  if (opts.window && opts.window !== existing.window && !opts.window.isDestroyed()) {
+function forNonOwnerView({
+  savePath: _savePath,
+  error: _error,
+  ...progress
+}: DownloadProgress): DownloadProgress {
+  return progress
+}
+
+function reachesContentsDirectly(
+  pending: PendingDownload,
+  contents: Electron.WebContents,
+  target: Electron.WebContents | undefined
+): boolean {
+  return (
+    contents === target ||
+    pending.subscriberContents.has(contents) ||
+    [...pending.subscriberWindows].some((win) => !win.isDestroyed() && win.webContents === contents)
+  )
+}
+
+const contentsWatchedForTeardown = new WeakSet<Electron.WebContents>()
+
+function addInstallationSubscriber(
+  pending: PendingDownload,
+  contents: Electron.WebContents,
+  installationId: string | null
+): void {
+  ;(pending.installationSubscribers ??= new Map()).set(contents, installationId)
+  if (contentsWatchedForTeardown.has(contents)) return
+  contentsWatchedForTeardown.add(contents)
+  const unsubscribe = (): void => {
+    for (const job of pendingDownloads.values()) job.installationSubscribers?.delete(contents)
+  }
+  contents.once('destroyed', unsubscribe)
+  contents.on('did-navigate', unsubscribe)
+}
+
+function joinModelJob(
+  existing: PendingDownload,
+  opts: ModelJobOptions,
+  installationId: string | null
+): ModelJobHandle {
+  const windowContents =
+    opts.window && !opts.window.isDestroyed() ? opts.window.webContents : undefined
+  if (opts.window && opts.window !== existing.window && windowContents) {
     existing.subscriberWindows.add(opts.window)
-    opts.window.webContents.send('desktop2-download-progress', existing.lastProgress)
+    windowContents.send('desktop2-download-progress', existing.lastProgress)
+  }
+  const joiner = opts.senderContents
+  if (
+    joiner &&
+    !joiner.isDestroyed() &&
+    joiner !== windowContents &&
+    resolveSenderInstallationId(joiner) === installationId
+  ) {
+    const isOwner = joiner === existing.senderContents
+    if (!isOwner) addInstallationSubscriber(existing, joiner, installationId)
+    joiner.send(
+      'desktop2-download-progress',
+      isOwner ? existing.lastProgress : forNonOwnerView(existing.lastProgress)
+    )
   }
   const onProgress = opts.onProgress
   if (onProgress) {
@@ -1019,7 +1084,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       }
       retryParamsById.delete(id)
       createdAtById.delete(id)
-      return joinModelJob(active, opts)
+      return joinModelJob(active, opts, resolvedInstallId)
     }
     modelJobIdByDest.delete(destKey)
   }
@@ -1898,6 +1963,33 @@ export function retryDownload(ref: string): boolean {
   return true
 }
 
+function isLiveStatus(status: DownloadProgress['status']): boolean {
+  return status === 'pending' || status === 'downloading' || status === 'paused'
+}
+
+function isCancellationUnderWay(pending: PendingDownload): boolean {
+  return pending.cancelling === true || pending.cancelRequested === true
+}
+
+export function subscribeToInstallationModelJobs(
+  installationId: string,
+  contents: Electron.WebContents
+): DownloadProgress[] {
+  if (contents.isDestroyed()) return []
+  const jobs = [...pendingDownloads.values()].filter(
+    (pending) =>
+      pending.kind === 'model' &&
+      pending.installationId === installationId &&
+      isLiveStatus(pending.lastProgress.status) &&
+      !isCancellationUnderWay(pending)
+  )
+  for (const job of jobs) addInstallationSubscriber(job, contents, installationId)
+  return jobs.map(({ lastProgress, suspended }) => ({
+    ...forNonOwnerView(lastProgress),
+    ...(suspended ? { status: 'paused' as const } : {})
+  }))
+}
+
 export function getActiveDownloads(): DownloadProgress[] {
   const result: DownloadProgress[] = []
   for (const pending of pendingDownloads.values()) {
@@ -2005,6 +2097,9 @@ export function detachWindowDownloads(win: BrowserWindow): void {
     }
     pending.subscriberWindows.delete(win)
     if (ownedByWin(pending.senderContents)) pending.senderContents = undefined
+    for (const subscriber of pending.installationSubscribers?.keys() ?? []) {
+      if (ownedByWin(subscriber)) pending.installationSubscribers?.delete(subscriber)
+    }
   }
   for (const params of retryParamsById.values()) {
     if (params.window === win) params.window = undefined

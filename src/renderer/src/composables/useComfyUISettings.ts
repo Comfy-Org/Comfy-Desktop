@@ -511,8 +511,12 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
   const offReleaseEnriched = window.api.onReleaseCacheEnriched?.(() => {
     if (toValue(opts.installation)) void reload()
   })
+  const offLocaleChanged = window.api.onLocaleChanged?.(() => {
+    if (toValue(opts.installation)) void reload()
+  })
   onScopeDispose(() => {
     offReleaseEnriched?.()
+    offLocaleChanged?.()
     if (noticeTimer) clearTimeout(noticeTimer)
   })
 

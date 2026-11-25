@@ -24,11 +24,12 @@ import * as mainTelemetry from '../lib/telemetry'
 import { COMFY_BG } from '../lib/theme'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
-import { areAppsEnabled, currentAppsLocation } from './appsConfig'
+import { currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
+import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
 import type { DraftApp } from './draftApps'
-import { isDraftStillAllowed } from './draftLinks'
+import { cloudIdentity, isDraftStillAllowed } from './draftLinks'
 
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
@@ -77,6 +78,9 @@ interface HostedPage {
   outputs: ShownOutputs | null
   running: boolean
   finished: boolean
+  staffTitle: string | null
+  fromStaffList: boolean
+  openedBy: string | null
   forget: () => void
 }
 
@@ -164,6 +168,10 @@ function everyPage(): HostedPage[] {
   return [...windowKeys].flatMap(pagesOf)
 }
 
+function listedTitleOf(appId: string): string | null {
+  return titleForListedApp(appId) ?? titleForHiddenApp(appId)
+}
+
 function runsOf(windowKey: number): AppRun[] {
   return pagesOf(windowKey).flatMap(({ appId, running, finished }) =>
     appId !== null && (running || finished) ? [{ appId, running, finished }] : []
@@ -171,9 +179,13 @@ function runsOf(windowKey: number): AppRun[] {
 }
 
 function appsWhere(windowKey: number, matches: (run: AppRun) => boolean): RunningApp[] {
-  return runsOf(windowKey)
-    .filter(matches)
-    .map((run) => ({ id: run.appId, title: titleForListedApp(run.appId) ?? run.appId }))
+  return pagesOf(windowKey).flatMap((hosted) => {
+    const { appId, running, finished } = hosted
+    if (appId === null || !(running || finished) || !matches({ appId, running, finished })) {
+      return []
+    }
+    return [{ id: appId, title: listedTitleOf(appId) ?? hosted.staffTitle ?? appId }]
+  })
 }
 
 export function runningApps(windowKey: number): RunningApp[] {
@@ -256,7 +268,7 @@ function isInAppRoute(base: string, url: string): boolean {
 }
 
 function pageUrlForApp(appId: string): string | null {
-  return draftPageUrl(appId) ?? pageUrlForListedApp(appId)
+  return draftPageUrl(appId) ?? pageUrlForListedApp(appId) ?? pageUrlForHiddenApp(appId)
 }
 
 function sessionForApp(appId: string): Session {
@@ -322,7 +334,7 @@ function isDraft(appId: string | null): appId is string {
   return appId !== null && draftOf(appId) !== null
 }
 
-function tellPanelsTheListChanged(): void {
+export function tellPanelsTheListChanged(): void {
   for (const windowKey of comfyWindows.keys()) panelOf(windowKey)?.send(APPS_LIST_CHANGED_CHANNEL)
 }
 
@@ -361,7 +373,11 @@ function isDraftRunning(appId: string): boolean {
 }
 
 function titleForApp(appId: string): string {
-  return draftOf(appId)?.card.title ?? titleForListedApp(appId) ?? appId
+  return draftOf(appId)?.card.title ?? listedTitleOf(appId) ?? appId
+}
+
+function isOnStaffListOnly(appId: string): boolean {
+  return draftPageUrl(appId) === null && pageUrlForListedApp(appId) === null
 }
 
 function draftClosingStop(appId: string): DraftClosingStop {
@@ -459,6 +475,9 @@ function createHostedPage(
     outputs: null,
     running: false,
     finished: false,
+    staffTitle: null,
+    fromStaffList: false,
+    openedBy: null,
     forget: registerAppsPage(contents, () => admitsBridge(hosted))
   }
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
@@ -666,7 +685,7 @@ export async function showAppPage(
   rawPlacement: unknown
 ): Promise<AppPageStatus> {
   const placement = parsePlacement(rawPlacement)
-  if (typeof appId !== 'string' || !placement || !(await areAppsEnabled())) return 'failed'
+  if (typeof appId !== 'string' || !placement) return 'failed'
   const pageUrl = pageUrlForApp(appId)
   const host = hostOf(panel)
   if (!pageUrl || !host) return 'failed'
@@ -680,6 +699,9 @@ export async function showAppPage(
   const draftMoved = isDraft(appId) && hosted.startUrl !== pageUrl
   if (hosted.appId !== appId || retriesFailedPage || draftMoved) {
     hosted.appId = appId
+    hosted.fromStaffList = isOnStaffListOnly(appId)
+    hosted.staffTitle = hosted.fromStaffList ? titleForHiddenApp(appId) : null
+    hosted.openedBy = cloudIdentity()
     load(host.windowKey, hosted, pageUrl)
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
@@ -701,6 +723,15 @@ export function closeDraftPages(only?: readonly DraftApp[]): void {
   }
   forgetDrafts(only)
   tellPanelsTheListChanged()
+}
+
+export function closeStaffPagesOfOtherAccounts(): void {
+  const identity = cloudIdentity()
+  for (const hosted of everyPage()) {
+    if (!hosted.fromStaffList || hosted.appId === null || hosted.openedBy === identity) continue
+    closeForList(hosted.windowKey, hosted, false)
+    if (isHeld(hosted)) disposePage(hosted)
+  }
 }
 
 export function closeAppPage(panel: WebContents, appId: unknown): void {

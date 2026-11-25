@@ -126,10 +126,8 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
-import { initAppsFlag } from './apps/appsFlag'
 import { runningAppCount, runningApps } from './apps/appPageView'
 import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
-import { appsEnabledAtStart } from './apps/appsConfig'
 import { releaseWindowWorkspaceClaim } from './apps/workspaceClaims'
 import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
 import { openDraftLink } from './apps/draftLinks'
@@ -256,6 +254,14 @@ function focusExternalProcessWindow(pid: number): void {
     )
   }
 }
+function installTranslatedAppMenu(): void {
+  installAppMenu(process.platform, undefined, {
+    onCheckForUpdates: () => {
+      void updater.runCheck('app-menu').catch(() => {})
+    }
+  })
+}
+
 function updateTrayMenu(): void {
   if (!tray) return
   const contextMenu = Menu.buildFromTemplate([
@@ -1056,11 +1062,10 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     migrateXdgPaths()
     persistWinDataRootChoice()
 
-    installAppMenu(process.platform, undefined, {
-      onCheckForUpdates: () => {
-        void updater.runCheck('app-menu').catch(() => {})
-      }
-    })
+    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
+    i18n.init(locale)
+
+    installTranslatedAppMenu()
 
     if (process.platform !== 'darwin') {
       app.on('browser-window-created', (_event, window) => {
@@ -1078,14 +1083,12 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     } catch (err) {
       console.warn('[comfy-procs] startup scan failed:', err)
     }
-    const appsEnabled = appsEnabledAtStart()
     mainTelemetry.initTelemetry({
       appVersion: APP_VERSION,
       appEnv: app.isPackaged ? 'prod-v2' : 'dev',
       isPackaged: app.isPackaged,
       sessionStartProps: {
-        prior_session_unclean: priorSessionUnclean,
-        ...(appsEnabled === undefined ? {} : { apps_enabled: appsEnabled })
+        prior_session_unclean: priorSessionUnclean
       }
     })
     mainTelemetry.setConsentState(initialConsent)
@@ -1140,14 +1143,9 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
 
-    void initAppsFlag({ distinctId: installationId })
-
     void initWorkspaceMintSwitchFlag({ distinctId: installationId })
 
     getCloudSession().resumeRevocations()
-
-    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
-    i18n.init(locale)
 
     mainTelemetry.capture('comfy.desktop.app.language_resolved', {
       os_locale: app.getLocale(),
@@ -1585,19 +1583,19 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,
             spec: {
-              title: 'Restart instance?',
-              message: 'Restart this instance?',
+              title: i18n.t('instancePicker.restartConfirmHeading'),
+              message: i18n.t('instancePicker.restartConfirmTitle'),
               details: [
                 {
-                  label: 'Heads up',
+                  label: i18n.t('instancePicker.confirmHeadsUp'),
                   items: [
-                    'Restarting will stop the running session.',
-                    'Any unsaved work in the workflow will be lost.'
+                    i18n.t('instancePicker.restartConfirmItem1'),
+                    i18n.t('instancePicker.restartConfirmItem2')
                   ]
                 }
               ],
-              confirmLabel: 'Restart',
-              cancelLabel: 'Cancel',
+              confirmLabel: i18n.t('instancePicker.restartConfirmAction'),
+              cancelLabel: i18n.t('common.cancel'),
               confirmStyle: 'primary',
               theme: parentEntry.lastTheme
             }
@@ -1642,7 +1640,10 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       },
       onComfyRestarted,
       onModelFolderRelaunch,
-      onLocaleChanged: updateTrayMenu,
+      onLocaleChanged: () => {
+        updateTrayMenu()
+        if (process.platform === 'darwin') installTranslatedAppMenu()
+      },
       onThemeChanged: applyChooserHostThemeToAll
     })
     initializeModelDownloads().catch((err) => {

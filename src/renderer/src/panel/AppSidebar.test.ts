@@ -143,7 +143,7 @@ describe('AppSidebar', () => {
     )
   })
 
-  it('marks Explore current and keeps the existing Apps route', async () => {
+  it('marks Apps as the current page and opens it from its row', async () => {
     const wrapper = await mountSidebar('apps')
 
     expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Explore'])
@@ -154,7 +154,36 @@ describe('AppSidebar', () => {
     expect(wrapper.emitted('navigate')).toEqual([['apps']])
   })
 
-  it('names the app left open under Explore, and opens Explore on it', async () => {
+  it('shows no Development row unless the staff list is shown', async () => {
+    const wrapper = await mountSidebar('home')
+
+    expect(wrapper.find('[data-testid="app-sidebar-staff-apps"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Development')
+  })
+
+  it('lists Development after Assets for staff, marks it current and opens it from its row', async () => {
+    const wrapper = mount(AppSidebar, { props: { activePage: 'staff-apps', showStaffApps: true } })
+    await flushPromises()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Explore',
+      'Assets',
+      'Development',
+      'Builds',
+      ''
+    ])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual([
+      'Development'
+    ])
+
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('staff-apps')
+    expect(wrapper.emitted('navigate')).toEqual([['staff-apps']])
+  })
+
+  it('names the app left open under Apps, and opens Apps on it', async () => {
     const wrapper = mount(AppSidebar, {
       props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
     })
@@ -177,6 +206,60 @@ describe('AppSidebar', () => {
     expect(wrapper.emitted('open-app')).toEqual([[CHARACTER_SWAP]])
     expect(wrapper.emitted('navigate')).toBeUndefined()
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
+  })
+
+  it('names an app left open from Development under Development, not Explore', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'home',
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Explore',
+      'Assets',
+      'Development',
+      'Character Swap',
+      'Builds',
+      ''
+    ])
+  })
+
+  it('leaves out the row for an app left open from Development while Development is shown', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'staff-apps',
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
+  it('names the rail Development while an app opened from Development is open', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: {
+        activePage: 'staff-apps',
+        makeRoom: true,
+        appInProgress: CHARACTER_SWAP,
+        appHome: 'staff-apps',
+        showStaffApps: true,
+        apps: [CHARACTER_SWAP]
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-app-rail"]').attributes('aria-label')).toBe(
+      'Development'
+    )
   })
 
   it('leaves out the row for the app left open while Apps itself is shown', async () => {
@@ -1181,6 +1264,21 @@ describe('AppSidebar', () => {
       expect(
         [...menu.querySelectorAll('[role="menuitem"]')].map((row) => row.textContent?.trim())
       ).toEqual(['Open in new window'])
+      expect(navigatePanel).not.toHaveBeenCalled()
+    })
+
+    it('offers no new window for Development', async () => {
+      useInstallationStore().installations = []
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home', showStaffApps: true },
+        attachTo: document.body
+      })
+      mounted.push(wrapper)
+      await flushPromises()
+
+      await rightClick(wrapper.get('[data-testid="app-sidebar-staff-apps"]').element)
+
+      expect(pageMenu()).toBeNull()
       expect(navigatePanel).not.toHaveBeenCalled()
     })
 

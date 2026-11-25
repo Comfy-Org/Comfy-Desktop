@@ -140,19 +140,18 @@ function buildStatus(build: Installation) {
 }
 
 const { state: appsState, apps, loadApps } = useHomeApps()
-const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.value !== 'off')
 const tab = ref<HomeTab>('apps')
 const tabs = computed(() => [
   { value: 'apps' as const, label: t('sidebar.apps'), testId: 'home-apps-tab' },
   { value: 'workflows' as const, label: t('sidebar.workflows'), testId: 'home-workflows-tab' }
 ])
-const showWorkflows = computed(() => appsState.value === 'off' || tab.value === 'workflows')
+const showWorkflows = computed(() => tab.value === 'workflows')
 const workflowState = ref<WorkflowState>('idle')
 const workflows = ref<CatalogWorkflow[]>([])
 const carouselIsLoading = computed(() =>
   showWorkflows.value
     ? workflowState.value === 'idle' || workflowState.value === 'loading'
-    : appsState.value === 'checking' || appsState.value === 'loading'
+    : appsState.value === 'loading'
 )
 
 function coversOf(app: AppCard): readonly AppCover[] {
@@ -212,7 +211,7 @@ onMounted(() => {
         class="mt-[74px]"
         :aria-label="showWorkflows ? t('home.exampleWorkflows') : t('sidebar.apps')"
       >
-        <div v-if="appsEnabled" class="mb-5 flex justify-center">
+        <div class="mb-5 flex justify-center">
           <SegmentedControl v-model="tab" :options="tabs" :label="t('home.carouselTabs')" />
         </div>
         <div
@@ -273,7 +272,7 @@ onMounted(() => {
           :title="t('apps.emptyTitle')"
           :text="t('apps.emptyBody')"
         />
-        <div v-if="appsState !== 'checking'" class="mt-[30px] flex justify-center">
+        <div class="mt-[30px] flex justify-center">
           <Button
             type="button"
             variant="muted-textonly"

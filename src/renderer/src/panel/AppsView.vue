@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, ArrowUpRight, PanelsTopLeft, Plus, Search, Workflow } from '@lucide/vue'
+import { AppWindow, PanelsTopLeft, Plus, Search, Workflow } from '@lucide/vue'
 import { useEventListener, useLocalStorage } from '@vueuse/core'
 import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
-import AppBadges from './AppBadges.vue'
-import CoverRotation from '../components/CoverRotation.vue'
+import AppCardTile from './AppCardTile.vue'
 import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
@@ -27,7 +26,8 @@ import {
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { shortcutBelongsToOverlay } from '../lib/pageShortcuts'
-import { badgeDescriptionIds, glassPictureOf } from './appCardBadges'
+import { badgeDescriptionIds } from './appCardBadges'
+import { RHYTHM_GRID_CLASS, rhythmSpanClass } from './appGridRhythm'
 import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
 import type { AppCard, CatalogWorkflow, DraftClosingStop } from '../types/ipc'
 
@@ -53,10 +53,6 @@ const { t } = useI18n()
 
 const state = ref<LoadState>('loading')
 const apps = ref<AppCard[]>([])
-const appsEnabled = ref<boolean | null>(null)
-const activeTab = computed<ExploreTab>(() =>
-  appsEnabled.value === false ? 'workflows' : tab.value
-)
 const tabOptions = computed(() => [
   {
     value: 'apps' as const,
@@ -73,9 +69,9 @@ const tabOptions = computed(() => [
 ])
 const queries = reactive<Record<ExploreTab, string>>({ apps: '', workflows: '' })
 const query = computed({
-  get: () => queries[activeTab.value],
+  get: () => queries[tab.value],
   set: (value: string) => {
-    queries[activeTab.value] = value
+    queries[tab.value] = value
   }
 })
 const workflowsVisited = ref(false)
@@ -111,14 +107,12 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 })
 const showsSearch = computed(
   () =>
-    activeTab.value === 'workflows' ||
+    tab.value === 'workflows' ||
     state.value === 'loading' ||
     (state.value === 'ready' && apps.value.length > 0)
 )
 const openApp = ref<AppCard | null>(null)
 const requestOpen = ref(false)
-const coversThatFailed = reactive(new Set<string>())
-const coverShowing = reactive(new Map<string, number | null>())
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
@@ -169,15 +163,6 @@ async function refreshApps(): Promise<void> {
   apps.value = listed
   state.value = 'ready'
   emit('apps-loaded', listed)
-}
-
-const RHYTHM_GRID_CLASS =
-  'm-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-6 @5xl:grid-cols-12'
-
-function rhythmSpanClass(index: number): string {
-  const medium = index % 5 < 2 ? '@3xl:col-span-3' : '@3xl:col-span-2'
-  const wide = index % 7 < 3 ? '@5xl:col-span-4' : '@5xl:col-span-3'
-  return `${medium} ${wide}`
 }
 
 const REQUEST_THUMB_LIMIT = 3
@@ -258,7 +243,8 @@ const requestThumbs = computed(() =>
     .slice(0, REQUEST_THUMB_LIMIT)
 )
 
-function rememberCard(id: string, element: unknown): void {
+function rememberCard(id: string, card: unknown): void {
+  const element = (card as { $el?: unknown } | null)?.$el
   if (element instanceof HTMLElement) cardButtons.set(id, element)
   else cardButtons.delete(id)
 }
@@ -331,21 +317,20 @@ watch(
 )
 
 watch(
-  activeTab,
+  tab,
   (section) => {
     if (section === 'workflows') workflowsVisited.value = true
   },
   { immediate: true }
 )
 
-onMounted(async () => {
+onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())
   stopBackToListAsks = window.api.onAppBackToListAsked(
     (appId, stop) => void askBackToList(appId, stop)
   )
   stopListUpdates = window.api.onAppsListChanged(() => void refreshApps())
-  appsEnabled.value = await window.api.getAppsEnabled().catch(() => false)
-  if (appsEnabled.value) void loadApps()
+  void loadApps()
 })
 
 onBeforeUnmount(() => {
@@ -362,7 +347,7 @@ onBeforeUnmount(() => {
       v-show="!openApp"
       class="@container/apps flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
       :class="PAGE_SPOTLIGHT_CLASS"
-      :data-testid="`${activeTab}-view`"
+      :data-testid="`${tab}-view`"
     >
       <header class="mx-auto w-full max-w-300 shrink-0 px-10 pt-9 pb-3">
         <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
@@ -371,18 +356,12 @@ onBeforeUnmount(() => {
       </header>
 
       <div
-        v-if="appsEnabled || showsSearch"
         class="mx-auto flex min-h-8 w-full max-w-300 shrink-0 flex-wrap items-center gap-2 px-10 py-3"
       >
-        <SegmentedControl
-          v-if="appsEnabled"
-          v-model="tab"
-          :options="tabOptions"
-          :label="t('sidebar.explore')"
-        />
+        <SegmentedControl v-model="tab" :options="tabOptions" :label="t('sidebar.explore')" />
         <div class="ml-auto flex min-w-0 items-center gap-2">
           <ExploreWorkflowFilters
-            v-if="activeTab === 'workflows' && listedWorkflows.length > 0"
+            v-if="tab === 'workflows' && listedWorkflows.length > 0"
             v-model="filters"
             :facets="facets"
           />
@@ -390,8 +369,8 @@ onBeforeUnmount(() => {
             <BaseInput
               v-model="query"
               class="h-[34px] [&_input]:text-ui"
-              :placeholder="t(`${activeTab}.search`)"
-              :aria-label="t(`${activeTab}.search`)"
+              :placeholder="t(`${tab}.search`)"
+              :aria-label="t(`${tab}.search`)"
             >
               <template #leading><Search :size="14" /></template>
               <template #trailing>
@@ -404,7 +383,7 @@ onBeforeUnmount(() => {
             </BaseInput>
           </div>
           <ExploreLayoutOptions
-            v-if="activeTab === 'workflows'"
+            v-if="tab === 'workflows'"
             v-model:size="cardSize"
             v-model:sort="workflowSort"
           />
@@ -413,7 +392,7 @@ onBeforeUnmount(() => {
 
       <div
         v-if="workflowsVisited"
-        v-show="activeTab === 'workflows'"
+        v-show="tab === 'workflows'"
         class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10"
       >
         <CatalogWorkflowsGallery
@@ -428,11 +407,7 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <div
-        v-if="appsEnabled"
-        v-show="activeTab === 'apps'"
-        class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10"
-      >
+      <div v-show="tab === 'apps'" class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10">
         <ul
           v-if="state === 'loading'"
           :class="RHYTHM_GRID_CLASS"
@@ -518,10 +493,12 @@ onBeforeUnmount(() => {
             class="min-w-0"
             :class="rhythmSpanClass(index)"
           >
-            <button
-              :ref="(element) => rememberCard(app.id, element)"
-              type="button"
-              class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <AppCardTile
+              :ref="(card) => rememberCard(app.id, card)"
+              :app="app"
+              :playing="playsCover(app)"
+              :revealed="keyboardFocusedId === app.id"
+              :description-id-prefix="badgeIdPrefixFor(app)"
               :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
               @click="openPicked(app)"
@@ -529,65 +506,7 @@ onBeforeUnmount(() => {
               @blur="keyboardFocusedId = null"
               @mouseenter="hoveredId = app.id"
               @mouseleave="hoveredId = null"
-            >
-              <span
-                class="absolute inset-0 block overflow-hidden transition-transform duration-600 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-focus-visible:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
-                data-testid="app-card-picture"
-              >
-                <CoverRotation
-                  v-if="app.covers.length > 0 && !coversThatFailed.has(app.id)"
-                  :pictures="app.covers"
-                  :paused="!playsCover(app)"
-                  load-on-play
-                  @broken="coversThatFailed.add(app.id)"
-                  @showing="coverShowing.set(app.id, $event)"
-                />
-                <span
-                  v-else
-                  class="flex size-full items-center justify-center text-subtle-foreground"
-                  data-testid="app-card-no-cover"
-                >
-                  <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
-                </span>
-                <AppBadges
-                  v-if="app.badges?.length"
-                  :badges="app.badges"
-                  :description-id-prefix="badgeIdPrefixFor(app)"
-                  :revealed="keyboardFocusedId === app.id"
-                  :glass-picture="
-                    coversThatFailed.has(app.id)
-                      ? null
-                      : glassPictureOf(app.covers, coverShowing.get(app.id))
-                  "
-                  class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
-                />
-              </span>
-              <span
-                class="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgb(0_0_0/0.7),rgb(0_0_0/0.55)_28%,transparent_60%)]"
-                aria-hidden="true"
-                data-testid="app-card-scrim"
-              />
-              <span
-                class="absolute top-3 right-3 grid size-8 scale-90 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-hover:delay-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:scale-100 motion-reduce:transition-none"
-                aria-hidden="true"
-                data-testid="app-card-go"
-              >
-                <ArrowUpRight :size="16" :stroke-width="2.25" />
-              </span>
-              <span class="absolute inset-x-3.5 bottom-3 grid">
-                <span
-                  data-testid="app-card-name"
-                  class="truncate text-sm/[17px] font-semibold text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:-translate-y-4.5 group-focus-visible:-translate-y-4.5 motion-reduce:transition-none"
-                >
-                  {{ app.title }}
-                </span>
-                <span
-                  class="translate-y-1.5 self-end truncate text-xs/4 text-white/78 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:translate-y-0 motion-reduce:transition-none"
-                >
-                  {{ app.description }}
-                </span>
-              </span>
-            </button>
+            />
           </li>
           <li
             class="col-span-(--request-span) min-w-0 @3xl:col-span-(--request-span-medium) @5xl:col-span-(--request-span-wide)"

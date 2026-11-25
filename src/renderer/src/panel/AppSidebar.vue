@@ -6,6 +6,7 @@ import {
   Cloud,
   Compass,
   CornerDownRight,
+  FlaskConical,
   House,
   Images,
   Laptop,
@@ -39,6 +40,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
 import type { NewWindowDashboardPage } from '../../../shared/dashboardPages'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
@@ -47,13 +49,17 @@ const {
   activeBuildId = null,
   makeRoom = false,
   appInProgress = null,
-  apps = null
+  apps = null,
+  appHome = 'apps',
+  showStaffApps = false
 } = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
   makeRoom?: boolean
   appInProgress?: AppCard | null
   apps?: AppCard[] | null
+  appHome?: 'apps' | 'staff-apps'
+  showStaffApps?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -65,7 +71,7 @@ const emit = defineEmits<{
 }>()
 
 interface SidebarRow {
-  page: NewWindowDashboardPage
+  page: NewWindowDashboardPage | 'staff-apps'
   label: string
   icon: Component
 }
@@ -130,6 +136,9 @@ const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
   { page: 'apps', label: t('sidebar.explore'), icon: Compass },
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
+  ...(showStaffApps
+    ? [{ page: 'staff-apps' as const, label: t('sidebar.development'), icon: FlaskConical }]
+    : []),
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>(() => [
@@ -244,6 +253,10 @@ function openPageMenu(event: MouseEvent, page: NewWindowDashboardPage): void {
   showPageMenu(event)
 }
 
+function openRowMenu(event: MouseEvent, page: SidebarRow['page']): void {
+  if (isNewWindowDashboardPage(page)) openPageMenu(event, page)
+}
+
 function noteFocusIn(event: FocusEvent): void {
   sidebarFocused.value = event.target instanceof Element && event.target.matches(':focus-visible')
 }
@@ -285,6 +298,7 @@ function openSettings(): void {
       v-if="makeRoom"
       :current-app="appInProgress"
       :apps="apps"
+      :label="appHome === 'staff-apps' ? t('sidebar.development') : t('sidebar.apps')"
       @switch-app="switchApp"
     />
     <div
@@ -374,9 +388,11 @@ function openSettings(): void {
             :aria-current="row.page === activePage ? 'page' : undefined"
             :aria-label="row.label"
             :data-testid="`app-sidebar-${row.page}`"
-            :data-home-tour="row.page === 'home' ? undefined : row.page"
+            :data-home-tour="
+              row.page === 'home' || row.page === 'staff-apps' ? undefined : row.page
+            "
             @click="navigate(row.page)"
-            @contextmenu.prevent="openPageMenu($event, row.page)"
+            @contextmenu.prevent="openRowMenu($event, row.page)"
           >
             <Tooltip
               :text="collapsed ? row.label : undefined"
@@ -395,7 +411,7 @@ function openSettings(): void {
             </Tooltip>
           </Button>
           <Button
-            v-if="row.page === 'apps' && appInProgress && activePage !== 'apps'"
+            v-if="row.page === appHome && appInProgress && activePage !== appHome"
             variant="muted-textonly"
             size="unset"
             class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
