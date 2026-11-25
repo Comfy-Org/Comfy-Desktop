@@ -346,11 +346,6 @@ const isStartupArgsPage = computed(
   () => isPage.value && activeTab.value === 'config' && !isCloud.value
 )
 
-const showUpdateBadge = computed(() => {
-  const inst = installation.value
-  return inst?.statusTag?.style === 'update' || inst?.status === 'update-available'
-})
-
 function availableTab(wanted: ComfyUISettingsTab): ComfyUISettingsTab {
   const list = tabs.value
   if (!sectionsFresh.value || list.length === 0) return wanted
@@ -409,7 +404,6 @@ watch(
   },
   { flush: 'post' }
 )
-watch(() => showUpdateBadge.value, measureTabStrip, { flush: 'post' })
 function onTabValueChange(value: string | number): void {
   const tab = tabs.value.find((item) => item.key === value)
   if (tab) selectTab(tab.key)
@@ -1009,7 +1003,7 @@ defineExpose({
                 :value="tab.key"
                 variant="panel"
                 :disabled="opInflight && activeTab !== tab.key"
-                class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
+                class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span]:min-w-0 [&>span]:truncate"
                 :class="[
                   {
                     'is-active': activeTab === tab.key,
@@ -1020,21 +1014,6 @@ defineExpose({
                 :data-testid="TID.settingsTab(tab.key)"
                 @click="selectTab(tab.key)"
               >
-                <span
-                  v-if="tab.key === 'update' && showUpdateBadge"
-                  class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
-                >
-                  <span
-                    v-if="tab.key === 'update' && showUpdateBadge"
-                    :class="[
-                      activeTab === tab.key
-                        ? 'border-neutral-700'
-                        : 'border-[var(--modal-surface-bg)]'
-                    ]"
-                    class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
-                    aria-hidden="true"
-                  ></span>
-                </span>
                 <span>{{ tab.label }}</span>
               </TabsTrigger>
             </Tooltip>
