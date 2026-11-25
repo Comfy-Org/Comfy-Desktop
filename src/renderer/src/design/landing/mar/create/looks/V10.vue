@@ -20,7 +20,8 @@ const TABS = [
   { id: 'audio', label: 'Audio' }
 ]
 const RECENT_MAX = 5
-const STRIP_MAX = 5
+const STRIP_MAX = 4
+const BLANK = 'blank'
 
 const query = ref('')
 const field = ref<HTMLInputElement>()
@@ -38,14 +39,21 @@ const chosen = computed<Starter>(
   () => starters.value.find((s) => s.id === chosenId.value) ?? starters.value[0]!
 )
 const chosenReady = computed(() => readiness(chosen.value.template))
+const blankOn = computed(() => chosenId.value === BLANK)
+const strip = computed(() => [BLANK, ...starters.value.map((s) => s.id)])
+
+function start(): void {
+  if (blankOn.value) startBlank()
+  else openTemplate(chosen.value.template)
+}
 
 const lastOutput = (w: ProjectWorkflow): string | undefined =>
   MOCK[w.name] ?? (w.thumbId ? thumb(w.thumbId) : undefined)
 
 function step(by: number): void {
-  const list = starters.value
-  const i = list.findIndex((s) => s.id === chosen.value.id)
-  chosenId.value = list[Math.min(list.length - 1, Math.max(0, i + by))]!.id
+  const list = strip.value
+  const i = list.indexOf(blankOn.value ? BLANK : chosen.value.id)
+  chosenId.value = list[Math.min(list.length - 1, Math.max(0, i + by))]!
 }
 
 function key(e: KeyboardEvent): void {
@@ -61,7 +69,7 @@ function key(e: KeyboardEvent): void {
   }
   if (e.key === 'ArrowRight') step(1)
   else if (e.key === 'ArrowLeft') step(-1)
-  else if (e.key === 'Enter') openTemplate(chosen.value.template)
+  else if (e.key === 'Enter') start()
   else return
   e.preventDefault()
 }
@@ -136,16 +144,6 @@ useEscapeCloses(() => field.value)
       <section class="v10-col" aria-labelledby="v10-new">
         <div class="v10-col-head">
           <h2 id="v10-new" class="v10-h">Start something new</h2>
-          <button
-            type="button"
-            class="v10-scratch"
-            :title="`Empty canvas on ${activeInstance.name}`"
-            @click="startBlank"
-          >
-            <span class="v10-scratch-plus"><Plus :size="14" /></span>
-            <span class="text-base-foreground">Blank canvas</span>
-            <span class="v10-scratch-hint">build node by node</span>
-          </button>
         </div>
 
         <nav class="v10-tabs" aria-label="Templates for">
@@ -162,7 +160,22 @@ useEscapeCloses(() => field.value)
           </button>
         </nav>
 
-        <div class="v10-detail">
+        <div v-if="blankOn" class="v10-detail">
+          <button
+            type="button"
+            class="v10-detail-media v10-canvas"
+            aria-label="Start blank"
+            @click="startBlank"
+          >
+            <Plus :size="28" />
+          </button>
+          <div class="v10-detail-text">
+            <p class="v10-detail-title">Blank canvas</p>
+            <p class="v10-line">Build it node by node on {{ activeInstance.name }}.</p>
+            <button type="button" class="v10-use" @click="startBlank">Start blank</button>
+          </div>
+        </div>
+        <div v-else class="v10-detail">
           <button
             type="button"
             class="v10-detail-media"
@@ -200,12 +213,25 @@ useEscapeCloses(() => field.value)
 
         <div :key="shelf" class="v10-strip">
           <button
+            type="button"
+            class="v10-tpl is-blank"
+            :class="blankOn && 'is-on'"
+            :aria-pressed="blankOn"
+            :title="`Empty canvas on ${activeInstance.name}`"
+            @pointerenter="chosenId = BLANK"
+            @focus="chosenId = BLANK"
+            @click="blankOn ? startBlank() : (chosenId = BLANK)"
+          >
+            <span class="v10-tpl-pic v10-canvas"><Plus :size="20" /></span>
+            <span class="v10-tpl-name">Blank canvas</span>
+          </button>
+          <button
             v-for="s in starters"
             :key="s.id"
             type="button"
             class="v10-tpl"
-            :class="s.id === chosen.id && 'is-on'"
-            :aria-pressed="s.id === chosen.id"
+            :class="!blankOn && s.id === chosen.id && 'is-on'"
+            :aria-pressed="!blankOn && s.id === chosen.id"
             @pointerenter="chosenId = s.id"
             @focus="chosenId = s.id"
             @click="chosenId === s.id ? openTemplate(s.template) : (chosenId = s.id)"
@@ -387,39 +413,6 @@ useEscapeCloses(() => field.value)
   color: var(--color-subtle-foreground);
   font-size: var(--text-ui);
 }
-:root .proto-ui.proto-ui.proto-ui .v10-scratch {
-  display: inline-flex;
-  height: 36px;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px 0 4px;
-  border-radius: 999px;
-  background: var(--color-secondary-background);
-  font-size: var(--text-ui);
-  font-weight: 500;
-  transition: background-color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v10-scratch:hover {
-  background: var(--color-secondary-background-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-scratch:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-scratch-plus {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-content-background);
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v10-scratch-hint {
-  color: var(--color-subtle-foreground);
-  font-weight: 400;
-}
 :root .proto-ui.proto-ui.proto-ui .v10-tabs {
   display: flex;
   gap: 20px;
@@ -553,6 +546,25 @@ useEscapeCloses(() => field.value)
     0 0 0 2px var(--color-app-background),
     0 0 0 4px var(--color-border-focus);
 }
+:root .proto-ui.proto-ui.proto-ui .v10-canvas {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(
+        color-mix(in oklch, var(--color-base-foreground) 16%, transparent) 1px,
+        transparent 1.4px
+      )
+      0 0 / 14px 14px,
+    var(--color-secondary-background);
+  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .v10-detail-media.v10-canvas {
+  background-size: 22px 22px;
+}
+:root .proto-ui.proto-ui.proto-ui .v10-tpl.is-blank .v10-tpl-pic {
+  opacity: 1;
+}
 :root .proto-ui.proto-ui.proto-ui .v10-tpl-pic img {
   width: 100%;
   height: 100%;
@@ -572,9 +584,6 @@ useEscapeCloses(() => field.value)
   :root .proto-ui.proto-ui.proto-ui .v10-split {
     gap: 48px;
   }
-  :root .proto-ui.proto-ui.proto-ui .v10-scratch-hint {
-    display: none;
-  }
   :root .proto-ui.proto-ui.proto-ui .v10-detail {
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
     gap: 20px;
@@ -586,9 +595,6 @@ useEscapeCloses(() => field.value)
   }
   :root .proto-ui.proto-ui.proto-ui .v10-col:last-child {
     order: -1;
-  }
-  :root .proto-ui.proto-ui.proto-ui .v10-scratch-hint {
-    display: inline;
   }
 }
 @media (hover: none) {
