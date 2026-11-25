@@ -2533,3 +2533,90 @@ describe('sha-256 expectations and install-local roots', () => {
     }
   })
 })
+
+describe('model download speed', () => {
+  const MB = 1_000_000
+
+  it('drops the speed toward 0 while no bytes arrive', async () => {
+    const name = uniqueName()
+    const before = transfers.length
+    const h = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await waitForTransfers(before + 1)
+    const t = transfers[before]!
+    const row = () => activeRows().find((r) => r.id === h.id)
+    const start = Date.now()
+    let clock = start
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    try {
+      for (let s = 0; s <= 4; s++) {
+        clock = start + s * 1000
+        t.opts.onProgress?.({ receivedBytes: s * 10 * MB, totalBytes: 100 * MB })
+      }
+      expect(row()?.speedBytesPerSec).toBeCloseTo(10 * MB)
+      expect(row()?.etaSeconds).toBeCloseTo(6)
+
+      clock = start + 6000
+      mod._test_tickModelSpeeds(clock)
+      expect(row()?.receivedBytes).toBe(40 * MB)
+      expect(row()?.speedBytesPerSec).toBeGreaterThan(0)
+      expect(row()?.speedBytesPerSec).toBeLessThan(10 * MB)
+
+      clock = start + 10_000
+      mod._test_tickModelSpeeds(clock)
+      expect(row()?.speedBytesPerSec).toBe(0)
+      expect(row()?.etaSeconds).toBeUndefined()
+    } finally {
+      nowSpy.mockRestore()
+    }
+
+    expect(mod.cancelModelDownload(h.id)).toBe(true)
+    await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+  })
+
+  it('shows no speed from before a pause, and starts counting again after resume', async () => {
+    const name = uniqueName()
+    const before = transfers.length
+    const h = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints'
+    })
+    await waitForTransfers(before + 1)
+    const row = () => activeRows().find((r) => r.id === h.id)
+    const start = Date.now()
+    let clock = start
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    try {
+      for (let s = 0; s <= 2; s++) {
+        clock = start + s * 1000
+        transfers[before]!.opts.onProgress?.({ receivedBytes: s * 16 * MB, totalBytes: 100 * MB })
+      }
+      expect(row()?.speedBytesPerSec).toBeCloseTo(16 * MB)
+    } finally {
+      nowSpy.mockRestore()
+    }
+
+    expect(mod.pauseModelDownload(h.id)).toBe(true)
+    await flush()
+    expect(row()?.status).toBe('paused')
+    expect(row()?.speedBytesPerSec).toBeUndefined()
+
+    expect(mod.resumeModelDownload(h.id)).toBe(true)
+    expect(row()?.status).toBe('downloading')
+    expect(row()?.speedBytesPerSec).toBeUndefined()
+    await waitForTransfers(before + 2)
+
+    transfers[before + 1]!.opts.onProgress?.({ receivedBytes: 40 * MB, totalBytes: 100 * MB })
+    expect(row()?.receivedBytes).toBe(40 * MB)
+    expect(row()?.speedBytesPerSec).toBeUndefined()
+
+    expect(mod.cancelModelDownload(h.id)).toBe(true)
+    await expect(h.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+  })
+})
