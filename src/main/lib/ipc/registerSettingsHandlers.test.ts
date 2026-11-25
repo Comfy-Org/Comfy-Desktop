@@ -102,6 +102,33 @@ describe('buildSettingsSections', () => {
     expect(fields.map((f) => f.id)).not.toContain('managerSecurityLevel')
   })
 
+  it('offers the page Desktop opens on, Home until another page is picked', () => {
+    const field = (): unknown =>
+      buildSettingsSections()
+        .flatMap((s) => (s.fields as { id?: string }[] | undefined) ?? [])
+        .find((f) => f.id === 'startPage')
+
+    expect(field()).toEqual({
+      id: 'startPage',
+      label: 'Open Desktop on',
+      type: 'select',
+      value: 'home',
+      options: [
+        { value: 'home', label: 'Home' },
+        { value: 'chooser', label: 'Builds' },
+        { value: 'apps', label: 'Apps' },
+        { value: 'assets', label: 'Assets' }
+      ],
+      tooltip: 'The page a new Desktop window opens on.'
+    })
+
+    mockSettings.startPage = 'chooser'
+    expect(field()).toMatchObject({ value: 'chooser' })
+
+    mockSettings.startPage = 'library'
+    expect(field()).toMatchObject({ value: 'home' })
+  })
+
   it('offers a default-on preference for the multiple-build warning', () => {
     const fields = buildSettingsSections().flatMap(
       (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []

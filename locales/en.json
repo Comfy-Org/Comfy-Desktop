@@ -916,6 +916,8 @@
     "autoInstallUpdates": "Automatically install Desktop updates",
     "appBehavior": "App behavior",
     "generalSection": "General",
+    "startPage": "Open Desktop on",
+    "startPageDescription": "The page a new Desktop window opens on.",
     "confirmBeforeClosingWindow": "Confirm before closing a window",
     "confirmBeforeClosingWindowDescription": "Ask before closing a window when that stops ComfyUI or quits Comfy Desktop.",
     "warnBeforeRunningMultipleInstances": "Warn before running multiple builds",

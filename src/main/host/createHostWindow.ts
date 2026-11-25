@@ -848,7 +848,12 @@ export function openChooserHostWindow(
   entry.coldStartPendingReveal = !opts.deferColdStartReveal
 
   entry.activePanel = initialPanel
-  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry), opts.dashboardPage)
+  ensurePanelView(
+    entry.windowKey,
+    entry,
+    computeBodyMode(entry),
+    opts.dashboardPage ?? settings.startPage()
+  )
 
   entry.layoutViews()
 

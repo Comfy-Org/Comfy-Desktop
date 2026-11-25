@@ -18,6 +18,7 @@ import { globalSettingsEvents } from '../globalSettingsEvents'
 import { acknowledgeBetaActivationNotice, peekBetaActivationNotice } from '../betaActivationNotice'
 import { recordIpcInvocation } from '../e2eOverrides'
 import type { SettingsSection } from '../../../types/ipc'
+import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
 
 export function buildSettingsSections(): SettingsSection[] {
   const s = settings.getAll()
@@ -42,6 +43,19 @@ export function buildSettingsSections(): SettingsSection[] {
           type: 'select',
           value: s.language || i18n.getLocale(),
           options: i18n.getAvailableLocales()
+        },
+        {
+          id: 'startPage',
+          label: i18n.t('settings.startPage'),
+          type: 'select',
+          value: isNewWindowDashboardPage(s.startPage) ? s.startPage : 'home',
+          options: [
+            { value: 'home', label: i18n.t('sidebar.home') },
+            { value: 'chooser', label: i18n.t('sidebar.builds') },
+            { value: 'apps', label: i18n.t('sidebar.apps') },
+            { value: 'assets', label: i18n.t('sidebar.assets') }
+          ],
+          tooltip: i18n.t('settings.startPageDescription')
         },
 
         {

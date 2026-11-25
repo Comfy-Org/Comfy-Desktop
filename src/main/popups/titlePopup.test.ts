@@ -1034,6 +1034,14 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
   })
 })
 
+describe('buildGlobalSettingsSnapshot general rows', () => {
+  it('puts the start page beside the language, not in app behavior', () => {
+    const snapshot = _test_buildGlobalSettingsSnapshot()
+    expect(snapshot.languageFields.map((field) => field['id'])).toEqual(['language', 'startPage'])
+    expect(snapshot.generalFields.map((field) => field['id'])).not.toContain('startPage')
+  })
+})
+
 describe('desktop2-open-terminal', () => {
   it('opens no instance picker for a Remote Connection', async () => {
     const { ipcMain } = await import('electron')
