@@ -629,7 +629,7 @@ describe('AppSidebar', () => {
       await vi.waitFor(() => expect(shownTooltips()).not.toHaveLength(0))
       tooltipsOnTheWay.push(shownTooltips())
     }
-    expect(tooltipsOnTheWay).toEqual([['Home'], ['Apps']])
+    expect(tooltipsOnTheWay).toEqual([['Home'], ['Explore']])
     wrapper.unmount()
   })
 
