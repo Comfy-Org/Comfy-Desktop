@@ -1,4 +1,4 @@
-import { app as electronApp } from 'electron'
+import { app as electronApp, net, session } from 'electron'
 import path from 'path'
 
 import { stillsOf } from '../../shared/appStills'
@@ -15,6 +15,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000
 const EMPTY_LIST_TTL_MS = 30 * 1000
 const RETRY_DELAYS_MS = [1000, 3000]
 const SAVED_LIST_FILE = 'apps-catalog.json'
+const SAVED_STILL_TIMEOUT_MS = 2000
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
 const BADGE_STYLES: readonly AppBadgeStyle[] = ['crown', 'chip', 'label']
@@ -213,6 +214,48 @@ async function savedAppsFor(listUrl: string, location: AppsLocation): Promise<Li
   return apps.length > 0 ? apps : null
 }
 
+export async function savedListBody(listUrl: string): Promise<string | null> {
+  savedList ??= readSavedListFile()
+  const saved = await savedList
+  return saved?.listUrl === listUrl ? JSON.stringify(saved.apps) : null
+}
+
+async function savedStill(url: string): Promise<string | null> {
+  try {
+    const response = await session.defaultSession.fetch(url, {
+      cache: 'force-cache',
+      signal: AbortSignal.timeout(SAVED_STILL_TIMEOUT_MS)
+    })
+    const type = response.headers.get('content-type') ?? ''
+    if (!response.ok || !type.startsWith('image/')) return null
+    const bytes = Buffer.from(await response.arrayBuffer())
+    return `data:${type};base64,${bytes.toString('base64')}`
+  } catch {
+    return null
+  }
+}
+
+async function withSavedStills(apps: ListedApp[]): Promise<ListedApp[]> {
+  return Promise.all(
+    apps.map(async (app) => {
+      const stills = await Promise.all(stillsOf(app.card).map(savedStill))
+      const covers = stills.flatMap((url) => (url ? [{ url, stillUrl: null }] : []))
+      return { ...app, card: { ...app.card, covers } }
+    })
+  )
+}
+
+function keepStills(apps: ListedApp[]): void {
+  for (const app of apps) {
+    for (const url of stillsOf(app.card)) {
+      void session.defaultSession
+        .fetch(url)
+        .then((response) => response.arrayBuffer())
+        .catch(() => {})
+    }
+  }
+}
+
 async function saveList(listUrl: string, apps: unknown[]): Promise<void> {
   savedList = Promise.resolve({ listUrl, apps })
   try {
@@ -236,12 +279,14 @@ function wait(ms: number): Promise<void> {
 async function fetchApps(listUrl: string, location: AppsLocation): Promise<ListedApp[]> {
   let failure: unknown
   for (const delay of [0, ...RETRY_DELAYS_MS]) {
+    if (delay > 0 && !net.isOnline()) break
     if (delay > 0) await wait(delay)
     try {
       const raw = await fetchList(listUrl)
       const apps = parseAppsList(raw, location)
       if (apps.length > 0) {
         await saveList(listUrl, raw as unknown[])
+        keepStills(apps)
         return apps
       }
       if (!(await hasGoodList(listUrl, location))) return apps
@@ -270,8 +315,9 @@ function loadApps(): Promise<ListedApp[]> {
       if (cache?.listUrl === listUrl) return cache.apps
       const saved = await savedAppsFor(listUrl, location)
       if (!saved) throw err
-      cache = { listUrl, expiresAt: 0, apps: saved }
-      return saved
+      const offline = await withSavedStills(saved)
+      cache = { listUrl, expiresAt: 0, apps: offline }
+      return offline
     })
     .finally(() => {
       if (inFlight?.request === request) inFlight = null

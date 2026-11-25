@@ -1,4 +1,4 @@
-import { session } from 'electron'
+import { net, session } from 'electron'
 import type { Event, Session, WebContents, WebContentsView } from 'electron'
 import path from 'path'
 
@@ -25,6 +25,11 @@ import { COMFY_BG } from '../lib/theme'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { currentAppsLocation } from './appsConfig'
+import {
+  answersFromKeptCopies,
+  startAnsweringFromKeptCopies,
+  stopAnsweringFromKeptCopies
+} from './appsOffline'
 import { registerAppsPage } from './appsPages'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
 import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
@@ -320,7 +325,23 @@ function dismissStaleOutputs(windowKey: number, hosted: HostedPage): void {
   panelOf(windowKey)?.send(APP_OUTPUTS_CHANNEL, shown.page.appId, null)
 }
 
+function choosePageSource(hosted: HostedPage): void {
+  if (showsDraftSession(hosted)) return
+  if (net.isOnline()) stopAnsweringFromKeptCopies(hosted.session)
+  else startAnsweringFromKeptCopies(hosted.session, currentAppsLocation())
+}
+
+function retriedFromKeptCopies(hosted: HostedPage, failedUrl: string): boolean {
+  if (showsDraftSession(hosted) || answersFromKeptCopies(hosted.session)) return false
+  const url = failedUrl || hosted.loadingUrl
+  if (!url) return false
+  startAnsweringFromKeptCopies(hosted.session, currentAppsLocation())
+  void hosted.view.webContents.loadURL(url).catch(() => {})
+  return true
+}
+
 function load(windowKey: number, hosted: HostedPage, url: string): void {
+  choosePageSource(hosted)
   hosted.loaded = null
   hosted.loadStarted = true
   hosted.loadingUrl = url
@@ -523,8 +544,10 @@ function createHostedPage(
     if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return
     setStatus(windowKey, hosted, 'ready')
   })
-  contents.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
-    if (isMainFrame && errorCode !== NAVIGATION_ABORTED) fail(windowKey, hosted, 'network')
+  contents.on('did-fail-load', (_event, errorCode, _description, url, isMainFrame) => {
+    if (!isMainFrame || errorCode === NAVIGATION_ABORTED) return
+    if (retriedFromKeptCopies(hosted, url)) return
+    fail(windowKey, hosted, 'network')
   })
   contents.on('render-process-gone', () => {
     forgetRun(hosted)
