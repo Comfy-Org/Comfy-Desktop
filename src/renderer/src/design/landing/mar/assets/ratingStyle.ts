@@ -16,9 +16,9 @@ const KEY = 'comfy.design.mar.ratingStyle'
 export const ratingStyle = reactive<{ id: RatingStyle }>({
   id: (() => {
     try {
-      return localStorage.getItem(KEY) === 'stars' ? 'stars' : 'favorite'
+      return localStorage.getItem(KEY) === 'favorite' ? 'favorite' : 'stars'
     } catch {
-      return 'favorite'
+      return 'stars'
     }
   })()
 })
