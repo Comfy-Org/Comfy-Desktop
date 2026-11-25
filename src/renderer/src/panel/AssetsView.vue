@@ -840,6 +840,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     height: asset.height,
     imported: isImported(asset),
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    savedBy: isLocal(asset) ? (selectedBuild.value?.build.name ?? null) : null,
     moreActions: viewerMenuItemsFor(asset),
     mainAction: isLocal(asset) ? null : 'download',
     workflow: canOpenWorkflow(asset),

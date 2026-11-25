@@ -1865,16 +1865,19 @@ describe('AssetsView', () => {
     expect(video.controls).toBe(true)
   })
 
-  it('tells the real folder of a file on this computer in the viewer, and shows it in Finder', async () => {
+  it('names the folder and the build of a file on this computer, never its path, and shows it in Finder', async () => {
     const file = '/Users/me/output/2026-11/forest.png'
-    const wrapper = await mountAssets([asset(file, 'forest.png', 'image')])
+    const wrapper = await mountAssets([asset(file, 'forest.png', 'image')], {
+      builds: [localBuild('lab', 'Video Lab')]
+    })
 
     await wrapper.get(`[data-testid="asset-open-${file}"]`).trigger('click')
     await flushPromises()
 
     expect(shownText(viewer()!.querySelector('[data-testid="output-detail-saved-in"]'))).toBe(
-      'SAVED IN 2026-11 /Users/me/output'
+      'SAVED IN 2026-11 Video Lab'
     )
+    expect(viewer()!.innerHTML).not.toContain('/Users/me')
     const show = viewer()!.querySelector<HTMLElement>(
       '[data-testid="output-detail-show-in-folder"]'
     )!

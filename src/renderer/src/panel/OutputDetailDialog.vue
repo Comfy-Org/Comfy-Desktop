@@ -46,6 +46,7 @@ export interface OutputDetailItem {
   height?: number | null
   imported?: boolean
   savedIn?: string | null
+  savedBy?: string | null
   models?: string[]
   prompts?: string[]
   inCloud?: boolean
@@ -148,8 +149,9 @@ const facts = computed(() =>
 const savedFolder = computed(() => {
   const folder = item.value.savedIn
   if (!folder) return null
-  const cut = Math.max(folder.lastIndexOf('/'), folder.lastIndexOf('\\'))
-  return { name: folder.slice(cut + 1) || folder, parent: cut > 0 ? folder.slice(0, cut) : '' }
+  const trimmed = folder.replace(/[\\/]+$/, '')
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return trimmed.slice(cut + 1) || trimmed
 })
 const percent = computed(() => new Intl.NumberFormat(locale.value, { style: 'percent' }))
 const zoomLabel = computed(() =>
@@ -434,14 +436,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <span v-if="item.inCloud" class="text-ui text-foreground">
           {{ t('assets.detail.cloudAssets') }}
         </span>
-        <div
-          v-if="savedFolder"
-          class="flex min-w-0 flex-col gap-0.5 text-ui"
-          :title="item.savedIn ?? undefined"
-        >
-          <span class="truncate text-foreground">{{ savedFolder.name }}</span>
-          <span v-if="savedFolder.parent" class="truncate text-subtle-foreground">{{
-            savedFolder.parent
+        <div v-if="savedFolder" class="flex min-w-0 flex-col gap-0.5 text-ui">
+          <span class="truncate text-foreground">{{ savedFolder }}</span>
+          <span v-if="item.savedBy" class="truncate text-subtle-foreground">{{
+            item.savedBy
           }}</span>
         </div>
       </div>
