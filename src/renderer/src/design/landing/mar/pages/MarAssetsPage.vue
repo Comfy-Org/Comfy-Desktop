@@ -220,10 +220,11 @@ const favOnly = ref(false)
 const stars = computed(() => ratingStyle.id === 'stars')
 const kept = (id: string): boolean => (stars.value ? ratingOf(id) > 0 : isStarred(id))
 const minStars = ref('')
-const RATINGS = Array.from({ length: MAX_STARS }, (_, i) => ({
-  value: String(i + 1),
-  label: `${'★'.repeat(i + 1)}${i + 1 < MAX_STARS ? ' and up' : ''}`
-}))
+const NOT_RATED = 'none'
+const passesRating = (id: string, pick: string): boolean =>
+  !pick || (pick === NOT_RATED ? ratingOf(id) === 0 : ratingOf(id) >= Number(pick))
+const starsLabel = (n: number): string =>
+  `${n} star${n > 1 ? 's' : ''}${n < MAX_STARS ? ' & up' : ''}`
 // In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
 const store = inGraph ? graphLibrary : assets
 
@@ -306,7 +307,7 @@ const CARD = [0, 200, 264, 340]
 
 /** Everything picked but the type: the tabs count this, so a folder or a
  *  filter shows its own numbers in them. */
-const scoped = computed(() => {
+const scopedAnyRating = computed(() => {
   const q = query.value.trim().toLowerCase()
   return base.value.filter(
     (a) =>
@@ -315,21 +316,36 @@ const scoped = computed(() => {
       (!label.value || labelOf(a.id) === label.value) &&
       (!folder.value || within(folder.value).has(folderOf(a.id) ?? '')) &&
       (!favOnly.value || kept(a.id)) &&
-      (!minStars.value || ratingOf(a.id) >= Number(minStars.value)) &&
       (fixedProject ||
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
       (!q || a.name.toLowerCase().includes(q))
   )
 })
+const scoped = computed(() =>
+  scopedAnyRating.value.filter((a) => passesRating(a.id, minStars.value))
+)
+const ofKind = (a: MarAsset): boolean =>
+  (kind.value === 'all' && !filter.value.types.length) ||
+  a.type === kind.value ||
+  filter.value.types.includes(a.type)
+const ratingRows = computed(() => {
+  const pool = scopedAnyRating.value.filter(ofKind)
+  const countOf = (pick: string): number => pool.filter((a) => passesRating(a.id, pick)).length
+  const starRows = Array.from({ length: MAX_STARS }, (_, i) => MAX_STARS - i).map((n) => ({
+    value: String(n),
+    label: starsLabel(n),
+    stars: n,
+    count: countOf(String(n))
+  }))
+  return [
+    { value: '', label: 'Any rating', count: pool.length },
+    ...starRows,
+    { value: NOT_RATED, label: 'Not rated', count: countOf(NOT_RATED) }
+  ]
+})
 const shown = computed(() => {
-  const list = scoped.value.filter(
-    (a) =>
-      // The type tabs and More types add up: either may match.
-      (kind.value === 'all' && !filter.value.types.length) ||
-      a.type === kind.value ||
-      filter.value.types.includes(a.type)
-  )
+  const list = scoped.value.filter(ofKind)
   const by: Record<string, (a: MarAsset, b: MarAsset) => number> = {
     newest: (a, b) => a.age - b.age,
     oldest: (a, b) => b.age - a.age,
@@ -347,6 +363,7 @@ const searchOn = computed(
     where.value !== 'all' ||
     activeFilters({ ...filter.value, source: 'all', tags: [] }) > 0 ||
     project.value !== 'all' ||
+    !!minStars.value ||
     !!query.value.trim()
 )
 /** An empty type tab: what lands there, in its own words. */
@@ -1456,7 +1473,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :folders="folderPill ? undefined : FOLDER_LIST"
             :builds="treeOn ? assetBuildRows : undefined"
             :kinds="folderPill ? KINDS : undefined"
-            :ratings="stars ? RATINGS : undefined"
+            :ratings="stars ? ratingRows : undefined"
             :favorite="!stars && !inGraph"
             @update:folder="folder = $event"
           />
