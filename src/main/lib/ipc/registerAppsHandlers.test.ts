@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({
   forgetHiddenApps: vi.fn(),
   tellPanelsTheListChanged: vi.fn(),
   openPastedDraft: vi.fn(async (_address: unknown) => ({ kind: 'asked' })),
+  draftForHiddenApp: vi.fn((_id: unknown): unknown => null),
+  hubPageForHiddenApp: vi.fn(async (_id: unknown): Promise<string | null> => null),
+  openStaffDraft: vi.fn(async (_draft: unknown): Promise<unknown> => null),
+  tryOpenExternalUrl: vi.fn(async (_url: unknown) => true),
   isAppsPage: true,
   titleBarEntry: null as unknown,
   running: [] as { id: string; title: string }[],
@@ -53,6 +57,8 @@ vi.mock('../../apps/appPageView', () => ({
   titleBarApps: () => ({ running: mocks.running, ready: mocks.ready })
 }))
 vi.mock('../../apps/hiddenApps', () => ({
+  draftForHiddenApp: mocks.draftForHiddenApp,
+  hubPageForHiddenApp: mocks.hubPageForHiddenApp,
   forgetHiddenApps: mocks.forgetHiddenApps,
   listHiddenApps: mocks.listHiddenApps,
   NO_HIDDEN_APPS: { apps: [] },
@@ -81,9 +87,11 @@ vi.mock('../../apps/draftLinks', () => ({
   acceptDraft: mocks.acceptDraft,
   canPasteDrafts: mocks.canPasteDrafts,
   draftsStillAllowed: mocks.draftsStillAllowed,
-  openPastedDraft: mocks.openPastedDraft
+  openPastedDraft: mocks.openPastedDraft,
+  openStaffDraft: mocks.openStaffDraft
 }))
 vi.mock('../telemetry', () => ({ sendSurveyResponse: mocks.sendSurveyResponse }))
+vi.mock('../openExternal', () => ({ tryOpenExternalUrl: mocks.tryOpenExternalUrl }))
 
 import { cloudAuthEvents } from '../cloudAuthEvents'
 import { registerAppsHandlers } from './registerAppsHandlers'
@@ -260,6 +268,76 @@ describe('listing hidden apps for the panel', () => {
     expect(mocks.closeStaffPagesOfOtherAccounts.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.forgetHiddenApps.mock.invocationCallOrder[0]!
     )
+  })
+})
+
+describe('opening a hidden app that has no page on comfy.org', () => {
+  const DRAFT = {
+    origin: 'https://comfy-website-preview-pr-445.vercel.app',
+    path: '/apps/compose-scene/desktop.html',
+    slug: 'compose-scene',
+    pr: 445,
+    mount: '/'
+  }
+  const QUESTION = { kind: 'ask', appId: 'draft-pr445-compose-scene-0a1b2c3d', token: 't' }
+
+  function call(channel: string, ...args: unknown[]): Promise<unknown> {
+    const handler = mocks.handlers.get(channel)
+    if (!handler) throw new Error(`No handler for ${channel}`)
+    return Promise.resolve(handler({ sender: {} }, ...args))
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.handlers.clear()
+    mocks.isPanel = true
+    cloudAuthEvents.removeAllListeners()
+    registerAppsHandlers()
+  })
+
+  it("asks about the app's draft page through the draft app checks", async () => {
+    mocks.draftForHiddenApp.mockReturnValueOnce(DRAFT)
+    mocks.openStaffDraft.mockResolvedValueOnce(QUESTION)
+
+    expect(await call('apps:open-hidden-draft', 'compose-scene')).toEqual(QUESTION)
+    expect(mocks.draftForHiddenApp).toHaveBeenCalledExactlyOnceWith('compose-scene')
+    expect(mocks.openStaffDraft).toHaveBeenCalledExactlyOnceWith(DRAFT)
+  })
+
+  it('asks nothing for an app with no draft page', async () => {
+    expect(await call('apps:open-hidden-draft', 'relight')).toBeNull()
+    expect(mocks.openStaffDraft).not.toHaveBeenCalled()
+  })
+
+  it("opens a Hub-only app's Hub page in the browser", async () => {
+    mocks.hubPageForHiddenApp.mockResolvedValueOnce('https://comfy.org/hub/apps/reshoot/')
+
+    expect(await call('apps:open-hidden-hub-page', 'reshoot')).toBe(true)
+    expect(mocks.hubPageForHiddenApp).toHaveBeenCalledExactlyOnceWith('reshoot')
+    expect(mocks.tryOpenExternalUrl).toHaveBeenCalledExactlyOnceWith(
+      'https://comfy.org/hub/apps/reshoot/'
+    )
+  })
+
+  it('opens no browser for an app with no Hub page, or when finding it fails', async () => {
+    expect(await call('apps:open-hidden-hub-page', 'relight')).toBe(false)
+    mocks.hubPageForHiddenApp.mockRejectedValueOnce(new Error('offline'))
+    expect(await call('apps:open-hidden-hub-page', 'reshoot')).toBe(false)
+    expect(mocks.tryOpenExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it('answers nothing to a page other than the panel', async () => {
+    mocks.isPanel = false
+    mocks.draftForHiddenApp.mockReturnValue(DRAFT)
+    mocks.hubPageForHiddenApp.mockResolvedValue('https://comfy.org/hub/apps/reshoot/')
+
+    expect(await call('apps:open-hidden-draft', 'compose-scene')).toBeNull()
+    expect(await call('apps:open-hidden-hub-page', 'reshoot')).toBe(false)
+    expect(mocks.draftForHiddenApp).not.toHaveBeenCalled()
+    expect(mocks.hubPageForHiddenApp).not.toHaveBeenCalled()
+    expect(mocks.tryOpenExternalUrl).not.toHaveBeenCalled()
+    mocks.draftForHiddenApp.mockReset().mockReturnValue(null)
+    mocks.hubPageForHiddenApp.mockReset().mockResolvedValue(null)
   })
 })
 

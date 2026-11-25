@@ -1,13 +1,19 @@
 import { stillsOf } from '../../shared/appStills'
 import { APP_ID_PATTERN, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { HiddenAppCard, HiddenAppPage, HiddenAppReason, HiddenAppsList } from '../../types/ipc'
+import type {
+  HiddenAppCard,
+  HiddenAppOpening,
+  HiddenAppPage,
+  HiddenAppReason,
+  HiddenAppsList
+} from '../../types/ipc'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import { listApps } from './appsCatalog'
 import { currentAppsLocation } from './appsConfig'
-import { isStaffAccount } from './draftApps'
-import type { SignedInAccount } from './draftApps'
+import { isStaffAccount, parseStaffDraftPage } from './draftApps'
+import type { DraftLink, SignedInAccount } from './draftApps'
 import { cloudIdentity, signedInAccount } from './draftLinks'
 
 export const NO_HIDDEN_APPS: HiddenAppsList = Object.freeze({ apps: [] })
@@ -34,6 +40,9 @@ const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403])
 const NO_ROUTE_STATUS = 404
 const MISSING_PAGE_STATUSES: ReadonlySet<number> = new Set([404, 410])
 const PICTURE_PATH = /^\/staff-apps\/[0-9a-f-]{36}\/picture\/[0-9a-f-]{36}$/i
+const HUB_ORIGIN = 'https://comfy.org'
+const HUB_PAGE_PATH = /^\/hub(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)+\/?$/
+const MAX_HUB_PAGE_LENGTH = 300
 
 export interface HiddenAppsDeps {
   signedInAccount: () => Promise<SignedInAccount | null>
@@ -47,6 +56,8 @@ export interface HiddenAppsDeps {
 interface HiddenApp {
   card: HiddenAppCard
   pageUrl: string | null
+  draft: DraftLink | null
+  hubPageUrl: string | null
 }
 
 interface CatalogRow {
@@ -55,6 +66,8 @@ interface CatalogRow {
   description: string
   reasons: HiddenAppReason[]
   picturePath: string | null
+  draft: DraftLink | null
+  hubPageUrl: string | null
 }
 
 interface CheckedApp {
@@ -115,18 +128,35 @@ function pictureOf(row: JsonRecord): string | null {
   return typeof row.picture === 'string' && PICTURE_PATH.test(row.picture) ? row.picture : null
 }
 
+export function hubPageUrlOf(path: unknown): string | null {
+  if (typeof path !== 'string' || path.length > MAX_HUB_PAGE_LENGTH || !HUB_PAGE_PATH.test(path)) {
+    return null
+  }
+  const url = new URL(path, HUB_ORIGIN)
+  return url.origin === HUB_ORIGIN && url.pathname === path ? url.href : null
+}
+
 function toCatalogRow(entry: unknown): CatalogRow | null {
   const row = asRecord(entry)
   if (!row) return null
   const slug = text(row.slug)
   if (!APP_ID_PATTERN.test(slug)) return null
+  const reasons = reasonsOf(row)
   return {
     slug,
     title: text(row.title) || slug,
     description: text(row.description),
-    reasons: reasonsOf(row),
-    picturePath: pictureOf(row)
+    reasons,
+    picturePath: pictureOf(row),
+    draft: parseStaffDraftPage(row.draft_page, slug),
+    hubPageUrl: reasons.includes('hub_only') ? hubPageUrlOf(row.hub_page) : null
   }
+}
+
+function openingOf(row: CatalogRow, page: HiddenAppPage): HiddenAppOpening | null {
+  if (page !== 'missing') return null
+  if (row.draft) return 'draft'
+  return row.hubPageUrl ? 'hub' : null
 }
 
 function hiddenRows(entries: readonly unknown[], published: readonly string[]): CatalogRow[] {
@@ -274,17 +304,21 @@ async function hiddenAppOf(
   ])
   const checked = checkedPage !== 'unchecked'
   const page = checked || !address ? checkedPage : pageKnownBefore(address, previous)
+  const opens = openingOf(row, page)
   return {
     checked,
     app: {
       pageUrl: page === 'live' ? address : null,
+      draft: opens === 'draft' ? row.draft : null,
+      hubPageUrl: opens === 'hub' ? row.hubPageUrl : null,
       card: {
         id: row.slug,
         title: row.title,
         description: row.description,
         covers: still ? [{ url: still, stillUrl: still }] : [],
         reasons: row.reasons,
-        page
+        page,
+        ...(opens ? { opens } : {})
       }
     }
   }
@@ -389,6 +423,27 @@ function currentHiddenApp(id: string, deps: HiddenAppsDeps): HiddenApp | null {
 export function pageUrlForHiddenApp(id: string, deps: HiddenAppsDeps = defaultDeps): string | null {
   const pageUrl = currentHiddenApp(id, deps)?.pageUrl ?? null
   return pageUrl && isInAppsScope(currentAppsLocation(), pageUrl) ? pageUrl : null
+}
+
+export function draftForHiddenApp(
+  id: unknown,
+  deps: HiddenAppsDeps = defaultDeps
+): DraftLink | null {
+  return typeof id === 'string' ? (currentHiddenApp(id, deps)?.draft ?? null) : null
+}
+
+export async function hubPageForHiddenApp(
+  id: unknown,
+  deps: HiddenAppsDeps = defaultDeps
+): Promise<string | null> {
+  if (typeof id !== 'string') return null
+  const owner = deps.cloudIdentity()
+  const app = currentHiddenApp(id, deps)
+  if (owner === null || !app?.hubPageUrl) return null
+  if (!isStaffAccount(await deps.signedInAccount())) return null
+  return deps.cloudIdentity() === owner && currentHiddenApp(id, deps) === app
+    ? app.hubPageUrl
+    : null
 }
 
 export function titleForHiddenApp(id: string, deps: HiddenAppsDeps = defaultDeps): string | null {

@@ -3,6 +3,7 @@ import type {
   HiddenAppCard,
   AssetSummary,
   CatalogWorkflow,
+  DraftAppRequest,
   FieldOption,
   GPUInfo,
   Installation,
@@ -325,8 +326,34 @@ export const HIDDEN_APP_CARDS: HiddenAppCard[] = [
     covers: [],
     reasons: ['unpublished'],
     page: 'missing'
+  },
+  {
+    id: 'sample-app-delta',
+    title: 'Sample app delta',
+    description: 'A made-up app for the preview with no page yet and a draft page to open.',
+    covers: [],
+    reasons: ['off'],
+    page: 'missing',
+    opens: 'draft'
+  },
+  {
+    id: 'sample-app-epsilon',
+    title: 'Sample app epsilon',
+    description: 'A made-up app for the preview that is only on the Hub.',
+    covers: [],
+    reasons: ['hub_only'],
+    page: 'missing',
+    opens: 'hub'
   }
 ]
+
+export const SAMPLE_DRAFT_QUESTION: DraftAppRequest = {
+  kind: 'ask',
+  appId: 'draft-pr1-sample-app-delta-0a1b2c3d',
+  token: 'sample-question',
+  title: 'Open a draft app from comfy-website-preview-pr-1.vercel.app?',
+  message: '"Sample app delta". It is not published, and it runs with your Comfy Cloud account.'
+}
 
 export const HOME_WORKFLOWS: CatalogWorkflow[] = [
   {

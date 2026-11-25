@@ -58,7 +58,13 @@ import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { runningAppIds, watchAppRuns } from './appRuns'
 import { useAppSwitchConfirm } from './useAppSwitchConfirm'
 import { useStaffApps } from './useStaffApps'
-import type { AppCard, DashboardPage, DraftAppRequest, Installation } from '../types/ipc'
+import type {
+  AppCard,
+  DashboardPage,
+  DraftAppRequest,
+  HiddenAppCard,
+  Installation
+} from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -394,6 +400,15 @@ async function confirmLeavingRuns(): Promise<boolean> {
     cancelLabel: t('apps.closeWhileRunning.cancel')
   })
   return choice === 'primary'
+}
+
+async function openStaffDraft(app: HiddenAppCard): Promise<void> {
+  const request = await window.api.openHiddenAppDraft(app.id).catch(() => null)
+  if (request) await answerDraftApp(request)
+}
+
+function openStaffHubPage(app: HiddenAppCard): void {
+  void window.api.openHiddenAppHubPage(app.id).catch(() => false)
 }
 
 async function answerDraftApp(request: DraftAppRequest): Promise<void> {
@@ -788,6 +803,8 @@ onUnmounted(() => {
               v-else-if="dashboardHomePage === 'staff-apps' && staffApps.shown.value"
               :apps="staffApps.apps.value"
               @open-app="openAppFromHome"
+              @open-draft="openStaffDraft"
+              @open-hub-page="openStaffHubPage"
             />
             <AssetsView
               v-else-if="dashboardHomePage === 'assets'"

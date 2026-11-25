@@ -146,6 +146,13 @@ export function parseDraftLink(link: unknown): DraftLink | null {
   return draftAt(pageInLink(link))
 }
 
+export function parseStaffDraftPage(address: unknown, slug: string): DraftLink | null {
+  if (typeof address !== 'string' || address.length > MAX_LINK_LENGTH) return null
+  const page = urlOf(address)
+  if (!page || previewPrOf(page) === null || hasSignIn(page) || page.hash !== '') return null
+  return DRAFT_PAGE_PATH.exec(page.pathname)?.[1] === slug ? appPageDraft(page, slug) : null
+}
+
 export function parsePastedDraft(address: unknown): DraftLink | null {
   if (typeof address !== 'string') return null
   const text = address.trim()

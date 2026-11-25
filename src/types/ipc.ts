@@ -178,9 +178,12 @@ export type HiddenAppReason = 'off' | 'draft' | 'hub_only' | 'unpublished'
 
 export type HiddenAppPage = 'live' | 'missing' | 'unchecked'
 
+export type HiddenAppOpening = 'draft' | 'hub'
+
 export interface HiddenAppCard extends AppCard {
   reasons: HiddenAppReason[]
   page: HiddenAppPage
+  opens?: HiddenAppOpening
 }
 
 export interface HiddenAppsList {
@@ -1348,6 +1351,8 @@ export interface ElectronApi {
   openCatalogWorkflow(id: string): Promise<boolean>
   listApps(): Promise<AppCard[]>
   listHiddenApps(): Promise<HiddenAppsList>
+  openHiddenAppDraft(appId: string): Promise<DraftAppRequest | null>
+  openHiddenAppHubPage(appId: string): Promise<boolean>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
   getAppRuns(): Promise<AppRun[]>

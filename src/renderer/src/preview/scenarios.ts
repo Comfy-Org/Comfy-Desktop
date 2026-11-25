@@ -2,6 +2,7 @@ import type { BridgeSeed, FakeBridge } from './fakeBridge'
 import {
   HIDDEN_APP_CARDS,
   INSTALL_STEPS,
+  SAMPLE_DRAFT_QUESTION,
   everydayBuilds,
   localAssets,
   type PreviewMachine
@@ -130,6 +131,22 @@ export const SCENARIOS: PreviewScenario[] = [
     }),
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-staff-apps"]')
+    }
+  },
+  {
+    id: 'staff-apps-draft',
+    title: 'Development page asking to open a draft app',
+    ready: '[role="alertdialog"] [data-testid="base-alert-action"]',
+    seed: (machine) => ({
+      installations: everydayBuilds(machine),
+      replies: {
+        listHiddenApps: async () => ({ apps: HIDDEN_APP_CARDS }),
+        openHiddenAppDraft: async () => SAMPLE_DRAFT_QUESTION
+      }
+    }),
+    arrange: async ({ click }) => {
+      await click('[data-testid="app-sidebar-staff-apps"]')
+      await click('[data-testid="staff-app-card-sample-app-delta"]')
     }
   },
   {

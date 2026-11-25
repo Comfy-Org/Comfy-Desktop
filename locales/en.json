@@ -2303,6 +2303,12 @@
       "draft": "Never published",
       "hubOnly": "Not listed for Desktop",
       "unpublished": "Has saved edits that are not published"
+    },
+    "opens": {
+      "draft": "Draft"
+    },
+    "opensDescription": {
+      "draft": "Opens its draft page from a website preview"
     }
   }
 }

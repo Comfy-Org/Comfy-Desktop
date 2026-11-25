@@ -45,6 +45,7 @@ import {
   mapToDraftOrigin,
   parseDraftLink,
   parsePastedDraft,
+  parseStaffDraftPage,
   registerDraft,
   revokeDraft,
   sameSiteHeaders,
@@ -249,6 +250,57 @@ describe('parsePastedDraft', () => {
 
   it('refuses something that is not text', () => {
     expect(parsePastedDraft(42)).toBeNull()
+  })
+})
+
+describe('parseStaffDraftPage', () => {
+  const VERCEL = 'https://comfy-website-preview-pr-445.vercel.app'
+
+  it("reads a staff app's draft page on a comfy-website preview as its pull request", () => {
+    expect(
+      parseStaffDraftPage(`${VERCEL}/apps/compose-scene/desktop.html`, 'compose-scene')
+    ).toEqual({
+      origin: VERCEL,
+      path: '/apps/compose-scene/desktop.html',
+      slug: 'compose-scene',
+      pr: 445,
+      mount: '/'
+    })
+  })
+
+  it('keeps the query and takes the app folder itself', () => {
+    expect(
+      parseStaffDraftPage(`${VERCEL}/apps/compose-scene/?example=2`, 'compose-scene')
+    ).toMatchObject({ path: '/apps/compose-scene/?example=2', pr: 445 })
+  })
+
+  it.each([
+    ['another app', `${VERCEL}/apps/upscale/desktop.html`],
+    ['a page deeper in the app folder', `${VERCEL}/apps/compose-scene/assets/run.html`],
+    ['a page outside /apps/', `${VERCEL}/compose-scene/desktop.html`],
+    [
+      'plain http',
+      'http://comfy-website-preview-pr-445.vercel.app/apps/compose-scene/desktop.html'
+    ],
+    ['another port', 'https://comfy-website-preview-pr-445.vercel.app:8443/apps/compose-scene/'],
+    ['another Vercel project', 'https://myapp.vercel.app/apps/compose-scene/desktop.html'],
+    [
+      'a look-alike host',
+      'https://comfy-website-preview-pr-445.vercel.app.evil.example/apps/compose-scene/'
+    ],
+    ['comfy.org itself', 'https://comfy.org/apps/compose-scene/desktop.html'],
+    ['this computer', 'http://localhost:4321/apps/compose-scene/desktop.html'],
+    [
+      'a sign-in in the address',
+      'https://me:pw@comfy-website-preview-pr-445.vercel.app/apps/compose-scene/'
+    ],
+    ['a fragment', `${VERCEL}/apps/compose-scene/desktop.html#top`],
+    ['an address over the length limit', `${VERCEL}/apps/compose-scene/?${'a'.repeat(3000)}`],
+    ['text that is not an address', 'compose-scene'],
+    ['something that is not text', 42],
+    ['nothing', undefined]
+  ])('refuses %s', (_why, address) => {
+    expect(parseStaffDraftPage(address, 'compose-scene')).toBeNull()
   })
 })
 

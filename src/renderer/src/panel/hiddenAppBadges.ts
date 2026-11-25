@@ -1,4 +1,4 @@
-import type { AppBadge, HiddenAppReason } from '../types/ipc'
+import type { AppBadge, HiddenAppCard, HiddenAppReason } from '../types/ipc'
 
 interface ReasonWords {
   id: string
@@ -29,17 +29,27 @@ const REASON_WORDS: Record<HiddenAppReason, ReasonWords> = {
   }
 }
 
+const DRAFT_PAGE_WORDS: ReasonWords = {
+  id: 'hidden-draft-page',
+  text: 'staffApps.opens.draft',
+  description: 'staffApps.opensDescription.draft'
+}
+
+function chipOf(words: ReasonWords, t: (key: string) => string): AppBadge {
+  return {
+    id: words.id,
+    style: 'chip',
+    text: { en: t(words.text) },
+    description: { en: t(words.description) }
+  }
+}
+
 export function hiddenAppBadges(
-  reasons: readonly HiddenAppReason[],
+  app: Pick<HiddenAppCard, 'reasons' | 'opens'>,
   t: (key: string) => string
 ): AppBadge[] {
-  return reasons.map((reason): AppBadge => {
-    const words = REASON_WORDS[reason]
-    return {
-      id: words.id,
-      style: 'chip',
-      text: { en: t(words.text) },
-      description: { en: t(words.description) }
-    }
-  })
+  const opensDraft = app.opens === 'draft'
+  const reasons = app.reasons.filter((reason) => !(opensDraft && reason === 'draft'))
+  const chips = reasons.map((reason) => chipOf(REASON_WORDS[reason], t))
+  return opensDraft ? [chipOf(DRAFT_PAGE_WORDS, t), ...chips] : chips
 }

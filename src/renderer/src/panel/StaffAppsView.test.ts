@@ -35,6 +35,33 @@ const STYLE: HiddenAppCard = {
   page: 'unchecked'
 }
 
+const COMPOSE: HiddenAppCard = {
+  id: 'compose-scene',
+  title: 'Compose Scene',
+  description: 'Place things in a scene.',
+  covers: [],
+  reasons: ['off'],
+  page: 'missing',
+  opens: 'draft'
+}
+
+const NEVER_PUBLISHED_DRAFT: HiddenAppCard = {
+  ...COMPOSE,
+  id: 'make-song',
+  title: 'Make Song',
+  reasons: ['off', 'draft']
+}
+
+const RESHOOT: HiddenAppCard = {
+  id: 'reshoot',
+  title: 'Reshoot',
+  description: 'Shoot a video again from a new angle.',
+  covers: [],
+  reasons: ['hub_only'],
+  page: 'missing',
+  opens: 'hub'
+}
+
 const CARDS = '[data-testid="staff-apps-grid"] [data-testid^="staff-app-card-"]'
 
 function mountPage(apps: HiddenAppCard[] = [WORLDS, RELIGHT]) {
@@ -87,6 +114,46 @@ describe('StaffAppsView', () => {
     await card.trigger('click')
 
     expect(wrapper.emitted('open-app')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('opens the draft page of an app with no page on comfy.org, with a Draft chip and no no-page note', async () => {
+    const wrapper = mountPage([COMPOSE])
+
+    const card = wrapper.get('[data-testid="staff-app-card-compose-scene"]')
+    expect(card.element.tagName).toBe('BUTTON')
+    expect(chipsOf(wrapper, 'compose-scene')).toEqual(['Draft', 'Off'])
+    expect(card.find('[data-testid="app-card-note"]').exists()).toBe(false)
+    expect(card.text()).not.toContain('No page on comfy.org yet')
+
+    await card.trigger('click')
+
+    expect(wrapper.emitted('open-draft')?.[0]?.[0]).toMatchObject({ id: 'compose-scene' })
+    expect(wrapper.emitted('open-app')).toBeUndefined()
+    expect(wrapper.emitted('open-hub-page')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('shows one Draft chip on a never-published app that opens its draft page', () => {
+    const wrapper = mountPage([NEVER_PUBLISHED_DRAFT])
+
+    expect(chipsOf(wrapper, 'make-song')).toEqual(['Draft', 'Off'])
+    wrapper.unmount()
+  })
+
+  it('opens the Hub page of a Hub-only app with no page on comfy.org', async () => {
+    const wrapper = mountPage([RESHOOT])
+
+    const card = wrapper.get('[data-testid="staff-app-card-reshoot"]')
+    expect(card.element.tagName).toBe('BUTTON')
+    expect(chipsOf(wrapper, 'reshoot')).toEqual(['Hub only'])
+    expect(card.text()).not.toContain('No page on comfy.org yet')
+
+    await card.trigger('click')
+
+    expect(wrapper.emitted('open-hub-page')?.[0]?.[0]).toMatchObject({ id: 'reshoot' })
+    expect(wrapper.emitted('open-app')).toBeUndefined()
+    expect(wrapper.emitted('open-draft')).toBeUndefined()
     wrapper.unmount()
   })
 

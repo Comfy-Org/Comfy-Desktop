@@ -414,6 +414,8 @@ function installMockApi(initial?: {
     navigatePanel: vi.fn(),
     listApps: vi.fn(async () => []),
     listHiddenApps: vi.fn(async () => ({ apps: [] })),
+    openHiddenAppDraft: vi.fn(async () => null),
+    openHiddenAppHubPage: vi.fn(async () => true),
     showAppPage: vi.fn(async () => 'loading'),
     captureAppPage: vi.fn(async () => null),
     getAppRuns: vi.fn(async () => []),
@@ -1845,6 +1847,104 @@ describe('PanelApp', () => {
     await vi.waitFor(() =>
       expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
     )
+  })
+
+  it('asks before opening the draft page of a staff app with no page on comfy.org, then opens it', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, page: 'missing', opens: 'draft' }]
+    })
+    vi.mocked(window.api.openHiddenAppDraft).mockResolvedValue({
+      kind: 'ask',
+      appId: 'draft-pr445-relight-0a1b2c3d',
+      token: 'question-7',
+      title: 'Open a draft app from comfy-website-preview-pr-445.vercel.app?',
+      message: '"Relight". It is not published, and it runs with your Comfy Cloud account.'
+    })
+    vi.mocked(window.api.acceptDraftApp).mockResolvedValue({
+      kind: 'open',
+      card: { id: 'draft-pr445-relight-0a1b2c3d', title: 'Relight', description: '', covers: [] }
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    const open = await vi.waitFor(() => {
+      const action = document.querySelector<HTMLElement>(
+        '[role="alertdialog"] [data-testid="base-alert-action"]'
+      )
+      if (!action) throw new Error('The draft app question is not open yet')
+      return action
+    })
+
+    expect(window.api.openHiddenAppDraft).toHaveBeenCalledExactlyOnceWith('relight')
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'Open a draft app from comfy-website-preview-pr-445.vercel.app?'
+    )
+    expect(window.api.acceptDraftApp).not.toHaveBeenCalled()
+    expect(window.api.showAppPage).not.toHaveBeenCalled()
+    open.click()
+    await flushPromises()
+
+    expect(window.api.acceptDraftApp).toHaveBeenCalledExactlyOnceWith('question-7')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+    wrapper.unmount()
+  })
+
+  it('shows why when Desktop refuses to open the draft, and opens nothing', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, page: 'missing', opens: 'draft' }]
+    })
+    vi.mocked(window.api.openHiddenAppDraft).mockResolvedValue({
+      kind: 'refused',
+      title: 'Draft apps are for Comfy staff',
+      message: 'Sign in to Comfy Desktop with your @comfy.org account.'
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+        'Draft apps are for Comfy staff'
+      )
+    )
+
+    expect(window.api.acceptDraftApp).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    document
+      .querySelector<HTMLElement>('[role="alertdialog"] [data-testid="base-alert-action"]')!
+      .click()
+    await flushPromises()
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('opens the Hub page of a Hub-only staff app in the browser, and stays on Development', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, reasons: ['hub_only'], page: 'missing', opens: 'hub' }]
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    await flushPromises()
+
+    expect(window.api.openHiddenAppHubPage).toHaveBeenCalledExactlyOnceWith('relight')
+    expect(window.api.openHiddenAppDraft).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   async function openRelightFromDevelopment(): Promise<ReturnType<typeof mountPanel>> {

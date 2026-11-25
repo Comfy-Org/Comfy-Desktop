@@ -2303,6 +2303,12 @@
       "draft": "从未发布",
       "hubOnly": "未在 Desktop 中列出",
       "unpublished": "有已保存但未发布的修改"
+    },
+    "opens": {
+      "draft": "草稿"
+    },
+    "opensDescription": {
+      "draft": "从网站预览打开草稿页面"
     }
   }
 }
