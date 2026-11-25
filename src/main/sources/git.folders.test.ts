@@ -25,6 +25,8 @@ vi.mock('../settings', () => ({
 import { gitSource } from './git'
 import { portable } from './portable'
 import { resolveInputDir } from './standalone/templateInputAssets'
+import { _runningSessions } from '../lib/ipc/shared'
+import { startupArgFolder } from '../lib/startupArgFolders'
 import type { InstallationRecord } from '../installations'
 
 type Field = { id?: string; value?: unknown; editable?: boolean }
@@ -37,6 +39,7 @@ let clone = ''
 afterEach(() => {
   if (clone) fs.rmSync(clone, { recursive: true, force: true })
   clone = ''
+  _runningSessions.clear()
 })
 
 function rootLayoutClone(): string {
@@ -104,8 +107,14 @@ describe('the Folders tab of a build added from an existing git clone', () => {
       launchArgs: '--port 8190 --input-directory /my/in --output-directory=/my/out'
     })
 
-    expect(valueOf(storage, 'launchInputDir')).toEqual({ path: '/my/in', shared: false })
-    expect(valueOf(storage, 'launchOutputDir')).toEqual({ path: '/my/out', shared: false })
+    expect(valueOf(storage, 'launchInputDir')).toEqual({
+      path: path.resolve('/my/in'),
+      shared: false
+    })
+    expect(valueOf(storage, 'launchOutputDir')).toEqual({
+      path: path.resolve('/my/out'),
+      shared: false
+    })
   })
 
   it('resolves a relative folder in Startup arguments from the ComfyUI folder it starts in', () => {
@@ -146,6 +155,48 @@ describe('template input downloads for a git build', () => {
   })
 
   it('go to the input folder set in Startup arguments', () => {
-    expect(resolveInputDir(record({ launchArgs: '--input-directory /my/in' }))).toBe('/my/in')
+    expect(resolveInputDir(record({ launchArgs: '--input-directory /my/in' }))).toBe(
+      path.resolve('/my/in')
+    )
+  })
+
+  it('go to the input folder a running build started with, not Startup arguments saved since', () => {
+    const launchedInput = path.resolve('/launched/input')
+    _runningSessions.set('git-1', {
+      launchFolders: { input: launchedInput, output: path.resolve('/launched/output') }
+    } as never)
+
+    expect(resolveInputDir(record({ launchArgs: '--input-directory /edited/since' }))).toBe(
+      launchedInput
+    )
+  })
+})
+
+describe('the folder a relative Startup argument names', () => {
+  function makeVenvPython(venv: string): void {
+    for (const python of [path.join('bin', 'python3'), path.join('Scripts', 'python.exe')]) {
+      fs.mkdirSync(path.dirname(path.join(venv, python)), { recursive: true })
+      fs.writeFileSync(path.join(venv, python), '')
+    }
+  }
+
+  it.each([
+    ['at the clone root', ''],
+    ['in a nested ComfyUI folder', 'ComfyUI']
+  ])('resolves from the folder ComfyUI starts in, with ComfyUI %s', (_layout, nested) => {
+    clone = fs.mkdtempSync(path.join(os.tmpdir(), 'git-clone-'))
+    fs.mkdirSync(path.join(clone, nested), { recursive: true })
+    fs.writeFileSync(path.join(clone, nested, 'main.py'), '')
+    makeVenvPython(path.join(clone, 'venv'))
+    const inst = record({
+      installPath: clone,
+      venvPath: path.join(clone, 'venv'),
+      launchArgs: '--output-directory renders'
+    })
+
+    const startDir = gitSource.getLaunchCommand(inst)?.cwd
+
+    expect(startDir).toBe(path.join(clone, nested))
+    expect(startupArgFolder(inst, 'output')).toBe(path.join(startDir!, 'renders'))
   })
 })

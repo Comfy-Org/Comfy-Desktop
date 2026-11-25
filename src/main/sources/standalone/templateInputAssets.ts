@@ -4,6 +4,7 @@ import * as settings from '../../settings'
 import { download } from '../../lib/download'
 import { stripQueryParams } from '../../lib/downloadFilename'
 import { installInputDir } from '../../lib/models'
+import { comfyFoldersOf } from '../../lib/outputFolders'
 import { startupArgOrSharedFolder, usesStartupArgFolders } from '../../lib/startupArgFolders'
 import { loadTemplateJson } from './templateModels'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
@@ -125,7 +126,9 @@ function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[]
 
 export function resolveInputDir(installation: InstallationRecord): string {
   if (usesStartupArgFolders(installation)) {
-    return startupArgOrSharedFolder(installation, 'input').path
+    return (
+      comfyFoldersOf(installation).input ?? startupArgOrSharedFolder(installation, 'input').path
+    )
   }
   if (installation.useSharedInput !== false) {
     return settings.get('inputDir') || settings.defaults.inputDir

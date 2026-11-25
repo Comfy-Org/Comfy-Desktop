@@ -84,6 +84,7 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 vi.mock('./models', () => ({
+  resolveComfyDir: (installPath: string) => path.join(installPath, 'ComfyUI'),
   installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output'),
   installInputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'input')
 }))
@@ -278,6 +279,24 @@ describe('launchFoldersOf', () => {
       output: path.join(installDir, 'ComfyUI', 'output'),
       input: path.join(installDir, 'ComfyUI', 'input')
     })
+  })
+
+  it('resolves a relative folder from the folder ComfyUI was started in', () => {
+    const startedIn = path.join(installDir, 'started-in')
+    const args = ['main.py', '--output-directory', 'renders', '--input-directory=../in']
+
+    expect(launchFoldersOf(install('a'), { args, cwd: startedIn })).toEqual({
+      output: path.join(startedIn, 'renders'),
+      input: path.join(installDir, 'in')
+    })
+  })
+
+  it('resolves a relative folder from the ComfyUI folder when the start folder is unknown', () => {
+    const args = ['--output-directory', 'renders']
+
+    expect(launchFoldersOf(install('a'), { args }).output).toBe(
+      path.join(installDir, 'ComfyUI', 'renders')
+    )
   })
 
   it('gives no folders when Desktop could not pass them', () => {

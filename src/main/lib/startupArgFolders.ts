@@ -43,11 +43,18 @@ export function sharedFolder(
     : storage.outputDir || settings.defaults.outputDir
 }
 
+export function comfyStartDir(inst: Pick<InstallationRecord, 'installPath'>): string {
+  return resolveComfyDir(inst.installPath)
+}
+
+export function resolveFolderArg(value: string, startDir: () => string): string {
+  return path.isAbsolute(value) ? path.resolve(value) : path.resolve(startDir(), value)
+}
+
 export function startupArgFolder(inst: InstallationRecord, kind: ComfyFolderKind): string | null {
   const launchArgs = typeof inst.launchArgs === 'string' ? inst.launchArgs : ''
   const value = lastArgValue(parseArgs(launchArgs), FOLDER_FLAG[kind])
-  if (!value) return null
-  return path.resolve(resolveComfyDir(inst.installPath), value)
+  return value ? resolveFolderArg(value, () => comfyStartDir(inst)) : null
 }
 
 export function startupArgOrSharedFolder(

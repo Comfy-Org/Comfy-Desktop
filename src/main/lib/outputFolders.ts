@@ -15,7 +15,15 @@ import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installInputDir, installOutputDir } from './models'
-import { lastArgValue, startupArgOrSharedFolder, usesStartupArgFolders } from './startupArgFolders'
+import {
+  FOLDER_FLAG,
+  comfyStartDir,
+  lastArgValue,
+  resolveFolderArg,
+  startupArgOrSharedFolder,
+  usesStartupArgFolders,
+  type ComfyFolderKind
+} from './startupArgFolders'
 import { _runningSessions, sourceMap } from './ipc/shared'
 import type {
   AssetKind,
@@ -88,14 +96,27 @@ export interface ComfyFolders {
 
 const NO_FOLDERS: ComfyFolders = { output: null, input: null }
 
-export function launchFoldersOf(
+interface LaunchedWith {
+  args?: readonly string[]
+  cwd?: string
+  skipSharedPaths?: boolean
+}
+
+function launchArgFolder(
   inst: InstallationRecord,
-  launch: { args?: readonly string[]; skipSharedPaths?: boolean }
-): ComfyFolders {
+  launch: LaunchedWith & { args: readonly string[] },
+  kind: ComfyFolderKind
+): string | null {
+  const value = lastArgValue(launch.args, FOLDER_FLAG[kind])
+  return value ? resolveFolderArg(value, () => launch.cwd ?? comfyStartDir(inst)) : null
+}
+
+export function launchFoldersOf(inst: InstallationRecord, launch: LaunchedWith): ComfyFolders {
   if (launch.skipSharedPaths || !launch.args || !hasOutputFolder(inst)) return NO_FOLDERS
+  const launched = { ...launch, args: launch.args }
   return {
-    output: lastArgValue(launch.args, '--output-directory') ?? installOutputDir(inst.installPath),
-    input: lastArgValue(launch.args, '--input-directory') ?? installInputDir(inst.installPath)
+    output: launchArgFolder(inst, launched, 'output') ?? installOutputDir(inst.installPath),
+    input: launchArgFolder(inst, launched, 'input') ?? installInputDir(inst.installPath)
   }
 }
 
