@@ -73,7 +73,7 @@ function onClick(): void {
     <Button
       variant="textonly"
       size="unset"
-      class="h-8 w-full gap-1 rounded-full bg-azure-600 text-[13px]/5 font-medium text-white hover:bg-azure-600/85"
+      class="h-8 w-full gap-1 overflow-hidden rounded-full bg-update text-[13px]/5 font-medium text-update-foreground hover:bg-update/85"
       :aria-label="tooltip"
       :data-state="state.kind"
       data-testid="app-sidebar-desktop-update"

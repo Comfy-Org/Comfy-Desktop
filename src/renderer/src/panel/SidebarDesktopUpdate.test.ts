@@ -53,18 +53,14 @@ describe('SidebarDesktopUpdate', () => {
     const button = wrapper.get(indicator)
     expect(button.text()).toBe('Update')
     expect(button.classes()).toEqual(
-      expect.arrayContaining(['rounded-full', 'bg-azure-600', 'text-white'])
+      expect.arrayContaining(['rounded-full', 'bg-update', 'text-update-foreground'])
     )
   })
 
   it.each([
-    ['available', false, 'Update to v2.3.4 is available. Click to download it.'],
-    [
-      'ready',
-      true,
-      'Update to v2.3.4 installs the next time Desktop restarts. Click to restart now.'
-    ],
-    ['ready', false, 'Update to v2.3.4 is downloaded. Click to restart and install it.']
+    ['available', false, 'v2.3.4 is ready to download.'],
+    ['ready', true, 'v2.3.4 installs when Desktop restarts.'],
+    ['ready', false, 'v2.3.4 is downloaded and ready to install.']
   ] as const)(
     'names the new version for the %s state (auto-update %s)',
     async (kind, autoUpdate, description) => {
@@ -172,9 +168,7 @@ describe('SidebarDesktopUpdate', () => {
 
     const button = wrapper.get(indicator)
     expect(button.text()).toBe('')
-    expect(button.attributes('aria-label')).toBe(
-      'Update to v2.3.4 installs the next time Desktop restarts. Click to restart now.'
-    )
+    expect(button.attributes('aria-label')).toBe('v2.3.4 installs when Desktop restarts.')
   })
 
   it('stops listening when it unmounts', async () => {
