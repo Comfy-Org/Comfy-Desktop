@@ -1,7 +1,10 @@
 import { computed, type WritableComputedRef } from 'vue'
 import { proto } from './useProto'
 import { can, MILESTONES } from './milestones'
-import { appsProto, type LookVariant } from './appFlow'
+import { DIRECTIONS, look as designLook, THEMES, type Theme } from './look'
+import { tuner } from './mar/uiTuner'
+import { titleTabs, type TitleBarStyle } from './mar/shell/titleTabs'
+import { marUser, setUser } from './mar/userStates/userState'
 
 /**
  * The prototype's switches, shown in the Prototype panel (DevBar, browser
@@ -22,35 +25,59 @@ const milestone = computed({
   get: () => String(proto.milestone),
   set: (v) => (proto.milestone = Number(v))
 })
+// The same switch as UI Playground › User.
 const user = computed({
-  get: () => (proto.fresh ? 'new' : 'returning'),
-  set: (v) => (proto.fresh = v === 'new')
+  get: () => (marUser.user === 'first' ? 'new' : 'returning'),
+  set: (v) => setUser(v === 'new' ? 'first' : 'returning')
 })
 const data = computed({
   get: () => (proto.live ? 'mine' : 'mock'),
   set: (v) => (proto.live = v === 'mine')
 })
 
-// Milestone 10: how the creator customizes the app's look.
-const look = computed({
-  get: () => appsProto.look,
-  set: (v) => (appsProto.look = v as LookVariant)
+// The theme being explored (look.ts, ui/looks/); the direction is picked
+// in the tuner.
+const theme = computed({
+  get: () => designLook.theme,
+  set: (v) => (designLook.theme = v as Theme)
+})
+
+// One row for the UI: it opens the tuner (mar/UiTuner.vue), where it is
+// picked; nothing to keep checked.
+const tune = computed({
+  get: () => (tuner.open ? 'open' : ''),
+  set: () => (tuner.open = true)
+})
+const tuneLabel = computed(
+  () => `${DIRECTIONS.find((d) => d.value === designLook.direction)?.label ?? 'Graphite'} · Tune…`
+)
+
+// The breadcrumb or tabs (mar/shell/titleTabs.ts).
+const titleBar = computed({
+  get: () => titleTabs.style,
+  set: (v) => (titleTabs.style = v as TitleBarStyle)
 })
 
 export const prototypeGroups = computed<PrototypeGroup[]>(() =>
   [
     { key: 'milestone', label: 'Milestone', model: milestone, options: MILESTONES },
-    can.value.agent && {
-      key: 'look',
-      label: 'Customize',
-      model: look,
+    // Milestone 0 is Desktop as it ships: there is nothing to tune.
+    can.value.design && {
+      key: 'tune',
+      label: 'UI Playground',
+      model: tune,
+      options: [{ value: 'open', label: tuneLabel.value }]
+    },
+    can.value.breadcrumb && {
+      key: 'marTitle',
+      label: 'Title bar',
+      model: titleBar,
       options: [
-        { value: 'panel', label: 'Style panel' },
-        { value: 'themes', label: 'Themes' },
-        { value: 'brand', label: 'Brand kit' },
-        { value: 'describe', label: 'Describe it' }
+        { value: 'breadcrumb', label: 'Breadcrumb' },
+        { value: 'tabs', label: 'Tabs' }
       ]
     },
+    { key: 'theme', label: 'Theme', model: theme, options: [...THEMES] },
     // First run vs returning only changes Home.
     can.value.home && {
       key: 'user',

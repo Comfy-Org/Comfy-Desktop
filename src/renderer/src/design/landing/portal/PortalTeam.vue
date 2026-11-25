@@ -12,7 +12,7 @@ const table = ref<InstanceType<typeof MembersTable>>()
 
 <template>
   <div class="mx-auto w-full max-w-280 px-10 pb-16">
-    <PageHeader title="Team" :description="`People who can use ${currentSpace.name}.`">
+    <PageHeader title="Team">
       <template #actions
         ><BrandButton size="lg" @click="table?.invite()"
           ><UserPlus :size="15" />Invite</BrandButton

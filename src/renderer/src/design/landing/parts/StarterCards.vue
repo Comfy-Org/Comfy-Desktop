@@ -14,23 +14,23 @@ export interface Starter {
 const STARTERS: Starter[] = [
   {
     label: 'Remove a background',
-    thumbId: 'api_google_nano_banana2_image_edit'
+    thumbId: 'api_google_nano_banana2_image_edit~start-remove-a-background'
   },
   {
     label: 'Turn a photo into video',
-    thumbId: 'video_ltx2_5_i2v'
+    thumbId: 'video_ltx2_5_i2v~start-turn-a-photo-into-video'
   },
   {
     label: 'Reshoot your product',
-    thumbId: 'template_product_placement'
+    thumbId: 'template_product_placement~start-reshoot-your-product'
   },
   {
     label: 'Upscale to 4K',
-    thumbId: 'utility_seedvr2_image_upscale'
+    thumbId: 'utility_seedvr2_image_upscale~start-upscale-to-4k'
   },
   {
     label: 'Build an API for product shots',
-    thumbId: 'image_flux2'
+    thumbId: 'image_flux2~start-build-an-api-for-product-shots'
   }
 ]
 

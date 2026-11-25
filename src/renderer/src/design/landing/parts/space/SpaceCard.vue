@@ -60,7 +60,7 @@ const open = computed(() => space.requests.filter((r) => r.status === 'new').len
             >+{{ space.members.length - 6 }}</span
           >
         </span>
-        <span class="text-ui text-subtle-foreground"
+        <span class="mar-space-meta text-ui text-subtle-foreground"
           >{{ online }} online · {{ space.members.length }} people ·
           {{ space.catalog.filter((c) => c.visible).length }} tools</span
         >

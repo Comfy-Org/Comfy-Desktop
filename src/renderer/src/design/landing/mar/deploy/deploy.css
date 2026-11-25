@@ -1,0 +1,1369 @@
+/* Mar's Deploy as API modal (MarDeployModal.vue). Global on purpose: its
+   buttons have to get past the prototype's button reset, which scoped
+   styles can't reach. Everything is under .mar-dep.
+
+   Radius nesting: modal 22 → panels 16 (inset 12) → rows / tiles 12
+   (inset 4) → glyphs 8. Segmented tabs follow UI Playground › Corners
+   through --mar-tab-radius. Same smoked glass as the template modal. */
+
+.mar-dep {
+  --dep-ink: var(--color-base-foreground);
+  --dep-line: color-mix(in oklch, var(--dep-ink) 8%, transparent);
+  --dep-well: color-mix(in oklch, var(--dep-ink) 4%, transparent);
+  --dep-well-2: color-mix(in oklch, var(--dep-ink) 7%, transparent);
+  --dep-well-3: color-mix(in oklch, var(--dep-ink) 11%, transparent);
+  --dep-ok: var(--color-status-running);
+  --dep-warn: oklch(0.8 0.14 75);
+  --dep-bad: oklch(0.7 0.17 25);
+  --dep-info: oklch(0.74 0.12 250);
+  --dep-code: oklch(0.15 0.004 285);
+  --dep-tab: var(--mar-tab-radius, 10px);
+  --dep-tab-item: var(--mar-tab-item-radius, 7px);
+
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1000px, calc(100vw - 32px));
+  height: min(800px, calc(100vh - 32px));
+  overflow: hidden;
+  border-radius: 22px;
+  color: var(--dep-ink);
+  font-size: 13px;
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--dep-ink) 5%, var(--color-card-background)) 90%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px var(--dep-line),
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 32px 80px -24px rgb(0 0 0 / 0.7);
+  outline: none;
+  transform: translate(-50%, -50%);
+}
+.mar-dep[data-state='open'] {
+  animation: mar-dep-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes mar-dep-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48.5%) scale(0.98);
+  }
+}
+.mar-dep-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background-color: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(6px);
+}
+:root[data-ds-theme='light'] .mar-dep {
+  --dep-line: color-mix(in oklch, var(--dep-ink) 9%, transparent);
+  --dep-well: color-mix(in oklch, var(--dep-ink) 3.5%, transparent);
+  --dep-well-2: color-mix(in oklch, var(--dep-ink) 6%, transparent);
+  --dep-well-3: color-mix(in oklch, var(--dep-ink) 9%, transparent);
+  --dep-ok: oklch(0.56 0.14 155);
+  --dep-warn: oklch(0.6 0.15 60);
+  --dep-bad: oklch(0.55 0.19 25);
+  --dep-info: oklch(0.52 0.15 255);
+  --dep-code: oklch(0.975 0.002 285);
+  background-color: color-mix(in oklch, var(--color-card-background) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--dep-line),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 28px 64px -20px rgb(0 0 0 / 0.28);
+}
+:root[data-ds-theme='light'] .mar-dep-scrim {
+  background-color: rgb(20 20 30 / 0.22);
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+.mar-dep-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px 64px 18px 24px;
+}
+.mar-dep-head > :first-child {
+  margin-top: 3px;
+}
+.mar-dep-sub {
+  margin-top: 2px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  line-height: 19px;
+  text-wrap: pretty;
+}
+.mar-dep-title {
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 26px;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-dep-lede {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  line-height: 19px;
+  text-wrap: pretty;
+}
+
+/* ── Body: form on the left, a summary rail on the right ─────────── */
+.mar-dep-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+  padding: 0 12px 0 24px;
+}
+.mar-dep-body[data-live] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+}
+.mar-dep-form,
+.mar-dep-side {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 2px 12px 16px 2px;
+  scrollbar-width: thin;
+}
+.mar-dep-side {
+  padding-right: 12px;
+}
+
+.mar-dep-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 16px;
+  padding: 12px;
+  background: var(--dep-well);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 0;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.mar-dep-label > b {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--dep-ink);
+  font-size: 11px;
+  background: var(--dep-well-3);
+}
+.mar-dep-label > span {
+  margin-left: auto;
+  color: var(--color-subtle-foreground);
+  font-weight: 500;
+}
+.mar-dep-field-label {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mar-dep-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+.mar-dep-dim {
+  color: var(--color-subtle-foreground);
+}
+.mar-dep-error {
+  color: var(--dep-bad);
+  font-size: 12px;
+}
+
+/* Radio rows: versions, API keys */
+.mar-dep-versions,
+.mar-dep-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-row {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  padding: 6px 10px 6px 8px;
+  text-align: left;
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-row:hover {
+  background: var(--dep-well);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-row[aria-checked='true'] {
+  background: var(--dep-well-2);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-ver {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--dep-well-2);
+}
+.mar-dep-row-icon {
+  margin: 0 4px 0 6px;
+  color: var(--color-muted-foreground);
+}
+.mar-dep-row-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  line-height: 17px;
+}
+.mar-dep-row-text > span {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-dep-row-text > small {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-dep-radio {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--dep-well-3);
+  transition: box-shadow 140ms ease;
+}
+[aria-checked='true'] > .mar-dep-radio {
+  box-shadow: inset 0 0 0 5px var(--dep-ink);
+}
+.mar-dep-badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--color-muted-foreground);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--dep-well-2);
+}
+.mar-dep-badge[data-tone='ok'] {
+  color: var(--dep-ok);
+  background: color-mix(in oklch, var(--dep-ok) 14%, transparent);
+}
+
+/* The explicit "Upload & release vN" step */
+.mar-dep-release {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 12px;
+  padding: 12px;
+  background: color-mix(in oklch, var(--dep-info) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--dep-info) 22%, transparent);
+}
+.mar-dep-release-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mar-dep-release-head b {
+  display: block;
+  font-weight: 600;
+}
+.mar-dep-release-head small,
+.mar-dep-release-cost small {
+  display: block;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-dep-release-cost {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-tile {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--dep-info);
+  background: color-mix(in oklch, var(--dep-info) 14%, transparent);
+}
+.mar-dep-release-note {
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  line-height: 18px;
+  text-wrap: pretty;
+}
+.mar-dep-models {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 8px;
+  padding: 4px 0;
+}
+.mar-dep-models li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 2px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-dep-models li > span:first-of-type {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--dep-ink);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-dep-models em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-mark {
+  width: 74px;
+  text-align: right;
+  font-size: 11.5px;
+}
+.mar-dep-mark[data-m='new'] {
+  color: var(--dep-info);
+}
+
+/* Segmented tabs (Corners tweak) */
+.mar-dep-seg {
+  display: flex;
+  gap: 2px;
+  border-radius: var(--dep-tab);
+  padding: 3px;
+  background: var(--dep-well-2);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-seg > button {
+  display: inline-flex;
+  min-height: 28px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--dep-tab-item);
+  padding: 0 12px;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-seg > button:hover {
+  color: var(--dep-ink);
+}
+:root
+  .proto-ui.proto-ui.proto-ui
+  .mar-dep-seg
+  > button:is([aria-checked='true'], [aria-selected='true']) {
+  color: var(--dep-ink);
+  background: var(--color-card-background);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.18),
+    inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-seg small {
+  color: var(--color-subtle-foreground);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+/* GPU tiles */
+.mar-dep-gpus {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-gpu {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 2px 8px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--dep-well);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-gpu:hover:not(:disabled) {
+  background: var(--dep-well-2);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-gpu[aria-checked='true'] {
+  background: var(--dep-well-2);
+  box-shadow: inset 0 0 0 1.5px var(--dep-ink);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-gpu:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.mar-dep-gpu-name {
+  font-weight: 600;
+}
+.mar-dep-gpu-mem {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-gpu-price {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-gpu-price small {
+  margin-left: 2px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 400;
+}
+.mar-dep-gpu-note {
+  grid-column: 1 / -1;
+  color: var(--color-subtle-foreground);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-gpu[data-full] .mar-dep-gpu-note {
+  color: var(--dep-warn);
+}
+
+/* Name + scaling */
+.mar-dep-name {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 4px;
+}
+.mar-dep-input {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: var(--dep-well-2);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-input:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--color-border-focus);
+}
+.mar-dep-input[data-invalid] {
+  box-shadow: inset 0 0 0 1.5px var(--dep-bad);
+}
+.mar-dep-input input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: none;
+  color: var(--dep-ink);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  background: transparent;
+}
+.mar-dep-input em {
+  color: var(--color-subtle-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  font-style: normal;
+}
+.mar-dep-scale {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.mar-dep-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--dep-well);
+}
+.mar-dep-stepper > small {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.mar-dep-step {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: var(--dep-tab);
+  padding: 3px;
+  background: var(--dep-well-2);
+}
+.mar-dep-step > b {
+  min-width: 34px;
+  text-align: center;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-step > button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--dep-tab-item);
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-step > button:hover:not(:disabled) {
+  color: var(--dep-ink);
+  background: var(--color-card-background);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-step > button:disabled {
+  opacity: 0.35;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-link {
+  color: var(--dep-ink);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--dep-well-3);
+  text-underline-offset: 2px;
+}
+
+/* Summary rail */
+.mar-dep-plan {
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px;
+  counter-reset: dep;
+}
+.mar-dep-plan li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 12px 28px;
+  line-height: 18px;
+  counter-increment: dep;
+}
+.mar-dep-plan li::before {
+  content: counter(dep);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--dep-well-2);
+}
+.mar-dep-plan li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 21px;
+  bottom: 3px;
+  left: 8.5px;
+  width: 1px;
+  background: var(--dep-line);
+}
+.mar-dep-plan li:last-child {
+  padding-bottom: 2px;
+}
+.mar-dep-plan b {
+  font-weight: 500;
+}
+.mar-dep-plan span {
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-dep-cost {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  padding: 0 4px;
+}
+.mar-dep-cost dt {
+  color: var(--color-muted-foreground);
+}
+.mar-dep-cost dd {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mar-dep-cost dd[data-zero] {
+  color: var(--dep-ok);
+}
+.mar-dep-fine {
+  padding: 0 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 17px;
+}
+.mar-dep-balance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--dep-well);
+}
+.mar-dep-balance > span {
+  color: var(--color-muted-foreground);
+}
+.mar-dep-balance > b {
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-balance > small {
+  margin-left: auto;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+
+/* Callouts: blockers, capacity, live status notes */
+.mar-dep-callout {
+  display: flex;
+  gap: 10px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: var(--color-muted-foreground);
+  line-height: 18px;
+  background: var(--dep-well-2);
+}
+.mar-dep-callout > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--dep-ink);
+}
+.mar-dep-callout > span {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.mar-dep-callout b {
+  color: var(--dep-ink);
+  font-weight: 600;
+}
+.mar-dep-callout[data-tone='warn'] {
+  background: color-mix(in oklch, var(--dep-warn) 11%, transparent);
+}
+.mar-dep-callout[data-tone='warn'] > svg {
+  color: var(--dep-warn);
+}
+.mar-dep-callout[data-tone='block'] {
+  background: color-mix(in oklch, var(--dep-bad) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--dep-bad) 24%, transparent);
+}
+.mar-dep-callout[data-tone='block'] > svg {
+  color: var(--dep-bad);
+}
+.mar-dep-callout[data-kind='signed-out'],
+.mar-dep-callout[data-kind='plan'] {
+  background: var(--dep-well-2);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-callout[data-kind='signed-out'] > svg,
+.mar-dep-callout[data-kind='plan'] > svg {
+  color: var(--dep-ink);
+}
+.mar-dep-callout[data-tone='info'] {
+  background: color-mix(in oklch, var(--dep-info) 9%, transparent);
+}
+.mar-dep-callout[data-tone='info'] > svg {
+  color: var(--dep-info);
+}
+.mar-dep-fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-fixes > button,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-inline,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-chip {
+  display: inline-flex;
+  width: fit-content;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9px;
+  padding: 0 10px;
+  color: var(--dep-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--dep-well-2);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-inline {
+  margin-top: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-fixes > button:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-inline:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-chip:hover:not(:disabled) {
+  background: var(--dep-well-3);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-chip[data-strong],
+:root .proto-ui.proto-ui.proto-ui .mar-dep-fixes > button:first-child,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-inline {
+  color: var(--color-inverted-foreground);
+  background: var(--color-inverted-background);
+  box-shadow: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-chip[data-strong]:hover:not(:disabled),
+:root .proto-ui.proto-ui.proto-ui .mar-dep-fixes > button:first-child:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-inline:hover {
+  background: var(--color-inverted-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ── Progress ────────────────────────────────────────────────────── */
+.mar-dep-steps {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  padding: 6px 14px;
+  background: var(--dep-well);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-steps > li {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+}
+.mar-dep-steps > li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 40px;
+  bottom: -10px;
+  left: 11.5px;
+  width: 1px;
+  background: var(--dep-line);
+}
+.mar-dep-dot {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--color-subtle-foreground);
+  background: var(--dep-well-2);
+}
+[data-s='done'] > .mar-dep-dot {
+  color: var(--dep-ok);
+  background: color-mix(in oklch, var(--dep-ok) 15%, transparent);
+}
+[data-s='now'] > .mar-dep-dot {
+  color: var(--dep-ink);
+  background: var(--dep-well-3);
+}
+[data-s='failed'] > .mar-dep-dot {
+  color: var(--dep-bad);
+  background: color-mix(in oklch, var(--dep-bad) 15%, transparent);
+}
+.mar-dep-step-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 2px;
+  color: var(--color-subtle-foreground);
+  font-size: 12.5px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-step-body > b {
+  color: var(--dep-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+[data-s='next'] .mar-dep-step-body > b {
+  color: var(--color-muted-foreground);
+}
+.mar-dep-bar {
+  display: block;
+  height: 6px;
+  margin: 6px 0 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--dep-well-2);
+}
+.mar-dep-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dep-ink);
+  transition: width 120ms linear;
+}
+.mar-dep-resume {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+.mar-dep-spin {
+  animation: mar-dep-spin 1s linear infinite;
+}
+@keyframes mar-dep-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mar-dep-logs-panel {
+  min-height: 0;
+  flex: 1;
+}
+.mar-dep-logs,
+.mar-dep-code {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: color-mix(in oklch, var(--dep-ink) 82%, transparent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 18px;
+  white-space: pre;
+  background: var(--dep-code);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+  scrollbar-width: thin;
+}
+.mar-dep-logs {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mar-dep-logs [data-err] {
+  color: var(--dep-bad);
+}
+
+/* ── Live ────────────────────────────────────────────────────────── */
+.mar-dep-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: var(--dep-well);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-status > b {
+  font-weight: 600;
+}
+.mar-dep-status-meta {
+  width: 100%;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-dep-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-subtle-foreground);
+}
+[data-s='ready'] > .mar-dep-pulse {
+  background: var(--dep-ok);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--dep-ok) 22%, transparent);
+}
+[data-s='updating'] > .mar-dep-pulse {
+  background: var(--dep-info);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--dep-info) 22%, transparent);
+}
+[data-s='stopped-credits'] > .mar-dep-pulse {
+  background: var(--dep-bad);
+}
+.mar-dep-copy {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 0 4px 0 12px;
+  background: var(--dep-code);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-copy > .mar-dep-mono {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-dep-copy[data-secret] {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--dep-warn) 55%, transparent);
+}
+.mar-dep-copy[data-secret] > svg {
+  flex-shrink: 0;
+  color: var(--dep-warn);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-copy > button,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-icon-btn {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-copy > button:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-icon-btn:hover {
+  color: var(--dep-ink);
+  background: var(--dep-well-2);
+}
+.mar-dep-warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--dep-warn);
+  font-size: 12.5px;
+}
+.mar-dep-warn > button {
+  margin-left: auto;
+}
+.mar-dep-newkey {
+  display: flex;
+  gap: 6px;
+}
+.mar-dep-newkey > .mar-dep-input {
+  flex: 1;
+  height: 32px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-newkey > button {
+  height: 32px;
+}
+.mar-dep-links {
+  display: flex;
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-links > button {
+  display: inline-flex;
+  height: 32px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 10px;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  background: var(--dep-well);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-links > button:hover {
+  color: var(--dep-ink);
+  background: var(--dep-well-2);
+}
+.mar-dep-code-panel {
+  min-height: 300px;
+  flex: 1;
+}
+.mar-dep-code-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mar-dep-code-head > .mar-pseg {
+  margin-right: auto;
+}
+.mar-dep-test {
+  gap: 12px;
+}
+.mar-dep-test-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+}
+.mar-dep-test-head > span {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.mar-dep-test-head b {
+  font-weight: 600;
+}
+.mar-dep-test-head small {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-dep-result {
+  display: flex;
+  gap: 12px;
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--dep-well);
+  animation: mar-dep-fade 240ms ease-out;
+}
+@keyframes mar-dep-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.mar-dep-result img {
+  width: 96px;
+  height: 72px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.mar-dep-result > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────── */
+.mar-dep-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px 18px;
+  box-shadow: inset 0 1px 0 var(--dep-line);
+}
+.mar-dep-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-ghost,
+:root .proto-ui.proto-ui.proto-ui .mar-dep-primary {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 140ms ease,
+    transform 120ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-ghost {
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-ghost:hover:not(:disabled) {
+  color: var(--dep-ink);
+  background: var(--dep-well-2);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-ghost:disabled {
+  opacity: 0.4;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-primary {
+  min-width: 120px;
+  color: var(--color-inverted-foreground);
+  font-size: 13.5px;
+  font-weight: 600;
+  background: var(--color-inverted-background);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-primary:hover:not(:disabled) {
+  background: var(--color-inverted-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-primary:active:not(:disabled) {
+  transform: scale(0.985);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-close {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  z-index: 4;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-close:hover {
+  color: var(--dep-ink);
+  background: var(--dep-well-2);
+}
+.mar-dep :is(button, input, select):focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mar-dep[data-state='open'],
+  .mar-dep-result,
+  .mar-dep-spin {
+    animation: none;
+  }
+}
+
+/* ── Configure: one surface, unnumbered sections ─────────────────── */
+.mar-dep-form[data-flat] {
+  gap: 0;
+  padding-top: 0;
+}
+.mar-dep-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0 18px;
+  box-shadow: inset 0 1px 0 var(--dep-line);
+}
+.mar-dep-sec:first-child {
+  padding-top: 4px;
+  box-shadow: none;
+}
+.mar-dep-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mar-dep-sec-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.mar-dep-sec-head span {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-dep-sec .mar-dep-versions {
+  gap: 2px;
+  margin: 0 -8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-sec .mar-dep-row {
+  min-height: 36px;
+  gap: 12px;
+  padding: 4px 10px;
+}
+.mar-dep-row-text[data-inline] {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+.mar-dep-row-text[data-inline] > b {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-row-text[data-inline] > span {
+  min-width: 0;
+  font-weight: 400;
+}
+.mar-dep-row-text[data-inline] > small {
+  flex-shrink: 0;
+}
+
+/* Release: one line, the file list on demand */
+.mar-dep-sec .mar-dep-release {
+  gap: 0;
+  border-radius: 12px;
+  padding: 0;
+  background: var(--dep-well);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+}
+.mar-dep-release-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 10px 10px 12px;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+.mar-dep-release-line > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--dep-info);
+}
+.mar-dep-release-line > span {
+  min-width: 0;
+  flex: 1;
+  text-wrap: pretty;
+}
+.mar-dep-release-line b {
+  color: var(--dep-ink);
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-disclose {
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 24px;
+  align-items: center;
+  gap: 4px;
+  margin: -3px 0;
+  border-radius: 7px;
+  padding: 0 6px 0 8px;
+  color: var(--dep-ink);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-disclose:hover {
+  background: var(--dep-well-2);
+}
+.mar-dep-disclose > svg {
+  color: var(--color-subtle-foreground);
+  transition: transform 160ms ease;
+}
+.mar-dep-disclose[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+.mar-dep-release-more {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 12px 10px 36px;
+  animation: mar-dep-fade 200ms ease-out;
+}
+.mar-dep-release-more .mar-dep-release-note {
+  font-size: 12px;
+}
+
+.mar-dep-sec .mar-dep-gpu {
+  padding: 10px 12px 9px;
+}
+.mar-dep-sec .mar-dep-name {
+  padding: 0;
+}
+.mar-dep-sec .mar-dep-stepper {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+.mar-dep-sec .mar-dep-stepper > small {
+  flex-basis: 100%;
+}
+
+/* Summary rail: what happens, then the cost */
+.mar-dep-summary {
+  gap: 12px;
+  padding: 14px 12px 12px;
+}
+.mar-dep-summary > hr {
+  margin: 2px 4px;
+  border: 0;
+  border-top: 1px solid var(--dep-line);
+}
+.mar-dep-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 4px;
+}
+.mar-dep-hero > b {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 30px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.mar-dep-hero > b[data-zero] {
+  color: var(--dep-ok);
+}
+.mar-dep-hero > span {
+  color: var(--color-muted-foreground);
+}
+.mar-dep-summary .mar-dep-cost {
+  gap: 4px 12px;
+  font-size: 12.5px;
+}
+.mar-dep-summary .mar-dep-balance {
+  margin-top: 2px;
+}
+
+:root .proto-ui.proto-ui.proto-ui .mar-dep-secondary {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  border-radius: 12px;
+  padding: 0 16px;
+  color: var(--dep-ink);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--dep-well-2);
+  box-shadow: inset 0 0 0 1px var(--dep-line);
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-secondary:hover:not(:disabled) {
+  background: var(--dep-well-3);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-dep-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* The UI Playground stays usable over the modal: Deploy state lives there. */
+:root body:has(.mar-dep) .proto-ui[aria-label='UI tuner'] {
+  z-index: 60;
+  pointer-events: auto;
+}
+/* …and its select menus open above it (reka sets their z-index inline). */
+:root body:has(.mar-dep) [data-reka-popper-content-wrapper] {
+  z-index: 61 !important;
+  pointer-events: auto;
+}

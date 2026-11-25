@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { instances, proto } from '../../useProto'
+import { instances, isNewUser, proto } from '../../useProto'
 import { SPACES } from '../../spaces'
 import {
   DEPLOYMENTS,
@@ -69,7 +69,7 @@ const spaceDeployments = computed<Deployment[]>(() =>
 )
 export const deployments = computed<Deployment[]>(() =>
   // New users haven't deployed anything yet.
-  proto.signedIn && !proto.fresh
+  proto.signedIn && !isNewUser.value
     ? [
         ...DEPLOYMENTS.filter((d) => d.workspace === proto.workspaceId),
         ...(proto.workspaceId === 'personal' ? spaceDeployments.value : [])

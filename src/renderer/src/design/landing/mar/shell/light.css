@@ -1,0 +1,118 @@
+/*
+ * Light mode in Mar's proposal: the pairs that were tuned for dark only.
+ * Everything here sits under `[data-ds-theme='light']`, so dark is
+ * untouched, and is built from theme tokens, not one-off colours.
+ */
+:root[data-mar-ui='on'][data-ds-theme='light'] {
+  /* Pablo's avatar ramp is four dark greys under light text. In light the
+     same four steps are light greys under dark initials. */
+  --mar-avatar-1: color-mix(
+    in oklch,
+    var(--color-base-foreground) 9%,
+    var(--color-card-background)
+  );
+  --mar-avatar-2: color-mix(
+    in oklch,
+    var(--color-base-foreground) 12%,
+    var(--color-card-background)
+  );
+  --mar-avatar-3: color-mix(
+    in oklch,
+    var(--color-base-foreground) 15%,
+    var(--color-card-background)
+  );
+  --mar-avatar-4: color-mix(
+    in oklch,
+    var(--color-base-foreground) 18%,
+    var(--color-card-background)
+  );
+  /* Meters and sparklines: a mid grey, not near-black (still 3:1 on white). */
+  --mar-meter-fill: var(--color-subtle-foreground);
+}
+
+/* Avatars (ui/Avatar tone solid, parts/MemberAvatar). */
+:root[data-mar-ui='on'][data-ds-theme='light']
+  :is(.bg-\[\#3a3a3d\], .bg-\[\#55555a\], .bg-\[\#46464b\], .bg-\[\#3a3a3e\], .bg-\[\#606066\]) {
+  color: var(--color-base-foreground);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .bg-\[\#606066\] {
+  background-color: var(--mar-avatar-1);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .bg-\[\#55555a\] {
+  background-color: var(--mar-avatar-2);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .bg-\[\#46464b\] {
+  background-color: var(--mar-avatar-3);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] :is(.bg-\[\#3a3a3e\], .bg-\[\#3a3a3d\]) {
+  background-color: var(--mar-avatar-4);
+}
+/* A workspace avatar painted in its own colour (inline) keeps the colour,
+   so its letter is white. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .bg-\[\#3a3a3d\][style*='background'] {
+  color: oklch(1 0 0);
+}
+
+/* Brand tiles (space logos): a white or near-white tile (Nike) vanishes
+   on a light card or the sidebar, so every tile gets a hairline. Not
+   --color-border-default: Mar's borders setting can make it transparent. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .space-mark {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+
+/* Usage meters and sparklines. */
+:root[data-mar-ui='on'][data-ds-theme='light'] [role='meter'] > .bg-base-foreground\/85 {
+  background-color: var(--mar-meter-fill);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] svg.overflow-visible.text-muted-foreground {
+  color: var(--mar-meter-fill);
+}
+
+/* The photo behind a page's title: its dark tones read as a grey smudge
+   on white. In light only its colour stays: blurred much further and
+   lifted to a pastel, under a thin white veil. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop:not(.is-bloom) img {
+  opacity: 0.55;
+  filter: blur(70px) saturate(1.8) brightness(1.45);
+  transform: scale(1.4);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop:not(.is-bloom)::after {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--color-content-background) 35%, transparent),
+    color-mix(in oklch, var(--color-content-background) 55%, transparent) 50%,
+    var(--color-content-background) 100%
+  );
+}
+
+/* Build cards' memory / VRAM / disk bars: the same mid grey as meters. */
+:root[data-mar-ui='on'][data-ds-theme='light'] :is(.mar-build-bar i, .mar-build-meter > span) {
+  background: var(--mar-meter-fill);
+}
+
+/* Error lines ("A custom node didn't load"): dark's light red is 3.9:1 on
+   white; light uses the theme's danger red (4.6:1). */
+:root[data-mar-ui='on'][data-ds-theme='light'] {
+  --color-error-foreground: var(--color-status-danger);
+}
+
+/* Faces in a space card (light): the card is a 5% tint over the page, so
+   a white cut-out ring reads as an outline. The ring takes the card's
+   real colour, and the online dot a clearer green with the same ring. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main .-space-x-1:has(> .rounded-full) {
+  --mar-face-ring: color-mix(
+    in oklch,
+    var(--color-base-foreground) 5%,
+    var(--color-content-background)
+  );
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main .-space-x-1:has(> .rounded-full) > *,
+:root[data-mar-ui='on'][data-ds-theme='light']
+  .proto-main
+  .-space-x-1:has(> .rounded-full)
+  .bg-status-running {
+  --tw-ring-color: var(--mar-face-ring);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-main .-space-x-1 .bg-status-running {
+  background-color: oklch(0.68 0.15 155);
+}

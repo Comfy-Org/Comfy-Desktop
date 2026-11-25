@@ -1,0 +1,197 @@
+<script setup lang="ts">
+import { computed, reactive } from 'vue'
+import { Download, Folder, FolderOpen, Plus, RotateCcw, Trash2 } from 'lucide-vue-next'
+import Button from '../../ui/Button.vue'
+import Card from '../../ui/Card.vue'
+import Switch from '../../ui/Switch.vue'
+import Tooltip from '../../ui/Tooltip.vue'
+import { toast } from '../../useProto'
+import type { ProtoInstance } from '../../mock'
+import MarItemMenu from '../pages/MarItemMenu.vue'
+import type { MenuLine } from '../pages/menu'
+import { notify } from '../pages/undo'
+import BuildBlock from './BuildBlock.vue'
+import { settingsOf, stateOf } from './buildFacts'
+import './buildTabs.css'
+
+/**
+ * Desktop's Folders tab (views/comfyUISettings/StoragePane.vue, named
+ * Folders in Comfy-Desktop#2217; a Cloud build keeps Storage). It reads
+ * top-down: each title (Models, Input, Output) above its folders, its
+ * toggle on the same line at the right, full paths that wrap. Models,
+ * every folder this build reads from (its own always, the shared ones
+ * when included, one marked for downloads), then Input and Output, each
+ * one folder you can open, browse for or reset. Shared folders are
+ * managed in Desktop Settings. On Cloud, what the workspace keeps.
+ */
+const { env } = defineProps<{ env: ProtoInstance }>()
+const set = settingsOf(env)
+const state = stateOf(env)
+const cloud = env.kind === 'cloud'
+
+const SHARED = ['~/Documents/ComfyUI/models', '/Volumes/Studio/models']
+const extra = reactive<string[]>([])
+const downloads = reactive({ path: set.modelDirs[0]! })
+const dirs = computed(() => [
+  { path: set.modelDirs[0]!, tag: 'Instance', locked: true },
+  ...extra.map((path) => ({ path, tag: '', locked: false })),
+  ...(set.sharedModels ? SHARED.map((path) => ({ path, tag: 'Shared', locked: true })) : [])
+])
+const home = `~/Documents/ComfyUI/${env.name}`
+const changed = (): void => {
+  if (state.run === 'running') state.restart = true
+}
+function useForDownloads(path: string): void {
+  const was = downloads.path
+  downloads.path = path
+  changed()
+  notify(`Model downloads go to ${path}`, () => (downloads.path = was))
+}
+const lines = (d: { path: string; locked: boolean }): MenuLine[] => [
+  { label: 'Open folder', icon: FolderOpen, run: () => toast(`Opened ${d.path}`) },
+  {
+    label: 'Use for Model Downloads',
+    icon: Download,
+    disabled: downloads.path === d.path,
+    run: () => useForDownloads(d.path)
+  },
+  ...(d.locked
+    ? [{ note: 'This directory is always used and cannot be removed.' }]
+    : [
+        'sep' as const,
+        {
+          label: 'Remove',
+          icon: Trash2,
+          danger: true,
+          run: () => {
+            const i = extra.indexOf(d.path)
+            extra.splice(i, 1)
+            changed()
+            notify(`Removed ${d.path}`, () => extra.splice(i, 0, d.path))
+          }
+        }
+      ])
+]
+function add(): void {
+  extra.push('~/AI/models')
+  changed()
+  notify('Added ~/AI/models', () => extra.pop())
+}
+const io = reactive({ input: set.inputDir, output: set.outputDir })
+function setFolder(k: 'input' | 'output', path: string): void {
+  const was = io[k]
+  io[k] = path
+  changed()
+  notify(`${k === 'input' ? 'Input' : 'Output'} folder: ${path}`, () => (io[k] = was))
+}
+const ioLines = (k: 'input' | 'output'): MenuLine[] => [
+  {
+    label: 'Browse…',
+    icon: FolderOpen,
+    run: () => setFolder(k, `/Volumes/Studio/${k}`)
+  },
+  {
+    label: 'Reset to default',
+    icon: RotateCcw,
+    disabled: io[k] === `${home}/${k}`,
+    run: () => setFolder(k, `${home}/${k}`)
+  }
+]
+const manage = (): void => toast('Opening Desktop Settings › Folders')
+const MODELS_INFO =
+  'ComfyUI looks for models in every folder here: this build’s own, always, and the shared folders when included. New models download to the folder marked Downloads; pick another from a folder’s ⋯. Shared folders are managed in Desktop Settings › Folders.'
+</script>
+
+<template>
+  <Card v-if="cloud" class="mar-bt-row">
+    <Folder :size="16" class="shrink-0 text-subtle-foreground" />
+    <div class="min-w-0 flex-1">
+      <p class="mar-bt-title">Kept in your Comfy Cloud workspace</p>
+      <p class="mar-bt-sub">
+        Models, inputs and outputs live in the cloud, with nothing to set up.
+      </p>
+    </div>
+  </Card>
+  <div v-else class="mar-bt-folders">
+    <p v-if="state.restart" class="mar-bt-note">
+      Restart {{ env.name }} for these changes to take effect.
+    </p>
+    <BuildBlock title="Models" :info="MODELS_INFO">
+      <template #actions>
+        <label class="mar-st-toggle"
+          >Include Shared Directories<Switch
+            v-model="set.sharedModels"
+            aria-label="Include Shared Directories"
+            @update:model-value="changed"
+        /></label>
+      </template>
+      <div v-for="d in dirs" :key="d.path" class="mar-bt-folder">
+        <Folder :size="14" class="shrink-0 text-subtle-foreground" />
+        <span class="mar-bt-folder-path">{{ d.path }}</span>
+        <span class="mar-bt-folder-tags">
+          <span v-if="downloads.path === d.path" class="mar-tag">Downloads</span>
+          <span v-if="d.tag" class="mar-tag">{{ d.tag }}</span>
+        </span>
+        <span class="mar-bt-folder-acts"
+          ><MarItemMenu :lines="lines(d)" label="More actions"
+        /></span>
+      </div>
+      <div class="flex flex-wrap items-center gap-4 px-3 py-2">
+        <Button variant="ghost" size="sm" @click="add"><Plus :size="13" />Add Directory</Button>
+        <button v-if="set.sharedModels" type="button" class="mar-st-link" @click="manage">
+          Manage Shared Directories in Desktop Settings
+        </button>
+      </div>
+    </BuildBlock>
+
+    <BuildBlock
+      v-for="k in ['input', 'output'] as const"
+      :key="k"
+      :title="k === 'input' ? 'Input' : 'Output'"
+    >
+      <template #actions>
+        <label class="mar-st-toggle"
+          >{{ k === 'input' ? 'Use Shared Input' : 'Use Shared Output'
+          }}<Switch
+            v-if="k === 'input'"
+            v-model="set.sharedInput"
+            aria-label="Use Shared Input"
+            @update:model-value="changed" /><Switch
+            v-else
+            v-model="set.sharedOutput"
+            aria-label="Use Shared Output"
+            @update:model-value="changed"
+        /></label>
+      </template>
+      <div class="mar-bt-folder">
+        <Folder :size="14" class="shrink-0 text-subtle-foreground" />
+        <!-- Badges, then one action column, the same x on every row. -->
+        <template v-if="k === 'input' ? set.sharedInput : set.sharedOutput">
+          <span class="mar-bt-folder-path">~/Documents/ComfyUI/{{ k }}</span>
+          <span class="mar-bt-folder-tags"><span class="mar-tag">Shared</span></span>
+          <span class="mar-bt-folder-acts">
+            <Button variant="ghost" size="sm" @click="manage">Manage</Button>
+          </span>
+        </template>
+        <template v-else>
+          <span class="mar-bt-folder-path">{{ io[k] }}</span>
+          <span class="mar-bt-folder-tags">
+            <span v-if="io[k] === `${home}/${k}`" class="mar-tag">default</span>
+          </span>
+          <span class="mar-bt-folder-acts">
+            <Tooltip content="Open folder">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open folder"
+                @click="toast(`Opened ${io[k]}`)"
+                ><FolderOpen :size="14"
+              /></Button>
+            </Tooltip>
+            <MarItemMenu :lines="ioLines(k)" label="More actions" />
+          </span>
+        </template>
+      </div>
+    </BuildBlock>
+  </div>
+</template>

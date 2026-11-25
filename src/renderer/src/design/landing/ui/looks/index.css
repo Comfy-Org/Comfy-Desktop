@@ -1,0 +1,9 @@
+/*
+ * Looks: the theme and the visual directions being explored (look.ts). Each
+ * file only overrides token values under its `<html>` attribute; components
+ * never change. Imported after surfaces.css so the overrides win.
+ */
+@import './light.css';
+@import './direction-a.css';
+@import './direction-b.css';
+@import './direction-c.css';

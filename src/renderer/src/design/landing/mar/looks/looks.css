@@ -1,0 +1,7 @@
+/*
+ * Looks (UI Playground › Look, looks.ts): Void, or Grain. Type and colour
+ * stay Void's; a look changes only composition,
+ * image treatment and component treatment. Each file is scoped to `:root[data-mar-look='<id>']`, so
+ * Current (no attribute) is untouched. Selectors that restyle buttons go
+ * through `.proto-ui.proto-ui.proto-ui` to beat the prototype's reset.
+ */

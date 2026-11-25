@@ -1,0 +1,359 @@
+/* Mar's search palette (MarSearch.vue). Global on purpose: its buttons
+   have to get past the prototype's button reset, which scoped styles
+   can't reach. Everything is under .mar-search.
+
+   One surface: the field and scope tabs read as one header, one
+   full-bleed hairline under it, the results, the footer. Groups part by
+   space alone, under the app's sentence-case section titles.
+   Two edges: the scope track and the row highlights sit 8px in, and
+   everything you read (the glass, group titles, pictures, footer) starts
+   18px in. Radius nesting follows UI Playground › Corners: rows take the
+   control radius, the palette that plus its 8px inset; the scope tabs are
+   the New UI tab group (MarSeg, with the shared sliding pill). Same
+   smoked glass as the menus (mar/menus/layers.css), a step more opaque
+   since it holds a page. */
+
+.mar-search {
+  --s-ink: var(--color-base-foreground);
+  --s-line: color-mix(in oklch, var(--s-ink) 8%, transparent);
+  --s-well: color-mix(in oklch, var(--s-ink) 6%, transparent);
+  --s-row: var(--radius-control, 8px);
+  --s-item: var(--mar-tab-item-radius, 7px);
+  --s-pad: 8px;
+  --s-edge: 18px;
+
+  display: flex;
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(664px, 85vh - 48px);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: calc(var(--s-row) + var(--s-pad));
+  color: var(--s-ink);
+  font-size: 13px;
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--s-ink) 6%, var(--color-card-background)) 88%,
+    transparent
+  );
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow:
+    inset 0 0 0 1px var(--s-line),
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 32px 80px -24px rgb(0 0 0 / 0.75);
+}
+[data-ds-theme='light'] .mar-search {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--s-ink) 2%, var(--color-card-background)) 90%,
+    transparent
+  );
+  backdrop-filter: blur(40px) saturate(1.6);
+  box-shadow:
+    inset 0 0 0 1px var(--s-line),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 28px 70px -24px rgb(0 0 0 / 0.28);
+}
+
+.mar-search-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  background: rgb(0 0 0 / 0.32);
+}
+[data-ds-theme='light'] .mar-search-scrim {
+  background: rgb(0 0 0 / 0.12);
+}
+
+/* Enter and leave: the scrim fades, the palette rises a few pixels. */
+.mar-search-enter-active,
+.mar-search-leave-active {
+  transition: opacity 160ms ease;
+}
+.mar-search-enter-active .mar-search,
+.mar-search-leave-active .mar-search {
+  transition:
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms ease;
+}
+.mar-search-leave-active,
+.mar-search-leave-active .mar-search {
+  transition-duration: 110ms;
+}
+.mar-search-enter-from,
+.mar-search-leave-to {
+  opacity: 0;
+}
+.mar-search-enter-from .mar-search,
+.mar-search-leave-to .mar-search {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-search-enter-from .mar-search,
+  .mar-search-leave-to .mar-search {
+    transform: none;
+  }
+}
+
+/* The field: one line, no box of its own. */
+.mar-search-field {
+  display: flex;
+  height: 54px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 var(--s-edge);
+}
+.mar-search-glass {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-field input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--s-ink);
+  font-size: 15px;
+  outline: none;
+}
+.mar-search-field input::placeholder {
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-clear {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--s-item);
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-clear:hover {
+  background: var(--s-well);
+  color: var(--s-ink);
+}
+
+/* Scopes: the New UI tab group without its track, so only the picked one
+   is a shape and its label lines up with the field's edge. They close the
+   header, over the palette's one hairline. */
+.mar-search-scopes {
+  display: flex;
+  flex-shrink: 0;
+  overflow-x: auto;
+  padding: 0 var(--s-pad) var(--s-pad);
+  border-bottom: 1px solid var(--s-line);
+  scrollbar-width: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-search-scopes .mar-pseg {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Key caps, everywhere in the palette. */
+.mar-search kbd {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: calc(var(--s-item) - 2px);
+  background: color-mix(in oklch, var(--s-ink) 8%, transparent);
+  color: var(--color-muted-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* The list. Not a menu, so none of what marShell.css, layers.css and
+   borders.css give every listbox: no glass, corners, shadow, edge or
+   grow-in. It is part of the palette's surface. */
+:root[data-mar-ui='on'] .mar-search .mar-search-list[role='listbox'],
+.mar-search-list {
+  min-width: 0;
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px var(--s-pad) var(--s-pad);
+  border: 0;
+  /* A divider between the field and what it found, edge to edge. */
+  border-top: 1px solid var(--color-border-default);
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  animation: none;
+  scrollbar-width: thin;
+}
+.mar-search-group + .mar-search-group {
+  margin-top: 10px;
+}
+.mar-search-head {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  padding: 0 0 0 calc(var(--s-edge) - var(--s-pad));
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Rows: picture, name, type · where; the shortcut or ↵ on the right. The
+   active row is the menus' raised row. */
+:root[data-mar-ui='on'] .mar-search .mar-search-row[role='option'],
+.mar-search-row {
+  display: flex;
+  min-height: 0;
+  height: 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 calc(var(--s-edge) - var(--s-pad));
+  border-radius: var(--s-row);
+  white-space: normal;
+  cursor: default;
+}
+.mar-search-row.is-on {
+  background: color-mix(in oklch, var(--s-ink) 7%, transparent);
+}
+[data-ds-theme='light'] .mar-search-row.is-on {
+  background: var(--color-card-background);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--s-ink) 6%, transparent),
+    0 1px 3px rgb(0 0 0 / 0.08);
+}
+.mar-search-lead {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: calc(var(--s-row) - 2px);
+  color: var(--color-muted-foreground);
+}
+.mar-search-lead.is-icon {
+  background: var(--s-well);
+}
+.mar-search-row.is-on .mar-search-lead {
+  color: var(--s-ink);
+}
+.mar-search-lead > img,
+.mar-search-mark {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.mar-search-lead > img {
+  outline: 1px solid color-mix(in oklch, var(--s-ink) 8%, transparent);
+  outline-offset: -1px;
+}
+.mar-search-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.mar-search-label {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--s-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-search-label mark {
+  background: none;
+  color: inherit;
+  font-weight: 600;
+}
+.mar-search-row:not(.is-on) .mar-search-label:has(mark) {
+  color: color-mix(in oklch, var(--s-ink) 82%, transparent);
+}
+.mar-search-row.is-more .mar-search-label,
+.mar-search-row.is-docs .mar-search-label {
+  color: var(--color-muted-foreground);
+}
+.mar-search-row.is-on.is-more .mar-search-label,
+.mar-search-row.is-on.is-docs .mar-search-label {
+  color: var(--s-ink);
+}
+.mar-search-sub {
+  flex-shrink: 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-search-fill {
+  flex: 1;
+}
+.mar-search-keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+}
+.mar-search-row:not(.is-on) .mar-search-keys kbd {
+  background: transparent;
+  color: var(--color-subtle-foreground);
+}
+
+/* Loading: skeleton rows in the same rhythm. */
+.mar-search-row.is-skel {
+  pointer-events: none;
+}
+.mar-search-skel {
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--s-well) 0%,
+    color-mix(in oklch, var(--s-ink) 11%, transparent) 50%,
+    var(--s-well) 100%
+  );
+  background-size: 200% 100%;
+  animation: mar-search-shimmer 1.4s ease-in-out infinite;
+}
+.mar-search-skel.mar-search-lead {
+  height: 28px;
+  border-radius: calc(var(--s-row) - 2px);
+}
+.mar-search-skel.is-head {
+  width: 64px;
+  height: 8px;
+}
+@keyframes mar-search-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-search-skel {
+    animation: none;
+  }
+}
+
+.mar-search-none .mar-empty {
+  padding: 28px 0 20px;
+}

@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { closeTab, go, hostActions, instanceById, instances, proto, toast } from './useProto'
+import { closeTab, go, goIn, hostActions, instanceById, instances, proto, toast } from './useProto'
 import type { ProtoInstance } from './mock'
 import {
   TITLEBAR_COMMAND_KEY,
@@ -12,6 +12,11 @@ import { buildState, openInNewWindow } from './buildTabs'
 import { can, landingPage } from './milestones'
 import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
+import { marTabsOn } from './mar/shell/titleTabs'
+import { buildTrail } from './mar/build/buildNav'
+import { stateOf } from './mar/build/buildFacts'
+import { onCloud } from './mar/shell/surface'
+import { assetsCrumbState, runAssetsCrumb } from './mar/shell/assetsCrumb'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
@@ -100,6 +105,12 @@ export const titleBarState = computed<TitleBarState>(() => ({
     return app ? [{ id, name: app.name, thumb: thumb(app.thumbId) }] : []
   }),
   appFront: appsProto.front || null,
+  ...assetsCrumbState(Boolean(frontTab.value)),
+  // Mar's tabs title bar (mar/shell/titleTabs.ts): only while it's on.
+  ...(marTabsOn.value ? marTabs() : {}),
+  // Mar's page trail (mar/build/buildNav.ts): only while it's on.
+  ...(buildTrail.value ? { trail: buildTrail.value } : {}),
+  ...(onCloud.value ? { noSwitcher: true } : {}),
   options: prototypeGroups.value.map((g) => ({
     key: g.key,
     label: g.label,
@@ -107,6 +118,35 @@ export const titleBarState = computed<TitleBarState>(() => ({
     options: g.options
   }))
 }))
+
+const kindOf = (id: string): 'local' | 'cloud' =>
+  instanceById(id)?.kind === 'cloud' ? 'cloud' : 'local'
+
+/** What Mar's tabs title bar adds: each open workflow as a tab, named
+ *  after the workflow (never its build: the pill already says where it
+ *  runs). New ones are "Untitled workflow", numbered from the second, its
+ *  build in the tooltip; where Home runs next, and whether the agent is
+ *  open. */
+function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'> {
+  const runs = instanceById(proto.activeInstanceId)
+  let untitled = 0
+  return {
+    tabs: proto.tabs.map((t) => ({
+      id: t.id,
+      name:
+        t.workflow === 'Untitled workflow'
+          ? ++untitled > 1
+            ? `Untitled workflow ${untitled}`
+            : t.workflow
+          : t.workflow,
+      build: t.title,
+      kind: kindOf(t.instanceId)
+    })),
+    tabFront: appsProto.front ? null : proto.activeTab === 'home' ? null : proto.activeTab,
+    runsOn: runs ? { name: stateOf(runs).name, kind: kindOf(runs.id) } : undefined,
+    agent: can.value.agent ? proto.mode === 'agent' && proto.activeTab === 'home' : undefined
+  }
+}
 
 /** A pick in a title-bar menu (or ⌘⇧H inside ComfyUI): `home`,
  *  `manage`, `proto:<switch>:<value>`, `window:<build id>` (open it in its
@@ -139,12 +179,18 @@ export function openFromMenu(id: string): void {
     return setPrototypeOption(key, value)
   }
   const inst = instanceById(id)
-  if (inst) hostActions.launch(inst)
+  if (!inst) return
+  // Mar's tabs bar: the pill says where work runs, so a pick switches it
+  // (Home follows); opening a workflow is what adds a tab.
+  if (marTabsOn.value && (inst.kind !== 'cloud' || proto.signedIn))
+    return void (proto.activeInstanceId = inst.id)
+  hostActions.launch(inst)
 }
 
 export function runTitleBarCommand(cmd: TitleBarCommand): void {
   // Anything else clicked in the bar closes the switcher.
   if (cmd.type !== 'switcher') switcherMenu.open = false
+  if (runAssetsCrumb(cmd)) return
   switch (cmd.type) {
     case 'home':
       appsProto.front = ''
@@ -155,6 +201,23 @@ export function runTitleBarCommand(cmd: TitleBarCommand): void {
       break
     case 'closeApp':
       closeAppTab(cmd.id)
+      break
+    case 'tab':
+      appsProto.front = ''
+      proto.activeTab = cmd.id
+      break
+    case 'closeTab':
+      closeTab(cmd.id)
+      break
+    case 'agent':
+      appsProto.front = ''
+      if (proto.mode === 'agent' && proto.activeTab === 'home') goIn('create', landingPage())
+      else goIn('agent', 'agent')
+      proto.activeTab = 'home'
+      break
+    case 'page':
+      appsProto.front = ''
+      go(cmd.page as Parameters<typeof go>[0])
       break
     case 'info':
       // The browser preview has no popup to show it in.

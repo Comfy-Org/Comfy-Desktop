@@ -1,0 +1,625 @@
+/* Build › Get started (MarBuildStart.vue). Global on purpose: its buttons
+   have to get past the prototype's button reset, which scoped styles
+   can't reach. Everything is under .mar-bs. */
+
+.mar-bs {
+  --bs-line: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  --bs-well: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  --bs-ok: var(--color-status-running, oklch(0.78 0.15 155));
+  --bs-ok-soft: color-mix(in oklch, var(--bs-ok) 14%, transparent);
+  /* The code block stays dark in both themes, like a terminal. */
+  --bs-code-bg: oklch(0.17 0.006 285);
+  --bs-code-fg: oklch(0.88 0.006 285);
+  --bs-code-dim: oklch(0.6 0.01 285);
+  --hl-kw: oklch(0.78 0.12 300);
+  --hl-str: oklch(0.82 0.11 145);
+  --hl-num: oklch(0.82 0.12 60);
+  --hl-com: oklch(0.56 0.01 285);
+  --hl-fn: oklch(0.8 0.1 230);
+  --hl-key: oklch(0.8 0.09 200);
+  --hl-var: oklch(0.82 0.12 60);
+  --hl-flag: oklch(0.78 0.08 250);
+  --hl-punc: oklch(0.66 0.01 285);
+}
+:root[data-ds-theme='light'] .mar-bs {
+  --bs-line: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  --bs-well: color-mix(in oklch, var(--color-base-foreground) 3.5%, transparent);
+  --bs-ok: oklch(0.6 0.15 155);
+  --bs-code-bg: oklch(0.2 0.006 285);
+}
+
+/* ---------- The Get started card ---------- */
+.mar-bs-card {
+  overflow: hidden;
+  border-radius: 22px;
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+}
+.mar-bs-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 28px 0;
+}
+.mar-bs-h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* Progress: three segments that fill as each step completes. */
+.mar-bs-progress {
+  display: flex;
+  min-width: 260px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.mar-bs-progress-bars {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.mar-bs-progress-bars > span {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bs-line);
+}
+.mar-bs-progress-bars > span > i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-base-foreground);
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-bs-progress-bars > span.is-done > i {
+  width: 100%;
+}
+.mar-bs-progress-bars > span.is-done:last-child > i {
+  background: var(--bs-ok);
+}
+
+/* Steps: a rail on the left joins the numbered dots. */
+.mar-bs-steps {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 0;
+}
+
+/* Steps on the left, the code they need on the right. */
+.mar-bs-split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: start;
+  gap: 32px;
+  padding: 22px 28px 28px;
+}
+.mar-bs-codecol {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+.mar-bs-codecol > .mar-bs-code {
+  margin-top: 0;
+}
+.mar-bs-inline {
+  border-radius: 5px;
+  padding: 1px 5px;
+  background: var(--bs-well);
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+}
+.mar-bs-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 16px;
+  padding-bottom: 26px;
+}
+.mar-bs-step:last-child {
+  padding-bottom: 0;
+}
+.mar-bs-step::before {
+  position: absolute;
+  top: 30px;
+  bottom: 4px;
+  left: 13.5px;
+  width: 1px;
+  background: var(--bs-line);
+  content: '';
+}
+.mar-bs-step:last-child::before {
+  display: none;
+}
+.mar-bs-dot {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 240ms ease,
+    color 240ms ease;
+}
+.mar-bs-step.is-current .mar-bs-dot {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+  color: var(--color-base-foreground);
+}
+.mar-bs-step.is-done .mar-bs-dot {
+  background: var(--color-base-foreground);
+  box-shadow: none;
+  color: var(--color-inverted-foreground, var(--color-app-background));
+}
+.mar-bs-step-title {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mar-bs-step-body {
+  margin-top: 2px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+/* ---------- Key row ---------- */
+.mar-bs-key {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 620px;
+  margin-top: 12px;
+  padding: 5px 5px 5px 14px;
+  border-radius: 12px;
+  background: var(--bs-well);
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+}
+.mar-bs-key-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-bs-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+
+/* ---------- Code block ---------- */
+.mar-bs-code {
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bs-code-bg);
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.07),
+    0 18px 40px -24px rgb(0 0 0 / 0.55);
+  color: var(--bs-code-fg);
+}
+.mar-bs-code-bar {
+  display: flex;
+  height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid oklch(1 0 0 / 0.06);
+  color: var(--bs-code-dim);
+  font-size: 12px;
+}
+.mar-bs-code-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+.mar-bs-pre {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  overflow-x: auto;
+  padding: 14px 0 16px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.75;
+  tab-size: 2;
+}
+.mar-bs-pre .ln {
+  padding: 0 14px 0 16px;
+  color: oklch(0.42 0.01 285);
+  text-align: right;
+  user-select: none;
+}
+.mar-bs-pre .lc {
+  padding-right: 20px;
+  white-space: pre;
+}
+.mar-bs-pre.is-prose .lc {
+  white-space: pre-wrap;
+}
+.hl-kw {
+  color: var(--hl-kw);
+}
+.hl-str {
+  color: var(--hl-str);
+}
+.hl-num {
+  color: var(--hl-num);
+}
+.hl-com {
+  color: var(--hl-com);
+  font-style: italic;
+}
+.hl-fn {
+  color: var(--hl-fn);
+}
+.hl-key {
+  color: var(--hl-key);
+}
+.hl-var {
+  color: var(--hl-var);
+}
+.hl-flag {
+  color: var(--hl-flag);
+}
+.hl-punc {
+  color: var(--hl-punc);
+}
+.hl-secret {
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: oklch(0.82 0.12 60 / 0.14);
+  color: oklch(0.86 0.12 70);
+}
+
+/* Copy buttons inside the dark code bar keep dark styling in light mode. */
+:root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn {
+  display: inline-flex;
+  width: auto;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: oklch(1 0 0 / 0.08);
+  color: oklch(0.92 0 0);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn:hover {
+  background: oklch(1 0 0 / 0.14);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-codebtn.is-done {
+  background: oklch(0.78 0.15 155 / 0.18);
+  color: oklch(0.86 0.13 155);
+}
+
+/* Small icon buttons next to the key. */
+:root .proto-ui.proto-ui.proto-ui .mar-bs-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-icon:hover {
+  background: var(--bs-line);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-icon.is-done {
+  color: var(--bs-ok);
+}
+
+/* ---------- Listening footer ---------- */
+.mar-bs-listen {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 28px;
+  border-top: 1px solid var(--bs-line);
+  background: var(--bs-well);
+  font-size: 13px;
+  transition: background-color 400ms ease;
+}
+.mar-bs-listen.is-got {
+  background: color-mix(in oklch, var(--bs-ok) 7%, transparent);
+}
+.mar-bs-pulse {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-subtle-foreground);
+}
+.mar-bs-listen.is-on .mar-bs-pulse {
+  background: var(--bs-ok);
+}
+.mar-bs-listen.is-on .mar-bs-pulse::after {
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  animation: mar-bs-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  background: var(--bs-ok);
+  content: '';
+  opacity: 0.5;
+}
+@keyframes mar-bs-ping {
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-bs-listen.is-on .mar-bs-pulse::after {
+    animation: none;
+  }
+}
+.mar-bs-got {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--bs-ok);
+  color: oklch(0.18 0.02 155);
+}
+
+/* The request that arrived, as a log row. */
+.mar-bs-req {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  animation: mar-bs-in 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes mar-bs-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.mar-bs-method {
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--bs-line);
+  color: var(--color-base-foreground);
+  font-weight: 600;
+}
+.mar-bs-200 {
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--bs-ok-soft);
+  color: var(--bs-ok);
+  font-weight: 600;
+}
+
+/* Text links inside the page (Request log →, Docs ↗). */
+:root .proto-ui.proto-ui.proto-ui .mar-bs-link {
+  display: inline-flex;
+  width: auto;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-link:hover {
+  background: var(--bs-line);
+  color: var(--color-base-foreground);
+}
+
+/* ---------- Usage + quick links ---------- */
+.mar-bs-h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+/* A section's title and its control (tabs, a link) on one line. */
+.mar-bs-sec-head {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.mar-bs-usage {
+  display: flex;
+  height: calc(100% - 44px);
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+}
+.mar-bs-big {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.mar-bs-meter {
+  display: flex;
+  height: 6px;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bs-line);
+}
+.mar-bs-meter > span {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-base-foreground);
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-bs-meter > span + span {
+  background: color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+.mar-bs-legend {
+  display: flex;
+  gap: 14px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.mar-bs-legend i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--color-base-foreground);
+  vertical-align: 1px;
+}
+.mar-bs-legend span + span i {
+  background: color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+
+:root .proto-ui.proto-ui.proto-ui .mar-bs-ql {
+  display: flex;
+  width: auto;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+  text-align: left;
+  transition: background-color 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-ql:hover {
+  background: var(--bs-well);
+}
+.mar-bs-ql-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--bs-well);
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+  color: var(--color-base-foreground);
+}
+.mar-bs-ql-arrow {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.mar-bs-ql:hover .mar-bs-ql-arrow {
+  opacity: 1;
+}
+
+/* ---------- Take it further ---------- */
+.mar-bs-product {
+  display: grid;
+  min-height: 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  padding: 28px;
+  border-radius: 22px;
+  box-shadow: inset 0 0 0 1px var(--bs-line);
+}
+.mar-bs-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  font-size: 13px;
+}
+.mar-bs-facts li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mar-bs-facts svg {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+}
+.mar-bs-product-art {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bs-well);
+}
+.mar-bs-product-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: mar-bs-fade 320ms ease;
+}
+@keyframes mar-bs-fade {
+  from {
+    opacity: 0;
+  }
+}
+.mar-bs-tag {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  border-radius: 7px;
+  padding: 3px 8px;
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(8px);
+  color: oklch(0.97 0 0);
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-bs-product-art img {
+    animation: none;
+  }
+}
+
+/* Spacing variants (Tailwind's mt-* lose to these unlayered rules). */
+.mar-bs-step-body.is-gap {
+  margin-top: 16px;
+  margin-bottom: -4px;
+}
+.mar-bs-note.is-inline {
+  margin-top: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bs-link.is-flush {
+  margin: 8px 0 0 -10px;
+}

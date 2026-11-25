@@ -433,6 +433,8 @@ function installMockApi(initial?: {
     getLocaleMessages: vi.fn().mockResolvedValue(messages.en),
     getLocale: vi.fn().mockResolvedValue('en'),
     onLocaleChanged: vi.fn(() => () => {}),
+    onDesignMenuPick: vi.fn(() => () => {}),
+    designShowBuild: vi.fn().mockResolvedValue({ ok: true }),
     onPanelSwitch: vi.fn((cb: (d: { panel: string; installationId?: string }) => void) => {
       state.panelSwitchCallbacks.push(cb)
       return () => {}

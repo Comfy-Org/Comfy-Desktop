@@ -33,7 +33,7 @@ const {
       <TooltipContent
         :side
         :side-offset="6"
-        class="proto-ui z-[60] max-w-64 rounded-control bg-inverted-background px-2 py-1 text-ui font-medium text-inverted-foreground shadow-popover data-[state=delayed-open]:animate-fade-in"
+        class="proto-ui mar-tip z-[60] max-w-64 rounded-control bg-inverted-background px-2 py-1 text-ui font-medium text-inverted-foreground shadow-popover data-[state=delayed-open]:animate-fade-in"
       >
         {{ content }}
       </TooltipContent>
