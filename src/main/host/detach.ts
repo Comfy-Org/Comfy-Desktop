@@ -314,7 +314,7 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
   applyChooserHostTheme(entry)
 
   destroyPanelView(entry)
-  ensurePanelView(entry.windowKey, entry, 'chooser', settings.startPage())
+  ensurePanelView(entry.windowKey, entry, 'chooser')
   entry.layoutViews()
 }
 

@@ -746,7 +746,7 @@ ipcMain.on('comfy-window:show-home', (event) => {
   const found = findEntryByTitleBarSender(event.sender)
   if (!found || !isInstallHost(found.entry)) return
   recordIpcInvocation('comfy-window:show-home')
-  openOrFocusHomeHostWindow()
+  openOrFocusHomeHostWindow('home')
 })
 
 function startHomeTour(fromWindowKey: number): void {
@@ -1055,7 +1055,9 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       relaunchStates,
       computeInstallUpdateAvailable
     })
-    setHostFactories({ createChooser: openChooserHostWindow })
+    setHostFactories({
+      createChooser: (dashboardPage) => openChooserHostWindow('comfy', { dashboardPage })
+    })
     registerPanelViewIpc()
     registerOutputFolderHandlers()
 

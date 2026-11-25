@@ -32,6 +32,7 @@ let settings: {
   resolveBetaFeaturesEnabled: () => boolean
   readSettled: (signal?: AbortSignal) => Promise<Record<string, unknown> | null>
   peekBetaFeaturesEnabled: () => boolean
+  startPage: () => string
   telemetryConsent: () => boolean | undefined
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
