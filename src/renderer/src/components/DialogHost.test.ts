@@ -58,3 +58,26 @@ describe('DialogHost button colours', () => {
     await expect(shown).resolves.toBe(false)
   })
 })
+
+describe('DialogHost update confirm', () => {
+  it('shows the note with the Info icon and no outside close, and Cancel still closes it', async () => {
+    const shown = dialogs.confirm({
+      title: 'Update ComfyUI to v0.46.3?',
+      message: '**v0.46.1** → **v0.46.3**',
+      hint: 'ComfyUI is running and will restart.',
+      note: 'If custom nodes break, restore the previous version from Snapshots.',
+      confirmLabel: 'Update now'
+    })
+    await actionButton()
+    expect(document.querySelector('.base-alert-title')!.textContent!.trim()).toBe(
+      'Update ComfyUI to v0.46.3?'
+    )
+    expect(document.querySelector('[data-testid="base-alert-note-icon"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="base-alert-close-icon"]')).toBeNull()
+    expect(document.querySelector('.base-alert-message')!.textContent).not.toMatch(
+      /\p{Extended_Pictographic}/u
+    )
+    document.querySelector<HTMLButtonElement>('[data-testid="base-alert-cancel"]')!.click()
+    await expect(shown).resolves.toBe(false)
+  })
+})

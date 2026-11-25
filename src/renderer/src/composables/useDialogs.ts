@@ -34,6 +34,7 @@ export interface ConfirmOpts {
   title: string
   message?: string
   hint?: string
+  note?: string
   confirmLabel?: string
   cancelLabel?: string
   tone?: 'primary' | 'danger'
@@ -81,6 +82,7 @@ export interface ConfirmState {
   title: string
   message: string
   hint: string
+  note: string
   confirmLabel?: string
   cancelLabel?: string
   tone: 'primary' | 'danger'
@@ -134,6 +136,7 @@ const state = reactive<DialogState>({
     title: '',
     message: '',
     hint: '',
+    note: '',
     confirmLabel: undefined,
     cancelLabel: undefined,
     tone: 'primary',
@@ -234,6 +237,7 @@ export function useDialogs() {
         title: opts.title,
         message: opts.message ?? '',
         hint: opts.hint ?? '',
+        note: opts.note ?? '',
         confirmLabel: opts.confirmLabel,
         cancelLabel: opts.cancelLabel,
         tone: opts.tone ?? 'primary',

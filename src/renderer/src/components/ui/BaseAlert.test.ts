@@ -176,12 +176,49 @@ describe('BaseAlert', async () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('always shows the round close outside the panel, also without showCloseIcon', async () => {
-    const wrapper = await mountAlert({ showCancel: true })
+  it('shows the round close outside the panel on an alert without Cancel', async () => {
+    const wrapper = await mountAlert()
     const close = wrapper.find('[data-testid="base-alert-close-icon"]')
     expect(close.exists()).toBe(true)
     await close.trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('leaves out the outside close when the dialog already has Cancel', async () => {
+    const wrapper = await mountAlert({ showCancel: true })
+    expect(wrapper.find('[data-testid="base-alert-close-icon"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="base-alert-cancel"]').exists()).toBe(true)
+  })
+
+  it('still cancels on ESC when the dialog has Cancel and no outside close', async () => {
+    const wrapper = await mountAlert({ showCancel: true })
+    await wrapper.find('.base-alert-panel').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
     expect(wrapper.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('renders the note as one muted line led by the Info icon, after the hint', async () => {
+    const wrapper = await mountAlert({
+      showCancel: true,
+      hint: 'ComfyUI is running and will restart.',
+      note: 'If custom nodes break, restore the previous version from Snapshots.'
+    })
+    const note = wrapper.find('[data-testid="base-alert-note"]')
+    expect(note.text()).toBe('If custom nodes break, restore the previous version from Snapshots.')
+    expect(note.find('[data-testid="base-alert-note-icon"]').element.tagName.toLowerCase()).toBe(
+      'svg'
+    )
+    const message = wrapper.find('.base-alert-message').element
+    const hint = wrapper.find('.base-alert-hint').element
+    expect(hint.compareDocumentPosition(note.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    expect(message.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
+  })
+
+  it('renders no note line when note is empty', async () => {
+    const wrapper = await mountAlert()
+    expect(wrapper.find('[data-testid="base-alert-note"]').exists()).toBe(false)
   })
 
   it('emits `cancel` on ESC when showCloseIcon is true (close icon is a cancel affordance)', async () => {

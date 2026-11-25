@@ -47,7 +47,7 @@ interface UpdateAction {
   id: string
   progressTitle: string
   data?: { channel?: string; isDowngrade?: boolean; stackId?: string }
-  confirm?: { title?: string; message?: string }
+  confirm?: { title?: string; message?: string; note?: string }
   prompt?: { defaultValue?: string; uniquifyDefault?: boolean }
 }
 interface ChannelOption {
@@ -256,9 +256,17 @@ describe('updateSections — update-comfyui action payload', () => {
     expect(action!.data?.isDowngrade).toBeDefined()
   })
 
-  it('confirm copy explains how to restore after custom-node breakage', () => {
+  it('confirm explains how to restore after custom-node breakage in a separate note', () => {
     const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
-    expect(action!.confirm?.message).toContain('standalone.updateSnapshotUndoHint')
+    expect(action!.confirm?.note).toBe('standalone.updateSnapshotUndoHint')
+    expect(action!.confirm?.message).not.toContain('standalone.updateSnapshotUndoHint')
+    expect(action!.confirm?.message).not.toContain('\n\n')
+  })
+
+  it('asks the update as the title and shows the version change as the message', () => {
+    const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
+    expect(action!.confirm?.title).toBe('standalone.updateConfirmTitleTo')
+    expect(action!.confirm?.message).toBe('standalone.updateConfirmVersionChange')
   })
 })
 

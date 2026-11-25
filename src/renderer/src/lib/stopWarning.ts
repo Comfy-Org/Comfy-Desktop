@@ -10,8 +10,15 @@ export function augmentMessageWithStopWarning(
 
 interface ActionLike {
   label: string
-  confirm?: { message?: string; title?: string }
+  confirm?: { message?: string; title?: string; hint?: string }
   prompt?: { message?: string }
+}
+
+export const RESTART_NOTICE_ACTION_IDS: ReadonlySet<string> = new Set(['update-comfyui'])
+
+export function addRestartNotice<T extends ActionLike>(action: T, restartNotice: string): T {
+  if (!action.confirm || action.prompt) return augmentActionWithStopWarning(action, restartNotice)
+  return { ...action, confirm: { ...action.confirm, hint: restartNotice } }
 }
 
 export function augmentActionWithStopWarning<T extends ActionLike>(

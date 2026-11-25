@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, useId, useSlots } from 'vue'
-import { X } from '@lucide/vue'
+import { Info, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from './DesktopDialogSurface.vue'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
@@ -12,6 +12,7 @@ interface Props {
   title: string
   message?: string
   hint?: string
+  note?: string
   buttonLabel?: string
   showCancel?: boolean
   cancelLabel?: string
@@ -36,6 +37,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   message: '',
   hint: '',
+  note: '',
   buttonLabel: undefined,
   showCancel: false,
   cancelLabel: undefined,
@@ -73,8 +75,13 @@ function dismiss(): void {
 const hasDetails = computed(() => props.messageDetails.length > 0)
 const slots = useSlots()
 const isShortMessage = computed(
-  () => !hasDetails.value && !slots.default && !slots.extra && !!(props.message || props.hint)
+  () =>
+    !hasDetails.value &&
+    !slots.default &&
+    !slots.extra &&
+    !!(props.message || props.hint || props.note)
 )
+const showsOutsideClose = computed(() => !props.showCancel)
 const linkifiedMessage = computed(() => linkify(props.message))
 const hasWideActions = computed(() => !!props.secondaryLabel)
 
@@ -110,6 +117,7 @@ const linkClass =
     @close="dismiss"
   >
     <Button
+      v-if="showsOutsideClose"
       type="button"
       variant="muted-textonly"
       size="icon"
@@ -120,13 +128,16 @@ const linkClass =
     >
       <X :size="18" />
     </Button>
-    <header class="base-alert-header relative mb-4 max-[860px]:pr-8">
+    <header
+      class="base-alert-header relative mb-4"
+      :class="showsOutsideClose && 'max-[860px]:pr-8'"
+    >
       <h2 :id="TITLE_ID" class="base-alert-title m-0 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
     </header>
     <div
-      v-if="message || hint || hasDetails || $slots.default || $slots.extra"
+      v-if="message || hint || note || hasDetails || $slots.default || $slots.extra"
       class="base-alert-message min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
       :class="isShortMessage ? 'base-alert-message--short mb-5 [&:has(+footer)]:mb-8' : 'mb-5'"
     >
@@ -164,9 +175,22 @@ const linkClass =
       </slot>
       <p
         v-if="hint"
-        class="base-alert-hint mt-3 text-xs leading-[1.4] [overflow-wrap:anywhere] text-text-muted/75"
+        class="base-alert-hint mt-1 text-xs leading-[1.4] [overflow-wrap:anywhere] text-text-muted/75"
       >
         {{ hint }}
+      </p>
+      <p
+        v-if="note"
+        class="base-alert-note mt-3 flex items-start gap-1.5 text-xs leading-[1.4] text-text-muted/75"
+        data-testid="base-alert-note"
+      >
+        <Info
+          :size="14"
+          class="mt-px shrink-0"
+          aria-hidden="true"
+          data-testid="base-alert-note-icon"
+        />
+        <span class="min-w-0 [overflow-wrap:anywhere]">{{ note }}</span>
       </p>
       <div v-if="$slots.extra" class="base-alert-extra mt-3">
         <slot name="extra" />
