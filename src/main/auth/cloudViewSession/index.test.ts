@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import type { WebContents } from 'electron'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DesktopIdentity } from './index'
 import type { CloudViewAuthState, DesktopSessionMarker } from './pageState'
@@ -65,7 +65,8 @@ vi.mock('../firebaseBridge/flowShared', () => ({ bindSignedInUser: h.bindSignedI
 
 const { CLOUD_VIEW_SESSION_EVENT, decideCloudViewSession, reconcileCloudViewSession } =
   await import('./index')
-const { preemptPartitionCleanup } = await import('../firebaseBridge/partitionCoordinator')
+const { PARTITION_LOCK_TIMEOUT_MS, preemptPartitionCleanup } =
+  await import('../firebaseBridge/partitionCoordinator')
 
 const CLOUD_URL = 'https://cloud.comfy.org/cloud'
 
@@ -205,6 +206,19 @@ beforeEach(() => {
   h.hasActiveFirebaseSessionInjection.mockReturnValue(false)
   h.keepsTokensInOsKeychain.mockReturnValue(true)
 })
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+function neverSettles(): Promise<never> {
+  return new Promise(() => {})
+}
+
+async function waitOutPageScript(run: Promise<void>): Promise<void> {
+  await vi.advanceTimersByTimeAsync(PARTITION_LOCK_TIMEOUT_MS)
+  await run
+}
 
 describe('decideCloudViewSession', () => {
   const signedIn: DesktopIdentity = { signedIn: true, sub: 'desktop-sub', fam: 'fam-1' }
@@ -363,6 +377,7 @@ describe('reconcileCloudViewSession', () => {
   })
 
   it('leaves the view signed out when Cloud declines', async () => {
+    h.session.fam = 'fam-declined'
     h.requestWebSessionToken.mockResolvedValue({ kind: 'declined', status: 404 })
 
     await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
@@ -373,6 +388,7 @@ describe('reconcileCloudViewSession', () => {
   })
 
   it('reports only known Cloud error codes', async () => {
+    h.session.fam = 'fam-unknown-code'
     h.requestWebSessionToken.mockResolvedValue({
       kind: 'declined',
       status: 403,
@@ -389,6 +405,7 @@ describe('reconcileCloudViewSession', () => {
   it.each(['web_session_unavailable', 'credential_unsupported', 'oauth_grant_ended'])(
     'reports the Cloud refusal %s by name',
     async (code) => {
+      h.session.fam = `fam-${code}`
       h.requestWebSessionToken.mockResolvedValue({ kind: 'declined', status: 403, code })
 
       await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
@@ -398,6 +415,125 @@ describe('reconcileCloudViewSession', () => {
       ])
     }
   )
+
+  it('asks Cloud again for a declined grant only once the wait is over, and reports it once', async () => {
+    vi.useFakeTimers()
+    h.session.fam = 'fam-declined-briefly'
+    h.requestWebSessionToken.mockResolvedValue({
+      kind: 'declined',
+      status: 503,
+      code: 'web_session_unavailable'
+    })
+    const load = (): Promise<void> =>
+      reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+
+    await load()
+    await load()
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    await load()
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(2)
+    expect(outcomes()).toEqual([
+      {
+        outcome: 'declined',
+        reason: 'http',
+        http_status: 503,
+        error_code: 'web_session_unavailable'
+      }
+    ])
+  })
+
+  it.each([
+    ['the endpoint does not exist yet', { status: 404 }],
+    ['the exchange is switched off', { status: 503, code: 'desktop_web_session_disabled' }],
+    ['the person is rate limited', { status: 429, code: 'rate_limited' }]
+  ])('waits an hour before asking Cloud again when %s', async (_name, declined) => {
+    vi.useFakeTimers()
+    h.session.fam = `fam-lasting-${declined.status}`
+    h.requestWebSessionToken.mockResolvedValue({ kind: 'declined', ...declined })
+    const load = (): Promise<void> =>
+      reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+
+    await load()
+    await vi.advanceTimersByTimeAsync(59 * 60_000)
+    await load()
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    await load()
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks Cloud straight away for a new Desktop sign-in after a decline', async () => {
+    h.session.fam = 'fam-declined-before-sign-in'
+    h.requestWebSessionToken.mockResolvedValueOnce({ kind: 'declined', status: 404 })
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+
+    h.session.fam = 'fam-signed-in-again'
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+
+    expect(h.requestWebSessionToken).toHaveBeenCalledTimes(2)
+    expect(h.injectFirebaseSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes the session on a later sign-out after a removal on the view never settled', async () => {
+    vi.useFakeTimers()
+    h.session.signedIn = false
+    let hangs = true
+    const view = fakeView(
+      { uid: 'desktop-uid', marker: serializeMarker(marker()) },
+      { remove: () => (hangs ? neverSettles() : Promise.resolve('signed_out')) }
+    )
+
+    await waitOutPageScript(reconcileCloudViewSession(view.contents))
+    hangs = false
+    await reconcileCloudViewSession(view.contents)
+
+    expect(removals(view)).toHaveLength(2)
+    expect(outcomes()).toEqual([
+      { outcome: 'failed', reason: 'page_script_timeout' },
+      { outcome: 'signed_out' }
+    ])
+  })
+
+  it('reads the view again after a read on it never settled', async () => {
+    vi.useFakeTimers()
+    let hangs = true
+    const view = fakeView(
+      { uid: null, marker: null },
+      { read: () => (hangs ? neverSettles() : Promise.resolve()) }
+    )
+
+    await waitOutPageScript(reconcileCloudViewSession(view.contents))
+    expect(h.requestWebSessionToken).not.toHaveBeenCalled()
+    hangs = false
+    await reconcileCloudViewSession(view.contents)
+
+    expect(outcomes()).toEqual([
+      { outcome: 'failed', reason: 'page_script_timeout' },
+      { outcome: 'signed_in' }
+    ])
+  })
+
+  it('signs the view in on a later load after an injection never settled', async () => {
+    vi.useFakeTimers()
+    h.injectFirebaseSession.mockReturnValueOnce(neverSettles())
+    const partition = {}
+
+    await waitOutPageScript(
+      reconcileCloudViewSession(fakeView({ uid: null, marker: null }, { partition }).contents)
+    )
+    expect(h.releaseFirebaseSessionInjection).toHaveBeenCalledTimes(1)
+    expect(h.bindSignedInUser).not.toHaveBeenCalled()
+    await reconcileCloudViewSession(fakeView({ uid: null, marker: null }, { partition }).contents)
+
+    expect(h.injectFirebaseSession).toHaveBeenCalledTimes(2)
+    expect(outcomes()).toEqual([
+      { outcome: 'failed', reason: 'page_script_timeout' },
+      { outcome: 'signed_in' }
+    ])
+  })
 
   it('drops the token when Desktop signs out during the exchange', async () => {
     h.requestWebSessionToken.mockImplementation(() => {

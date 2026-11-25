@@ -189,7 +189,7 @@ export function buildRemoveDesktopSessionScript(
   }
   release();
   const signedOut = dbResult === 'deleted' || storedRemoved || sessionEnded;
-  if (signedOut) location.reload();
+  if (signedOut && !superseded) location.reload();
   if (superseded) return 'superseded';
   return signedOut ? 'signed_out' : 'kept';
 })()`

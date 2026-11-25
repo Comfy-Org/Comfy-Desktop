@@ -101,6 +101,20 @@ async function run(
   return (win as unknown as { eval: (code: string) => unknown }).eval(script)
 }
 
+const RELOAD_SETTLE_MS = 300
+
+function countReloads(win: Window): () => number {
+  let reloads = 0
+  win.frameElement?.addEventListener('load', () => {
+    reloads += 1
+  })
+  return () => reloads
+}
+
+function reloadsSettled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, RELOAD_SETTLE_MS))
+}
+
 function deleteFirebaseDb(): Promise<void> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.deleteDatabase('firebaseLocalStorageDb')
@@ -368,6 +382,44 @@ describe('buildRemoveDesktopSessionScript', () => {
     const session = webSession('desktop-uid', { deleteStatus: 503 })
     await expect(run(removeScript(), session)).resolves.toBe('kept')
     expect(localStorage.getItem(DESKTOP_SESSION_MARKER_KEY)).toBe(serializeMarker(MARKER))
+  })
+
+  it("reloads the view once Desktop's session is gone", async () => {
+    await seedUser('desktop-uid')
+    holdMarker()
+    let reloads = (): number => 0
+    await expect(
+      run(removeScript(), webSession(null), (win) => {
+        reloads = countReloads(win)
+      })
+    ).resolves.toBe('signed_out')
+    await expect.poll(reloads).toBe(1)
+  })
+
+  it('leaves the reload to the sign-in that cancelled it after the web session ended', async () => {
+    await seedUser('desktop-uid')
+    holdMarker()
+    const session = webSession('desktop-uid')
+    let reloads = (): number => 0
+    await expect(
+      run(removeScript(), session, (win) => {
+        reloads = countReloads(win)
+        const endpoint = win.fetch
+        win.fetch = async (input, init) => {
+          const response = await endpoint(input, init)
+          if (init?.method === 'DELETE') {
+            ;(win as unknown as { eval: (code: string) => unknown }).eval(
+              buildCancelCleanupScript(CLEANUP_TOKEN)
+            )
+          }
+          return response
+        }
+      })
+    ).resolves.toBe('superseded')
+    expect(session.deletes).toBe(1)
+    await expect(storedUid()).resolves.toBe('desktop-uid')
+    await reloadsSettled()
+    expect(reloads()).toBe(0)
   })
 })
 

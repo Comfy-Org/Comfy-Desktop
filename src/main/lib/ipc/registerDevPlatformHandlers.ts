@@ -100,7 +100,6 @@ export function broadcastAuthChanged(status: AuthStatus): void {
   creditBalanceAuthChanged()
   cloudAuthEvents.emit('changed')
   for (const entry of comfyWindows.values()) {
-    if (entry.sourceCategory !== 'cloud') continue
     const contents = entry.comfyView.webContents
     if (!contents.isDestroyed()) void reconcileCloudViewSession(contents)
   }

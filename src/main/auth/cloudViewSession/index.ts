@@ -22,6 +22,7 @@ import {
 } from '../firebaseBridge/inject'
 import {
   claimPartitionSignIn,
+  PARTITION_LOCK_TIMEOUT_MS,
   partitionEpoch,
   runOnPartition,
   trackPartitionCleanup
@@ -44,6 +45,14 @@ export const CLOUD_VIEW_SESSION_EVENT = 'comfy.desktop.auth.cloud_view_session'
 
 const PROD_CLOUD_ORIGIN = 'https://cloud.comfy.org'
 const MAX_SUPERSEDED_RETRIES = 3
+const DECLINE_RETRY_MS = 5 * 60_000
+const LASTING_DECLINE_RETRY_MS = 60 * 60_000
+const ENDPOINT_MISSING_STATUS = 404
+
+const LASTING_DECLINE_CODES: ReadonlySet<string> = new Set([
+  'desktop_web_session_disabled',
+  'rate_limited'
+])
 
 const REPORTABLE_ERROR_CODES: ReadonlySet<string> = new Set([
   'account_outside_organization',
@@ -137,11 +146,64 @@ function report(outcome: string, extra: mainTelemetry.TelemetryContext = {}): vo
 
 const reportedGrantOutcomes = new Set<string>()
 
-function reportOncePerGrant(outcome: string, sub: string, fam: string | null): void {
-  const key = JSON.stringify([outcome, sub, fam])
+function reportOncePerGrant(
+  outcome: string,
+  sub: string,
+  fam: string | null,
+  extra: mainTelemetry.TelemetryContext = {}
+): void {
+  const key = JSON.stringify([outcome, sub, fam, extra])
   if (reportedGrantOutcomes.has(key)) return
   reportedGrantOutcomes.add(key)
-  report(outcome)
+  report(outcome, extra)
+}
+
+const declinedGrantRetryAt = new Map<string, number>()
+
+function grantKey(sub: string, fam: string | null): string {
+  return JSON.stringify([sub, fam])
+}
+
+function declineRetryMs(status: number | null, code?: string): number {
+  const lasting =
+    status === ENDPOINT_MISSING_STATUS || (code !== undefined && LASTING_DECLINE_CODES.has(code))
+  return lasting ? LASTING_DECLINE_RETRY_MS : DECLINE_RETRY_MS
+}
+
+function isWaitingOutDecline(sub: string, fam: string | null): boolean {
+  return (declinedGrantRetryAt.get(grantKey(sub, fam)) ?? 0) > Date.now()
+}
+
+const UNSETTLED = Symbol('unsettled')
+
+function settledWithin<T>(work: Promise<T>, timeoutMs: number): Promise<T | typeof UNSETTLED> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(UNSETTLED), timeoutMs)
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err: unknown) => {
+        clearTimeout(timer)
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+    )
+  })
+}
+
+function reportPageScriptTimeout(): void {
+  report('failed', { reason: 'page_script_timeout' })
+}
+
+async function runPageScript(contents: WebContents, script: string): Promise<unknown> {
+  const result = await settledWithin(
+    contents.executeJavaScript(script, true).catch(() => null),
+    PARTITION_LOCK_TIMEOUT_MS
+  )
+  if (result !== UNSETTLED) return result
+  reportPageScriptTimeout()
+  return null
 }
 
 function declinedReport(status: number | null, code?: string): mainTelemetry.TelemetryContext {
@@ -163,13 +225,16 @@ async function injectIntoSignedOutView(
   { contents, origin, apiKey }: ViewTarget,
   user: Record<string, unknown>,
   marker: DesktopSessionMarker
-): Promise<InjectOutcome> {
+): Promise<InjectOutcome | typeof UNSETTLED> {
   const injection = beginFirebaseSessionInjection(contents)
   try {
-    return await injectFirebaseSession(injection, origin, user, apiKey, {
-      onlyIfSignedOut: true,
-      marker: { key: DESKTOP_SESSION_MARKER_KEY, value: serializeMarker(marker) }
-    })
+    return await settledWithin(
+      injectFirebaseSession(injection, origin, user, apiKey, {
+        onlyIfSignedOut: true,
+        marker: { key: DESKTOP_SESSION_MARKER_KEY, value: serializeMarker(marker) }
+      }),
+      PARTITION_LOCK_TIMEOUT_MS
+    )
   } finally {
     releaseFirebaseSessionInjection(injection)
   }
@@ -195,7 +260,7 @@ async function signInClaimedView(target: ViewTarget): Promise<void> {
     session.currentAuthGeneration() === generation &&
     session.currentSubject() === sub &&
     currentOrigin(contents) === origin
-  if (!sub) return
+  if (!sub || isWaitingOutDecline(sub, fam)) return
 
   const accessToken = await session.getGrantAccessToken()
   if (!accessToken || !unchanged()) return
@@ -210,7 +275,11 @@ async function signInClaimedView(target: ViewTarget): Promise<void> {
 
   const minted = await requestWebSessionToken(accessToken)
   if (minted.kind === 'declined') {
-    report('declined', declinedReport(minted.status, minted.code))
+    declinedGrantRetryAt.set(
+      grantKey(sub, fam),
+      Date.now() + declineRetryMs(minted.status, minted.code)
+    )
+    reportOncePerGrant('declined', sub, fam, declinedReport(minted.status, minted.code))
     return
   }
   if (!unchanged()) return
@@ -223,6 +292,10 @@ async function signInClaimedView(target: ViewTarget): Promise<void> {
 
   const marker: DesktopSessionMarker = { v: 1, uid: account.localId, sub, fam, state: 'active' }
   const injected = await injectIntoSignedOutView(target, user, marker)
+  if (injected === UNSETTLED) {
+    reportPageScriptTimeout()
+    return
+  }
   if (injected === 'marker_unsaved') {
     report('marker_unsaved')
     return
@@ -247,9 +320,10 @@ async function removeDesktopSession(
   const token = randomUUID()
   const untrack = trackPartitionCleanup(contents, token)
   try {
-    const outcome = (await contents
-      .executeJavaScript(buildRemoveDesktopSessionScript(apiKey, origin, uid, marker, token), true)
-      .catch(() => 'kept')) as RemoveDesktopSessionOutcome
+    const outcome = (await runPageScript(
+      contents,
+      buildRemoveDesktopSessionScript(apiKey, origin, uid, marker, token)
+    )) as RemoveDesktopSessionOutcome | null
     if (outcome === 'signed_out') report('signed_out')
     return outcome === 'superseded' ? 'superseded' : 'done'
   } finally {
@@ -260,10 +334,7 @@ async function removeDesktopSession(
 async function settleOnPartition(target: ViewTarget): Promise<SettledStep> {
   const { contents, origin, apiKey } = target
   const epoch = partitionEpoch(contents)
-  const raw: unknown = await contents
-    .executeJavaScript(buildReadStateScript(apiKey, origin), true)
-    .catch(() => null)
-  const state = parseState(raw)
+  const state = parseState(await runPageScript(contents, buildReadStateScript(apiKey, origin)))
   if (!state || currentOrigin(contents) !== origin) return 'done'
 
   const decision = decideCloudViewSession(state, desktopIdentity())
@@ -271,9 +342,7 @@ async function settleOnPartition(target: ViewTarget): Promise<SettledStep> {
     case 'none':
       return 'done'
     case 'write_marker':
-      await contents
-        .executeJavaScript(buildWriteMarkerScript(origin, decision.marker, state.marker), true)
-        .catch(() => false)
+      await runPageScript(contents, buildWriteMarkerScript(origin, decision.marker, state.marker))
       return 'done'
     case 'sign_out':
       return await removeDesktopSession(target, decision.uid, state.marker, epoch)
