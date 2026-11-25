@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
+  ArrowLeft,
   ChevronsUpDown,
   Eye,
   Gauge,
@@ -72,6 +73,10 @@ const active = (p: string): boolean =>
 const open = (p: string): void => {
   proto.portalPage = p
 }
+const leave = (): void => {
+  proto.viewAs = 'studio'
+  proto.previewing = false
+}
 </script>
 
 <template>
@@ -130,6 +135,21 @@ const open = (p: string): void => {
         </div>
 
         <nav class="flex flex-col gap-px" aria-label="Space">
+          <Button
+            variant="ghost"
+            :class="
+              cn(
+                'mb-2 font-normal text-muted-foreground',
+                expanded
+                  ? 'h-8 w-full justify-start gap-2.5 px-2.5 text-ui'
+                  : 'h-auto w-full flex-col gap-1 px-0 py-2 text-[10.5px] leading-none'
+              )
+            "
+            @click="leave"
+          >
+            <ArrowLeft :size="expanded ? 15 : 17" />
+            <span :class="expanded && 'flex-1 text-left'">Back</span>
+          </Button>
           <Button
             v-for="n in NAV"
             :key="n.page"
