@@ -135,6 +135,7 @@ export interface Installation {
   launchArgs?: string
   hasConsole?: boolean
   hasOutputFolder?: boolean
+  savesToSharedOutput?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number
