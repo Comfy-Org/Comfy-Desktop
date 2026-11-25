@@ -350,6 +350,23 @@ describe('AssetsView', () => {
     )
   })
 
+  it('marks a video length with a video icon at the bottom left of its card, and a sound length without one', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'clip.mp4', 'video', { durationSeconds: 7.4 }),
+      asset('song', 'song.flac', 'audio', { durationSeconds: 69.4 })
+    ])
+
+    const clipBadge = wrapper.get('[data-testid="asset-clip"] [data-testid="asset-duration"]')
+    expect(clipBadge.classes()).toEqual(expect.arrayContaining(['left-2', 'bottom-2']))
+    expect(clipBadge.find('[data-testid="asset-duration-video-icon"]').exists()).toBe(true)
+    expect(
+      wrapper
+        .get('[data-testid="asset-song"] [data-testid="asset-duration"]')
+        .find('[data-testid="asset-duration-video-icon"]')
+        .exists()
+    ).toBe(false)
+  })
+
   it('shows how long a sound runs on its card', async () => {
     const wrapper = await mountAssets([
       asset('song', 'song.flac', 'audio', { durationSeconds: 69.4 }),

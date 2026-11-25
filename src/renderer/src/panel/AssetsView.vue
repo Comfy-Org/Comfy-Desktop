@@ -21,7 +21,8 @@ import {
   ScanSearch,
   Search,
   Play,
-  Trash2
+  Trash2,
+  Video
 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -1633,9 +1634,15 @@ function extensionOf(name: string): string {
                 </span>
                 <span
                   v-if="(asset.kind === 'video' || asset.kind === 'audio') && asset.durationSeconds"
-                  class="absolute right-2 bottom-2 rounded-md bg-media-overlay px-1.5 py-0.5 text-xs font-medium text-foreground tabular-nums backdrop-blur-sm"
+                  class="absolute bottom-2 left-2 flex h-5.5 items-center gap-1.25 rounded-full bg-[rgb(14_14_16/0.28)] pr-2 pl-1.75 text-[11.5px] font-medium text-white tabular-nums backdrop-blur-[14px] backdrop-saturate-150"
                   data-testid="asset-duration"
                 >
+                  <Video
+                    v-if="asset.kind === 'video'"
+                    :size="12"
+                    aria-hidden="true"
+                    data-testid="asset-duration-video-icon"
+                  />
                   {{ formatPlaybackTime(asset.durationSeconds) }}
                 </span>
               </span>
