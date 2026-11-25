@@ -24,10 +24,14 @@ import { assetsEverywhere } from './assets/assetsEverywhere'
 import { assetLink, holdAssetLink } from './assets/assetLink'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
+import { createLook } from './create/createLook'
+import { CREATE_LOOKS } from './create/looks'
+import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
 import { WF_CASES, tplCase } from './templateModal/templateData'
+import { DOWNLOAD_SCENARIOS, downloadScenario } from './downloads/templateDownloads'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { LOOKS, marLook } from './looks/looks'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
@@ -156,11 +160,14 @@ const PARTS: Part[] = [
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
   one('assetFolders', assetFoldersShown, 'off', OFF_ON),
+  one('createLook', createLook, 'current', CREATE_LOOKS),
+  one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
   one('wf', tplCase, 'catalog', WF_CASES),
+  one('download', downloadScenario, 'normal', DOWNLOAD_SCENARIOS),
   // After Graph look: Production sets it to Current.
   one('comfyui', comfyLook, 'proposal', COMFY_LOOKS),
   one('look', marLook, 'current', LOOKS),

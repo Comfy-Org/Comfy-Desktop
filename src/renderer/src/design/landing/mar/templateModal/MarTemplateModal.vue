@@ -36,19 +36,12 @@ import {
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
-import { hostActions, instanceById, instances, proto, toast } from '../../useProto'
+import { hostActions, instanceById, proto, toast } from '../../useProto'
 import { can } from '../../milestones'
 import { browserSignIn, SIGN_IN_COPY } from '../signIn/browserSignIn'
 import MarRunCreditsSheet from '../MarRunCreditsSheet.vue'
 import { runBlock } from '../runCredits'
-import {
-  autoRuns,
-  downloadFinished,
-  keepDownloading,
-  runAction,
-  runNote,
-  runTemplate
-} from '../autorun/autorun'
+import { autoRuns, runAction, runNote, runTemplate } from '../autorun/autorun'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
@@ -64,24 +57,24 @@ import {
   hasPack,
   infoFor,
   minComfyFor,
-  newBuildTarget,
   packsFor,
   mediaFor,
   needsFor,
-  rankTargets,
   reasonFor,
-  targetFor,
   tplById,
   totalGb,
   versionShort,
   type NeedKind,
   type Target
 } from './templateData'
+import { bestTarget, targetsFor } from './runReadiness'
 import { graphFor } from './graphSpec'
 import TplGraph from './TplGraph.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import TplDownloadActions from '../downloads/TplDownloadActions.vue'
+import { downloadFor, percentOf, startDownload } from '../downloads/templateDownloads'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
 // wears them, so the two read as one view. Imported for its styles.
 import '../assets/AssetDetail.vue'
@@ -139,14 +132,13 @@ const graph = computed(() =>
 const targets = computed<Target[]>(() => {
   const t = template.value
   if (!t) return []
-  const gone = (i: (typeof instances.value)[number]): boolean =>
-    Boolean(saved.value && i.id === savedIn.value?.id && SAVED_MISSING_MODELS.has(saved.value.name))
-  const list = instances.value.map((i) => targetFor(t, i, proto.signedIn, gone(i)))
-  const fresh = !instances.value.some((i) => i.kind === 'local' && !i.deployment)
-  const add = fresh ? newBuildTarget(t) : undefined
-  return rankTargets(add ? [...list, add] : list, saved.value ? undefined : caseBuild(t))
+  const gone = saved.value && SAVED_MISSING_MODELS.has(saved.value.name)
+  return targetsFor(t, {
+    modelsGoneOn: gone ? savedIn.value?.id : undefined,
+    prefer: saved.value ? null : undefined
+  })
 })
-const best = computed(() => targets.value.find((x) => !x.disabled && x.state !== 'login'))
+const best = computed(() => bestTarget(targets.value))
 const reason = computed(() =>
   best.value && template.value ? reasonFor(best.value, targets.value, template.value) : ''
 )
@@ -172,6 +164,7 @@ const shown = computed(() => selected.value ?? targets.value[0])
  *  of the reason. Only while the default is the pick. */
 const fit = computed(() =>
   !saved.value &&
+  !bgDownload.value &&
   reason.value &&
   shown.value?.inst.id === best.value?.inst.id &&
   shown.value?.state !== 'running' &&
@@ -185,10 +178,9 @@ const line = computed(() => {
   if (!s) return ''
   if (s.state === 'blocked' || s.state === 'platform')
     return `${s.status}. Pick another build to open it.`
-  if (autorunOn.value && template.value && autoRuns(s)) {
-    if (phase.value === 'busy' && cloudOffer.value) return cloudBusyNote.value
-    return runNote(s, template.value)
-  }
+  if (s.state === 'download' && keptGb.value)
+    return `${fmtGb(keptGb.value)} of ${fmtGb(total.value)} is already here. Downloading picks up where it stopped.`
+  if (autorunOn.value && template.value && autoRuns(s)) return runNote(s, template.value)
   // The plain cases need no line: the button says it.
   return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
@@ -207,10 +199,10 @@ const cloudOffer = computed(() => {
   if (!autorunOn.value || !s || !c || c.disabled || c.state === 'blocked') return false
   return s.inst.kind === 'local' && (s.state === 'download' || Boolean(s.fetch))
 })
-const cloudBusyNote = computed(() =>
-  selected.value && template.value
-    ? `Or run it on Comfy Cloud now. The download keeps going, and ${selected.value.inst.name} has it next time.`
-    : ''
+const cloudLeaveNote = computed(() =>
+  cloudOffer.value && selected.value
+    ? `It keeps downloading if you leave, and ${selected.value.inst.name} has it next time. Or try it on Comfy Cloud now.`
+    : undefined
 )
 /** The cost's colour: a warning only for what may fail; a download stays
  *  quiet, even on a build short of memory. */
@@ -232,6 +224,22 @@ const favorited = computed(() =>
       : false
 )
 const selected = computed(() => targets.value.find((x) => x.inst.id === selectedId.value))
+const tplDownload = computed(() =>
+  proto.detail?.kind === 'template' && template.value ? downloadFor(template.value.id) : undefined
+)
+const bgDownload = computed(() =>
+  tplDownload.value?.status === 'cancelled' ? undefined : tplDownload.value
+)
+const downloadBusy = computed(() => Boolean(bgDownload.value && bgDownload.value.status !== 'done'))
+const keptGb = computed(() =>
+  tplDownload.value?.status === 'cancelled' ? tplDownload.value.doneGb : 0
+)
+const DOWNLOAD_NEEDS: Record<string, string> = {
+  paused: 'Paused',
+  failed: 'Download stopped',
+  disk: 'Not enough space',
+  done: 'Installed'
+}
 const view = ref<'result' | 'graph'>('result')
 const phase = ref<'idle' | 'busy'>('idle')
 const progress = ref(0)
@@ -322,11 +330,10 @@ const busyLabel = computed(() => {
 
 const creditsSheet = ref(false)
 const afterCredits = ref<'confirm' | 'cloud'>('confirm')
-let runMs = 0
 function confirm(): void {
   const s = selected.value
   const t = template.value
-  if (!s || !t || s.disabled || phase.value === 'busy') return
+  if (!s || !t || s.disabled || phase.value === 'busy' || bgDownload.value) return
   if (s.state === 'login') {
     hostActions.signIn()
     return
@@ -346,6 +353,10 @@ function confirm(): void {
     )
     return
   }
+  if (s.state === 'download' && s.inst.kind === 'local' && !saved.value) {
+    startDownload(t, s.inst)
+    return
+  }
   phase.value = 'busy'
   const shares = steps.value.reduce((n, x) => n + x.share, 0)
   const ms =
@@ -356,23 +367,20 @@ function confirm(): void {
         : s.state === 'running'
           ? 700
           : 1400
-  runMs = ms
   const t0 = Date.now()
   timer = setInterval(() => {
     progress.value = Math.min(1, (Date.now() - t0) / ms)
     if (progress.value < 1) return
     stop()
-    if (!autorunOn.value || !autoRuns(s)) hostActions.launch(s.inst, t.title)
-    else if (s.state === 'download') downloadFinished(t.id, s.inst.id)
-    else runTemplate(t, s.inst)
+    if (autorunOn.value && autoRuns(s)) runTemplate(t, s.inst)
+    else hostActions.launch(s.inst, t.title)
   }, 40)
 }
 
 function tryCloud(): void {
   const c = cloudTarget.value
-  const s = selected.value
   const t = template.value
-  if (!c || !s || !t) return
+  if (!c || !t) return
   if (c.state === 'login') {
     hostActions.signIn(tryCloud)
     return
@@ -388,7 +396,6 @@ function tryCloud(): void {
     creditsSheet.value = true
     return
   }
-  if (phase.value === 'busy') keepDownloading(t.id, s.inst.id, (1 - progress.value) * runMs)
   stop()
   runTemplate(t, c.inst)
 }
@@ -511,6 +518,14 @@ const needsTone = computed(() =>
       : modelState.value
 )
 
+const needsPill = computed(() => {
+  const d = bgDownload.value
+  if (!d) return { label: needsState.value, tone: needsTone.value }
+  if (d.status === 'downloading') return { label: `Downloading ${percentOf(d)}%`, tone: 'get' }
+  const tone = d.status === 'done' ? 'here' : d.status === 'paused' ? 'get' : 'warn'
+  return { label: DOWNLOAD_NEEDS[d.status] ?? '', tone }
+})
+
 const aboutEl = ref<HTMLElement>()
 const aboutOpen = ref(false)
 const aboutLong = ref(false)
@@ -539,6 +554,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
 // The graph takes the whole stage so zoomed in it runs to the edges; it
 // fits inside the room the picture has (under the bar, over the zoom).
 const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
+const full = computed(() => can.value.onboarding)
 </script>
 
 <template>
@@ -549,6 +565,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
         v-if="template && info && media"
         ref="content"
         class="proto-ui mad mar-tpl"
+        :class="full && 'is-full'"
         :data-busy="phase === 'busy' || undefined"
         @open-auto-focus="focusPicker"
         @escape-key-down="onEscape"
@@ -596,7 +613,9 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
           <div class="mad-body">
             <header class="mad-head">
               <div class="mad-head-text">
-                <DialogTitle class="mad-name">{{ template.title }}</DialogTitle>
+                <DialogTitle class="mad-name" :class="full && 'is-clamped'">{{
+                  template.title
+                }}</DialogTitle>
                 <DialogDescription v-if="saved" class="mar-tpl-by">
                   <LocationIcon :kind="saved.source === 'cloud' ? 'cloud' : 'local'" :size="12" />{{
                     savedIn?.name ?? (saved.source === 'cloud' ? 'Comfy Cloud' : 'This computer')
@@ -637,6 +656,13 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   <Link2 :size="15" />
                 </button>
               </Tooltip>
+              <DialogClose
+                v-if="full"
+                class="mad-icon mad-head-close"
+                aria-label="Close"
+                title="Close"
+                ><X :size="16"
+              /></DialogClose>
             </header>
 
             <!-- What it does, short: the first paragraph. -->
@@ -672,7 +698,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   :aria-label="`Open in ${shown.inst.name}. Change build`"
                   aria-haspopup="menu"
                   :aria-expanded="buildMenu"
-                  :disabled="phase === 'busy' || targets.length < 2"
+                  :disabled="phase === 'busy' || downloadBusy || targets.length < 2"
                   @click="buildMenu = !buildMenu"
                 >
                   <span class="mar-tpl-glyph">
@@ -728,8 +754,8 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               >
                 <summary>
                   <span class="mar-tpl-total">{{ needsLine }}</span>
-                  <span v-if="needsState" class="mar-tpl-state" :data-m="needsTone">{{
-                    needsState
+                  <span v-if="needsPill.label" class="mar-tpl-state" :data-m="needsPill.tone">{{
+                    needsPill.label
                   }}</span>
                   <ChevronDown :size="14" class="mar-tpl-fold" />
                 </summary>
@@ -887,7 +913,29 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
           </div>
 
           <!-- At the bottom: what happens, then the one action. -->
-          <footer class="mad-actions">
+          <footer v-if="bgDownload" class="mad-actions">
+            <TplDownloadActions
+              :download="bgDownload"
+              :leave-note="cloudLeaveNote"
+              @close="open = false"
+            />
+            <button
+              v-if="cloudOffer && bgDownload.status !== 'done'"
+              type="button"
+              class="mad-btn"
+              data-tpl-cloud
+              :disabled="browserSignIn.pending"
+              @click="tryCloud"
+            >
+              <LocationIcon kind="cloud" :size="15" />
+              <span>{{
+                browserSignIn.pending && cloudTarget?.state === 'login'
+                  ? SIGN_IN_COPY.waiting
+                  : 'Try it now on Cloud'
+              }}</span>
+            </button>
+          </footer>
+          <footer v-else class="mad-actions">
             <p v-if="line" class="mar-tpl-note">{{ line }}</p>
             <button
               v-if="cloudOffer"
@@ -925,7 +973,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
           </footer>
         </aside>
 
-        <DialogClose class="mad-x" aria-label="Close"><X :size="18" /></DialogClose>
+        <DialogClose v-if="!full" class="mad-x" aria-label="Close"><X :size="18" /></DialogClose>
         <MarRunCreditsSheet v-model:open="creditsSheet" @resolved="creditsResolved" />
       </DialogContent>
     </DialogPortal>

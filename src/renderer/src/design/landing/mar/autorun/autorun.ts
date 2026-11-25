@@ -1,6 +1,8 @@
 import { computed } from 'vue'
 import type { ProtoInstance, Template } from '../../mock'
-import { hostActions, instanceById, proto, toast } from '../../useProto'
+import { hostActions, instanceById, proto } from '../../useProto'
+import { notify } from '../pages/undo'
+import { downloadFor, remove } from '../downloads/templateDownloads'
 import { graphOpen } from '../graph/graphOpen'
 import { hubById } from '../explore/hubWorkflows'
 import { infoFor, mediaFor, tplById, type Target } from '../templateModal/templateData'
@@ -73,6 +75,7 @@ export function runTemplate(t: Template, inst: ProtoInstance): void {
     video: t.category === 'video'
   }
   clearReady(t.id, inst.id)
+  if (downloadFor(t.id)?.status === 'done') remove(t.id)
   hostActions.launch(inst, t.title)
 }
 
@@ -89,23 +92,11 @@ export function downloadFinished(templateId: string, instId: string): void {
     return
   }
   addReady(templateId, instId)
-  toast(`${shortName(t)} is ready on ${inst.name}`)
-}
-
-const background = new Map<string, ReturnType<typeof setTimeout>>()
-
-export function keepDownloading(templateId: string, instId: string, ms: number): void {
-  const key = `${templateId}@${instId}`
-  clearTimeout(background.get(key))
-  background.set(
-    key,
-    setTimeout(
-      () => {
-        background.delete(key)
-        downloadFinished(templateId, instId)
-      },
-      Math.max(400, ms)
-    )
+  notify(
+    `${shortName(t)} is ready on ${inst.name}`,
+    () => runTemplate(t, inst),
+    'success',
+    'Open and run'
   )
 }
 

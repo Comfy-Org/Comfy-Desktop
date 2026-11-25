@@ -15,6 +15,7 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
+import { assetFolderLayout } from './assets/assetFolderLayout'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
@@ -38,6 +39,9 @@ import { localSetup } from './setup/setupFlow'
 import { tplCase } from './templateModal/templateData'
 import { homeTour } from './homeTour/homeTour'
 import { returningReady } from './autorun/installed'
+import { createLook } from './create/createLook'
+import { createScreen } from './create/createScreen'
+import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -111,6 +115,7 @@ export const when = {
   recentsCover: computed(() => onHome.value && can.value.onboarding),
   homeTour: computed(() => onHome.value && can.value.onboarding),
   readyTemplate: computed(() => onHome.value && can.value.onboarding),
+  createLook: computed(() => can.value.onboarding && createScreen.open),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
@@ -118,10 +123,17 @@ export const when = {
   assetFolders: computed(
     () => (inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on)
   ),
+  assetFolderLayout: computed(
+    () => inShell.value && proto.page === 'assets' && can.value.onboarding
+  ),
   folderDepth: computed(
     () =>
-      assetFoldersShown.id === 'on' &&
-      ((inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on))
+      (assetFoldersShown.id === 'on' &&
+        ((inShell.value && proto.page === 'assets') || (assetsTab.open && assetsTab.on))) ||
+      (assetFolderLayout.id === 'tree' &&
+        inShell.value &&
+        proto.page === 'assets' &&
+        can.value.onboarding)
   ),
   // ComfyUI (Proposal): where the Assets panel's expand button goes.
   fullAssets: computed(() => inGraph.value && comfyLook.id === 'proposal'),
@@ -132,6 +144,13 @@ export const when = {
   deployState: computed(() => Boolean(proto.deploying)),
   // The template modal (templateModal/MarTemplateModal.vue), while it's open.
   wfCase: computed(() => proto.detail?.kind === 'template' && !can.value.onboarding),
+  downloadScenario: computed(
+    () =>
+      can.value.onboarding &&
+      (proto.detail?.kind === 'template' ||
+        (inShell.value && proto.page === 'explore') ||
+        templateDownloads.list.length > 0)
+  ),
   tplCases: computed(
     () =>
       can.value.onboarding &&
@@ -244,16 +263,19 @@ export const TWEAKS = {
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),
   readyTemplate: one(returningReady, 'off'),
+  createLook: one(createLook, 'current'),
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
   assetFolders: one(assetFoldersShown, 'off'),
+  assetFolderLayout: one(assetFolderLayout, 'off'),
   folderDepth: one(folderDepth, 'few'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   wfCase: one(tplCase, 'catalog'),
+  downloadScenario: one(downloadScenario, 'normal'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
   deployState: {
     isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),

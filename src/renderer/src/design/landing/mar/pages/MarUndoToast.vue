@@ -18,7 +18,7 @@ const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error:
       <component :is="ICONS[undoToast.tone]" :size="16" class="mar-undo-icon" />
       <span class="mar-undo-text">{{ undoToast.message }}</span>
       <button v-if="undoToast.undo" type="button" class="mar-undo-btn" @click="runUndo">
-        Undo
+        {{ undoToast.label }}
       </button>
       <button type="button" class="mar-undo-x" aria-label="Dismiss" @click="dismiss">
         <X :size="13" />

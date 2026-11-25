@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue'
-import { thumb, type ProtoInstance, type Template } from '../../mock'
+import type { ProtoInstance, Template } from '../../mock'
 import { modelsFor, templateAbout, templateById, templateStats, type ModelReq } from '../../fit'
-import { hubById, hubTemplate, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
+import { hubById, hubTemplate, workflowThumb, type HubWorkflow } from '../explore/hubWorkflows'
 import { can } from '../../milestones'
 import heroAngles from './angles-hero.jpg'
 import inputAngles from './angles-input.jpg'
@@ -226,7 +226,7 @@ const MEDIA: Record<string, TplMedia> = {
 }
 
 export function mediaFor(t: Template): TplMedia {
-  const pic = hubThumb(t.id) ?? thumb(t.id)
+  const pic = workflowThumb(t.id)
   return MEDIA[t.id] ?? { hero: pic, output: pic }
 }
 
@@ -391,13 +391,10 @@ export const hasPack = (inst: ProtoInstance, pack: string): boolean =>
     : Boolean(INSTALLED_PACKS[inst.id]?.includes(pack))
 
 function hasModels(t: Template, inst: ProtoInstance): boolean {
+  if (isDownloaded(t.id, inst.id)) return true
   if (caseIs(t, 'gated')) return false
   const c = caseFor(t)
-  return Boolean(
-    INSTALLED[inst.id]?.includes(t.id) ||
-    c?.installedOn?.includes(inst.id) ||
-    isDownloaded(t.id, inst.id)
-  )
+  return Boolean(INSTALLED[inst.id]?.includes(t.id) || c?.installedOn?.includes(inst.id))
 }
 
 const parts = (v: string): number[] => v.replace(/^v/, '').split('-')[0]!.split('.').map(Number)

@@ -16,6 +16,9 @@ import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
+import { createLook } from './create/createLook'
+import { CREATE_LOOKS } from './create/looks'
+import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
@@ -23,6 +26,7 @@ import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
 import { WF_CASES, tplCase } from './templateModal/templateData'
+import { DOWNLOAD_SCENARIOS, downloadScenario } from './downloads/templateDownloads'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
@@ -160,7 +164,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'credits', show: () => when.credits.value },
   { id: 'readyTemplate', show: () => when.readyTemplate.value },
   { id: 'deployState', show: () => when.deployState.value },
-  { id: 'wfCase', show: () => when.wfCase.value }
+  { id: 'wfCase', show: () => when.wfCase.value },
+  { id: 'downloadScenario', show: () => when.downloadScenario.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBackground', show: () => when.homeBackground.value },
@@ -176,11 +181,13 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'assetFolders', show: () => when.assetFolders.value },
+  { id: 'assetFolderLayout', show: () => when.assetFolderLayout.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'recentsCover', show: () => when.recentsCover.value },
   { id: 'homeTour', show: () => when.homeTour.value },
+  { id: 'createLook', show: () => when.createLook.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -357,6 +364,14 @@ const linkSays = computed(() => {
           <Row :show="shows('wfCase')" label="Workflow case">
             <Select v-model="tplCase.id" :options="WF_CASES" class="w-full" />
           </Row>
+          <Row :show="shows('downloadScenario')" label="Model download">
+            <Select
+              v-model="downloadScenario.id"
+              :options="DOWNLOAD_SCENARIOS"
+              class="w-full"
+              data-testid="download-scenario"
+            />
+          </Row>
           <Row :show="when.tplCases.value" label="Can't-run cases" stack>
             <TplCasesNote />
           </Row>
@@ -489,6 +504,21 @@ const linkSays = computed(() => {
             <span class="text-ui text-subtle-foreground"
               >Folders in Assets, on Desktop and in ComfyUI's Assets tab.</span
             >
+          </Row>
+          <Row :show="shows('createLook')" label="Create look">
+            <Select v-model="createLook.id" :options="CREATE_LOOKS" class="w-full" />
+          </Row>
+          <Row :show="shows('assetFolderLayout')" label="Folders layout">
+            <Seg
+              v-model="assetFolderLayout.id"
+              label="Folders layout"
+              :options="ASSET_FOLDER_LAYOUTS"
+            />
+            <span class="text-ui text-subtle-foreground">{{
+              assetFolderLayout.id === 'tree'
+                ? 'Tree sidebar: on Assets the sidebar folds to its rail, the folder tree beside it.'
+                : 'Folders stay in Filters, as today.'
+            }}</span>
           </Row>
           <Row :show="shows('folderDepth')" label="Folder depth">
             <Seg v-model="folderDepth.id" label="Folder depth" :options="FOLDER_DEPTHS" />

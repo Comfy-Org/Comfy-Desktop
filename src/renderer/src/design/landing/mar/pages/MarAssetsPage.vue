@@ -106,12 +106,16 @@ import { saveFile } from '../assets/saveFile'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import { assetsEverywhere } from '../assets/assetsEverywhere'
 import { assetFoldersShown } from '../assets/assetFolderSwitch'
+import { assetFolderLayout, railBeforeTree } from '../assets/assetFolderLayout'
+import AssetFolderTree from '../assets/AssetFolderTree.vue'
+import { marNav } from '../shell/marShell'
 import { assetLink, dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, metaIn, noFilter, passes, tagsIn } from '../assets/assetFilters'
 import {
+  assetBuildRows,
   assetBuilds,
   buildStatus,
   defaultBuild,
@@ -159,9 +163,17 @@ const followsTitleBar = computed(
 )
 const titleBarBuild = (): string =>
   assetBuilds.value.some((b) => b.id === proto.activeInstanceId) ? proto.activeInstanceId : ''
+const treeOn = computed(
+  () => !inGraph && !fixedProject && can.value.onboarding && assetFolderLayout.id === 'tree'
+)
 const linkedBuild = assetLink.at === 'desktop' ? assetLink.build : ''
 if (followsTitleBar.value && linkedBuild) proto.activeInstanceId = linkedBuild
-const build = ref(linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild())
+const build = ref(
+  treeOn.value
+    ? linkedBuild || 'all'
+    : linkedBuild || (followsTitleBar.value ? titleBarBuild() : '') || defaultBuild()
+)
+watch(treeOn, (on) => (build.value = on ? 'all' : defaultBuild()))
 watch(
   () => [followsTitleBar.value, proto.activeInstanceId] as const,
   ([follows]) => {
@@ -176,7 +188,23 @@ const query = ref('')
 const label = ref<AssetLabel | ''>('')
 /** And a folder, with every folder inside it. */
 const folder = ref('')
-const foldersOn = computed(() => assetFoldersShown.id === 'on')
+const foldersOn = computed(() => assetFoldersShown.id === 'on' || treeOn.value)
+function railForTree(on: boolean): void {
+  const before = railBeforeTree.get()
+  if (on) {
+    if (before === null) railBeforeTree.set(marNav.collapsed)
+    marNav.collapsed = true
+  } else if (before !== null) {
+    marNav.collapsed = before
+    railBeforeTree.set(null)
+  }
+}
+watch(treeOn, railForTree, { immediate: true })
+onBeforeUnmount(() => railForTree(false))
+const treeSource = computed({
+  get: () => filter.value.source,
+  set: (source: (typeof filter.value)['source']) => (filter.value = { ...filter.value, source })
+})
 watch(foldersOn, (on) => !on && (folder.value = ''))
 /** And only the starred ones (the sidebar's Favorites). */
 const favOnly = ref(false)
@@ -185,8 +213,8 @@ const store = inGraph ? graphLibrary : assets
 
 // Everywhere (a UI Playground tweak) reads every running build at once;
 // each card names its own.
-const running = computed(() =>
-  assetBuilds.value.filter((b) => buildStatus(b) === 'running').map((b) => b.id)
+const allBuildIds = computed(() =>
+  assetBuilds.value.filter((b) => treeOn.value || buildStatus(b) === 'running').map((b) => b.id)
 )
 const base = computed(() =>
   store.items.filter(
@@ -195,14 +223,14 @@ const base = computed(() =>
       (fixedProject
         ? a.project === fixedProject
         : build.value === 'all'
-          ? running.value.includes(a.envId ?? '')
+          ? allBuildIds.value.includes(a.envId ?? '')
           : a.envId === build.value)
   )
 )
 // The tweak off, Everywhere goes back to a build.
 watch(
   () => assetsEverywhere.id,
-  (id) => id === 'off' && build.value === 'all' && (build.value = defaultBuild())
+  (id) => id === 'off' && !treeOn.value && build.value === 'all' && (build.value = defaultBuild())
 )
 const current = computed(() => assetBuilds.value.find((b) => b.id === build.value))
 const buildName = (a: MarAsset): string =>
@@ -374,13 +402,19 @@ function labelKey(n: number, ids: string[]): void {
 }
 /** Desktop's Filters › Folder: the build's folders, in tree order. */
 const FOLDER_LIST = computed(() =>
-  foldersOn.value ? tree().map(({ folder: f, depth }) => ({ ...f, depth })) : []
+  foldersOn.value && !treeOn.value ? tree().map(({ folder: f, depth }) => ({ ...f, depth })) : []
 )
 /** Any filter on (the folder too, on Desktop): what ⌘⌫ clears. */
-const filtered = computed(() => activeFilters(filter.value) > 0 || (!inGraph && !!folder.value))
+const filtered = computed(
+  () =>
+    activeFilters(filter.value) > 0 ||
+    (treeOn.value && build.value !== 'all') ||
+    (!inGraph && !treeOn.value && !!folder.value)
+)
 function clearFilters(): void {
   filter.value = noFilter()
-  if (!inGraph) folder.value = ''
+  if (treeOn.value) build.value = 'all'
+  if (!inGraph && !treeOn.value) folder.value = ''
 }
 // ⌘⌫ / Ctrl+Backspace clears every filter, ahead of the selection's own
 // Backspace (useLibrary), unless you're typing.
@@ -396,7 +430,7 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
 /** The title reads the view in ComfyUI's tab: the folder, label, Favorites
  *  or tags picked in its sidebar, else where files came from, else All. */
 const title = computed(() => {
-  if (!inGraph) return (foldersOn.value && folderName(folder.value)) || 'Assets'
+  if (!inGraph) return 'Assets'
   if (folder.value) return folderName(folder.value) ?? 'Assets'
   if (label.value) return labelName(label.value) ?? 'Assets'
   if (favOnly.value) return 'Favorites'
@@ -585,7 +619,7 @@ function folderPath(id: string): AssetFolder[] {
 /** The title's breadcrumb in a nested folder: the top folder, the one
  *  above, and an ellipsis for the levels between (named in its tooltip). */
 const crumbs = computed(() => {
-  if (!foldersOn.value || !folder.value) return null
+  if (!inGraph || !foldersOn.value || !folder.value) return null
   const path = folderPath(folder.value)
   if (!path.length) return null
   const first = path[0]!
@@ -781,13 +815,14 @@ const sections = computed(() => {
 // the search or the filters either.
 const detail = ref<MarAsset | null>(null)
 watch(build, (id) => {
-  rememberBuild(id)
   detail.value = null
+  lib.sel.clear()
+  if (treeOn.value) return
+  rememberBuild(id)
   filter.value = noFilter()
   folder.value = ''
   query.value = ''
   kind.value = 'all'
-  lib.sel.clear()
 })
 const suggested = computed(() => suggestedBuild())
 const finished = computed(() => shown.value.filter((a) => !a.status))
@@ -1310,7 +1345,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 
     <template #toolbar>
       <div class="mar-asset-tools">
-        <AssetBuildPicker v-if="!fixedProject && !inGraph && !followsTitleBar" v-model="build" />
+        <AssetBuildPicker
+          v-if="!fixedProject && !inGraph && !followsTitleBar && !treeOn"
+          v-model="build"
+        />
         <MarSeg
           v-if="!fixedProject && browsable"
           v-model="kind"
@@ -1343,7 +1381,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           </Tooltip>
           <AssetFilterMenu
             v-model="filter"
-            v-model:folder="folder"
+            v-model:build="build"
+            :folder="treeOn ? '' : folder"
             field
             source
             range
@@ -1352,6 +1391,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :tags="TAGS"
             :meta="metaIn(base)"
             :folders="FOLDER_LIST"
+            :builds="treeOn ? assetBuildRows : undefined"
+            @update:folder="folder = $event"
           />
           <AssetSearch v-model:query="query" />
           <AssetLayoutMenu
@@ -1464,8 +1505,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                     :selecting="lib.sel.ids.value.size > 0"
                     :renaming="lib.renaming.value === a.id"
                     :class="a.status === 'running' && 'mar-asset-running'"
-                    :draggable="inGraph && foldersOn && !a.status"
+                    :draggable="(inGraph || treeOn) && foldersOn && !a.status"
                     @dragstart="dragCard($event, a)"
+                    @dragend="dragged = []"
                     @mouseenter="hoverPlay(a, true)"
                     @mouseleave="hoverPlay(a, false)"
                     @open="open(a)"
@@ -1682,6 +1724,19 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       @close="detail = null"
     />
   </MarPage>
+  <Teleport v-if="treeOn" defer to="#mar-assets-side">
+    <aside class="mar-ftree-panel" aria-label="Asset folders">
+      <AssetFolderTree
+        v-model:folder="folder"
+        v-model:source="treeSource"
+        v-model:fav-only="favOnly"
+        :items="done"
+        :favorites="can.explore"
+        :dropping="dragged.length > 0"
+        @drop="dropCards"
+      />
+    </aside>
+  </Teleport>
   <!-- ComfyUI's tab: the sidebar, in the tab's own left column. -->
   <Teleport v-if="inGraph" defer to="#mg-assets-nav">
     <nav class="mar-anav" aria-label="Assets">

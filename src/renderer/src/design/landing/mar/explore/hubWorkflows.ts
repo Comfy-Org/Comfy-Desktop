@@ -1,4 +1,5 @@
-import type { Template } from '../../mock'
+import { thumb, type Template } from '../../mock'
+import { bundledThumb } from '../assets/mock'
 
 /**
  * The Hub's workflows, as Explore › Workflows lists them. Real entries from
@@ -1270,6 +1271,8 @@ const THUMBS: Record<string, string> = Object.fromEntries(
 )
 /** The bundled thumbnail, if this file has it (the mock's twelve keep theirs). */
 export const hubThumb = (id: string): string | undefined => THUMBS[id]
+
+export const workflowThumb = (id: string): string => bundledThumb(id) ?? hubThumb(id) ?? thumb(id)
 
 /** The card's one line: what it does, from the description's first
  *  sentence, without the "using Model X" tail the name already says. */
