@@ -54,7 +54,7 @@ function cloudSections(opts: {
       editType: 'select',
       options: [
         { value: 'shared', label: 'Shared' },
-        { value: 'unique', label: 'Unique to this build' }
+        { value: 'unique', label: 'Separate' }
       ]
     },
     {

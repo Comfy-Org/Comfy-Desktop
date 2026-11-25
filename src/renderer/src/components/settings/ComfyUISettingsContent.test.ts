@@ -579,14 +579,7 @@ describe('ComfyUISettingsContent', () => {
     const CONSOLE_TOOLTIP =
       "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
-    const TAB_LABELS = new Set([
-      'Overview',
-      'Startup Args',
-      'Snapshots',
-      'Folders',
-      'Storage',
-      'Terminal'
-    ])
+    const TAB_LABELS = new Set(['Overview', 'Startup Args', 'Snapshots', 'Folders', 'Terminal'])
 
     function tabTooltips(w: VueWrapper) {
       return w
@@ -1252,12 +1245,13 @@ describe('ComfyUISettingsContent', () => {
       expect(await stackedFor({})).toBe(false)
     })
 
-    it('gives a cloud build its Storage pane in the Folders layout instead of the settings list', async () => {
+    it('gives a cloud build a Folders tab in the Folders layout instead of the settings list', async () => {
       const w = await mountContent({
         initialTab: 'config',
         pageActionsTarget: '#page-actions',
         installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
       })
+      expect(w.get(`[data-testid="${TID.settingsTab('config')}"]`).text()).toBe('Folders')
       const pane = w.findComponent({ name: 'CloudStoragePane' })
       expect(pane.exists()).toBe(true)
       expect(pane.props('sections')).toEqual([{ tab: 'settings', fields: [] }])

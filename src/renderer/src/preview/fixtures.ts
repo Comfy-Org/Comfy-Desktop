@@ -324,7 +324,7 @@ export function cloudDetailSections(
           editType: 'select',
           options: [
             { value: 'shared', label: 'Shared' },
-            { value: 'unique', label: 'Unique to this build' }
+            { value: 'unique', label: 'Separate' }
           ],
           tooltip:
             'Controls whether this build shares browser cache (cookies, local storage) with other builds or keeps its own separate cache.'

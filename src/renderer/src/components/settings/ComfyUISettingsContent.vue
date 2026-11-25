@@ -317,7 +317,7 @@ function tabHasContent(tab: TabSpec): boolean {
 }
 
 function tabLabelKey(tab: TabSpec): string {
-  return isCloud.value && tab.key === 'config' ? 'comfyUISettings.tabCloudStorage' : tab.labelKey
+  return isCloud.value && tab.key === 'config' ? 'comfyUISettings.tabFolders' : tab.labelKey
 }
 
 const tabs = computed<TabDef[]>(() =>

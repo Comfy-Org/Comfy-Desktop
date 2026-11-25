@@ -163,7 +163,7 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
               editType: 'select',
               options: [
                 { value: 'shared', label: t('common.partitionShared') },
-                { value: 'unique', label: t('common.partitionUnique') }
+                { value: 'unique', label: t('common.partitionSeparate') }
               ],
               tooltip: t('tooltips.browserPartition')
             },
