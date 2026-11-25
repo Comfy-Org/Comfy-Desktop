@@ -4,11 +4,8 @@ import MarCloudBar from './MarCloudBar.vue'
 import MarDock from './MarDock.vue'
 import MarSidebar from './MarSidebar.vue'
 import { onCloud } from './surface'
-import MarBloom from './MarBloom.vue'
-import MarWires from './MarWires.vue'
 import PointBuildMenu from '../build/PointBuildMenu.vue'
 import BuildLogs from '../build/BuildLogs.vue'
-import GradedImage from '../brand/GradedImage.vue'
 import MarSearch from '../search/MarSearch.vue'
 import QueuePanel from '../p20/QueuePanel.vue'
 import InspectorPanel from '../p20/InspectorPanel.vue'
@@ -16,16 +13,14 @@ import ShortcutBar from '../p20/ShortcutBar.vue'
 import TabsNav from '../p20/TabsNav.vue'
 import { p20 } from '../p20/p20'
 import {
-  altBackground,
-  bloomOn,
   heroImage,
   quietLight,
   marDockOn,
   marNav,
   marSideOn,
-  spaceCover
+  spaceCover,
+  spotlightOn
 } from './marShell'
-import lastOutput from '../assets/portrait-seaside.jpg'
 import './marShell.css'
 import './panelsNav.css'
 import './light.css'
@@ -44,21 +39,13 @@ import '../motion/pageTransition'
 </script>
 
 <template>
-  <div v-if="bloomOn" class="mar-backdrop is-bloom" aria-hidden="true"><MarBloom /></div>
-  <!-- The quieter alternatives: drawn in CSS (marShell.css), except Your
-       latest, which blurs the last thing you made. -->
   <div
-    v-else-if="altBackground"
-    class="mar-backdrop is-bloom is-alt"
-    :class="[`is-${altBackground}`, quietLight && 'is-quiet']"
+    v-if="spotlightOn"
+    class="mar-backdrop is-bloom is-alt is-spotlight"
+    :class="quietLight && 'is-quiet'"
     aria-hidden="true"
   >
-    <img v-if="altBackground === 'output'" :src="lastOutput" alt="" class="mar-bg-output" />
-    <GradedImage v-else-if="altBackground === 'grade'" :src="lastOutput" :blur="14" />
-    <template v-else>
-      <div class="mar-bg" />
-      <MarWires v-if="altBackground === 'wires'" />
-    </template>
+    <div class="mar-bg" />
   </div>
   <div v-else-if="heroImage" class="mar-backdrop" aria-hidden="true">
     <img :src="heroImage" alt="" />

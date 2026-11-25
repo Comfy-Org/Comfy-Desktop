@@ -779,8 +779,7 @@
 }
 
 /* Home backgrounds, the quieter alternatives to Latent bloom. */
-:root[data-mar-ui='on'] .mar-backdrop.is-alt .mar-bg,
-:root[data-mar-ui='on'] .mar-backdrop.is-alt .mar-bg-output {
+:root[data-mar-ui='on'] .mar-backdrop.is-alt .mar-bg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -935,14 +934,6 @@
       color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
       transparent 75%
     );
-}
-/* Your latest: the last output, blurred into colour. Personal, and it
-   changes as you work. */
-:root[data-mar-ui='on'] .mar-backdrop.is-output .mar-bg-output {
-  object-fit: cover;
-  opacity: 0.22;
-  filter: blur(90px) saturate(0.75);
-  transform: scale(1.3);
 }
 @media (prefers-reduced-motion: reduce) {
   :root[data-mar-ui='on'] .mar-backdrop.is-aurora .mar-bg {

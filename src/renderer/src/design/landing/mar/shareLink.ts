@@ -7,7 +7,6 @@ import { graphOpen } from './graph/graphOpen'
 import { TWEAKS, type TweakId } from './tunerContext'
 import { tuning, KNOBS } from './uiTuner'
 import { SURFACES, surface } from './shell/surface'
-import { homeBackground } from './shell/marShell'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
@@ -117,9 +116,6 @@ const field = <T extends object>(
 })
 
 const OFF_ON = [{ value: 'off' }, { value: 'on' }]
-const BACKGROUNDS = ['spotlight', 'bloom', 'output', 'canvas', 'wires', 'grade'].map((value) => ({
-  value
-}))
 
 // In the order they are applied: who and what's installed before the
 // pages that read them.
@@ -141,7 +137,6 @@ const PARTS: Part[] = [
   },
   one('surface', surface, 'desktop', SURFACES),
   one('brandMotif', brandMotif, 'off', BRAND_MOTIFS),
-  one('homeBackground', homeBackground, 'spotlight', BACKGROUNDS),
   one('appsStage', appsStage, 'm1', APPS_STAGES),
   one('appPage', appPage, 'hub', APP_PAGE_LOOKS),
   one('appExamplesAt', appExamplesAt, 'tabs', APP_EXAMPLES_AT),

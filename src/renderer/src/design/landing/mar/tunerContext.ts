@@ -4,7 +4,7 @@ import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
 import { resetTuning, tuning } from './uiTuner'
 import { surface } from './shell/surface'
-import { homeBackground, marNav, marSideOn, marSidebarClosed } from './shell/marShell'
+import { marNav, marSideOn, marSidebarClosed } from './shell/marShell'
 import { screen } from './screen'
 // Graphite is applied on load.
 import './palette'
@@ -67,7 +67,6 @@ const LIBRARY = ['explore', 'workflows', 'apps', 'assets', 'projects', 'spaces',
 
 /** The predicates, one per tweak that depends on the screen. */
 export const when = {
-  homeBackground: onHome,
   // What an app can do by stage: only on the app's own screen.
   appsStage: computed(() => can.value.exploreApps && !!appsProto.front),
   // How an app's page looks: on the app's own screen too.
@@ -246,7 +245,6 @@ export const TWEAKS = {
   },
   surface: one(surface, 'desktop'),
   brandMotif: one(brandMotif, 'off'),
-  homeBackground: one(homeBackground, 'spotlight'),
   appsStage: one(appsStage, 'm1'),
   appPage: one(appPage, 'hub'),
   appExamplesAt: one(appExamplesAt, 'tabs'),
