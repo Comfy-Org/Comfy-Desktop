@@ -604,6 +604,11 @@ function back(): void {
               <span class="flex-1 text-left">Installing ComfyUI · {{ flow.percent }}%</span>
               <span class="mar-app-editor-wait-link">View progress</span>
             </button>
+            <Transition name="mar-app-editor-note">
+              <div v-if="$slots.runNote" class="mar-app-editor-note">
+                <div class="mar-app-editor-note-in"><slot name="runNote" /></div>
+              </div>
+            </Transition>
             <button
               type="button"
               class="mar-app-editor-run"
@@ -620,7 +625,6 @@ function back(): void {
                 <template v-else>Free</template>
               </span>
             </button>
-            <slot name="runNote" />
             <p v-if="payerNote" class="mar-app-editor-payer">{{ payerNote }}</p>
           </footer>
         </div>
@@ -1097,6 +1101,36 @@ function back(): void {
   flex-shrink: 0;
   margin-top: auto;
   padding: 12px 20px 20px;
+}
+.mar-app-editor-note {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.mar-app-editor-note-in {
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 8px;
+}
+.mar-app-editor-note-enter-active,
+.mar-app-editor-note-leave-active {
+  transition:
+    grid-template-rows 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms ease;
+}
+.mar-app-editor-note-enter-from,
+.mar-app-editor-note-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-app-editor-note-enter-active,
+  .mar-app-editor-note-leave-active {
+    transition: opacity 120ms ease;
+  }
+  .mar-app-editor-note-enter-from,
+  .mar-app-editor-note-leave-to {
+    grid-template-rows: 1fr;
+  }
 }
 /* Run: the one white button, its label left and the cost right. */
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-run {
