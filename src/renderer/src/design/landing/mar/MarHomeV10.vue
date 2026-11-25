@@ -329,7 +329,7 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
       </section>
 
       <template v-if="recentsFirst">
-        <div class="mar-home-bleed mt-10">
+        <div class="mt-10">
           <HomeArcMix v-if="can.explore" full />
           <HomeLoadFailed v-else-if="offline" />
           <AppStrip v-else :items="arcApps()" data-home-tour="apps-carousel" @all="go('apps')" />
@@ -386,27 +386,3 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
   />
   <MarHomeTour v-if="can.onboarding" :active="tourActive" />
 </template>
-
-<style>
-.mar-home-bleed {
-  margin-inline: calc(50% - var(--mar-pane, 100%) / 2);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-home-bleed .mar-arc-card {
-  border-radius: 0;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-home-bleed .mar-arc-step {
-  background: rgb(14 14 16 / 0.42);
-  backdrop-filter: blur(14px) saturate(1.5);
-  color: #fff;
-  opacity: 0.85;
-}
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-home-bleed
-  .mar-arc
-  .mar-arc-step:is(:hover, :focus-visible) {
-  background: rgb(14 14 16 / 0.6);
-  color: #fff;
-  opacity: 1;
-}
-</style>

@@ -31,7 +31,7 @@ function openCloud(): void {
 </script>
 
 <template>
-  <div v-if="can.onboarding && homeLayout.id === 'recents'" class="mar-home-bleed mt-6">
+  <div v-if="can.onboarding && homeLayout.id === 'recents'" class="mt-6">
     <HomeArcMix full />
   </div>
   <HomeArcMix v-else-if="can.onboarding" class="mt-6" />
