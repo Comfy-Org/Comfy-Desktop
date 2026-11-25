@@ -197,7 +197,7 @@ function inWorkspace(build: Installation): boolean {
 }
 
 function savesToSharedFolder(build: Installation): boolean {
-  return build.useSharedOutput !== false
+  return build.savesToSharedOutput !== false
 }
 
 function placeOption(id: string, name: string, cloud: boolean): AssetBuild {
@@ -297,15 +297,22 @@ const outputFolders = ref<OutputFolderPaths | null>(null)
 const outputFoldersLoaded = ref(false)
 let outputFoldersRequest = 0
 
+async function loadOutputFolders(): Promise<void> {
+  const request = ++outputFoldersRequest
+  const folders = await window.api.listOutputFolders().catch(() => null)
+  if (request !== outputFoldersRequest) return
+  outputFolders.value = folders
+  outputFoldersLoaded.value = true
+}
+
 watch(
-  () => localBuilds.value.map((build) => build.id).join('\n'),
-  async () => {
-    const request = ++outputFoldersRequest
-    const folders = await window.api.listOutputFolders().catch(() => null)
-    if (request !== outputFoldersRequest) return
-    outputFolders.value = folders
-    outputFoldersLoaded.value = true
-  },
+  () =>
+    localBuilds.value
+      .map((build) =>
+        [build.id, build.launchArgs ?? '', sessionStore.isRunning(build.id)].join('\t')
+      )
+      .join('\n'),
+  () => void loadOutputFolders(),
   { immediate: true }
 )
 
@@ -754,6 +761,7 @@ watch(
 )
 
 function refresh(): void {
+  void loadOutputFolders()
   resetCloudPaging()
   if (currentPage.value === 1) {
     void loadAssets(true)

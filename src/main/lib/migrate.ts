@@ -30,6 +30,8 @@ export function listCustomNodes(customNodesDir: string): CustomNode[] {
 }
 
 export function findComfyUIDir(installPath: string): string | null {
+  if (fs.existsSync(path.join(installPath, 'main.py'))) return installPath
+
   const direct = path.join(installPath, 'ComfyUI')
   if (fs.existsSync(direct)) return direct
 

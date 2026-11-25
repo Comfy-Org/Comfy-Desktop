@@ -33,6 +33,7 @@ export interface ComfySystemModalBridge {
   action(payload: SystemModalActionPayload): void
   ready(): void
   notifyRendered(): void
+  notifyRenderFailed(): void
   onModal(cb: (spec: SystemModalSpec) => void): () => void
 }
 
@@ -87,6 +88,9 @@ const bridge: ComfySystemModalBridge = {
   },
   notifyRendered: () => {
     ipcRenderer.send('comfy-systemmodal:rendered')
+  },
+  notifyRenderFailed: () => {
+    ipcRenderer.send('comfy-systemmodal:render-failed')
   },
   onModal: (cb) => {
     const handler = (_event: IpcRendererEvent, data: unknown): void => {

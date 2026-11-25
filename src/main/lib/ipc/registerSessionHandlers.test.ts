@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
   killByPort: vi.fn(async () => {}),
   findPidsByPort: vi.fn(async (): Promise<number[]> => []),
   isPortListening: vi.fn(async () => false),
-  removePortLock: vi.fn()
+  removePortLock: vi.fn(),
+  stopRunningOnPort: vi.fn(async (_port: number) => {})
 }))
 
 vi.mock('./shared', () => ({
@@ -23,7 +24,8 @@ vi.mock('./shared', () => ({
   _getLaunchingInstances: () => [],
   _getStoppingInstallationIds: () => [],
   hasRunningSessionForInstallation: () => false,
-  stopRunning: vi.fn()
+  stopRunning: vi.fn(),
+  stopRunningOnPort: mocks.stopRunningOnPort
 }))
 vi.mock('./sessionActions', () => ({
   dispatchSessionAction: vi.fn(),
@@ -60,6 +62,15 @@ describe('kill-port-process', () => {
     mocks.isPortListening.mockResolvedValue(false)
     expect(await run(8188)).toEqual({ ok: true })
     expect(mocks.removePortLock).toHaveBeenCalledWith(8188)
+  })
+
+  it('stops its own build on the port as a stop, before it kills what is left', async () => {
+    await run(8188)
+
+    expect(mocks.stopRunningOnPort.mock.calls).toEqual([[8188]])
+    expect(mocks.stopRunningOnPort.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.killByPort.mock.invocationCallOrder[0]!
+    )
   })
 
   it('does not claim success, and keeps the lock, for a holder no listener list shows', async () => {

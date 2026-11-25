@@ -1419,7 +1419,7 @@ describe('PanelApp', () => {
     expect(api.claimAttachHost).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
-    expect(wrapper.get('[data-testid="home-build-starting"]').text()).toContain('Starting ComfyUI')
+    expect(wrapper.get('[data-testid="home-build-starting"]').text()).toContain('Starting…')
 
     finishLaunch({ ok: false, message: 'ComfyUI exited with code 1' })
     await flushPromises()
@@ -1433,6 +1433,35 @@ describe('PanelApp', () => {
     expect(dialog?.textContent).toContain('ComfyUI exited with code 1')
     document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()
     await flushPromises()
+  })
+
+  it('opens a build pressed on Home while it starts once it is ready, after the person moved on to Apps and Assets', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const launching = { installationId: 'test-id', installationName: 'Test Install' }
+    api.onInstanceLaunching.mock.calls.forEach(([listener]) => listener(launching))
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(api.focusComfyWindow).not.toHaveBeenCalled()
+
+    api.onInstanceStarted.mock.calls.forEach(([listener]) =>
+      listener({ ...launching, mode: 'console' })
+    )
+    await flushPromises()
+
+    expect(api.focusComfyWindow).toHaveBeenCalledTimes(1)
+    expect(api.focusComfyWindow).toHaveBeenCalledWith('test-id')
+    expect(api.runAction).not.toHaveBeenCalled()
   })
 
   it('Launch in the build menu starts a build that crashed with its window still open', async () => {

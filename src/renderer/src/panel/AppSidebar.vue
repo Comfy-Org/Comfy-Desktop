@@ -32,7 +32,7 @@ import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
-import { buildFailure, buildProgressOf } from '../composables/useBuildProgress'
+import { buildFailure, buildProgressOf, type BuildProgress } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -187,6 +187,11 @@ function isLive(build: Installation): boolean {
   return homeBuildStatus(build, sessionStore) === 'running'
 }
 
+function isStarting(build: Installation, install: BuildProgress | null): boolean {
+  if (install) return install.kind === 'launch'
+  return homeBuildStatus(build, sessionStore) === 'starting'
+}
+
 function failureText(build: Installation): string | null {
   const failure = buildFailure(build, sessionStore, progressStore, t)
   if (!failure) return null
@@ -207,15 +212,20 @@ const buildRows = computed(() =>
   visibleInstalls.value
     .filter((build) => isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId))
     .map((build) => {
-      const install = buildProgressOf(progressStore, build.id)
+      const progress = buildProgressOf(progressStore, build.id)
+      const starting = isStarting(build, progress)
+      const install = starting ? null : progress
       return {
         build,
         install,
-        failure: install ? null : failureText(build),
-        live: !install && isLive(build)
+        starting,
+        failure: progress ? null : failureText(build),
+        live: !progress && isLive(build)
       }
     })
 )
+
+const anyBuildStarting = computed(() => buildRows.value.some((row) => row.starting))
 
 function navigate(page: DashboardPage): void {
   emit('navigate', page)
@@ -460,12 +470,20 @@ function openSettings(): void {
                     class="flex size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
                     :class="railRowInset"
                   >
-                    <component
-                      :is="railBuildsRow.icon"
-                      :size="15"
-                      class="shrink-0"
-                      aria-hidden="true"
-                    />
+                    <span class="relative flex shrink-0">
+                      <component :is="railBuildsRow.icon" :size="15" aria-hidden="true" />
+                      <span
+                        v-if="anyBuildStarting"
+                        class="absolute -right-0.5 -bottom-0.5 size-2 animate-status-starting rounded-full bg-status-starting ring-2 motion-reduce:animate-none"
+                        :class="
+                          activePage === 'chooser'
+                            ? 'ring-[oklch(0.27_0_0)]'
+                            : 'ring-sidebar-background'
+                        "
+                        data-testid="app-sidebar-rail-starting"
+                        aria-hidden="true"
+                      />
+                    </span>
                   </span>
                 </Button>
               </Tooltip>
@@ -531,7 +549,7 @@ function openSettings(): void {
               </p>
               <template v-if="buildRowsMounted">
                 <Button
-                  v-for="{ build, install, failure, live } in buildRows"
+                  v-for="{ build, install, starting, failure, live } in buildRows"
                   :key="build.id"
                   variant="muted-textonly"
                   size="unset"
@@ -556,7 +574,18 @@ function openSettings(): void {
                       aria-hidden="true"
                     />
                     <span
-                      v-if="failure || live"
+                      v-if="starting"
+                      class="absolute -right-0.5 -bottom-0.5 size-2 animate-status-starting rounded-full bg-status-starting ring-2 motion-reduce:animate-none"
+                      :class="
+                        build.id === activeBuildId
+                          ? 'ring-[oklch(0.27_0_0)]'
+                          : 'ring-sidebar-background'
+                      "
+                      data-testid="app-sidebar-dot-starting"
+                      aria-hidden="true"
+                    />
+                    <span
+                      v-else-if="failure || live"
                       class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
                       :class="[
                         failure ? 'bg-destructive' : 'bg-success',
@@ -581,8 +610,11 @@ function openSettings(): void {
                     >
                     <span v-if="failure" class="sr-only">· {{ failure }}</span>
                   </Tooltip>
+                  <span v-if="starting" class="sr-only" role="status" aria-live="polite"
+                    >· {{ t('home.buildStarting') }}</span
+                  >
                   <span
-                    v-if="install && install.kind !== 'launch' && install.percent !== null"
+                    v-else-if="install && install.percent !== null"
                     class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
                     data-testid="app-sidebar-build-percent"
                     >{{ t('installProgress.percent', { percent: install.percent }) }}</span

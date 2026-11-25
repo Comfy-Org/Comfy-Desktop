@@ -121,7 +121,6 @@ export function buildSettingsSections(): SettingsSection[] {
           label: i18n.t('settings.hardwareAcceleration'),
           type: 'boolean',
           value: s.hardwareAcceleration !== false,
-          description: i18n.t('settings.hardwareAccelerationDescription'),
           tooltip: i18n.t('settings.hardwareAccelerationDescription')
         }
       ]

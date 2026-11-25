@@ -247,11 +247,16 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
-const vcRuntime = vi.hoisted(() => ({ missing: [] as string[], auditThrows: false }))
+const vcRuntime = vi.hoisted(() => ({
+  missing: [] as string[],
+  auditThrows: false,
+  audited: Promise.resolve()
+}))
 
 vi.mock('../../vcRuntimeAudit', async (importOriginal) => ({
   ...(await importOriginal<typeof VcRuntimeAuditModule>()),
   auditVcRuntime: async () => {
+    await vcRuntime.audited
     if (vcRuntime.auditThrows) throw new Error('System32 unreadable')
     return vcRuntime.missing
   }
@@ -417,6 +422,7 @@ import {
   _stoppingInstallationIds,
   cancelAll,
   noteWindowClosed,
+  sessionLifecycleEvents,
   setCallbacks,
   stopRunning
 } from '../shared'
@@ -3555,6 +3561,27 @@ describe('Performance Test guardrail', () => {
         events.find((e) => e.event === 'comfy.desktop.comfyui.exited')?.properties
       ).toMatchObject({ session_kind: 'performance_test' })
     )
+  })
+
+  it('ends a crashed session as a crash when it is stopped while Desktop reads why it crashed', async () => {
+    const ACCESS_VIOLATION = 0xc0000005
+    const ended: unknown[][] = []
+    const onChanged = (...crashed: unknown[]): void => void ended.push(crashed)
+    let audited = (): void => {}
+    vcRuntime.audited = new Promise((resolve) => (audited = resolve))
+    expect((await handleLaunch(ctxFor('guard-bench'))).ok).toBe(true)
+    sessionLifecycleEvents.on('changed', onChanged)
+
+    Object.assign(child!, { killed: true })
+    child!.emit('close', ACCESS_VIOLATION, null)
+    await stopRunning('guard-bench')
+    audited()
+    await vi.waitFor(() =>
+      expect(events.some((e) => e.event === 'comfy.desktop.comfyui.exited')).toBe(true)
+    )
+    sessionLifecycleEvents.off('changed', onChanged)
+
+    expect(ended).toEqual([['guard-bench']])
   })
 
   it('names every other ComfyUI running', async () => {

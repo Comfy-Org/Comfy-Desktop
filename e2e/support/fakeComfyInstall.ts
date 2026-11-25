@@ -88,7 +88,11 @@ server.on('listening', () => {
   console.log('Starting server\\n')
   console.log('To see the GUI go to: http://127.0.0.1:' + port)
 })
-server.listen(port, '127.0.0.1')
+const delayPath = require('node:path').join(__dirname, 'startup-delay-ms')
+const startupDelayMs = require('node:fs').existsSync(delayPath)
+  ? Number(require('node:fs').readFileSync(delayPath, 'utf8'))
+  : 0
+setTimeout(() => server.listen(port, '127.0.0.1'), startupDelayMs)
 `
 
 export async function reserveFreePort(): Promise<number> {

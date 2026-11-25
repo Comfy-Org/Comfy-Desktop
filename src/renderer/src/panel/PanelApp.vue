@@ -54,6 +54,7 @@ import { provideBuildMenuHost } from './home/useBuildMenu'
 import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
+import { provideOpenWhenReady } from './home/useOpenWhenReady'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { runningAppIds, watchAppRuns } from './appRuns'
 import { useAppSwitchConfirm } from './useAppSwitchConfirm'
@@ -507,6 +508,7 @@ chooserHandoff = useChooserHandoff({
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
 provideAutoStartBuild()
+provideOpenWhenReady((build) => void handleChooserPick(build))
 provideBuildMenuHost({
   launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
   openDetails: openBuildFromSidebar,
