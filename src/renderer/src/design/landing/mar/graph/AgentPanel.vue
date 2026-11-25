@@ -10,7 +10,10 @@ import type { AgentStart } from './graphOpen'
  * says what it adds, step by step, and hands the graph a recipe.
  */
 
-const { start = null } = defineProps<{ start?: AgentStart | null }>()
+const { start = null, dockTop = 0 } = defineProps<{
+  start?: AgentStart | null
+  dockTop?: number
+}>()
 const emit = defineEmits<{
   build: [recipe: Recipe]
   step: [recipe: Recipe, k: number]
@@ -183,51 +186,66 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
 </script>
 
 <template>
-  <aside class="ag" :class="start && 'is-docked'" aria-label="Agent" @pointerdown.stop @wheel.stop>
-    <header class="ag-head">
-      <Bot :size="15" />
-      <span class="ag-title">Agent</span>
-      <button type="button" class="ag-close" aria-label="Close" @click="emit('close')">
-        <X :size="14" />
-      </button>
-    </header>
-    <div ref="list" class="ag-list">
-      <template v-if="!messages.length">
-        <p class="ag-hint">Describe what you want to make; the agent builds the workflow here.</p>
-        <button v-for="s in SUGGESTIONS" :key="s" type="button" class="ag-suggest" @click="send(s)">
-          {{ s }}
+  <Teleport to="body" :disabled="!start">
+    <aside
+      class="ag"
+      :class="start && 'is-docked proto-ui'"
+      :style="start ? { top: `${dockTop}px` } : undefined"
+      aria-label="Agent"
+      @pointerdown.stop
+      @wheel.stop
+    >
+      <header class="ag-head">
+        <Bot :size="15" />
+        <span class="ag-title">Agent</span>
+        <button type="button" class="ag-close" aria-label="Close" @click="emit('close')">
+          <X :size="14" />
         </button>
-      </template>
-      <div
-        v-for="(m, i) in messages"
-        :key="i"
-        class="ag-msg"
-        :class="[`is-${m.role}`, m.result && 'is-result']"
-      >
-        <p>{{ m.text }}</p>
-        <button v-if="m.result" type="button" class="ag-change" @click="field?.focus()">
-          Change something
-        </button>
-        <ul v-if="m.steps" class="ag-steps">
-          <li v-for="(s, j) in m.steps" :key="j" :class="s.done && 'is-done'">
-            <Check v-if="s.done" :size="11" /><i v-else class="ag-dot" />{{ s.text }}
-          </li>
-        </ul>
+      </header>
+      <div ref="list" class="ag-list">
+        <template v-if="!messages.length">
+          <p class="ag-hint">Describe what you want to make; the agent builds the workflow here.</p>
+          <button
+            v-for="s in SUGGESTIONS"
+            :key="s"
+            type="button"
+            class="ag-suggest"
+            @click="send(s)"
+          >
+            {{ s }}
+          </button>
+        </template>
+        <div
+          v-for="(m, i) in messages"
+          :key="i"
+          class="ag-msg"
+          :class="[`is-${m.role}`, m.result && 'is-result']"
+        >
+          <p>{{ m.text }}</p>
+          <button v-if="m.result" type="button" class="ag-change" @click="field?.focus()">
+            Change something
+          </button>
+          <ul v-if="m.steps" class="ag-steps">
+            <li v-for="(s, j) in m.steps" :key="j" :class="s.done && 'is-done'">
+              <Check v-if="s.done" :size="11" /><i v-else class="ag-dot" />{{ s.text }}
+            </li>
+          </ul>
+        </div>
       </div>
-    </div>
-    <form class="ag-compose" @submit.prevent="send()">
-      <input
-        ref="field"
-        v-model="draft"
-        type="text"
-        :placeholder="start ? 'Ask for a change…' : 'Describe a workflow'"
-        :disabled="busy"
-      />
-      <button type="submit" class="ag-send" aria-label="Send" :disabled="!draft.trim() || busy">
-        <ArrowUp :size="14" />
-      </button>
-    </form>
-  </aside>
+      <form class="ag-compose" @submit.prevent="send()">
+        <input
+          ref="field"
+          v-model="draft"
+          type="text"
+          :placeholder="start ? 'Ask for a change…' : 'Describe a workflow'"
+          :disabled="busy"
+        />
+        <button type="submit" class="ag-send" aria-label="Send" :disabled="!draft.trim() || busy">
+          <ArrowUp :size="14" />
+        </button>
+      </form>
+    </aside>
+  </Teleport>
 </template>
 
 <style>
@@ -389,19 +407,42 @@ onBeforeUnmount(() => timers.forEach(clearTimeout))
 .is-current .ag {
   left: 68px;
 }
-:root .proto-ui.proto-ui.proto-ui .ag.is-docked {
-  top: 84px;
-  right: 12px;
-  bottom: 12px;
+:root .ag.is-docked.proto-ui {
+  --mg-text: var(--color-base-foreground);
+  --mg-muted: var(--color-muted-foreground);
+  --mg-dim: var(--color-subtle-foreground);
+  --mg-well: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  --mg-hover: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  --mg-run: var(--color-inverted-background);
+  --mg-run-text: var(--color-inverted-foreground);
+  position: fixed;
+  right: 0;
+  bottom: 0;
   left: auto;
-  z-index: 8;
-  width: 368px;
+  z-index: 40;
+  width: var(--ag-dock-w, 380px);
+  min-height: 0;
   max-height: none;
-  background: var(--mg-chrome-2, var(--color-card-background));
-  box-shadow:
-    0 0 0 1px var(--mg-chrome-line, var(--color-border-default)),
-    0 12px 30px rgb(0 0 0 / 0.35);
+  border-radius: 0;
+  border-left: 1px solid var(--color-border-default);
+  background: color-mix(
+    in oklch,
+    var(--color-base-foreground) 2.5%,
+    var(--color-content-background)
+  );
+  box-shadow: none;
   backdrop-filter: none;
+  animation: ag-dock 280ms var(--ease-out-expo) both;
+}
+@keyframes ag-dock {
+  from {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .ag.is-docked.proto-ui {
+    animation: none;
+  }
 }
 .ag-msg.is-result p {
   font-weight: 600;

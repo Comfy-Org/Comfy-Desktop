@@ -102,6 +102,24 @@ watch(
 </template>
 
 <style>
+:root .proto-ui.proto-ui.proto-ui .ca-agent > * {
+  min-width: 352px;
+}
+:root .proto-ui.proto-ui.proto-ui .ca-dock-enter-active,
+:root .proto-ui.proto-ui.proto-ui .ca-dock-leave-active {
+  overflow: hidden;
+  transition: width 280ms var(--ease-out-expo);
+}
+:root .proto-ui.proto-ui.proto-ui .ca-dock-enter-from,
+:root .proto-ui.proto-ui.proto-ui .ca-dock-leave-to {
+  width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .ca-dock-enter-active,
+  :root .proto-ui.proto-ui.proto-ui .ca-dock-leave-active {
+    transition: none;
+  }
+}
 :root .proto-ui.proto-ui.proto-ui .ca-icon-btn {
   display: grid;
   width: 28px;
@@ -131,7 +149,7 @@ watch(
     var(--color-base-foreground) 2.5%,
     var(--color-content-background)
   );
-  animation: ca-panel 280ms var(--ease-out-expo) both;
+  overflow: hidden;
 }
 :root .proto-ui.proto-ui.proto-ui .ca-agent-head {
   display: flex;
@@ -328,12 +346,6 @@ watch(
 }
 :root .proto-ui.proto-ui.proto-ui .ca-agent-send:disabled {
   opacity: 0.3;
-}
-@keyframes ca-panel {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
 }
 @keyframes ca-blink {
   50% {

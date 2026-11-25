@@ -270,12 +270,14 @@ useEscapeCloses(() => composer.value?.field)
       </div>
     </div>
 
-    <CreateAgentPanel
-      v-if="flow.panel.value"
-      :flow
-      @close="flow.close()"
-      @use="(s) => openTemplate(s.template)"
-    />
+    <Transition name="ca-dock">
+      <CreateAgentPanel
+        v-if="flow.panel.value"
+        :flow
+        @close="flow.close()"
+        @use="(s) => openTemplate(s.template)"
+      />
+    </Transition>
   </section>
 </template>
 

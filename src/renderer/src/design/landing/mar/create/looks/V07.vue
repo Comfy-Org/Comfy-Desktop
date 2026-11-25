@@ -672,91 +672,116 @@ useEscapeCloses(() => composer.value?.field)
       </div>
     </div>
 
-    <aside v-if="panel" class="v07-agent" aria-label="Agent">
-      <header class="v07-agent-head">
-        <AgentChat :size="15" />
-        <span>Agent</span>
-        <button type="button" class="v07-icon-btn" aria-label="Close agent" @click="closePanel">
-          <X :size="14" />
-        </button>
-      </header>
-      <div ref="scroller" class="v07-agent-log" aria-live="polite">
-        <template v-for="(e, i) in talk" :key="e.id">
-          <p class="v07-msg-user">{{ e.prompt }}</p>
-          <div class="v07-msg">
-            <span class="v07-msg-avatar"><AgentChat :size="13" /></span>
-            <div class="v07-msg-body">
-              <p>{{ e.reply.slice(0, e.typed) }}</p>
-              <template v-if="i === talk.length - 1 && build && e.rec">
-                <ol class="v07-steps">
-                  <li
-                    v-for="(label, k) in steps"
-                    :key="label"
-                    :class="k < build.shown ? 'is-done' : k === build.shown ? 'is-active' : ''"
-                  >
-                    <Check v-if="k < build.shown" :size="12" />
-                    <i v-else class="v07-step-dot" />
-                    {{ label }}
-                  </li>
-                </ol>
-                <div v-if="built" class="v07-result">
-                  <p class="v07-result-line">{{ resultLine(e) }}</p>
-                  <div class="v07-acts">
-                    <button
-                      type="button"
-                      class="v07-act is-primary"
-                      @click="openTemplate(e.rec.template)"
+    <Transition name="v07-dock">
+      <aside v-if="panel" class="v07-agent" aria-label="Agent">
+        <header class="v07-agent-head">
+          <AgentChat :size="15" />
+          <span>Agent</span>
+          <button type="button" class="v07-icon-btn" aria-label="Close agent" @click="closePanel">
+            <X :size="14" />
+          </button>
+        </header>
+        <div ref="scroller" class="v07-agent-log" aria-live="polite">
+          <template v-for="(e, i) in talk" :key="e.id">
+            <p class="v07-msg-user">{{ e.prompt }}</p>
+            <div class="v07-msg">
+              <span class="v07-msg-avatar"><AgentChat :size="13" /></span>
+              <div class="v07-msg-body">
+                <p>{{ e.reply.slice(0, e.typed) }}</p>
+                <template v-if="i === talk.length - 1 && build && e.rec">
+                  <ol class="v07-steps">
+                    <li
+                      v-for="(label, k) in steps"
+                      :key="label"
+                      :class="k < build.shown ? 'is-done' : k === build.shown ? 'is-active' : ''"
                     >
-                      Use this workflow
-                    </button>
-                    <button type="button" class="v07-act" @click="changeSomething">
-                      Change something
-                    </button>
+                      <Check v-if="k < build.shown" :size="12" />
+                      <i v-else class="v07-step-dot" />
+                      {{ label }}
+                    </li>
+                  </ol>
+                  <div v-if="built" class="v07-result">
+                    <p class="v07-result-line">{{ resultLine(e) }}</p>
+                    <div class="v07-acts">
+                      <button
+                        type="button"
+                        class="v07-act is-primary"
+                        @click="openTemplate(e.rec.template)"
+                      >
+                        Use this workflow
+                      </button>
+                      <button type="button" class="v07-act" @click="changeSomething">
+                        Change something
+                      </button>
+                    </div>
+                    <div class="v07-choice">
+                      <span>{{ questionOf(e).label }}</span>
+                      <button
+                        v-for="o in questionOf(e).options"
+                        :key="o"
+                        type="button"
+                        :class="choiceOf(e) === o && 'is-on'"
+                        :aria-pressed="choiceOf(e) === o"
+                        @click="e.choice = o"
+                      >
+                        {{ o }}
+                      </button>
+                    </div>
                   </div>
-                  <div class="v07-choice">
-                    <span>{{ questionOf(e).label }}</span>
-                    <button
-                      v-for="o in questionOf(e).options"
-                      :key="o"
-                      type="button"
-                      :class="choiceOf(e) === o && 'is-on'"
-                      :aria-pressed="choiceOf(e) === o"
-                      @click="e.choice = o"
-                    >
-                      {{ o }}
-                    </button>
-                  </div>
-                </div>
-              </template>
-              <button
-                v-else-if="!e.rec && e.typed >= e.reply.length"
-                type="button"
-                class="v07-act"
-                @click="startBlank"
-              >
-                Start blank
-              </button>
+                </template>
+                <button
+                  v-else-if="!e.rec && e.typed >= e.reply.length"
+                  type="button"
+                  class="v07-act"
+                  @click="startBlank"
+                >
+                  Start blank
+                </button>
+              </div>
             </div>
-          </div>
-        </template>
-      </div>
-      <form class="v07-agent-foot" @submit.prevent="refine">
-        <input
-          ref="panelField"
-          v-model="followUp"
-          type="text"
-          placeholder="Ask for a change…"
-          aria-label="Ask the agent for a change"
-        />
-        <button type="submit" class="v07-agent-send" aria-label="Send" :disabled="!followUp.trim()">
-          <ArrowUp :size="14" />
-        </button>
-      </form>
-    </aside>
+          </template>
+        </div>
+        <form class="v07-agent-foot" @submit.prevent="refine">
+          <input
+            ref="panelField"
+            v-model="followUp"
+            type="text"
+            placeholder="Ask for a change…"
+            aria-label="Ask the agent for a change"
+          />
+          <button
+            type="submit"
+            class="v07-agent-send"
+            aria-label="Send"
+            :disabled="!followUp.trim()"
+          >
+            <ArrowUp :size="14" />
+          </button>
+        </form>
+      </aside>
+    </Transition>
   </section>
 </template>
 
 <style>
+:root .proto-ui.proto-ui.proto-ui .v07-agent > * {
+  min-width: 352px;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-dock-enter-active,
+:root .proto-ui.proto-ui.proto-ui .v07-dock-leave-active {
+  overflow: hidden;
+  transition: width 280ms var(--ease-out-expo);
+}
+:root .proto-ui.proto-ui.proto-ui .v07-dock-enter-from,
+:root .proto-ui.proto-ui.proto-ui .v07-dock-leave-to {
+  width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .v07-dock-enter-active,
+  :root .proto-ui.proto-ui.proto-ui .v07-dock-leave-active {
+    transition: none;
+  }
+}
 :root .proto-ui.proto-ui.proto-ui .v07 {
   isolation: isolate;
   overflow: hidden;
@@ -820,7 +845,7 @@ useEscapeCloses(() => composer.value?.field)
     var(--color-base-foreground) 2.5%,
     var(--color-content-background)
   );
-  animation: v07-panel 280ms var(--ease-out-expo) both;
+  overflow: hidden;
 }
 :root .proto-ui.proto-ui.proto-ui .v07-agent-head {
   display: flex;
@@ -1046,12 +1071,6 @@ useEscapeCloses(() => composer.value?.field)
   box-shadow:
     0 0 0 2px var(--color-content-background),
     0 0 0 4px var(--color-border-focus);
-}
-@keyframes v07-panel {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
 }
 @keyframes v07-blink {
   50% {

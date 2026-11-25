@@ -942,10 +942,7 @@ function placeStep(recipe: Recipe, k: number): void {
   }
   selection.value = [n.id]
   commit()
-  nextTick(() => {
-    frame(Object.values(stepIds))
-    view.x -= AGENT_DOCK_W / 2
-  })
+  nextTick(() => frame(Object.values(stepIds)))
 }
 function addMenuInView(): void {
   pending = undefined
@@ -1034,7 +1031,10 @@ const shownWorkflow = ref(workflow)
 startFromScratch()
 const agent = ref(false)
 const agentStart = ref<AgentStart | null>(null)
-const AGENT_DOCK_W = 380
+const dockTop = ref(0)
+watch(agentStart, (s) => {
+  if (s) dockTop.value = host.value?.getBoundingClientRect().top ?? 0
+})
 // The Agent and a rail panel share the left edge: one at a time.
 watch(panel, (id) => id && (agent.value = false))
 watch(agent, (on) => on && (panel.value = ''))
@@ -1463,6 +1463,7 @@ function addFromPanel(kind: NodeKind): void {
     :class="[
       `is-${graphStyle.id}`,
       (panel || agent) && 'has-panel',
+      agent && agentStart && 'has-dock',
       !current && assetsTab.open && assetsTab.on && comfyLook.id === 'proposal' && 'on-assets'
     ]"
     :style="{ '--mg-top': `${top}px` }"
@@ -1844,6 +1845,7 @@ function addFromPanel(kind: NodeKind): void {
     <AgentPanel
       v-if="agent"
       :start="agentStart"
+      :dock-top="dockTop"
       @build="build"
       @step="placeStep"
       @close="((agent = false), (agentStart = null))"
@@ -2148,7 +2150,11 @@ function addFromPanel(kind: NodeKind): void {
      through `:root .proto-ui.proto-ui.proto-ui`. Every class is `mg-`. -->
 <style>
 /* ── Tokens. Glass reads the Void palette; Current uses ComfyUI's own. ── */
+.mg.has-dock {
+  margin-right: 380px;
+}
 .mg {
+  transition: margin-right 280ms var(--ease-out-expo);
   --mg-canvas: var(--color-content-background);
   --mg-dot: color-mix(
     in oklch,
@@ -2786,6 +2792,7 @@ function addFromPanel(kind: NodeKind): void {
   transform: translateY(6px);
 }
 @media (prefers-reduced-motion: reduce) {
+  .mg,
   .mg-hairline,
   .mg-toast-enter-active,
   .mg-toast-leave-active {
