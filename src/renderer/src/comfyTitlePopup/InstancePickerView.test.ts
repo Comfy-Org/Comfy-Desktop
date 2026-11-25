@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '../stores/sessionStore'
 
 import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
+import '../assets/main.css'
 import InstancePickerView from './InstancePickerView.vue'
 
 const START_DECISION: NavDecision = { verb: 'start', primaryLabel: NAV_LABEL.start }
@@ -339,14 +340,14 @@ describe('comfyTitlePopup/InstancePickerView', () => {
     it('gives the Update pill the exact look of the Current pill', async () => {
       const wrapper = await mountPicker({
         installs: [
-          makeInstall({ id: 'a', name: 'Alpha', statusTag: { style: 'update', label: 'Update' } })
+          makeInstall({ id: 'a', name: 'Alpha' }),
+          makeInstall({ id: 'b', name: 'Bravo', statusTag: { style: 'update', label: 'Update' } })
         ],
         activeInstallationId: 'a',
         runningInstallationIds: []
       })
-      const row = wrapper.find('.picker-row')
       const styleClasses = (selector: string) =>
-        row
+        wrapper
           .get(selector)
           .classes()
           .filter((name) => !name.startsWith('picker-row-'))
@@ -355,28 +356,50 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       )
     })
 
-    it('shows both Update and Current pills on the current build, Update first', async () => {
-      const wrapper = await mountPicker({
-        installs: [
-          makeInstall({
-            id: 'a',
-            name: 'Alpha',
-            lastLaunchedAt: Date.now() - 60_000,
-            statusTag: { style: 'update', label: 'Update' }
-          })
-        ],
-        activeInstallationId: 'a',
-        runningInstallationIds: []
+    it('shows only the Current pill on the current build, even with an update, so its name has room', async () => {
+      const host = document.createElement('div')
+      host.style.width = '820px'
+      host.style.height = '560px'
+      document.body.append(host)
+      onTestFinished(() => host.remove())
+      const wrapper = mount(InstancePickerView, {
+        props: {
+          snapshot: {
+            installs: [
+              makeInstall({
+                id: 'a',
+                name: 'ComfyUI',
+                lastLaunchedAt: Date.now() - 60_000,
+                statusTag: { style: 'update', label: 'Update' }
+              })
+            ],
+            activeInstallationId: 'a',
+            runningInstallationIds: ['a'],
+            selectedInstallationId: 'a',
+            selectedSettings: null,
+            selectedSnapshots: emptySnapshotListPayload,
+            launchingInstallationIds: []
+          },
+          globalSettingsSnapshot: {
+            sharedDirectoriesFields: [],
+            modelsDirs: [],
+            modelsSystemDefault: ''
+          }
+        },
+        global: { plugins: [createPinia()] },
+        attachTo: host
       })
+      onTestFinished(() => wrapper.unmount())
+      await flushPromises()
       const body = wrapper.get('.picker-row .picker-row-body')
-      const pills = Array.from(body.element.children).map((el) => el.className.split(' ')[0])
-      expect(pills).toEqual([
-        'picker-row-name',
-        'picker-row-update-pill',
-        'picker-row-current-pill'
-      ])
-      expect(body.find('.picker-row-recency').exists()).toBe(false)
-      expect(body.find('.picker-row-update-dot').exists()).toBe(false)
+      const children = Array.from(body.element.children).map((el) => el.className.split(' ')[0])
+      expect(children).toEqual(['picker-row-name', 'picker-row-current-pill'])
+      expect(body.find('.picker-row-update-pill').exists()).toBe(false)
+      expect(wrapper.find('.picker-row-update-dot').exists()).toBe(false)
+      expect(wrapper.find('.picker-row-running-dot').exists()).toBe(true)
+      const name = body.get<HTMLElement>('.picker-row-name').element
+      expect(name.clientWidth).toBeGreaterThan(0)
+      expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth)
     })
   })
 

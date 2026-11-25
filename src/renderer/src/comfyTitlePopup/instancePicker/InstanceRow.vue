@@ -76,7 +76,7 @@ function handleClick(): void {
           >{{ installation.name }}</span
         >
         <span
-          v-if="updateAvailable"
+          v-if="updateAvailable && !isCurrent"
           class="picker-row-update-pill flex-none rounded-[999px] px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-text-muted shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_22%,transparent)] group-aria-selected/instance:text-text group-aria-selected/instance:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_30%,transparent)]"
           :title="t('chooser.updateAvailable')"
         >
