@@ -154,6 +154,15 @@ const agentGraph = computed(() => !!build.value && hover.value < 0)
 const recId = computed(() => last.value?.rec?.id)
 const heroAway = computed(() => hover.value >= 0 || (agentGraph.value && panel.value))
 const heroTop = computed(() => !heroAway.value && !!current.value)
+const bandGone = computed(
+  () => center.value && createInput.id === 'agent' && (panel.value || !!build.value)
+)
+
+function discard(): void {
+  stopBuild()
+  talk.value = []
+  composer.value?.focus()
+}
 
 const current = computed<Item | undefined>(() => {
   if (hover.value >= 0) return items.value[hover.value]
@@ -434,6 +443,7 @@ function key(e: KeyboardEvent): void {
   const sideways = !query.value && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')
   if (e.key === 'Escape') {
     if (panel.value) closePanel()
+    else if (center.value && build.value) discard()
     else if (query.value) query.value = ''
     else closeCreate()
   } else if (e.key === 'Enter') {
@@ -538,6 +548,7 @@ useEscapeCloses(() => composer.value?.field)
           Point at a template to preview it here
         </p>
         <div v-if="center" class="v07-hero" :class="[heroAway && 'is-away', heroTop && 'is-top']">
+          <h1 v-if="!heroTop" class="v07-hero-title">What do you want to make?</h1>
           <CreateComposer
             ref="composer"
             v-model="query"
@@ -555,6 +566,9 @@ useEscapeCloses(() => composer.value?.field)
           </div>
           <button v-else-if="!heroTop" type="button" class="v07-hero-blank" @click="startBlank">
             <Plus :size="14" />Start with a blank canvas
+          </button>
+          <button v-else-if="build && !panel" type="button" class="v07-hero-blank" @click="discard">
+            <X :size="14" />Clear the canvas and start over
           </button>
         </div>
         <aside
@@ -604,7 +618,7 @@ useEscapeCloses(() => composer.value?.field)
         </aside>
       </div>
 
-      <div class="v07-dock-wrap">
+      <div class="v07-dock-wrap" :class="bandGone && 'is-gone'" :aria-hidden="bandGone">
         <div class="v07-band">
           <div class="v07-bar">
             <CreateComposer
@@ -1424,7 +1438,37 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v07-go.is-quiet:hover {
   background: var(--color-secondary-background-hover);
 }
+:root .proto-ui.proto-ui.proto-ui .v07-hero-title {
+  margin-bottom: 8px;
+  color: var(--color-base-foreground);
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 36px;
+  text-align: center;
+}
+:root .proto-ui.proto-ui.proto-ui .v07-dock-wrap.is-gone {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-color: transparent;
+  opacity: 0;
+  transform: translateY(24px);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .v07-dock-wrap.v07-dock-wrap {
+    transition: none;
+  }
+}
 :root .proto-ui.proto-ui.proto-ui .v07-dock-wrap {
+  max-height: 320px;
+  overflow: hidden;
+  transition:
+    max-height 360ms var(--ease-out-expo),
+    padding 360ms var(--ease-out-expo),
+    opacity 240ms ease,
+    transform 360ms var(--ease-out-expo);
   flex: none;
   padding: 14px 32px 18px;
   border-top: 1px solid var(--color-border-default);
