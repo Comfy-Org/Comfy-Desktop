@@ -33,6 +33,7 @@ import { LOOKS, marLook } from './looks/looks'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import { PORTS, ports } from './navOptions'
 import { HOME_TOUR_MODES, homeTour } from './homeTour/homeTour'
+import { RETURNING_READY_MODES, returningReady } from './autorun/installed'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import {
   LOCAL_SETUPS,
@@ -149,6 +150,7 @@ const PARTS: Part[] = [
   one('cover', cover, () => (can.value.projects ? 'output' : 'canvas'), COVERS),
   one('recentsCover', recentsCover, 'generic', RECENTS_COVERS),
   one('tour', homeTour, 'auto', HOME_TOUR_MODES),
+  one('ready', returningReady, 'off', RETURNING_READY_MODES),
   one('buildCard', buildCard, 'rows', BUILD_CARDS),
   one('buildPage', buildPage, 'production', BUILD_PAGES),
   one('syncPrevious', syncPrevious, 'off', OFF_ON),

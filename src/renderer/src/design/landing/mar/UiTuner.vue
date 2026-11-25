@@ -57,6 +57,7 @@ import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext
 import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
 import { HOME_TOUR_MODES, homeTour, replayHomeTour } from './homeTour/homeTour'
+import { RETURNING_READY_MODES, returningReady } from './autorun/installed'
 import { replayOnboarding } from './setup/replayOnboarding'
 import TplCasesNote from './templateModal/TplCasesNote.vue'
 import Seg from './tuner/TunerSeg.vue'
@@ -157,6 +158,7 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'account', show: () => true },
   { id: 'pageState', show: () => when.pageState.value },
   { id: 'credits', show: () => when.credits.value },
+  { id: 'readyTemplate', show: () => when.readyTemplate.value },
   { id: 'deployState', show: () => when.deployState.value },
   { id: 'wfCase', show: () => when.wfCase.value }
 ]
@@ -395,6 +397,16 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('credits')" label="Credits state">
             <Select v-model="creditsState.id" :options="CREDITS_STATES" class="w-full" />
+          </Row>
+          <Row :show="shows('readyTemplate')" label="Ready template">
+            <Seg
+              v-model="returningReady.id"
+              label="Returning with a ready template"
+              :options="RETURNING_READY_MODES"
+            />
+            <span class="text-ui text-subtle-foreground"
+              >Returning with a ready template: its models downloaded, never run.</span
+            >
           </Row>
         </section>
 

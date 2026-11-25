@@ -1,6 +1,15 @@
 import { reactive } from 'vue'
 import type { NodeKind } from './canvasData'
 
+export interface GraphAutorun {
+  title: string
+  model: string
+  prompt: string
+  output: string
+  input?: string
+  video: boolean
+}
+
 /** What ComfyUI opens with when a share link asks for it (?comfy=assets,
  *  tab or inspect): the Media Assets panel, expanded to a tab, and the
  *  first asset in Inspect asset. Read once, then cleared. */
@@ -10,6 +19,7 @@ export const graphOpen = reactive({
   inspect: false,
   scratch: false,
   start: null as null | { kind: NodeKind; model?: string },
+  autorun: null as null | GraphAutorun,
   /** Assets › Open workflow: ComfyUI opens with this one on the canvas,
    *  on the workflow's output (MarGraph's landAsset). */
   select: null as null | {

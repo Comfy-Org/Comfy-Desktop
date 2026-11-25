@@ -37,6 +37,7 @@ import { dep, scenarioPick } from './deploy/deployData'
 import { localSetup } from './setup/setupFlow'
 import { tplCase } from './templateModal/templateData'
 import { homeTour } from './homeTour/homeTour'
+import { returningReady } from './autorun/installed'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -109,6 +110,7 @@ export const when = {
   ),
   recentsCover: computed(() => onHome.value && can.value.onboarding),
   homeTour: computed(() => onHome.value && can.value.onboarding),
+  readyTemplate: computed(() => onHome.value && can.value.onboarding),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
@@ -241,6 +243,7 @@ export const TWEAKS = {
   },
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),
+  readyTemplate: one(returningReady, 'off'),
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),

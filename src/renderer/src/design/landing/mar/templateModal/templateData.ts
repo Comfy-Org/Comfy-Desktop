@@ -6,6 +6,7 @@ import { can } from '../../milestones'
 import heroAngles from './angles-hero.jpg'
 import inputAngles from './angles-input.jpg'
 import outputAngles from './angles-output.jpg'
+import { isDownloaded } from '../autorun/installed'
 
 /**
  * Mock data behind Mar's template modal. The fields mirror ComfyUI's
@@ -392,7 +393,11 @@ export const hasPack = (inst: ProtoInstance, pack: string): boolean =>
 function hasModels(t: Template, inst: ProtoInstance): boolean {
   if (caseIs(t, 'gated')) return false
   const c = caseFor(t)
-  return Boolean(INSTALLED[inst.id]?.includes(t.id) || c?.installedOn?.includes(inst.id))
+  return Boolean(
+    INSTALLED[inst.id]?.includes(t.id) ||
+    c?.installedOn?.includes(inst.id) ||
+    isDownloaded(t.id, inst.id)
+  )
 }
 
 const parts = (v: string): number[] => v.replace(/^v/, '').split('-')[0]!.split('.').map(Number)
