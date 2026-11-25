@@ -181,9 +181,12 @@
     },
     "inspect": "查看 {name}",
     "detail": {
+      "title": "详细信息",
       "prompts": "提示词",
       "models": "模型",
       "createdAt": "创建于 {date}",
+      "imported": "已导入",
+      "importedAt": "导入于 {date}",
       "fit": "适应",
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
