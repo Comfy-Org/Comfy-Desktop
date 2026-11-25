@@ -21,6 +21,8 @@
     "navigation": "导航",
     "home": "主页",
     "apps": "应用",
+    "explore": "探索",
+    "workflows": "工作流",
     "backToApp": "返回{app}",
     "assets": "资产",
     "development": "开发",
@@ -107,6 +109,75 @@
     "rail": {
       "running": "{app}，正在生成",
       "finished": "{app}，已完成"
+    }
+  },
+  "workflows": {
+    "search": "搜索工作流",
+    "failedTitle": "工作流未能加载",
+    "failedBody": "请检查网络连接，然后重试。",
+    "emptyTitle": "暂无工作流",
+    "emptyBody": "目录中的新工作流会显示在这里。",
+    "noMatches": "没有与“{query}”匹配的工作流",
+    "noFilterMatches": "换个筛选条件，或清除筛选查看全部工作流。",
+    "filters": {
+      "label": "筛选",
+      "useCase": "用途",
+      "model": "模型",
+      "runsOn": "运行位置",
+      "all": "全部",
+      "clear": "清除筛选",
+      "runsOnOption": {
+        "local": "这台电脑",
+        "cloud": "Comfy Cloud"
+      }
+    },
+    "layout": {
+      "label": "布局",
+      "size": "大小",
+      "smaller": "缩小卡片",
+      "larger": "放大卡片",
+      "sizes": {
+        "small": "小",
+        "medium": "中",
+        "large": "大"
+      },
+      "sortBy": "排序",
+      "sorts": {
+        "popular": "热门",
+        "newest": "最新",
+        "name": "名称"
+      }
+    },
+    "useCase": {
+      "edit-images": "图像编辑",
+      "upscale-and-restore": "放大与修复",
+      "product-fashion-and-ads": "产品、时尚与广告",
+      "generate-video": "视频生成",
+      "edit-video": "视频编辑",
+      "generate-images": "图像生成",
+      "animate-characters": "角色动画",
+      "vfx-and-motion-transfer": "特效与动作迁移",
+      "storyboards": "分镜",
+      "controlnet-and-tools": "ControlNet 与工具",
+      "lip-sync-and-avatars": "口型同步与数字人",
+      "swap-faces-and-characters": "换脸与角色替换",
+      "sprite-sheets-and-game-assets": "精灵图与游戏素材",
+      "voice-and-speech": "语音",
+      "music-and-sound": "音乐与音效"
+    },
+    "generation": {
+      "edit-images": "图像编辑",
+      "generate-images": "图像生成",
+      "edit-videos": "视频编辑",
+      "generate-videos": "视频生成",
+      "animate-images": "图生视频",
+      "image": "图像",
+      "video": "视频",
+      "audio": "音频"
+    },
+    "license": {
+      "open-source": "开源",
+      "partner": "合作伙伴 API"
     }
   },
   "assets": {
@@ -209,6 +280,84 @@
       "file": "文件"
     }
   },
+  "workflowLaunch": {
+    "updateBuild": "此工作流需要 ComfyUI {version} 或更高版本。请在 Comfy Desktop 中更新一个本地构建。",
+    "noLocalBuild": "添加兼容的本地构建，即可在此电脑上打开此工作流。",
+    "unavailable": "你可以在 Comfy Hub 查看此工作流。",
+    "openHub": "在 Comfy Hub 查看",
+    "opening": "正在打开…",
+    "openFailed": "无法打开工作流，请重试。",
+    "hubFailed": "无法在 Comfy Hub 打开此工作流，请重试。",
+    "preview": "预览",
+    "result": "效果",
+    "graph": "节点图",
+    "zoom": "缩放",
+    "zoomFit": "适应",
+    "noPreview": "此工作流没有预览。",
+    "noGraph": "此工作流没有可显示的节点图。",
+    "copyLink": "复制链接",
+    "linkCopied": "链接已复制",
+    "more": "更多",
+    "less": "收起",
+    "openIn": "打开位置",
+    "whatItNeeds": "所需内容",
+    "details": "详细信息",
+    "partnerOnly": "使用仅在 Comfy Cloud 上运行的合作伙伴模型。",
+    "noTarget": "添加一个构建来打开此工作流，或在 Comfy Hub 上查看。",
+    "downloadFailed": "部分模型未能下载。请检查下载列表后重试。",
+    "noDiskSpace": "磁盘空间不足，无法下载此工作流所需的模型。请释放空间后重试。",
+    "downloadCancelled": "下载已取消。",
+    "status": {
+      "outdated": "需要 ComfyUI {version} 或更高版本",
+      "notOnCloud": "暂未上线 Cloud",
+      "offline": "你已离线",
+      "signedOut": "需要 Comfy 账号",
+      "cloudReady": "模型已就绪",
+      "running": "运行中",
+      "stopped": "已停止",
+      "checking": "正在检查模型",
+      "everyModel": "模型齐全",
+      "missing": "缺少 {count} 个模型 | 缺少 {count} 个模型",
+      "unchecked": "未检查模型"
+    },
+    "needs": {
+      "partner": "Comfy Cloud 上的合作伙伴 API",
+      "checking": "正在检查模型…",
+      "none": "无需下载模型",
+      "models": "{count} 个模型 | {count} 个模型",
+      "state": {
+        "installed": "已安装",
+        "downloads": "需先下载",
+        "cloud": "在 Comfy Cloud 上"
+      },
+      "failed": "无法检查模型",
+      "retry": "重试"
+    },
+    "action": {
+      "logIn": "登录 Comfy Cloud",
+      "runOnCloud": "在 Comfy Cloud 上运行",
+      "downloadAndLaunch": "下载并启动",
+      "openIn": "在 {name} 中打开",
+      "launch": "启动 {name}",
+      "downloading": "正在下载…",
+      "downloadingBytes": "正在下载 {done} / {total}",
+      "cancelDownload": "取消下载"
+    },
+    "note": {
+      "freeCredits": "新账号可获得免费积分。",
+      "offline": "Comfy Cloud 需要网络连接。",
+      "downloadModels": "先下载 {count} 个模型，然后启动 {name}。 | 先下载 {count} 个模型，然后启动 {name}。",
+      "downloadBytes": "先下载 {size}，然后启动 {name}。"
+    },
+    "detail": {
+      "author": "作者",
+      "model": "模型",
+      "uses": "使用次数",
+      "license": "许可",
+      "comfyui": "ComfyUI",
+      "tutorial": "教程"
+    }
+  },
   "home": {
     "title": "欢迎。开始创作吧！",
     "openComfyUI": "打开 ComfyUI",
@@ -244,9 +393,11 @@
     "buildClickToViewLogs": "点击查看日志",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "示例工作流",
+    "carouselTabs": "浏览精选内容",
     "seeAllApps": "查看全部应用",
+    "seeAllWorkflows": "查看全部工作流",
     "showWorkflow": "显示 {title}",
-    "openWorkflow": "在 Comfy Hub 打开 {title}",
+    "openWorkflow": "打开 {title}",
     "previousWorkflow": "上一个工作流",
     "nextWorkflow": "下一个工作流",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",

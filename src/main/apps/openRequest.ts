@@ -1,7 +1,8 @@
-const MAX_WORKFLOW_BYTES = 1_000_000
+export const MAX_WORKFLOW_BYTES = 1_000_000
 const MAX_NODES = 500
 const BUILD_ID = /^[A-Za-z0-9_-]{1,64}$/
-const WORKFLOW_NAME = /^[\p{L}\p{N} .,()'&_-]{1,80}$/u
+const MAX_WORKFLOW_NAME_LENGTH = 80
+const WORKFLOW_NAME = new RegExp(`^[\\p{L}\\p{N} .,()'&_-]{1,${MAX_WORKFLOW_NAME_LENGTH}}$`, 'u')
 const CREDENTIAL_INPUT = /^(api_key_comfy_org|auth_token_comfy_org)$/i
 export const DEFAULT_WORKFLOW_NAME = 'Comfy app'
 
@@ -11,6 +12,16 @@ export interface OpenRequest {
   name: string
   build?: string
 }
+
+export interface EditorWorkflowRequest {
+  graph: Record<string, unknown>
+  where: 'local' | 'cloud'
+  name: string
+  build?: string
+  refreshModels?: boolean
+}
+
+export type WorkflowRequest = OpenRequest | EditorWorkflowRequest
 
 export type OpenRefusal = 'not-a-workflow' | 'unknown-place' | 'unknown-build' | 'carries-keys'
 
@@ -42,13 +53,41 @@ export function isApiWorkflow(value: unknown): value is Record<string, unknown> 
   return nodes.every(isNode) && serializedBytes(value) <= MAX_WORKFLOW_BYTES
 }
 
+export function isEditorWorkflow(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || !Array.isArray(value.nodes)) return false
+  const { nodes } = value
+  return (
+    nodes.length > 0 &&
+    nodes.length <= MAX_NODES &&
+    nodes.every(
+      (node: unknown) => isRecord(node) && typeof node.type === 'string' && node.type !== ''
+    )
+  )
+}
+
 export function isBuildId(value: unknown): value is string {
   return typeof value === 'string' && BUILD_ID.test(value)
 }
 
-export function workflowName(value: unknown): string {
+export function workflowName(value: unknown, fallback = DEFAULT_WORKFLOW_NAME): string {
   const name = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
-  return WORKFLOW_NAME.test(name) ? name : DEFAULT_WORKFLOW_NAME
+  return WORKFLOW_NAME.test(name) ? name : fallback
+}
+
+export function workflowNameFromTitle(title: string, fallback: string): string {
+  const name = title
+    .replace(/[[{]/g, '(')
+    .replace(/[\]}]/g, ')')
+    .replace(/[‘’‛`´]/g, "'")
+    .replace(/\s*\+\s*/g, ' & ')
+    .replace(/\s*[:：|]\s*/g, ' - ')
+    .replace(/[/\\→–—‐‑]/g, '-')
+    .replace(/[^\p{L}\p{N} .,()'&_-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_WORKFLOW_NAME_LENGTH)
+    .replace(/[\s.-]+$/, '')
+  return workflowName(name, fallback)
 }
 
 function carriesCredentials(prompt: Record<string, unknown>): boolean {
@@ -90,11 +129,18 @@ export const COMFY_STATE_SCRIPT =
   `if(workflows.isBusy===true||workflows.tabsRestored===false)return 'starting';` +
   `return workflows.activeWorkflow?'ready':'no-workflow'})()`
 
+const NAME_NO_WORKFLOW_USES =
+  `var workflows=app.extensionManager&&app.extensionManager.workflow;` +
+  `var inUse=function(candidate){return !!workflows&&typeof workflows.getWorkflowByPath==='function'` +
+  `&&!!workflows.getWorkflowByPath('workflows/'+candidate+'.json')};` +
+  `var base=name;for(var copy=2;copy<1000&&inUse(name);copy++)name=base+' ('+copy+')';`
+
 function loadScript(call: string, data: Record<string, unknown>, name: string): string {
   return (
     `(function(dataText,name){` +
     FIND_COMFY_APP +
     `if(!usable)return false;` +
+    NAME_NO_WORKFLOW_USES +
     `var data=JSON.parse(dataText);` +
     `return Promise.resolve(${call})` +
     `.then(function(r){return r!==false},function(){return false});` +
@@ -106,12 +152,21 @@ export function openWorkflowScript(request: OpenRequest): string {
   return loadScript('app.loadApiJson(data,name)', request.prompt, request.name)
 }
 
-export function openGraphScript(graph: Record<string, unknown>, name: string): string {
-  return loadScript(
-    `typeof app.loadGraphData==='function'?app.loadGraphData(data,true,true,name):false`,
-    graph,
-    name
-  )
+const LOAD_GRAPH = `typeof app.loadGraphData==='function'?app.loadGraphData(data,true,true,name):false`
+
+const REFRESH_MODEL_LISTS =
+  `Promise.resolve(typeof app.refreshComboInNodes==='function'?app.refreshComboInNodes():null)` +
+  `.catch(function(){})`
+
+export function openGraphScript(
+  graph: Record<string, unknown>,
+  name: string,
+  { refreshModels = false }: { refreshModels?: boolean } = {}
+): string {
+  const call = refreshModels
+    ? `${REFRESH_MODEL_LISTS}.then(function(){return ${LOAD_GRAPH}})`
+    : LOAD_GRAPH
+  return loadScript(call, graph, name)
 }
 
 export function isComfyPage(pageUrl: string, comfyUrl: string): boolean {

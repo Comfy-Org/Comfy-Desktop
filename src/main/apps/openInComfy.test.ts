@@ -22,9 +22,13 @@ const mocks = vi.hoisted(() => ({
   otherLaunchSettled: vi.fn(),
   onLaunch: vi.fn(),
   setActivePanel: vi.fn(),
+  syncCloudWindowWorkspace: vi.fn(),
   maximizeIfPendingReveal: vi.fn()
 }))
 
+vi.mock('../lib/cloudWorkspace', () => ({
+  syncCloudWindowWorkspace: mocks.syncCloudWindowWorkspace
+}))
 vi.mock('../host/panelView', () => ({ setActivePanel: mocks.setActivePanel }))
 vi.mock('../host/registry', () => ({
   getEntryByInstallationId: (id: string) => mocks.windows.get(id),
@@ -62,12 +66,14 @@ vi.mock('./localComfy', () => ({
   pageBuildId: () => mocks.pageBuild
 }))
 
+import { releaseWindowWorkspaceClaim } from './workspaceClaims'
 import {
   _resetForTest,
   LOAD_TIMEOUT_MS,
   localBuilds,
   localBuildsForEach,
   NO_WORKFLOW_GRACE_MS,
+  openCatalogInComfy,
   openEmbeddedWorkflow,
   openInComfy,
   WINDOW_TIMEOUT_MS
@@ -611,6 +617,142 @@ describe('the builds a page can pick from', () => {
       STUDIO.id,
       'inst-never'
     ])
+  })
+})
+
+describe('opening a catalog graph in a workspace build', () => {
+  const graph = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+  const scope = {
+    workspaceId: 'team',
+    minComfyUIVersion: '0.3.66',
+    isCurrent: () => true
+  }
+
+  it('opens the editable graph in the selected local build', async () => {
+    const build = { ...STUDIO, version: '0.3.66', workspaceId: 'team' }
+    mocks.builds = [build]
+    mocks.records = [build]
+    const entry = new FakeWindow('http://127.0.0.1:8188')
+    mocks.windows.set(build.id, entry)
+    runLocal(build.id, 8188, 'window')
+
+    expect(
+      await openCatalogInComfy(
+        PAGE,
+        { graph, where: 'local', build: build.id, name: 'Example' },
+        scope
+      )
+    ).toEqual({ opened: true })
+    expect(entry.loadedGraphs()).toHaveLength(1)
+  })
+
+  it('refuses to open a build in a different workspace or below the catalog minimum', async () => {
+    const other = { ...STUDIO, version: '0.3.67' }
+    const old = { ...LAB, version: '0.3.65', workspaceId: 'team' }
+    mocks.builds = [other, old]
+    mocks.records = [other, old]
+    const request = { graph, where: 'local', name: 'Example' } as const
+
+    expect(await openCatalogInComfy(PAGE, { ...request, build: other.id }, scope)).toEqual({
+      opened: false,
+      error: 'apps.local.openUnknownBuild'
+    })
+    expect(await openCatalogInComfy(PAGE, { ...request, build: old.id }, scope)).toEqual({
+      opened: false,
+      error: 'workflowLaunch.updateBuild 0.3.66'
+    })
+    expect(mocks.launchOnce).not.toHaveBeenCalled()
+  })
+
+  it('synchronizes an already-open Cloud window with the selected workspace before import', async () => {
+    const entry = new FakeWindow(CLOUD_URL)
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(true)
+
+    expect(
+      await openCatalogInComfy(PAGE, { graph, where: 'cloud', name: 'Example' }, scope)
+    ).toEqual({
+      opened: true
+    })
+    expect(mocks.syncCloudWindowWorkspace).toHaveBeenCalledWith(entry, {
+      pickerWorkspaceId: 'team'
+    })
+    expect(entry.loadedGraphs()).toHaveLength(1)
+  })
+
+  it('drops a Cloud import once a later launch has moved the same window to another workspace', async () => {
+    vi.useFakeTimers()
+    const entry = new FakeWindow(CLOUD_URL)
+    entry.state = 'starting'
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(true)
+    const request = { graph, where: 'cloud', name: 'Example' } as const
+
+    const first = openCatalogInComfy(PAGE, request, scope)
+    await vi.advanceTimersByTimeAsync(1_000)
+    const second = openCatalogInComfy(PAGE, request, { ...scope, workspaceId: 'studio' })
+    await vi.advanceTimersByTimeAsync(1_000)
+    entry.state = 'ready'
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await first).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    expect(await second).toEqual({ opened: true })
+    expect(entry.loadedGraphs()).toHaveLength(1)
+    expect(mocks.syncCloudWindowWorkspace).toHaveBeenLastCalledWith(entry, {
+      pickerWorkspaceId: 'studio'
+    })
+  })
+})
+
+describe('who owns a Comfy Cloud window while a catalog graph waits to load', () => {
+  const graph = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+  const request = { graph, where: 'cloud', name: 'Example' } as const
+  const scope = { workspaceId: 'team', minComfyUIVersion: null, isCurrent: () => true }
+
+  function cloudWindowStillStarting(): FakeWindow {
+    const entry = new FakeWindow(CLOUD_URL)
+    entry.state = 'starting'
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(true)
+    return entry
+  }
+
+  it('drops the import when the window is focused for another workspace meanwhile', async () => {
+    vi.useFakeTimers()
+    const entry = cloudWindowStillStarting()
+
+    const opening = openCatalogInComfy(PAGE, request, scope)
+    await vi.advanceTimersByTimeAsync(1_000)
+    releaseWindowWorkspaceClaim(CLOUD.id)
+    entry.state = 'ready'
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await opening).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    expect(entry.loadedGraphs()).toHaveLength(0)
+  })
+
+  it('lets a launch whose page has gone stop without taking the window from a newer one', async () => {
+    vi.useFakeTimers()
+    const entry = cloudWindowStillStarting()
+    let firstPageOpen = true
+
+    const second = openCatalogInComfy(PAGE, request, scope)
+    await vi.advanceTimersByTimeAsync(1_000)
+    firstPageOpen = false
+    const first = openCatalogInComfy(PAGE, request, { ...scope, isCurrent: () => firstPageOpen })
+    await vi.advanceTimersByTimeAsync(1_000)
+    entry.state = 'ready'
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await first).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
+    expect(await second).toEqual({ opened: true })
+    expect(entry.loadedGraphs()).toHaveLength(1)
   })
 })
 

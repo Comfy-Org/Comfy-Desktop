@@ -47,6 +47,11 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['connect-src']).toContain('blob:')
   })
 
+  it('plays the example videos the Comfy content catalog serves from comfy.org', () => {
+    expect(csp['media-src']).toContain('https://comfy.org')
+    expect(csp['img-src']).toContain('https://comfy.org')
+  })
+
   it('restricts script-src to self only', () => {
     expect(csp['script-src']).toBe("'self'")
   })
