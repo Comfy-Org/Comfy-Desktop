@@ -15,11 +15,13 @@ export const undoToast = reactive<{
   message: string
   undo: (() => void) | null
   tone: ToastTone
+  label: string
   key: number
 }>({
   message: '',
   undo: null,
   tone: 'info',
+  label: 'Undo',
   key: 0
 })
 
@@ -37,13 +39,19 @@ export function toneOf(message: string): ToastTone {
 
 let timer: ReturnType<typeof setTimeout> | undefined
 
-export function notify(message: string, undo?: () => void, tone = toneOf(message)): void {
+export function notify(
+  message: string,
+  undo?: () => void,
+  tone = toneOf(message),
+  label = 'Undo'
+): void {
   undoToast.message = message
   undoToast.undo = undo ?? null
   undoToast.tone = tone
+  undoToast.label = label
   undoToast.key++
   clearTimeout(timer)
-  timer = setTimeout(dismiss, undo ? 6000 : 2600)
+  timer = setTimeout(dismiss, undo ? (label === 'Undo' ? 6000 : 9000) : 2600)
 }
 
 export function dismiss(): void {
