@@ -161,7 +161,7 @@ const PARTS: Part[] = [
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
   one('arcMix', homeArcMix, 'tabs', HOME_ARC_MIXES),
   one('homeLayout', homeLayout, 'current', HOME_LAYOUTS),
-  one('recentThumb', recentThumb, 'image', RECENT_THUMBS),
+  one('recentThumb', recentThumb, 'runsOn', RECENT_THUMBS),
   ...HOME_IDEAS.map((x) => one(x.key, x.store, x.def, HOME_IDEA_SWITCHES)),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),

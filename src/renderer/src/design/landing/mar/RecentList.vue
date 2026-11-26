@@ -26,16 +26,24 @@ const emit = defineEmits<{ open: [row: RecentListRow]; hover: [id: string] }>()
         @focus="emit('hover', r.id)"
         @click="emit('open', r)"
       >
-        <span v-if="recentThumb.id === 'runsOn'" class="v15-thumb is-icon" aria-hidden="true">
-          <Cloud v-if="/cloud/i.test(r.build)" :size="16" />
-          <Monitor v-else :size="16" />
-        </span>
-        <span v-else class="v15-thumb">
-          <img v-if="r.src" :src="r.src" alt="" loading="lazy" />
+        <span class="v15-thumb">
+          <img v-if="r.src && recentThumb.id === 'image'" :src="r.src" alt="" loading="lazy" />
           <WorkflowCover v-else :name="r.name" />
         </span>
         <span class="v15-file">{{ r.name }}</span>
-        <span class="v15-build">{{ r.build }}</span>
+        <span class="v15-build"
+          ><template v-if="recentThumb.id === 'runsOn'"
+            ><Cloud
+              v-if="/cloud/i.test(r.build)"
+              :size="13"
+              class="v15-runs"
+              aria-hidden="true" /><Monitor
+              v-else
+              :size="13"
+              class="v15-runs"
+              aria-hidden="true" /></template
+          >{{ r.build }}</span
+        >
         <span class="v15-when">{{ r.edited }}</span>
       </button>
     </li>
@@ -79,10 +87,11 @@ const emit = defineEmits<{ open: [row: RecentListRow]; hover: [id: string] }>()
   background: var(--color-secondary-background);
   box-shadow: inset 0 0 0 1px var(--color-border-default);
 }
-:root .proto-ui.proto-ui.proto-ui .v15-thumb.is-icon {
-  display: grid;
-  place-items: center;
-  color: var(--color-muted-foreground);
+:root .proto-ui.proto-ui.proto-ui .v15-runs {
+  display: inline-block;
+  flex: none;
+  margin-right: 6px;
+  vertical-align: -2px;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-thumb > img,
 :root .proto-ui.proto-ui.proto-ui .v15-thumb > .wfc {

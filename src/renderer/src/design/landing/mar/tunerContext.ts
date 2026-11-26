@@ -286,7 +286,7 @@ export const TWEAKS = {
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'current'),
-  recentThumb: one(recentThumb, 'image'),
+  recentThumb: one(recentThumb, 'runsOn'),
   homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
   homeIdeaHeaders: one(homeIdea('headers').store, 'on'),
   homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),
