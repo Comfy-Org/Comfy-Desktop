@@ -239,7 +239,6 @@ watch(ids, async () => {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
-  mask-image: linear-gradient(90deg, transparent, #000 72px, #000 calc(100% - 72px), transparent);
   scrollbar-width: none;
   outline: none;
   cursor: grab;
