@@ -1420,12 +1420,9 @@ onBeforeUnmount(() => {
   color: color-mix(in oklch, var(--color-base-foreground) 75%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-stage .mad-viewer-btn[aria-pressed='true'] {
-  background: #fff;
-  color: #111;
-}
-.mad-stage .mad-viewer-btn[aria-pressed='true'] .mad-viewer-kbd {
-  border-color: rgb(0 0 0 / 0.18);
-  color: rgb(0 0 0 / 0.55);
+  background: color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn:focus-visible {
   outline: 2px solid var(--color-border-focus);
@@ -1563,12 +1560,9 @@ onBeforeUnmount(() => {
   color: color-mix(in oklch, var(--color-base-foreground) 75%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn.is-bar[aria-pressed='true'] {
-  background: #fff;
-  color: #111;
-}
-.mad-viewer-btn.is-bar[aria-pressed='true'] .mad-viewer-kbd {
-  border-color: rgb(0 0 0 / 0.18);
-  color: rgb(0 0 0 / 0.55);
+  background: color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+  color: var(--color-base-foreground);
 }
 .mad-foot .zc {
   justify-self: end;
