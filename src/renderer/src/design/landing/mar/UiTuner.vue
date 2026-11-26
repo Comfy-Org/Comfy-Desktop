@@ -17,6 +17,7 @@ import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
 import { RATING_STYLES, ratingStyle } from './assets/ratingStyle'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
+import { viewerShortcut } from './assets/viewerShortcut'
 import { createLook } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
@@ -61,6 +62,7 @@ import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { APPS_SECTIONS, appsSection } from './home/appsSection'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
+import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
 import { HOME_IDEAS, type HomeIdeaId } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { MAR_USERS, marUser, setUser } from './userStates/userState'
@@ -185,6 +187,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeLayout', show: () => when.homeLayout.value },
   { id: 'appsSection', show: () => when.appsSection.value },
   { id: 'buildsAt', show: () => when.buildsAt.value },
+  { id: 'exploreSwitch', show: () => when.exploreSwitch.value },
   { id: 'appPage', show: () => when.appPage.value },
   { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
   { id: 'appToComfy', show: () => when.appToComfy.value },
@@ -199,6 +202,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'rating', show: () => when.rating.value },
   { id: 'folderPicker', show: () => when.folderPicker.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
+  { id: 'viewerShortcut', show: () => when.viewerShortcut.value },
   { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'recentsCover', show: () => when.recentsCover.value },
@@ -492,6 +496,9 @@ const linkSays = computed(() => {
           <Row :show="shows('appsSection')" label="Apps section">
             <Select v-model="appsSection.id" :options="APPS_SECTIONS" class="w-full" />
           </Row>
+          <Row :show="shows('exploreSwitch')" label="Explore switch">
+            <Select v-model="exploreSwitch.id" :options="EXPLORE_SWITCHES" class="w-full" />
+          </Row>
           <Row :show="shows('buildsAt')" label="Builds position">
             <Select v-model="buildsAt.id" :options="BUILDS_AT" class="w-full" />
           </Row>
@@ -604,6 +611,20 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('folderDepth')" label="Folder depth">
             <Seg v-model="folderDepth.id" label="Folder depth" :options="FOLDER_DEPTHS" />
+          </Row>
+          <Row :show="shows('viewerShortcut')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Viewer controls shortcut</span>
+              <Switch
+                :model-value="viewerShortcut.id === 'on'"
+                aria-label="Viewer controls shortcut"
+                @update:model-value="viewerShortcut.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >EXR and 3D: a button on the picture and the V key switch to the Viewer tab and
+              back.</span
+            >
           </Row>
           <Row :show="shows('fullAssets')" label="Full Assets">
             <Seg v-model="fullAssets.id" label="Full Assets" :options="FULL_ASSETS" />

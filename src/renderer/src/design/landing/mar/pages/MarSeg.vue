@@ -3,16 +3,27 @@ import type { Component } from 'vue'
 /** Segmented tabs (Mar's pages): radius 10 outside, 7 inside, following
  *  the Corners tweak; an optional icon before and count after each label. On a picture
  *  (onMedia) the row is dark glass, light-on-dark in both themes. */
-const { options, label, onMedia } = defineProps<{
+const {
+  options,
+  label,
+  onMedia,
+  tone = 'default'
+} = defineProps<{
   options: { value: T; label: string; count?: number; dot?: boolean; icon?: Component }[]
   label: string
   onMedia?: boolean
+  tone?: 'default' | 'ghost' | 'text'
 }>()
 const model = defineModel<T>({ required: true })
 </script>
 
 <template>
-  <div class="mar-pseg" :class="onMedia && 'on-media'" role="tablist" :aria-label="label">
+  <div
+    class="mar-pseg"
+    :class="[onMedia && 'on-media', tone !== 'default' && `is-${tone}`]"
+    role="tablist"
+    :aria-label="label"
+  >
     <button
       v-for="o in options"
       :key="o.value"
@@ -93,5 +104,21 @@ const model = defineModel<T>({ required: true })
   margin-left: 6px;
   color: var(--color-subtle-foreground);
   font-variant-numeric: tabular-nums;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg:is(.is-ghost, .is-text) {
+  padding: 0;
+  background: transparent;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.is-text {
+  gap: 14px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.is-text .mar-pseg-btn {
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.is-text .mar-pseg-btn[aria-selected='true'] {
+  background: transparent;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.is-text .mar-tab-pill {
+  display: none;
 }
 </style>

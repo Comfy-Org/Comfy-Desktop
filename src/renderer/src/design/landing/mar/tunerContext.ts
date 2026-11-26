@@ -8,7 +8,7 @@ import { marNav, marSideOn, marSidebarClosed } from './shell/marShell'
 import { screen } from './screen'
 // Graphite is applied on load.
 import './palette'
-import { cover, recentsCover } from './cover'
+import { cover, defaultCover, recentsCover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
@@ -20,6 +20,7 @@ import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { assetFolderLayout } from './assets/assetFolderLayout'
 import { folderPicker } from './assets/folderPicker'
 import { ratingStyle } from './assets/ratingStyle'
+import { viewerOnScreen, viewerShortcut } from './assets/viewerShortcut'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
@@ -56,6 +57,7 @@ import { homeLayout, homeVersion } from './home/homeLayout'
 import { homeIdea } from './home/homeIdeas'
 import { appsSection } from './home/appsSection'
 import { buildsAt } from './home/buildsAt'
+import { exploreSwitch } from './home/exploreSwitch'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -111,6 +113,9 @@ export const when = {
       !onFirstRun.value &&
       homeLayout.id === 'recents' &&
       homeIdea('headers').store.id === 'on'
+  ),
+  exploreSwitch: computed(
+    () => onHome.value && can.value.explore && !onFirstRun.value && homeArcMix.id === 'tabs'
   ),
   buildsAt: computed(
     () =>
@@ -182,6 +187,7 @@ export const when = {
         proto.page === 'assets' &&
         can.value.onboarding)
   ),
+  viewerShortcut: computed(() => viewerOnScreen.count > 0),
   // ComfyUI (Proposal): where the Assets panel's expand button goes.
   fullAssets: computed(() => inGraph.value && comfyLook.id === 'proposal'),
   // Credits: the sidebar foot; Tabs has no sidebar.
@@ -308,6 +314,7 @@ export const TWEAKS = {
   homeLayout: one(homeLayout, 'recents'),
   appsSection: one(appsSection, 'apps'),
   buildsAt: one(buildsAt, 'bottom'),
+  exploreSwitch: one(exploreSwitch, 'seg'),
   homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
   homeIdeaHeaders: one(homeIdea('headers').store, 'off'),
   homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),
@@ -317,8 +324,8 @@ export const TWEAKS = {
   templates: one(templateStyle, 'photo'),
   // The milestone picks the cover (cover.ts): the canvas, then the image.
   cover: {
-    isDefault: () => cover.id === (can.value.projects ? 'output' : 'canvas'),
-    reset: () => (cover.id = can.value.projects ? 'output' : 'canvas')
+    isDefault: () => cover.id === defaultCover(),
+    reset: () => (cover.id = defaultCover())
   },
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),
@@ -336,6 +343,7 @@ export const TWEAKS = {
   rating: one(ratingStyle, 'stars'),
   folderPicker: one(folderPicker, 'filters'),
   folderDepth: one(folderDepth, 'few'),
+  viewerShortcut: one(viewerShortcut, 'on'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
