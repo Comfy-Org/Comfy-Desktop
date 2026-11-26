@@ -4,7 +4,11 @@ const LINGER_MS = 220
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 2.5
 
-export function useGraphPreview<T extends { id: string }>() {
+export interface GraphPreviewExit<T> {
+  top?: (item: T) => number
+}
+
+export function useGraphPreview<T extends { id: string }>(exit: GraphPreviewExit<T> = {}) {
   const preview = ref(null) as Ref<T | null>
   const dragging = ref(false)
   const view = reactive({ x: 0, y: 0, k: 1 })
@@ -49,8 +53,16 @@ export function useGraphPreview<T extends { id: string }>() {
     ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
   }
 
+  function exitsAtTop(e: PointerEvent): boolean {
+    const edge = preview.value && exit.top ? exit.top(preview.value) : 0
+    return edge > 0 && e.clientY - (e.currentTarget as Element).getBoundingClientRect().top < edge
+  }
+
   function onMove(e: PointerEvent): void {
-    if (!drag) return
+    if (!drag) {
+      if (exitsAtTop(e)) endPreview()
+      return
+    }
     view.x += e.clientX - drag.x
     view.y += e.clientY - drag.y
     drag = { x: e.clientX, y: e.clientY }
@@ -72,11 +84,13 @@ export function useGraphPreview<T extends { id: string }>() {
     if (!preview.value) return
     e.preventDefault()
     stay()
+    const up = e.deltaY < 0 && !e.ctrlKey
+    if (up && !dragging.value && view.k >= 1) return endPreview()
     const r = (e.currentTarget as Element).getBoundingClientRect()
     const sx = e.clientX - r.left - r.width / 2
     const sy = e.clientY - r.top - r.height / 2
     const k = Math.min(
-      ZOOM_MAX,
+      up ? 1 : ZOOM_MAX,
       Math.max(ZOOM_MIN, view.k * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)))
     )
     const f = k / view.k

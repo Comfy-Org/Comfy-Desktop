@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { StyleValue } from 'vue'
+import { X } from 'lucide-vue-next'
+import Button from '../../../ui/Button.vue'
 import type { Starter } from '../createStarters'
 import GhostGraph from './GhostGraph.vue'
 
@@ -10,15 +12,11 @@ export interface GraphPreviewItem {
   workflow: { name: string; cover?: string } | null
 }
 
-const {
-  item,
-  pan,
-  opens = 'card'
-} = defineProps<{
+const { item, pan } = defineProps<{
   item: GraphPreviewItem | null
   pan: StyleValue
-  opens?: 'card' | 'row'
 }>()
+const emit = defineEmits<{ open: []; close: [] }>()
 </script>
 
 <template>
@@ -30,11 +28,16 @@ const {
     </div>
   </Transition>
   <Transition name="gp-fade">
-    <p v-if="item" class="mar-tip gp-label" role="status">
-      Previewing {{ item.name }} · click the {{ opens }} to open<span class="gp-label-hint">
-        · drag to move, scroll to zoom</span
+    <div v-if="item" class="mar-tip gp-label" @pointerdown.stop @pointermove.stop @wheel.stop>
+      <span class="gp-label-text" role="status"
+        >Previewing {{ item.name
+        }}<span class="gp-label-hint"> · drag to move, scroll to zoom</span></span
       >
-    </p>
+      <Button variant="link" size="sm" class="gp-label-open" @click="emit('open')">Open</Button>
+      <Button variant="ghost" size="icon-xs" aria-label="Close preview" @click="emit('close')">
+        <X :size="13" />
+      </Button>
+    </div>
   </Transition>
 </template>
 
@@ -58,12 +61,24 @@ const {
   bottom: 14px;
   left: 50%;
   z-index: 4;
+  display: flex;
   max-width: calc(100% - 48px);
+  align-items: center;
+  gap: 8px;
+  padding-block: 3px;
+  padding-right: 4px;
+  transform: translateX(-50%);
+}
+:root .proto-ui.proto-ui.proto-ui .gp-label-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transform: translateX(-50%);
-  pointer-events: none;
+}
+:root .proto-ui.proto-ui.proto-ui .gp-label-open {
+  height: 24px;
+  color: var(--color-base-foreground);
+  font-size: 12px;
 }
 :root .proto-ui.proto-ui.proto-ui .gp-label-hint {
   color: var(--color-muted-foreground);

@@ -68,6 +68,7 @@ const CARDS = 4
 const RECENTS = 8
 const LEAVE_MS = 220
 const STAGE_GAP = 8
+const EXIT_TOP = 96
 
 const query = ref('')
 const useCase = ref(USE_CASES[0]!.id)
@@ -91,7 +92,7 @@ const {
   onWheel,
   panStyle,
   dotsStyle
-} = useGraphPreview<PreviewItem>()
+} = useGraphPreview<PreviewItem>({ top: (item) => (item.kind === 'recent' ? EXIT_TOP : 0) })
 watch(query, () => {
   navigated.value = false
   endPreview()
@@ -186,7 +187,7 @@ const recentsEl = ref<HTMLElement>()
 const stage = ref<StageBox>({ top: 0, height: 0 })
 const graphOn = computed(() => graphHover.id === 'on')
 const at = computed(() => hover.value || preview.value?.id || '')
-const canvasStyle = computed(() => dotsStyle(22, 2, 0))
+const canvasStyle = computed(() => dotsStyle(22, 1, 0))
 const stageStyle = computed(() => ({
   top: `${stage.value.top}px`,
   height: `${stage.value.height}px`
@@ -365,7 +366,12 @@ useEscapeCloses(() => search.value?.field, endOnEscape)
 
 <template>
   <section class="v15 relative flex h-full min-h-[600px]" aria-label="Create">
-    <div class="v15-canvas" :style="preview ? canvasStyle : undefined" aria-hidden="true" />
+    <div
+      class="v15-canvas"
+      :class="preview && 'is-preview'"
+      :style="preview ? canvasStyle : undefined"
+      aria-hidden="true"
+    />
 
     <div ref="main" class="v15-main">
       <div
@@ -397,7 +403,8 @@ useEscapeCloses(() => search.value?.field, endOnEscape)
         <GraphPreview
           :item="preview"
           :pan="panStyle"
-          :opens="preview?.kind === 'recent' ? 'row' : 'card'"
+          @open="preview && openAt(preview.id)"
+          @close="endPreview"
         />
       </div>
 
@@ -540,18 +547,21 @@ useEscapeCloses(() => search.value?.field, endOnEscape)
 :root .proto-ui.proto-ui.proto-ui .v15 {
   isolation: isolate;
   overflow: hidden;
+  background: var(--color-content-background);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-canvas {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background:
-    radial-gradient(
-        color-mix(in oklch, var(--color-base-foreground) 10%, transparent) 1px,
-        transparent 1.4px
-      )
-      0 0 / 22px 22px,
-    var(--color-content-background);
+  background: radial-gradient(
+      color-mix(in oklch, var(--color-base-foreground) 10%, transparent) 1px,
+      transparent 1.4px
+    )
+    0 0 / 22px 22px;
+  mask-image: radial-gradient(ellipse 56% 62% at 50% 28%, #000 35%, transparent 100%);
+}
+:root .proto-ui.proto-ui.proto-ui .v15-canvas.is-preview {
+  mask-image: none;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-main {
   position: relative;
