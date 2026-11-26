@@ -16,7 +16,9 @@ const {
   clean = false,
   kinds = false,
   heading = '',
-  corner = false
+  corner = false,
+  switchTone = 'default',
+  switchBeside = false
 } = defineProps<{
   items: ArcItem[]
   allLabel?: string
@@ -28,6 +30,8 @@ const {
   kinds?: boolean
   heading?: string
   corner?: boolean
+  switchTone?: 'default' | 'ghost' | 'text'
+  switchBeside?: boolean
 }>()
 const emit = defineEmits<{ all: []; heading: [] }>()
 const tab = defineModel<string>('tab', { default: '' })
@@ -167,11 +171,20 @@ watch(ids, async () => {
     :aria-label="title"
   >
     <div v-if="!headless" class="mar-strip-head">
-      <h2 v-if="heading" class="mar-strip-title-head">
-        <button type="button" class="mar-strip-heading" @click="emit('heading')">
-          {{ heading }}<ChevronRight :size="13" aria-hidden="true" />
-        </button>
-      </h2>
+      <div v-if="heading" class="mar-strip-title-head" :class="switchBeside && 'is-beside'">
+        <h2 class="mar-strip-title-head">
+          <button type="button" class="mar-strip-heading" @click="emit('heading')">
+            {{ heading }}<ChevronRight :size="13" aria-hidden="true" />
+          </button>
+        </h2>
+        <MarSeg
+          v-if="switchBeside && tabs.length"
+          v-model="tab"
+          :options="tabs"
+          :label="title"
+          :tone="switchTone"
+        />
+      </div>
       <MarSeg v-else-if="tabs.length" v-model="tab" :options="tabs" :label="title" />
       <h2 v-else class="mar-strip-title-head">
         <button type="button" class="mar-strip-heading" @click="emit('all')">
@@ -179,7 +192,13 @@ watch(ids, async () => {
         </button>
       </h2>
       <div class="mar-strip-tools">
-        <MarSeg v-if="heading && tabs.length" v-model="tab" :options="tabs" :label="title" />
+        <MarSeg
+          v-if="heading && !switchBeside && tabs.length"
+          v-model="tab"
+          :options="tabs"
+          :label="title"
+          :tone="switchTone"
+        />
         <button v-if="allLabel" type="button" class="mar-strip-all" @click="emit('all')">
           {{ allLabel }}<ChevronRight :size="13" aria-hidden="true" />
         </button>
@@ -372,6 +391,9 @@ watch(ids, async () => {
   min-width: 0;
   align-items: center;
   gap: 8px;
+}
+.mar-strip-title-head.is-beside {
+  gap: 20px;
 }
 .mar-strip-tools {
   display: flex;

@@ -57,6 +57,7 @@ import { homeLayout, homeVersion } from './home/homeLayout'
 import { homeIdea } from './home/homeIdeas'
 import { appsSection } from './home/appsSection'
 import { buildsAt } from './home/buildsAt'
+import { exploreSwitch } from './home/exploreSwitch'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -112,6 +113,9 @@ export const when = {
       !onFirstRun.value &&
       homeLayout.id === 'recents' &&
       homeIdea('headers').store.id === 'on'
+  ),
+  exploreSwitch: computed(
+    () => onHome.value && can.value.explore && !onFirstRun.value && homeArcMix.id === 'tabs'
   ),
   buildsAt: computed(
     () =>
@@ -310,6 +314,7 @@ export const TWEAKS = {
   homeLayout: one(homeLayout, 'recents'),
   appsSection: one(appsSection, 'apps'),
   buildsAt: one(buildsAt, 'bottom'),
+  exploreSwitch: one(exploreSwitch, 'seg'),
   homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
   homeIdeaHeaders: one(homeIdea('headers').store, 'off'),
   homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),
