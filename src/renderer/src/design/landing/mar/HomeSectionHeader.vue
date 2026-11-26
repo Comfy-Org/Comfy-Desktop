@@ -70,13 +70,22 @@ const emit = defineEmits<{ open: []; add: [] }>()
   letter-spacing: 0.09em;
   text-transform: uppercase;
   outline: none;
-  transition:
-    background-color 160ms ease,
-    color 160ms ease;
+  transition: color 160ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .hsh-link:hover {
-  background: var(--color-secondary-background);
+  background: transparent;
   color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .hsh-link > svg {
+  transition: translate 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .hsh-link:hover > svg {
+  translate: 2px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .hsh-link:hover > svg {
+    translate: none;
+  }
 }
 :root .proto-ui.proto-ui.proto-ui .hsh-link:focus-visible {
   box-shadow: 0 0 0 2px var(--color-border-focus);
