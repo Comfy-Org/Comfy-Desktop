@@ -1232,3 +1232,163 @@ describe('StoragePane', () => {
     })
   })
 })
+
+describe('StoragePane for a build whose input and output come from Startup arguments', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function gitSections(
+    input: { path: string; shared: boolean; nextStartPath?: string },
+    output: { path: string; shared: boolean }
+  ) {
+    return [
+      {
+        fields: [
+          ...makeStorageSections([], { sharedOn: true, own: '/clone/models' })[0]!.fields,
+          {
+            id: 'launchInputDir',
+            label: 'Input',
+            value: input,
+            editable: false,
+            editType: 'hidden'
+          },
+          {
+            id: 'launchOutputDir',
+            label: 'Output',
+            value: output,
+            editable: false,
+            editType: 'hidden'
+          }
+        ]
+      }
+    ]
+  }
+
+  const sharedSnapshot = (): StorageSnapshot => ({
+    ...makeSnapshot(),
+    sharedDirectoriesFields: [
+      { id: 'inputDir', value: '/shared/input' },
+      { id: 'outputDir', value: '/shared/output' }
+    ]
+  })
+
+  it('shows the shared input and output folders read-only, with no switches', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections(
+      gitSections(
+        { path: '/shared/input', shared: true },
+        { path: '/shared/output', shared: true }
+      ),
+      sharedSnapshot()
+    )
+    await nextTick()
+
+    const input = wrapper.get('[data-testid="storage-launch-input"]')
+    const output = wrapper.get('[data-testid="storage-launch-output"]')
+    expect(input.text()).toContain('/shared/input')
+    expect(output.text()).toContain('/shared/output')
+    expect(input.find('.storage-dir-shared-tag').exists()).toBe(true)
+    expect(output.find('.storage-dir-shared-tag').exists()).toBe(true)
+    expect(input.find('.storage-dir-menu').exists()).toBe(false)
+    expect(wrapper.findAll('.storage-header-toggle')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('Use shared input')
+    expect(wrapper.text()).not.toContain('Use shared output')
+  })
+
+  it('opens the input and output folders from their Open buttons', async () => {
+    const api = installMockApi()
+    const wrapper = mountPaneWithSections(
+      gitSections({ path: '/shared/input', shared: true }, { path: '/shared/output', shared: true })
+    )
+    await nextTick()
+
+    await wrapper.get('[data-testid="storage-launch-input"] .reveal-folder-button').trigger('click')
+    await wrapper
+      .get('[data-testid="storage-launch-output"] .reveal-folder-button')
+      .trigger('click')
+
+    expect(api.openPathCalls).toEqual(['/shared/input', '/shared/output'])
+  })
+
+  it('shows a folder set in Startup arguments without the Shared chip', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections(
+      gitSections({ path: '/my/in', shared: false }, { path: '/shared/output', shared: true })
+    )
+    await nextTick()
+
+    const input = wrapper.get('[data-testid="storage-launch-input"]')
+    expect(input.text()).toContain('/my/in')
+    expect(input.find('.storage-dir-shared-tag').exists()).toBe(false)
+  })
+
+  it('shows the folder a running build started with, and the saved one as after a restart', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections(
+      gitSections(
+        { path: '/launched/in', shared: false, nextStartPath: '/edited/in' },
+        { path: '/shared/output', shared: true }
+      )
+    )
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="storage-launch-input"]').text()).toContain('/launched/in')
+    expect(wrapper.get('[data-testid="storage-launch-input-next"]').text()).toBe(
+      'After a restart: /edited/in'
+    )
+    expect(wrapper.find('[data-testid="storage-launch-output-next"]').exists()).toBe(false)
+  })
+
+  it('explains how to use other folders, naming the flags as code', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections(
+      gitSections({ path: '/shared/input', shared: true }, { path: '/shared/output', shared: true })
+    )
+    await nextTick()
+
+    const note = wrapper.get('[data-testid="storage-startup-arg-note"]')
+    expect(note.text()).toBe(
+      'Git builds use the shared input and output folders. To use your own, add --input-directory or --output-directory in Startup arguments.'
+    )
+    expect(note.findAll('code').map((code) => code.text())).toEqual([
+      '--input-directory',
+      '--output-directory'
+    ])
+  })
+
+  it('keeps the shared input and output switches for other builds, with no note', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections([
+      {
+        fields: [
+          ...makeStorageSections([], { sharedOn: true })[0]!.fields,
+          { id: 'useSharedInput', label: 'In', value: true, editable: true, editType: 'boolean' },
+          { id: 'useSharedOutput', label: 'Out', value: true, editable: true, editType: 'boolean' }
+        ]
+      }
+    ])
+    await nextTick()
+
+    expect(wrapper.findAll('.storage-header-toggle')).toHaveLength(3)
+    expect(wrapper.findAll('.storage-dir-card .bt-switch')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="storage-startup-arg-note"]').exists()).toBe(false)
+  })
+
+  it('shows no empty card when the shared folder is not known yet', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections([
+      {
+        fields: [
+          ...makeStorageSections([], { sharedOn: true })[0]!.fields,
+          { id: 'useSharedInput', label: 'In', value: true, editable: true, editType: 'boolean' },
+          { id: 'useSharedOutput', label: 'Out', value: true, editable: true, editType: 'boolean' }
+        ]
+      }
+    ])
+    await nextTick()
+
+    expect(wrapper.findAll('.storage-header-toggle')).toHaveLength(3)
+    expect(wrapper.findAll('.storage-dir-card')).toHaveLength(0)
+  })
+})

@@ -54,9 +54,7 @@ beforeAll(() => browserPage.viewport(1280, 1400))
 
 beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
-    listHomeWorkflows: vi.fn().mockResolvedValue([]),
-    openCatalogWorkflow: vi.fn().mockResolvedValue(true),
-    getAppsEnabled: vi.fn().mockResolvedValue(false),
+    listApps: vi.fn().mockResolvedValue([]),
     getInstallations: vi.fn().mockResolvedValue([STUDIO, PORTRAITS]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
@@ -179,6 +177,7 @@ describe('Auto start on Home build cards in the smallest window with the sidebar
     page.style.cssText = `position: absolute; left: 0; top: 0; width: ${HOME_WIDTH_IN_SMALLEST_WINDOW}px`
     const wrapper = track(mount(HomeView, { attachTo: page }))
     await flushPromises()
+    await userEvent.hover(page, { position: { x: 1, y: 1 }, force: true })
 
     const studioStatus = onlyIn(
       wrapper,
@@ -190,6 +189,7 @@ describe('Auto start on Home build cards in the smallest window with the sidebar
 
     for (const { id } of [STUDIO, PORTRAITS]) {
       const card = onlyIn(wrapper, `div[data-testid="home-build"][data-build-id="${id}"]`)
+      await userEvent.unhover(card, { force: true })
       const name = card.querySelector('.font-semibold')!
       const cardBox = boxOf(card)
       const nameBox = boxOf(name)

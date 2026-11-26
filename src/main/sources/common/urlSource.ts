@@ -139,7 +139,11 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
           tab: 'status',
           title: t('remote.connectionInfo'),
           fields: [
-            { label: t('common.installMethod'), value: installation.sourceLabel as string },
+            {
+              key: 'install-method',
+              label: t('common.installMethod'),
+              value: installation.sourceLabel as string
+            },
             urlField,
             {
               label: t('remote.added'),

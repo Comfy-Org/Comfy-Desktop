@@ -120,13 +120,13 @@ function localBuild(id: string, name = id, extra: Partial<Installation> = {}): I
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
     hasOutputFolder: true,
-    useSharedOutput: false,
+    savesToSharedOutput: false,
     ...extra
   }
 }
 
 function sharedBuild(id: string, name = id): Installation {
-  return localBuild(id, name, { useSharedOutput: true })
+  return localBuild(id, name, { savesToSharedOutput: true })
 }
 
 function shownText(element: Element | null): string {
@@ -866,6 +866,34 @@ describe('AssetsView', () => {
     ).toBe(true)
   })
 
+  it("shows a build's new output folder after its launch arguments change, and on Refresh", async () => {
+    let labOutput = '/Volumes/Work/Video Lab/output'
+    const api = window.api as unknown as { listOutputFolders: () => Promise<unknown> }
+    api.listOutputFolders = async () => ({
+      home: '/Users/me',
+      shared: '/Users/me/ComfyUI/output',
+      ofBuild: { lab: labOutput }
+    })
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    const tooltipShows = (text: string) =>
+      wrapper.findAllComponents(Tooltip).some((tip) => tip.props('text') === text)
+
+    labOutput = '/Volumes/Other/renders'
+    useInstallationStore().installations = [
+      { ...localBuild('lab', 'Video Lab'), launchArgs: '--output-directory /Volumes/Other/renders' }
+    ]
+    await flushPromises()
+    await openBuildPicker(wrapper)
+    expect(tooltipShows('/Volumes/Other/renders'), 'new launch arguments').toBe(true)
+
+    labOutput = '/Volumes/Third/out'
+    await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+    await flushPromises()
+    if (wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded') !== 'true')
+      await openBuildPicker(wrapper)
+    expect(tooltipShows('/Volumes/Third/out'), 'Refresh').toBe(true)
+  })
+
   it('moves between rows with the arrow keys and never stops on Show in Finder', async () => {
     const wrapper = await mountAssets([], {
       builds: [localBuild('lab', 'Video Lab'), localBuild('art', 'Art Lab')]
@@ -1000,6 +1028,20 @@ describe('AssetsView', () => {
     const cloud = await mountAssets([], { builds, installationId: 'cloud' })
     expect(cloud.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
     expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
+  })
+
+  it('opens a git build with its own output folder in Startup arguments on that folder, not Shared folder', async () => {
+    const gitBuild = localBuild('git', 'Git Clone', { sourceLabel: 'Git clone' })
+    const wrapper = await mountAssets([], {
+      builds: [sharedBuild('a', 'Shared A'), gitBuild],
+      installationId: 'git'
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Git Clone')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('git')
+
+    await openBuildPicker(wrapper)
+    expect(buildRows().map((row) => row.split(' ')[0])).toEqual(['Comfy', 'Shared', 'Git'])
   })
 
   it('says the workspace has no Comfy Cloud build', async () => {

@@ -68,6 +68,17 @@ options:
   --enable-manager      Enable the ComfyUI-Manager feature.
 `
 
+const FEATURE_FLAG_HELP = `usage: main.py [-h] [--port PORT] [--feature-flag KEY[=VALUE]] [--list-feature-flags] [--enable-manager]
+
+options:
+  -h, --help            show this help message and exit
+  --port PORT           Set the listen port.
+  --feature-flag KEY[=VALUE]
+                        Set a server feature flag. Can be specified multiple times.
+  --list-feature-flags  Print the registry of known CLI-settable feature flags as JSON and exit.
+  --enable-manager      Enable the ComfyUI-Manager feature.
+`
+
 describe('parseHelpOutput', () => {
   it('parses flags with correct types', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
@@ -216,28 +227,24 @@ options:
     expect(byName.get('enable-manager')?.type).toBe('boolean')
   })
 
-  it('hides --feature-flag / --list-feature-flags from suggestion list but keeps them in knownFlags', () => {
-    const helpWithFeatureFlags = `usage: main.py [-h] [--port PORT] [--feature-flag KEY=VALUE] [--list-feature-flags] [--enable-manager]
+  it('keeps --feature-flag as a hidden value arg, accepted when typed but never listed', () => {
+    const schema = parseHelpOutput(FEATURE_FLAG_HELP)
 
-options:
-  -h, --help            show this help message and exit
-  --port PORT           Set the listen port.
-  --feature-flag KEY=VALUE
-                        Set a server feature flag as a key=value pair.
-  --list-feature-flags  Print the registry of known CLI-settable feature flags as JSON and exit.
-  --enable-manager      Enable the ComfyUI-Manager feature.
-`
-    const schema = parseHelpOutput(helpWithFeatureFlags)
-    const argNames = new Set(schema.args.map((a) => a.name))
+    expect(schema.args.find((a) => a.name === 'feature-flag')).toMatchObject({
+      type: 'value',
+      hidden: true
+    })
+    expect(schema.args.filter((a) => a.hidden).map((a) => a.name)).toEqual(['feature-flag'])
+  })
 
-    expect(argNames.has('feature-flag')).toBe(false)
-    expect(argNames.has('list-feature-flags')).toBe(false)
+  it('leaves --list-feature-flags out of the args, since it prints the flag registry and exits', () => {
+    const schema = parseHelpOutput(FEATURE_FLAG_HELP)
 
-    expect(schema.knownFlags.has('feature-flag')).toBe(true)
-    expect(schema.knownFlags.has('list-feature-flags')).toBe(true)
-
-    expect(argNames.has('port')).toBe(true)
-    expect(argNames.has('enable-manager')).toBe(true)
+    expect(schema.args.map((a) => a.name)).not.toContain('list-feature-flags')
+    expect(
+      [...schema.knownFlags].filter((name) => name.includes('feature-flag')),
+      'launch probes these to decide whether to pass Desktop feature flags'
+    ).toEqual(['feature-flag', 'list-feature-flags'])
   })
 
   it('lets user-typed --feature-flag survive filterUnsupportedArgs', () => {
@@ -419,6 +426,21 @@ options:
     }
   )
 
+  it('drops a --feature-flag with no value and keeps every repeat that has its KEY[=VALUE]', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(
+        dropValuelessArgs(
+          ['--feature-flag', 'a=1', '--feature-flag', 'b', '--feature-flag', '--port', '8188'],
+          parseHelpOutput(FEATURE_FLAG_HELP)
+        ),
+        'a bare --feature-flag makes argparse exit: "expected one argument"'
+      ).toEqual(['--feature-flag', 'a=1', '--feature-flag', 'b', '--port', '8188'])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('keeps a bare variadic flag, which may take zero values', () => {
     const fast = parseHelpOutput(`usage: main.py [-h] [--fast [FAST ...]] [--lowvram]
 
@@ -480,6 +502,14 @@ describe('filterUnsupportedArgs', () => {
       '--use-ck-attention',
       '--enable-manager'
     ])
+  })
+
+  it('drops --list-feature-flags, which prints the flag registry and exits instead of starting ComfyUI', () => {
+    const filtered = filterUnsupportedArgs(
+      ['--list-feature-flags', '--feature-flag', 'a=1', '--enable-manager'],
+      parseHelpOutput(FEATURE_FLAG_HELP)
+    )
+    expect(filtered).toEqual(['--feature-flag', 'a=1', '--enable-manager'])
   })
 
   it('does not consume next token when skipping --unknown=value', () => {

@@ -1,5 +1,5 @@
 import type { Session, WebContents } from 'electron'
-import { tryOpenExternalUrl } from './openExternal'
+import { tryOpenExternalUrlOrAgentApp } from './openExternal'
 
 const guardedSessions = new WeakSet<Session>()
 const pagesWithoutPermissions = new WeakSet<WebContents>()
@@ -29,6 +29,6 @@ export function guardPermissionRequests(session: Session): void {
       return
     }
     callback(false)
-    if ('externalURL' in details) void tryOpenExternalUrl(details.externalURL)
+    if ('externalURL' in details) void tryOpenExternalUrlOrAgentApp(details.externalURL)
   })
 }

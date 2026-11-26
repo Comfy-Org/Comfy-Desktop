@@ -14,7 +14,6 @@ import type {
   ComfyDesktop2BillingHandoffIntent,
   ComfyDesktop2BillingHandoffReceiver
 } from '../../types/comfyDesktopBridge'
-import { areAppsEnabled } from '../apps/appsConfig'
 import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../apps/appsPages'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 import * as mainTelemetry from './telemetry'
@@ -111,8 +110,12 @@ async function sessionState(
 
 type SessionGate = () => Promise<boolean>
 
+async function anyAppsPageOpen(): Promise<boolean> {
+  return liveAppsPages().length > 0
+}
+
 function appsPageGate(page: WebContents): SessionGate {
-  return async () => (await areAppsEnabled()) && (await appsPageAdmits(page))
+  return () => appsPageAdmits(page)
 }
 
 function gateForSender(event: EmbeddedSessionSender): SessionGate | null {
@@ -238,7 +241,7 @@ let broadcastGeneration = 0
 
 export async function broadcastEmbeddedSessionChanged(): Promise<void> {
   const generation = ++broadcastGeneration
-  const [localState, appsState] = await Promise.all([sessionState(), sessionState(areAppsEnabled)])
+  const [localState, appsState] = await Promise.all([sessionState(), sessionState(anyAppsPageOpen)])
   if (generation !== broadcastGeneration) return
   if (localState.status !== 'disabled') {
     for (const entry of comfyWindows.values()) {

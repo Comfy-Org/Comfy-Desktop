@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
 import { _runningSessions, _isStopping, noteStartWindowClosed } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
+import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 import { isLocalInstall } from './localInstall'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
@@ -303,13 +304,13 @@ export function revealColdStartHostIfPending(windowKey: number): void {
 }
 
 interface HostFactories {
-  createChooser: () => BrowserWindow
+  createChooser: (dashboardPage?: NewWindowDashboardPage) => BrowserWindow
 }
 let hostFactories: HostFactories | null = null
 export function setHostFactories(factories: HostFactories): void {
   hostFactories = factories
 }
-function requireChooserFactory(): () => BrowserWindow {
+function requireChooserFactory(): (dashboardPage?: NewWindowDashboardPage) => BrowserWindow {
   if (!hostFactories) {
     throw new Error('host registry: setHostFactories() must be called before openOrFocus*')
   }
@@ -341,13 +342,13 @@ function findHomeHostWindow(): BrowserWindow | null {
   return findPreferredHostByVisibility(isHomeHostEntry)?.window ?? null
 }
 
-export function openOrFocusHomeHostWindow(): BrowserWindow {
+export function openOrFocusHomeHostWindow(dashboardPage?: NewWindowDashboardPage): BrowserWindow {
   const existing = findHomeHostWindow()
   if (existing) {
     bringToFront(existing)
     return existing
   }
-  return requireChooserFactory()()
+  return requireChooserFactory()(dashboardPage)
 }
 
 export type BuildOpenRoute =

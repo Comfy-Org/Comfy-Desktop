@@ -23,6 +23,19 @@ const SCHEMA: ComfyArgDef[] = [
   }
 ]
 
+const WITH_FEATURE_FLAG: ComfyArgDef[] = [
+  ...SCHEMA,
+  {
+    name: 'feature-flag',
+    flag: '--feature-flag',
+    help: 'Set a server feature flag.',
+    type: 'value',
+    metavar: 'KEY',
+    category: 'other',
+    hidden: true
+  }
+]
+
 describe('validateArgs', () => {
   it('reports no issues for an empty string', () => {
     const v = validateArgs('', SCHEMA)
@@ -92,6 +105,15 @@ describe('validateArgs', () => {
     expect(validateArgs('--preview-method latent2rgb', SCHEMA).hasIssues).toBe(false)
   })
 
+  it('accepts a hidden flag every time it repeats, in either value form', () => {
+    const v = validateArgs(
+      '--feature-flag open_on_cloud_enabled=true --feature-flag=show_signin_button --cpu',
+      WITH_FEATURE_FLAG
+    )
+    expect(v.tokens.map((t) => t.status)).toEqual(['ok', 'ok', 'ok', 'ok'])
+    expect(v.hasIssues).toBe(false)
+  })
+
   describe('suppressTrailingPartial', () => {
     it('does not flag a partial trailing flag while focused (no trailing space)', () => {
       const v = validateArgs('--po', SCHEMA, { suppressTrailingPartial: true })
@@ -142,6 +164,15 @@ describe('parseArgs', () => {
   it('accepts a multi-value flag with no values', () => {
     const { known } = parseArgs('--cache-ram', SCHEMA)
     expect(known.get('cache-ram')).toBe('')
+  })
+
+  it('leaves every repeat of a hidden flag in extra, where the builder keeps it verbatim', () => {
+    const { known, extra } = parseArgs(
+      '--feature-flag a=1 --cpu --feature-flag b=2',
+      WITH_FEATURE_FLAG
+    )
+    expect([...known.keys()]).toEqual(['cpu'])
+    expect(extra).toEqual(['--feature-flag', 'a=1', '--feature-flag', 'b=2'])
   })
 })
 

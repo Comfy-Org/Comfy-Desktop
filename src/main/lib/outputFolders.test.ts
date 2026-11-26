@@ -79,11 +79,13 @@ vi.mock('./ipc/shared', () => ({
   _runningSessions: runningSessions,
   sourceMap: {
     standalone: { category: 'local' },
+    git: { category: 'local' },
     desktop: { category: 'local', managesOwnPaths: true },
     cloud: { category: 'cloud' }
   }
 }))
 vi.mock('./models', () => ({
+  resolveComfyDir: (installPath: string) => path.join(installPath, 'ComfyUI'),
   installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output'),
   installInputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'input')
 }))
@@ -280,6 +282,24 @@ describe('launchFoldersOf', () => {
     })
   })
 
+  it('resolves a relative folder from the folder ComfyUI was started in', () => {
+    const startedIn = path.join(installDir, 'started-in')
+    const args = ['main.py', '--output-directory', 'renders', '--input-directory=../in']
+
+    expect(launchFoldersOf(install('a'), { args, cwd: startedIn })).toEqual({
+      output: path.join(startedIn, 'renders'),
+      input: path.join(installDir, 'in')
+    })
+  })
+
+  it('resolves a relative folder from the ComfyUI folder when the start folder is unknown', () => {
+    const args = ['--output-directory', 'renders']
+
+    expect(launchFoldersOf(install('a'), { args }).output).toBe(
+      path.join(installDir, 'ComfyUI', 'renders')
+    )
+  })
+
   it('gives no folders when Desktop could not pass them', () => {
     const none = { output: null, input: null }
     const args = ['--input-directory', '/in']
@@ -297,6 +317,29 @@ describe('listOutputFolders', () => {
       ownDir,
       path.join(installDir, 'ComfyUI', 'output')
     ])
+  })
+
+  it('uses the output folder a running git build started with, not Startup arguments saved since', async () => {
+    const launched = path.join(root, 'git-launched-output')
+    const savedSince = path.join(root, 'git-saved-since')
+    fs.mkdirSync(launched, { recursive: true })
+    fs.mkdirSync(savedSince, { recursive: true })
+    const git = install('git-build', {
+      sourceId: 'git',
+      launchArgs: `--output-directory "${savedSince}"`
+    })
+    installs.mockResolvedValue([git])
+
+    expect(await outputFolderPaths(), 'stopped: the saved folder').toMatchObject({
+      ofBuild: { 'git-build': savedSince }
+    })
+
+    runningSessions.set('git-build', { launchFolders: { output: launched, input: launched } })
+
+    expect(await outputFolderPaths(), 'running: the folder it started with').toMatchObject({
+      ofBuild: { 'git-build': launched }
+    })
+    expect(await listOutputFolders()).toEqual([sharedDir, launched])
   })
 
   it('leaves out folders that do not exist yet', async () => {

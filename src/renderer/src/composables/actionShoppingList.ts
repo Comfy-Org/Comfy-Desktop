@@ -2,6 +2,7 @@ import type { useModal } from './useModal'
 import type { useDialogs } from './useDialogs'
 import type { ActionDef, DiskSpaceInfo, FieldOption, Installation } from '../types/ipc'
 import { confirmToneForActionStyle } from '../lib/destructiveStyles'
+import { i18n } from '../i18n'
 
 type Modal = ReturnType<typeof useModal>
 type Dialogs = ReturnType<typeof useDialogs>
@@ -142,6 +143,11 @@ export async function runPromptChain(
   return { ...action, data: { ...action.data, [action.prompt.field]: value } }
 }
 
+function messageWithConfirmNotes(confirm: NonNullable<ActionDef['confirm']>): string {
+  const message = confirm.message || i18n.global.t('modal.areYouSure')
+  return [message, confirm.hint, confirm.note].filter(Boolean).join('\n\n')
+}
+
 export async function runConfirmChain(
   action: ActionDef,
   modal: Modal,
@@ -150,8 +156,8 @@ export async function runConfirmChain(
   if (!action.confirm) return action
   if (action.confirm.options) {
     const result = await modal.confirmWithOptions({
-      title: action.confirm.title || 'Confirm',
-      message: action.confirm.message || 'Are you sure?',
+      title: action.confirm.title || i18n.global.t('modal.confirm'),
+      message: messageWithConfirmNotes(action.confirm),
       options: action.confirm.options,
       confirmLabel: action.confirm.confirmLabel || action.label,
       confirmStyle: confirmToneForActionStyle(action.style)
@@ -161,8 +167,10 @@ export async function runConfirmChain(
   }
   if (dialogs) {
     const result = await dialogs.confirm({
-      title: action.confirm.title || 'Confirm',
-      message: action.confirm.message || 'Are you sure?',
+      title: action.confirm.title || i18n.global.t('modal.confirm'),
+      message: action.confirm.message || i18n.global.t('modal.areYouSure'),
+      hint: action.confirm.hint,
+      note: action.confirm.note,
       messageDetails: action.confirm.messageDetails,
       restoreDiff: action.confirm.restoreDiff,
       confirmLabel: action.confirm.confirmLabel || action.label,
@@ -171,8 +179,8 @@ export async function runConfirmChain(
     return result === 'primary' ? action : null
   }
   const confirmed = await modal.confirm({
-    title: action.confirm.title || 'Confirm',
-    message: action.confirm.message || 'Are you sure?',
+    title: action.confirm.title || i18n.global.t('modal.confirm'),
+    message: messageWithConfirmNotes(action.confirm),
     messageDetails: action.confirm.messageDetails,
     confirmLabel: action.label,
     confirmStyle: confirmToneForActionStyle(action.style)

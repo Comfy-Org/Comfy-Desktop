@@ -231,7 +231,6 @@ onUnmounted(() => unsubscribeSettings?.())
           @show-progress="emit('show-progress', $event)"
           @navigate-list="emit('back')"
           @request-close="emit('back')"
-          @request-dismiss="emit('back')"
           @primary-action="handlePrimaryAction"
         />
       </template>
