@@ -31,7 +31,7 @@ import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { relaunchIntoUninstallCleanup } from './lib/uninstallCleanup'
-import { saveWindowBounds } from './lib/windowState'
+import { flushWindowStateSync, saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
@@ -128,6 +128,7 @@ import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignF
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { runningAppCount, runningApps } from './apps/appPageView'
 import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
+import { releaseWindowWorkspaceClaim } from './apps/workspaceClaims'
 import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
 import { openDraftLink } from './apps/draftLinks'
 import {
@@ -140,9 +141,9 @@ import {
   type DraftLinkStartup
 } from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
+import { noteAutoStartReady, registerAutoStartNoticeHandlers } from './apps/autoStartNotice'
 import {
-  isRunningForAppsOnly,
-  runsWithItsWindowClosed,
+  opensInDesktopWindow,
   startWithDesktop,
   stopBuildsRunningForAppsOnly
 } from './apps/localComfy'
@@ -253,6 +254,14 @@ function focusExternalProcessWindow(pid: number): void {
     )
   }
 }
+function installTranslatedAppMenu(): void {
+  installAppMenu(process.platform, undefined, {
+    onCheckForUpdates: () => {
+      void updater.runCheck('app-menu').catch(() => {})
+    }
+  })
+}
+
 function updateTrayMenu(): void {
   if (!tray) return
   const contextMenu = Menu.buildFromTemplate([
@@ -308,7 +317,11 @@ async function openStartupSurface(): Promise<void> {
 
   openOrFocusHomeHostWindow()
 
-  if (explicitInst) void startWithDesktop(explicitInst)
+  if (explicitInst) void announceWhenReady(explicitInst)
+}
+
+async function announceWhenReady(inst: InstallationRecord): Promise<void> {
+  if (await startWithDesktop(inst)) noteAutoStartReady(inst.id)
 }
 
 function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
@@ -734,7 +747,7 @@ ipcMain.on('comfy-window:show-home', (event) => {
   const found = findEntryByTitleBarSender(event.sender)
   if (!found || !isInstallHost(found.entry)) return
   recordIpcInvocation('comfy-window:show-home')
-  openOrFocusHomeHostWindow()
+  openOrFocusHomeHostWindow('home')
 })
 
 function startHomeTour(fromWindowKey: number): void {
@@ -753,6 +766,7 @@ async function prepareBuildWindowFocus(
   requester?: BrowserWindow | null,
   pickerWorkspaceId?: string
 ): Promise<boolean> {
+  if (entry.installationId) releaseWindowWorkspaceClaim(entry.installationId)
   try {
     return (
       (await syncCloudWindowWorkspace(entry, { pickerWorkspaceId })) && !entry.window.isDestroyed()
@@ -811,9 +825,7 @@ ipcMain.handle(
     const workspaceId =
       requester && typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
     if (await focusOpenComfyWindow(installationId, requester, workspaceId)) return true
-    if (isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)) {
-      return openWindowForAppsBuild(installationId)
-    }
+    if (await opensInDesktopWindow(installationId)) return openWindowForAppsBuild(installationId)
 
     const proc = ipc.getSessionProcess(installationId)
     if (proc?.pid) {
@@ -1045,18 +1057,19 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       relaunchStates,
       computeInstallUpdateAvailable
     })
-    setHostFactories({ createChooser: openChooserHostWindow })
+    setHostFactories({
+      createChooser: (dashboardPage) => openChooserHostWindow('comfy', { dashboardPage })
+    })
     registerPanelViewIpc()
     registerOutputFolderHandlers()
 
     migrateXdgPaths()
     persistWinDataRootChoice()
 
-    installAppMenu(process.platform, undefined, {
-      onCheckForUpdates: () => {
-        void updater.runCheck('app-menu').catch(() => {})
-      }
-    })
+    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
+    i18n.init(locale)
+
+    installTranslatedAppMenu()
 
     if (process.platform !== 'darwin') {
       app.on('browser-window-created', (_event, window) => {
@@ -1137,9 +1150,6 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     void initWorkspaceMintSwitchFlag({ distinctId: installationId })
 
     getCloudSession().resumeRevocations()
-
-    const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
-    i18n.init(locale)
 
     mainTelemetry.capture('comfy.desktop.app.language_resolved', {
       os_locale: app.getLocale(),
@@ -1577,19 +1587,19 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,
             spec: {
-              title: 'Restart instance?',
-              message: 'Restart this instance?',
+              title: i18n.t('instancePicker.restartConfirmHeading'),
+              message: i18n.t('instancePicker.restartConfirmTitle'),
               details: [
                 {
-                  label: 'Heads up',
+                  label: i18n.t('instancePicker.confirmHeadsUp'),
                   items: [
-                    'Restarting will stop the running session.',
-                    'Any unsaved work in the workflow will be lost.'
+                    i18n.t('instancePicker.restartConfirmItem1'),
+                    i18n.t('instancePicker.restartConfirmItem2')
                   ]
                 }
               ],
-              confirmLabel: 'Restart',
-              cancelLabel: 'Cancel',
+              confirmLabel: i18n.t('instancePicker.restartConfirmAction'),
+              cancelLabel: i18n.t('common.cancel'),
               confirmStyle: 'primary',
               theme: parentEntry.lastTheme
             }
@@ -1618,6 +1628,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     })
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
+    registerAutoStartNoticeHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     registerTemplateInputAssetHandlers({
       findInstallationIdForWindow,
@@ -1634,7 +1645,10 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       },
       onComfyRestarted,
       onModelFolderRelaunch,
-      onLocaleChanged: updateTrayMenu,
+      onLocaleChanged: () => {
+        updateTrayMenu()
+        if (process.platform === 'darwin') installTranslatedAppMenu()
+      },
       onThemeChanged: applyChooserHostThemeToAll
     })
     initializeModelDownloads().catch((err) => {
@@ -1764,6 +1778,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       _stopPeriodicReleaseChecks = null
     }
     flushLastSessionSync()
+    flushWindowStateSync()
     flushOperationOutput()
     cleanupTempDownloads()
     stopAgentPrefetches()

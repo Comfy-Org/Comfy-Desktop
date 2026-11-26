@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -10,8 +10,12 @@ import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import HomeReadyToast from './home/HomeReadyToast.vue'
 import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
+import { useAutoStartReadyNotice } from './home/useAutoStartReadyNotice'
+import { useOpenWhenReady } from './home/useOpenWhenReady'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
@@ -27,9 +31,12 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, AppCover, Installation } from '../types/ipc'
+import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
+
+type WorkflowState = 'idle' | 'loading' | 'ready' | 'unavailable'
+type HomeTab = 'apps' | 'workflows'
 
 const HOME_BUILD_LIMIT = 3
 const BUILDS_TITLE_LINK_CLASS =
@@ -39,10 +46,12 @@ const TEXT_LINK_CLASS =
 
 const emit = defineEmits<{
   'open-app': [app: AppCard]
+  'open-workflow': [workflow: CatalogWorkflow]
   pick: [installation: Installation]
   'open-build': [installation: Installation]
   'show-builds': []
   'show-apps': []
+  'show-workflows': []
   'new-build': []
 }>()
 
@@ -124,7 +133,23 @@ const openTarget = computed(
       (build) => build.id === pickedBuildId.value && build.statusTag?.style !== 'danger'
     ) ?? mostRecentBuild.value
 )
+const readyNotice = useAutoStartReadyNotice()
+const readyBuild = computed(() => {
+  const id = readyNotice.buildId.value
+  if (id === null || !sessionStore.isRunning(id)) return null
+  return installationStore.installations.find((build) => build.id === id) ?? null
+})
+const opensWhenReady = useOpenWhenReady((build) => emit('pick', build))
+function pickBuild(build: Installation): void {
+  readyNotice.dismiss(build.id)
+  if (opensWhenReady.openWhenReady(build)) return
+  opensWhenReady.forget()
+  emit('pick', build)
+}
 function openBuild(build: Installation): void {
+  readyNotice.dismiss(build.id)
+  if (build.statusTag?.style !== 'danger' && opensWhenReady.openWhenReady(build)) return
+  opensWhenReady.forget()
   if (build.statusTag?.style === 'danger') emit('open-build', build)
   else if (launchFailed(progressStore, build.id)) viewBuildLogs(build.id)
   else emit('pick', build)
@@ -134,10 +159,44 @@ function buildStatus(build: Installation) {
 }
 
 const { state: appsState, apps, loadApps } = useHomeApps()
+const tab = ref<HomeTab>('apps')
+const tabs = computed(() => [
+  { value: 'apps' as const, label: t('sidebar.apps'), testId: 'home-apps-tab' },
+  { value: 'workflows' as const, label: t('sidebar.workflows'), testId: 'home-workflows-tab' }
+])
+const showWorkflows = computed(() => tab.value === 'workflows')
+const workflowState = ref<WorkflowState>('idle')
+const workflows = ref<CatalogWorkflow[]>([])
+const carouselIsLoading = computed(() =>
+  showWorkflows.value
+    ? workflowState.value === 'idle' || workflowState.value === 'loading'
+    : appsState.value === 'loading'
+)
 
 function coversOf(app: AppCard): readonly AppCover[] {
   return app.covers
 }
+
+function thumbnailOf(workflow: CatalogWorkflow): readonly AppCover[] {
+  return workflow.thumbnailUrl
+    ? [{ url: workflow.thumbnailUrl, stillUrl: workflow.thumbnailUrl }]
+    : []
+}
+
+async function loadWorkflows(): Promise<void> {
+  workflowState.value = 'loading'
+  try {
+    workflows.value = await window.api.listHomeWorkflows()
+    workflowState.value = workflows.value.length > 0 ? 'ready' : 'unavailable'
+  } catch {
+    workflows.value = []
+    workflowState.value = 'unavailable'
+  }
+}
+
+watch(showWorkflows, (show) => {
+  if (show && workflowState.value === 'idle') void loadWorkflows()
+})
 
 onMounted(() => {
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
@@ -156,8 +215,16 @@ onMounted(() => {
       :builds="openableBuilds"
       :target="openTarget"
       :status-of="buildStatus"
-      @open="emit('pick', $event)"
+      @open="pickBuild"
       @pick="pickedBuildId = $event.id"
+    />
+
+    <HomeReadyToast
+      v-if="readyBuild"
+      class="absolute top-14 right-4 z-10"
+      :data-build-id="readyBuild.id"
+      @open="openBuild(readyBuild)"
+      @dismiss="readyNotice.dismiss()"
     />
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
@@ -167,9 +234,15 @@ onMounted(() => {
         {{ t('home.title') }}
       </h1>
 
-      <section class="mt-[74px]" :aria-label="t('sidebar.apps')">
+      <section
+        class="mt-[74px]"
+        :aria-label="showWorkflows ? t('home.exampleWorkflows') : t('sidebar.apps')"
+      >
+        <div class="mb-5 flex justify-center">
+          <SegmentedControl v-model="tab" :options="tabs" :label="t('home.carouselTabs')" />
+        </div>
         <div
-          v-if="appsState === 'loading'"
+          v-if="carouselIsLoading"
           class="flex h-75 items-center justify-center gap-2.5"
           aria-busy="true"
           data-testid="home-carousel-loading"
@@ -178,6 +251,27 @@ onMounted(() => {
           <Skeleton class="h-75 w-64 rounded-[18px]" />
           <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
         </div>
+        <template v-else-if="showWorkflows">
+          <HomeCarousel
+            v-if="workflowState === 'ready'"
+            kind="workflows"
+            :cards="workflows"
+            :pictures-of="thumbnailOf"
+            @open="emit('open-workflow', $event)"
+          />
+          <div
+            v-else
+            class="flex h-75 flex-col items-center justify-center gap-3"
+            data-testid="home-workflows-unavailable"
+          >
+            <p class="m-0 text-[13px]/5 text-muted-foreground">
+              {{ t('home.workflowsUnavailable') }}
+            </p>
+            <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
+              {{ t('home.retry') }}
+            </Button>
+          </div>
+        </template>
         <HomeCarousel
           v-else-if="appsState === 'ready'"
           kind="apps"
@@ -205,17 +299,16 @@ onMounted(() => {
           :title="t('apps.emptyTitle')"
           :text="t('apps.emptyBody')"
         />
-
         <div class="mt-[30px] flex justify-center">
           <Button
             type="button"
             variant="muted-textonly"
             size="unset"
             :class="TEXT_LINK_CLASS"
-            data-testid="home-see-all-apps"
-            @click="emit('show-apps')"
+            :data-testid="showWorkflows ? 'home-see-all-workflows' : 'home-see-all-apps'"
+            @click="showWorkflows ? emit('show-workflows') : emit('show-apps')"
           >
-            {{ t('home.seeAllApps') }}
+            {{ showWorkflows ? t('home.seeAllWorkflows') : t('home.seeAllApps') }}
             <ArrowRight :size="14" aria-hidden="true" />
           </Button>
         </div>

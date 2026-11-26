@@ -10,12 +10,14 @@ const {
   label,
   menuLabel,
   tooltip = undefined,
+  description = undefined,
   mainTestid = undefined,
   menuTestid = undefined
 } = defineProps<{
   label: string
   menuLabel: string
   tooltip?: string
+  description?: string
   mainTestid?: string
   menuTestid?: string
 }>()
@@ -45,6 +47,7 @@ watch(open, (isOpen) => {
         class="gap-1 px-3 text-[13px]/5 font-medium"
         :class="slots.menu && 'rounded-none'"
         :aria-label="label"
+        :aria-description="description"
         :data-testid="mainTestid"
         @click="emit('run')"
       >

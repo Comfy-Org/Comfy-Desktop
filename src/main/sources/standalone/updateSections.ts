@@ -265,11 +265,8 @@ function buildPytorchSection(
             data: { stackId: s.stackId },
             confirm: {
               title: t('standalone.pytorchConfirmTitle'),
-              message:
-                confirmMessage +
-                capNotice +
-                driverNotice +
-                `\n\n${t('standalone.updateSnapshotUndoHint')}`
+              message: confirmMessage + capNotice + driverNotice,
+              note: t('standalone.updateSnapshotUndoHint')
             }
           },
           {
@@ -341,7 +338,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
   const installed = installation.status === 'installed'
 
   const infoFields: Record<string, unknown>[] = [
-    { label: t('common.installMethod'), value: installation.sourceLabel as string },
+    {
+      key: 'install-method',
+      label: t('common.installMethod'),
+      value: installation.sourceLabel as string
+    },
     {
       key: 'comfyui-version',
       label: t('standalone.currentVersion'),
@@ -434,11 +435,12 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         card.value === 'stable' && cv
           ? isStableDowngrade(cv, channelInfo.baseTag || channelInfo.latestTag)
           : false
+      const isPlainUpdate = !isSwitching && !isDowngrade && card.value !== 'latest'
       const msgKey = isDowngrade
         ? 'standalone.updateConfirmMessageDowngrade'
         : card.value === 'latest'
           ? 'standalone.updateConfirmMessageLatest'
-          : 'standalone.updateConfirmMessage'
+          : 'standalone.updateConfirmVersionChange'
       const notes = truncateNotes(channelInfo.releaseNotes || '', 2000)
       const notesDetails = notes
         ? [{ label: t('standalone.releaseNotesLabel'), items: [notes] }]
@@ -454,7 +456,6 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       const baseConfirmMessage = isSwitching
         ? t('channelCards.movingTo', { channel: `**${card.label}**` })
         : t(msgKey, { installed: boldInstalled, latest: boldLatest })
-      const confirmMessage = `${baseConfirmMessage}\n\n${t('standalone.updateSnapshotUndoHint')}`
       actions.push({
         id: 'update-comfyui',
         label: t('standalone.updateNow'),
@@ -473,8 +474,11 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
           isDowngrade
         },
         confirm: {
-          title: t('standalone.updateConfirmTitle'),
-          message: confirmMessage,
+          title: isPlainUpdate
+            ? t('standalone.updateConfirmTitleTo', { version: latestDisplay })
+            : t('standalone.updateConfirmTitle'),
+          message: baseConfirmMessage,
+          note: t('standalone.updateSnapshotUndoHint'),
           messageDetails: notesDetails
         }
       })

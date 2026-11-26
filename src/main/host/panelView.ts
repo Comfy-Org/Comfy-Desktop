@@ -28,6 +28,7 @@ const DASHBOARD_PAGE_PANELS: ReadonlyMap<unknown, ComfyPanelKey> = new Map([
   ['apps', 'comfy'],
   ['assets', 'comfy'],
   ['chooser', 'comfy'],
+  ['staff-apps', 'comfy'],
   ['benchmarks', 'benchmarks'],
   ['performance-test', 'performance-test']
 ])

@@ -987,7 +987,7 @@ describe('Home build card while a build starts', () => {
     const starting = wrapper.get(
       `[data-testid="home-build-starting"][data-build-id="${NEWEST.id}"]`
     )
-    expect(starting.text()).toContain('Starting ComfyUI')
+    expect(starting.text()).toContain('Starting…')
     expect(starting.text()).toContain(NEWEST.name)
     expect(starting.find('[data-testid="home-build-cancel"]').exists()).toBe(false)
     expect(starting.find('[data-testid="home-build-view-logs"]').exists()).toBe(false)

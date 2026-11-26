@@ -6,11 +6,13 @@ import type { LoadedAppPage } from '../../apps/appPageView'
 import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
 import { onRunsChanged } from '../../apps/localAppEvents'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
+import { machine } from '../../apps/machine'
 import { localBuilds, localBuildsForEach, openInComfy } from '../../apps/openInComfy'
 import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopLocalComfy,
   ComfyDesktopLocalDownload,
+  ComfyDesktopMachine,
   ComfyDesktopOpenInComfy
 } from '../../../types/comfyDesktopBridge'
 import * as i18n from '../i18n'
@@ -22,7 +24,8 @@ export const APPS_LOCAL_CHANNELS = {
   download: 'apps-local:download',
   openInComfy: 'apps-local:open-in-comfy',
   builds: 'apps-local:builds',
-  buildsChanged: 'apps-local:builds-changed'
+  buildsChanged: 'apps-local:builds-changed',
+  machine: 'apps-local:machine'
 } as const
 
 let latestAnnouncement = 0
@@ -106,6 +109,11 @@ export function registerAppsLocalHandlers(): void {
   ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> => {
     const caller = await callerUnchanged(event)
     return caller ? localBuilds(caller.appId) : []
+  })
+
+  ipcMain.handle(APPS_LOCAL_CHANNELS.machine, async (event): Promise<ComfyDesktopMachine> => {
+    if (!(await isFromAppsPage(event))) throw new Error('This page cannot ask about this computer.')
+    return machine()
   })
 
   onRunsChanged(() => void announceBuilds())

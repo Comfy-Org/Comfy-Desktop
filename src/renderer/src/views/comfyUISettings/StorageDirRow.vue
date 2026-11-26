@@ -52,7 +52,7 @@ const variantClass: Record<StorageDirRowVariant, string> = {
 }
 const rowClass = computed(() =>
   props.listAligned && props.variant === 'panel'
-    ? 'items-start rounded-[14px] bg-card py-4 pr-[9px] pl-[18px]'
+    ? 'items-start rounded-[10px] py-1.5 pr-[3px] pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]'
     : ['items-center', variantClass[props.variant]]
 )
 const slotClass = computed(() =>
@@ -150,6 +150,7 @@ function onMenuKeydown(event: KeyboardEvent): void {
           {{ t('comfyUISettings.manageSharedDirs') }}
         </MenuItem>
       </Menu>
+      <span v-else class="storage-dir-menu-slot size-7 shrink-0" aria-hidden="true" />
     </div>
     <div v-else class="storage-dir-actions inline-flex shrink-0 items-center gap-0.5">
       <RevealFolderButton v-if="path" :path="path" @click="emit('open')" />

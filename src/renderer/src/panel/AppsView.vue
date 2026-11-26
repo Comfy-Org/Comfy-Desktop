@@ -1,45 +1,118 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, ArrowUpRight, Plus, Search } from '@lucide/vue'
+import { AppWindow, PanelsTopLeft, Plus, Search, Workflow } from '@lucide/vue'
+import { useEventListener, useLocalStorage } from '@vueuse/core'
 import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
-import AppBadges from './AppBadges.vue'
-import CoverRotation from '../components/CoverRotation.vue'
+import AppCardTile from './AppCardTile.vue'
 import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import CatalogWorkflowsGallery from './CatalogWorkflowsGallery.vue'
+import ExploreLayoutOptions from './ExploreLayoutOptions.vue'
+import ExploreWorkflowFilters from './ExploreWorkflowFilters.vue'
+import {
+  CARD_SIZES,
+  NO_FILTERS,
+  WORKFLOW_SORTS,
+  workflowFacets,
+  type CardSize,
+  type WorkflowFilters,
+  type WorkflowSort
+} from './exploreWorkflows'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import { badgeDescriptionIds, glassPictureOf } from './appCardBadges'
+import { shortcutBelongsToOverlay } from '../lib/pageShortcuts'
+import { badgeDescriptionIds } from './appCardBadges'
+import { RHYTHM_GRID_CLASS, rhythmSpanClass } from './appGridRhythm'
 import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
-import type { AppCard, DraftClosingStop } from '../types/ipc'
+import type { AppCard, CatalogWorkflow, DraftClosingStop } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
+type ExploreTab = 'apps' | 'workflows'
 
 const SKELETON_CARD_COUNT = 7
 
 const { revisit = 0 } = defineProps<{ revisit?: number }>()
 
 const startWith = defineModel<AppCard | null>('startWith', { default: null })
+const tab = defineModel<ExploreTab>('tab', { default: 'apps' })
 
 const emit = defineEmits<{
   'app-open-change': [open: boolean]
   'current-app': [app: AppCard | null]
   'apps-loaded': [apps: AppCard[]]
   'view-in-assets': [name: string]
+  'open-workflow': [workflow: CatalogWorkflow]
 }>()
 
 const { t } = useI18n()
 
 const state = ref<LoadState>('loading')
 const apps = ref<AppCard[]>([])
-const query = ref('')
+const tabOptions = computed(() => [
+  {
+    value: 'apps' as const,
+    label: t('sidebar.apps'),
+    testId: 'explore-apps-tab',
+    icon: PanelsTopLeft
+  },
+  {
+    value: 'workflows' as const,
+    label: t('sidebar.workflows'),
+    testId: 'explore-workflows-tab',
+    icon: Workflow
+  }
+])
+const queries = reactive<Record<ExploreTab, string>>({ apps: '', workflows: '' })
+const query = computed({
+  get: () => queries[tab.value],
+  set: (value: string) => {
+    queries[tab.value] = value
+  }
+})
+const workflowsVisited = ref(false)
+const listedWorkflows = ref<CatalogWorkflow[]>([])
+const facets = computed(() => workflowFacets(listedWorkflows.value))
+const filters = ref<WorkflowFilters>({ ...NO_FILTERS })
+const storedSize = useLocalStorage<string>('comfy.desktop.explore.workflowSize', 'medium')
+const storedSort = useLocalStorage<string>('comfy.desktop.explore.workflowSort', 'popular')
+const cardSize = computed<CardSize>({
+  get: () =>
+    CARD_SIZES.includes(storedSize.value as CardSize) ? (storedSize.value as CardSize) : 'medium',
+  set: (value) => {
+    storedSize.value = value
+  }
+})
+const workflowSort = computed<WorkflowSort>({
+  get: () =>
+    WORKFLOW_SORTS.includes(storedSort.value as WorkflowSort)
+      ? (storedSort.value as WorkflowSort)
+      : 'popular',
+  set: (value) => {
+    storedSort.value = value
+  }
+})
+const searchField = ref<HTMLElement | null>(null)
+const searchShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ /' : 'Ctrl /'
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== '/' || !(event.metaKey || event.ctrlKey) || openApp.value) return
+  if (shortcutBelongsToOverlay(event)) return
+  event.preventDefault()
+  searchField.value?.querySelector('input')?.focus()
+})
+const showsSearch = computed(
+  () =>
+    tab.value === 'workflows' ||
+    state.value === 'loading' ||
+    (state.value === 'ready' && apps.value.length > 0)
+)
 const openApp = ref<AppCard | null>(null)
 const requestOpen = ref(false)
-const coversThatFailed = reactive(new Set<string>())
-const coverShowing = reactive(new Map<string, number | null>())
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
@@ -51,7 +124,7 @@ let stopBackToListAsks: (() => void) | null = null
 let stopListUpdates: (() => void) | null = null
 
 const matchingApps = computed(() => {
-  const needle = query.value.trim().toLowerCase()
+  const needle = queries.apps.trim().toLowerCase()
   if (!needle) return apps.value
   return apps.value.filter((app) =>
     `${app.title}\n${app.description}`.toLowerCase().includes(needle)
@@ -90,15 +163,6 @@ async function refreshApps(): Promise<void> {
   apps.value = listed
   state.value = 'ready'
   emit('apps-loaded', listed)
-}
-
-const RHYTHM_GRID_CLASS =
-  'm-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-6 @5xl:grid-cols-12'
-
-function rhythmSpanClass(index: number): string {
-  const medium = index % 5 < 2 ? '@3xl:col-span-3' : '@3xl:col-span-2'
-  const wide = index % 7 < 3 ? '@5xl:col-span-4' : '@5xl:col-span-3'
-  return `${medium} ${wide}`
 }
 
 const REQUEST_THUMB_LIMIT = 3
@@ -179,7 +243,8 @@ const requestThumbs = computed(() =>
     .slice(0, REQUEST_THUMB_LIMIT)
 )
 
-function rememberCard(id: string, element: unknown): void {
+function rememberCard(id: string, card: unknown): void {
+  const element = (card as { $el?: unknown } | null)?.$el
   if (element instanceof HTMLElement) cardButtons.set(id, element)
   else cardButtons.delete(id)
 }
@@ -251,6 +316,14 @@ watch(
   { immediate: true }
 )
 
+watch(
+  tab,
+  (section) => {
+    if (section === 'workflows') workflowsVisited.value = true
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())
   stopBackToListAsks = window.api.onAppBackToListAsked(
@@ -274,31 +347,67 @@ onBeforeUnmount(() => {
       v-show="!openApp"
       class="@container/apps flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
       :class="PAGE_SPOTLIGHT_CLASS"
-      data-testid="apps-view"
+      :data-testid="`${tab}-view`"
     >
-      <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
+      <header class="mx-auto w-full max-w-300 shrink-0 px-10 pt-9 pb-3">
         <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
-          {{ t('sidebar.apps') }}
+          {{ t('sidebar.explore') }}
         </h1>
       </header>
 
       <div
-        v-if="state === 'loading' || (state === 'ready' && apps.length > 0)"
-        class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3"
+        class="mx-auto flex min-h-8 w-full max-w-300 shrink-0 flex-wrap items-center gap-2 px-10 py-3"
       >
-        <div class="ml-auto w-[220px]">
-          <BaseInput
-            v-model="query"
-            class="h-8 [&_input]:text-ui"
-            :placeholder="t('apps.search')"
-            :aria-label="t('apps.search')"
-          >
-            <template #leading><Search :size="14" /></template>
-          </BaseInput>
+        <SegmentedControl v-model="tab" :options="tabOptions" :label="t('sidebar.explore')" />
+        <div class="ml-auto flex min-w-0 items-center gap-2">
+          <ExploreWorkflowFilters
+            v-if="tab === 'workflows' && listedWorkflows.length > 0"
+            v-model="filters"
+            :facets="facets"
+          />
+          <div v-if="showsSearch" ref="searchField" class="w-[220px] min-w-0">
+            <BaseInput
+              v-model="query"
+              class="h-[34px] [&_input]:text-ui"
+              :placeholder="t(`${tab}.search`)"
+              :aria-label="t(`${tab}.search`)"
+            >
+              <template #leading><Search :size="14" /></template>
+              <template #trailing>
+                <kbd
+                  class="rounded-[5px] bg-accent px-1.5 font-[inherit] text-[11px]/4 text-muted-foreground"
+                  aria-hidden="true"
+                  >{{ searchShortcut }}</kbd
+                >
+              </template>
+            </BaseInput>
+          </div>
+          <ExploreLayoutOptions
+            v-if="tab === 'workflows'"
+            v-model:size="cardSize"
+            v-model:sort="workflowSort"
+          />
         </div>
       </div>
 
-      <div class="mx-auto w-full max-w-300 px-10 pb-10">
+      <div
+        v-if="workflowsVisited"
+        v-show="tab === 'workflows'"
+        class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10"
+      >
+        <CatalogWorkflowsGallery
+          :query="queries.workflows"
+          :filters="filters"
+          :sort="workflowSort"
+          :size="cardSize"
+          @loaded="listedWorkflows = $event"
+          @clear-filters="filters = { ...NO_FILTERS }"
+          @open-workflow="emit('open-workflow', $event)"
+          @clear-search="queries.workflows = ''"
+        />
+      </div>
+
+      <div v-show="tab === 'apps'" class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10">
         <ul
           v-if="state === 'loading'"
           :class="RHYTHM_GRID_CLASS"
@@ -384,10 +493,12 @@ onBeforeUnmount(() => {
             class="min-w-0"
             :class="rhythmSpanClass(index)"
           >
-            <button
-              :ref="(element) => rememberCard(app.id, element)"
-              type="button"
-              class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <AppCardTile
+              :ref="(card) => rememberCard(app.id, card)"
+              :app="app"
+              :playing="playsCover(app)"
+              :revealed="keyboardFocusedId === app.id"
+              :description-id-prefix="badgeIdPrefixFor(app)"
               :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
               @click="openPicked(app)"
@@ -395,65 +506,7 @@ onBeforeUnmount(() => {
               @blur="keyboardFocusedId = null"
               @mouseenter="hoveredId = app.id"
               @mouseleave="hoveredId = null"
-            >
-              <span
-                class="absolute inset-0 block overflow-hidden transition-transform duration-600 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-focus-visible:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
-                data-testid="app-card-picture"
-              >
-                <CoverRotation
-                  v-if="app.covers.length > 0 && !coversThatFailed.has(app.id)"
-                  :pictures="app.covers"
-                  :paused="!playsCover(app)"
-                  load-on-play
-                  @broken="coversThatFailed.add(app.id)"
-                  @showing="coverShowing.set(app.id, $event)"
-                />
-                <span
-                  v-else
-                  class="flex size-full items-center justify-center text-subtle-foreground"
-                  data-testid="app-card-no-cover"
-                >
-                  <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
-                </span>
-                <AppBadges
-                  v-if="app.badges?.length"
-                  :badges="app.badges"
-                  :description-id-prefix="badgeIdPrefixFor(app)"
-                  :revealed="keyboardFocusedId === app.id"
-                  :glass-picture="
-                    coversThatFailed.has(app.id)
-                      ? null
-                      : glassPictureOf(app.covers, coverShowing.get(app.id))
-                  "
-                  class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
-                />
-              </span>
-              <span
-                class="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgb(0_0_0/0.7),rgb(0_0_0/0.55)_28%,transparent_60%)]"
-                aria-hidden="true"
-                data-testid="app-card-scrim"
-              />
-              <span
-                class="absolute top-3 right-3 grid size-8 scale-90 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-hover:delay-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:scale-100 motion-reduce:transition-none"
-                aria-hidden="true"
-                data-testid="app-card-go"
-              >
-                <ArrowUpRight :size="16" :stroke-width="2.25" />
-              </span>
-              <span class="absolute inset-x-3.5 bottom-3 grid">
-                <span
-                  data-testid="app-card-name"
-                  class="truncate text-sm/[17px] font-semibold text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:-translate-y-4.5 group-focus-visible:-translate-y-4.5 motion-reduce:transition-none"
-                >
-                  {{ app.title }}
-                </span>
-                <span
-                  class="translate-y-1.5 self-end truncate text-xs/4 text-white/78 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:translate-y-0 motion-reduce:transition-none"
-                >
-                  {{ app.description }}
-                </span>
-              </span>
-            </button>
+            />
           </li>
           <li
             class="col-span-(--request-span) min-w-0 @3xl:col-span-(--request-span-medium) @5xl:col-span-(--request-span-wide)"

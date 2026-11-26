@@ -1,5 +1,6 @@
 import { app, Menu } from 'electron'
 import type { BaseWindow, MenuItemConstructorOptions } from 'electron'
+import { t } from './lib/i18n'
 
 export type AppMenuDevOverrides = {
   toggleEmbeddedDevTools?: (focusedWindow?: BaseWindow | null) => void
@@ -35,7 +36,9 @@ export function installAppMenu(
         }
       )
     }
-    Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'View', submenu: viewSubmenu }]))
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([{ label: t('appMenu.view'), submenu: viewSubmenu }])
+    )
     return
   }
   const onCheckForUpdates =
@@ -47,7 +50,7 @@ export function installAppMenu(
         submenu: [
           { role: 'about' },
           {
-            label: 'Check for Updates…',
+            label: t('appMenu.checkForUpdates'),
             click: () => {
               onCheckForUpdates()
             }
@@ -70,7 +73,7 @@ export function installAppMenu(
     ...(routedDevTools
       ? ([
           {
-            label: 'View',
+            label: t('appMenu.view'),
             submenu: [
               { role: 'reload' },
               { role: 'forceReload' },
@@ -86,7 +89,7 @@ export function installAppMenu(
         ] as MenuItemConstructorOptions[])
       : []),
     {
-      label: 'Window',
+      label: t('appMenu.window'),
       submenu: [
         { role: 'minimize' },
         { role: 'zoom' },

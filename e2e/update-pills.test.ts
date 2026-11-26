@@ -62,9 +62,14 @@ test('desktop update shows in the sidebar for state=available @windows @macos @l
   expect(await ctx.titleBar.exists('.title-update-pill')).toBe(false)
 })
 
-test('desktop update shows in the sidebar for state=downloading @windows @macos @linux', async () => {
+test('desktop update stays hidden in the sidebar while it downloads by itself @windows @macos @linux', async () => {
+  await setAppUpdateState(ctx.app, { kind: 'ready', version: '1.2.3', autoUpdate: true })
+  await expectSidebarUpdate('ready')
   await setAppUpdateState(ctx.app, { kind: 'downloading', version: '1.2.3', autoUpdate: true })
-  await expectSidebarUpdate('downloading')
+  await ctx.panel.waitFor(async () => !(await ctx.panel.exists(SIDEBAR_UPDATE)), {
+    timeout: 5_000,
+    message: 'sidebar desktop update showed while the update downloaded by itself'
+  })
 })
 
 test('desktop update shows in the sidebar for state=ready @windows @macos @linux', async () => {

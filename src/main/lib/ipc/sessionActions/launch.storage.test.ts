@@ -341,3 +341,59 @@ describe('applyStorageLaunchArgs', () => {
     expect(fs.statSync(settingsMock.defaults.outputDir).isDirectory()).toBe(true)
   })
 })
+
+describe('applyStorageLaunchArgs for a build added from an existing git clone', () => {
+  function flagValues(args: readonly string[], flag: string): string[] {
+    return args.flatMap((arg, i) => (arg === flag ? [args[i + 1]!] : []))
+  }
+
+  it('starts with the shared input and output folders, even with old switches saved off', () => {
+    const launchCmd = makeLaunchCmd()
+    const inst = makeInstall({
+      sourceId: 'git',
+      useSharedInput: false,
+      useSharedOutput: false,
+      inputDir: path.join(root, 'stale-own-input'),
+      outputDir: path.join(root, 'stale-own-output')
+    })
+
+    applyStorageLaunchArgs(inst, 'git-shared', launchCmd, storage())
+
+    expect(flagValues(launchCmd.args!, '--input-directory')).toEqual([globalInput])
+    expect(flagValues(launchCmd.args!, '--output-directory')).toEqual([globalOutput])
+  })
+
+  it('leaves a folder set in Startup arguments as the only one ComfyUI gets', () => {
+    const ownInput = path.join(root, 'own-input')
+    const launchCmd = makeLaunchCmd({ args: ['-s', 'main.py', '--input-directory', ownInput] })
+
+    applyStorageLaunchArgs(makeInstall({ sourceId: 'git' }), 'git-args', launchCmd, storage())
+
+    expect(flagValues(launchCmd.args!, '--input-directory')).toEqual([ownInput])
+    expect(flagValues(launchCmd.args!, '--output-directory')).toEqual([globalOutput])
+  })
+
+  it('creates the input and output folders Startup arguments name before ComfyUI starts', () => {
+    const ownInput = path.join(root, 'missing-own-input')
+    const launchCmd = makeLaunchCmd({
+      cwd: path.join(root, 'git-start-dir'),
+      args: ['main.py', '--input-directory', ownInput, '--output-directory=relative-output']
+    })
+
+    applyStorageLaunchArgs(makeInstall({ sourceId: 'git' }), 'git-missing', launchCmd, storage())
+
+    expect(fs.statSync(ownInput).isDirectory()).toBe(true)
+    expect(fs.statSync(path.join(root, 'git-start-dir', 'relative-output')).isDirectory()).toBe(
+      true
+    )
+  })
+
+  it('still adds the shared input folder after a Standalone build own startup argument', () => {
+    const ownInput = path.join(root, 'standalone-own-input')
+    const launchCmd = makeLaunchCmd({ args: ['main.py', '--input-directory', ownInput] })
+
+    applyStorageLaunchArgs(makeInstall({ sourceId: 'standalone' }), 'sa-args', launchCmd, storage())
+
+    expect(flagValues(launchCmd.args!, '--input-directory')).toEqual([ownInput, globalInput])
+  })
+})

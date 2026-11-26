@@ -65,7 +65,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       const baseMessage = action.confirm?.message
       const message = willStopMsg
         ? augmentMessageWithStopWarning(baseMessage, willStopMsg)
-        : baseMessage || 'Are you sure?'
+        : baseMessage || t('modal.areYouSure')
       const confirmed = await modal.confirm({
         title: action.confirm?.title || action.label,
         message,
