@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
@@ -19,6 +19,8 @@ import { useCreateAgent } from './createAgent'
 import CreateComposer from './CreateComposer.vue'
 import CreateAgentPanel from './CreateAgentPanel.vue'
 import GhostGraph from './GhostGraph.vue'
+import GraphPreview, { type GraphPreviewItem } from './GraphPreview.vue'
+import { useGraphPreview } from './graphPreview'
 import SmartDrop from './SmartDrop.vue'
 
 type Card =
@@ -36,9 +38,6 @@ const TABS = [
   { id: YOURS, label: 'Yours' }
 ]
 const PER_PAGE = 8
-const LINGER_MS = 220
-const ZOOM_MIN = 0.4
-const ZOOM_MAX = 2.5
 const LIST_ID = 'v16-smart-list'
 
 const query = ref('')
@@ -91,54 +90,41 @@ const cards = computed<Card[]>(() => {
 const pages = computed(() => Math.max(1, Math.ceil(cards.value.length / PER_PAGE)))
 const shown = computed(() => cards.value.slice(page.value * PER_PAGE, (page.value + 1) * PER_PAGE))
 const blanks = computed(() => Math.max(0, PER_PAGE - shown.value.length))
-watch(shelf, () => {
-  page.value = 0
-  endPreview()
-})
 
-const preview = ref<Card | null>(null)
-const dragging = ref(false)
-const view = reactive({ x: 0, y: 0, k: 1 })
-let linger: ReturnType<typeof setTimeout> | undefined
-let drag: { x: number; y: number } | null = null
+const {
+  preview,
+  dragging,
+  stay,
+  show,
+  endPreview,
+  endSoon,
+  onStageEnter,
+  onStageLeave,
+  onDown,
+  onMove,
+  onUp,
+  onWheel,
+  panStyle,
+  dotsStyle
+} = useGraphPreview<Card>()
 
-const ghostWorkflow = computed(() => {
+const previewItem = computed<GraphPreviewItem | null>(() => {
   const c = preview.value
-  return c?.type === 'workflow' ? { name: c.name, cover: lastOutput(c.workflow) } : null
+  if (!c) return null
+  return {
+    id: c.id,
+    name: c.name,
+    starter: c.type === 'template' ? c.starter : null,
+    workflow: c.type === 'workflow' ? { name: c.name, cover: lastOutput(c.workflow) } : null
+  }
 })
-const ghostStarter = computed(() =>
-  preview.value?.type === 'template' ? preview.value.starter : null
-)
 const heroHidden = computed(() => !!preview.value || flow.panel.value)
 const bandGone = computed(() => flow.panel.value)
 
-function stay(): void {
-  clearTimeout(linger)
-}
-
 function showPreview(c: Card): void {
-  stay()
-  if (flow.panel.value) return
-  if (preview.value?.id !== c.id) Object.assign(view, { x: 0, y: 0, k: 1 })
-  preview.value = c
+  if (flow.panel.value) return stay()
+  show(c)
   dropOpen.value = false
-}
-
-function endPreview(): void {
-  stay()
-  preview.value = null
-  dragging.value = false
-  drag = null
-}
-
-function endSoon(): void {
-  stay()
-  if (!preview.value || dragging.value) return
-  linger = setTimeout(endPreview, LINGER_MS)
-}
-
-function onStageEnter(): void {
-  if (preview.value) stay()
 }
 
 function onBandLeave(e: PointerEvent): void {
@@ -146,62 +132,11 @@ function onBandLeave(e: PointerEvent): void {
   if (e.clientY > top) endSoon()
 }
 
-function onStageLeave(): void {
-  if (!dragging.value) endSoon()
-}
+const canvasStyle = computed(() => dotsStyle(24, 3, 1))
 
-function onDown(e: PointerEvent): void {
-  if (!preview.value || e.button !== 0) return
-  drag = { x: e.clientX, y: e.clientY }
-  dragging.value = true
-  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
-}
-
-function onMove(e: PointerEvent): void {
-  if (!drag) return
-  view.x += e.clientX - drag.x
-  view.y += e.clientY - drag.y
-  drag = { x: e.clientX, y: e.clientY }
-}
-
-function onUp(e: PointerEvent): void {
-  if (!drag) return
-  drag = null
-  dragging.value = false
-  const el = e.currentTarget as Element
-  if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
-  const r = el.getBoundingClientRect()
-  const inside =
-    e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
-  if (!inside) endSoon()
-}
-
-function onWheel(e: WheelEvent): void {
-  if (!preview.value) return
-  e.preventDefault()
-  stay()
-  const r = (e.currentTarget as Element).getBoundingClientRect()
-  const sx = e.clientX - r.left - r.width / 2
-  const sy = e.clientY - r.top - r.height / 2
-  const k = Math.min(
-    ZOOM_MAX,
-    Math.max(ZOOM_MIN, view.k * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)))
-  )
-  const f = k / view.k
-  view.x = sx - (sx - view.x) * f
-  view.y = sy - (sy - view.y) * f
-  view.k = k
-}
-
-const panStyle = computed(() => ({
-  transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`
-}))
-const canvasStyle = computed(() => {
-  const size = 24 * view.k
-  return {
-    backgroundSize: `auto, ${size}px ${size}px, auto`,
-    backgroundPosition: `0 0, calc(50% + ${view.x}px) calc(50% + ${view.y}px), 0 0`
-  }
+watch(shelf, () => {
+  page.value = 0
+  endPreview()
 })
 
 function open(c: Card): void {
@@ -307,13 +242,7 @@ onBeforeUnmount(() => {
           <GhostGraph :starter="flow.build.value.starter" :agent="flow.ghost.value" />
         </div>
 
-        <Transition name="v16-fade">
-          <div v-if="preview" class="v16-view" aria-hidden="true">
-            <div class="v16-pan" :style="panStyle">
-              <GhostGraph :key="preview.id" :starter="ghostStarter" :workflow="ghostWorkflow" />
-            </div>
-          </div>
-        </Transition>
+        <GraphPreview :item="previewItem" :pan="panStyle" />
 
         <div class="v16-hero" :class="heroHidden && 'is-hidden'" :aria-hidden="heroHidden">
           <h1 class="v16-title">What do you want to make?</h1>
@@ -351,14 +280,6 @@ onBeforeUnmount(() => {
             <Plus :size="14" />Start with a blank canvas
           </button>
         </div>
-
-        <Transition name="v16-fade">
-          <p v-if="preview" class="mar-tip v16-label" role="status">
-            Previewing {{ preview.name }} · click the card to open<span class="v16-label-hint">
-              · drag to move, scroll to zoom</span
-            >
-          </p>
-        </Transition>
       </div>
 
       <div
@@ -497,7 +418,6 @@ onBeforeUnmount(() => {
   cursor: grabbing;
   user-select: none;
 }
-:root .proto-ui.proto-ui.proto-ui .v16-view,
 :root .proto-ui.proto-ui.proto-ui .v16-built {
   position: absolute;
   inset: 0;
@@ -514,15 +434,6 @@ onBeforeUnmount(() => {
 }
 :root .proto-ui.proto-ui.proto-ui .v16-built.is-gone {
   opacity: 0;
-}
-:root .proto-ui.proto-ui.proto-ui .v16-pan {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 40px 56px 72px;
-  transform-origin: 50% 50%;
-  will-change: transform;
 }
 :root .proto-ui.proto-ui.proto-ui .v16-hero {
   position: relative;
@@ -590,29 +501,6 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .v16-blank:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v16-label {
-  position: absolute;
-  bottom: 14px;
-  left: 50%;
-  z-index: 4;
-  max-width: calc(100% - 48px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-:root .proto-ui.proto-ui.proto-ui .v16-label-hint {
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v16-fade-enter-active,
-:root .proto-ui.proto-ui.proto-ui .v16-fade-leave-active {
-  transition: opacity 180ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v16-fade-enter-from,
-:root .proto-ui.proto-ui.proto-ui .v16-fade-leave-to {
-  opacity: 0;
 }
 :root .proto-ui.proto-ui.proto-ui .v16-icon-btn {
   display: grid;
@@ -768,11 +656,6 @@ onBeforeUnmount(() => {
     opacity: 0;
   }
 }
-@media (max-width: 1180px) {
-  :root .proto-ui.proto-ui.proto-ui .v16-label-hint {
-    display: none;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   :root .proto-ui.proto-ui.proto-ui .v16-hero,
   :root .proto-ui.proto-ui.proto-ui .v16-title,
@@ -780,9 +663,7 @@ onBeforeUnmount(() => {
   :root .proto-ui.proto-ui.proto-ui .v16-drop,
   :root .proto-ui.proto-ui.proto-ui .v16-dock-wrap,
   :root .proto-ui.proto-ui.proto-ui .v16-tile-pic,
-  :root .proto-ui.proto-ui.proto-ui .v16-tile-name,
-  :root .proto-ui.proto-ui.proto-ui .v16-fade-enter-active,
-  :root .proto-ui.proto-ui.proto-ui .v16-fade-leave-active {
+  :root .proto-ui.proto-ui.proto-ui .v16-tile-name {
     animation: none;
     transition: none;
   }

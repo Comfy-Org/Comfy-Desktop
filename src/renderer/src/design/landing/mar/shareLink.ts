@@ -25,6 +25,7 @@ import { COVERS, RECENTS_COVERS, cover, defaultCover, recentsCover } from './cov
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
+import { graphHover } from './create/graphHover'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { assetLink, holdAssetLink } from './assets/assetLink'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
@@ -182,6 +183,7 @@ const PARTS: Part[] = [
   one('composerSearch', composerSearch, 'smart', COMPOSER_SEARCHES),
   one('agentOpens', agentOpens, 'create', AGENT_OPENS),
   one('composer', composerPos, 'bottom', COMPOSER_POSITIONS),
+  one('graphHover', graphHover, 'off', OFF_ON),
   one('folderLayout', assetFolderLayout, 'off', ASSET_FOLDER_LAYOUTS),
   one('folderPicker', folderPicker, 'filters', FOLDER_PICKERS),
   one('rating', ratingStyle, 'stars', RATING_STYLES),

@@ -26,9 +26,13 @@ export function stopIn(el: EventTarget | Element | null | undefined): void {
   video.currentTime = 0
 }
 
-export function useEscapeCloses(field: () => HTMLElement | undefined): void {
+export function useEscapeCloses(
+  field: () => HTMLElement | undefined,
+  first: () => boolean = () => false
+): void {
   function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && document.activeElement !== field()) closeCreate()
+    if (e.key !== 'Escape' || document.activeElement === field()) return
+    if (!first()) closeCreate()
   }
   onMounted(() => window.addEventListener('keydown', onKey))
   onBeforeUnmount(() => window.removeEventListener('keydown', onKey))

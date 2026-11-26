@@ -19,6 +19,7 @@ import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { VIEWER_SHORTCUTS, viewerShortcut } from './assets/viewerShortcut'
 import { createLook } from './create/createLook'
+import { graphHover } from './create/graphHover'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
 import { COMPOSER_SEARCHES, composerSearch } from './create/composerSearch'
@@ -213,6 +214,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
     show: () => when.createLook.value && (createInput.id === 'agent' || smartLook())
   },
   { id: 'composerPos', show: () => when.createLook.value && createLook.id === 'V07' },
+  { id: 'graphHover', show: () => when.graphHover.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -572,6 +574,19 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('composerPos')" label="Composer position">
             <Seg v-model="composerPos.id" label="Composer position" :options="COMPOSER_POSITIONS" />
+          </Row>
+          <Row :show="shows('graphHover')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Graph preview on hover</span>
+              <Switch
+                :model-value="graphHover.id === 'on'"
+                aria-label="Graph preview on hover"
+                @update:model-value="graphHover.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >Pointing at a template or a recent shows its graph on the canvas.</span
+            >
           </Row>
           <Row :show="shows('assetFolderLayout')" label="Folders layout">
             <Seg
