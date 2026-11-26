@@ -4,7 +4,8 @@ import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
 import { resetTuning, tuning } from './uiTuner'
 import { surface } from './shell/surface'
-import { marNav, marSideOn, marSidebarClosed } from './shell/marShell'
+import { marNav, marPanelsOn, marSideOn, marSidebarClosed } from './shell/marShell'
+import { sidebarMotion } from './shell/sidebarMotion'
 import { screen } from './screen'
 // Graphite is applied on load.
 import './palette'
@@ -107,6 +108,7 @@ export const when = {
   exploreSwitch: computed(
     () => onHome.value && can.value.explore && !onFirstRun.value && homeArcMix.id === 'tabs'
   ),
+  sidebarMotion: computed(() => sidebarShown.value && marPanelsOn.value),
   buildsAt: computed(
     () =>
       onHome.value &&
@@ -302,6 +304,7 @@ export const TWEAKS = {
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'recents'),
   buildsAt: one(buildsAt, 'bottom'),
+  sidebarMotion: one(sidebarMotion, 'desktop'),
   exploreSwitch: one(exploreSwitch, 'seg'),
   homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
   homeIdeaSmallGreeting: one(homeIdea('smallGreeting').store, 'off'),

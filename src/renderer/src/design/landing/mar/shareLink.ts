@@ -17,6 +17,7 @@ import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
+import { SIDEBAR_MOTIONS, sidebarMotion } from './shell/sidebarMotion'
 import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
 import { HOME_IDEAS, HOME_IDEA_SWITCHES } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
@@ -164,6 +165,7 @@ const PARTS: Part[] = [
   one('arcMix', homeArcMix, 'tabs', HOME_ARC_MIXES),
   one('homeLayout', homeLayout, 'recents', HOME_LAYOUTS),
   one('buildsAt', buildsAt, 'bottom', BUILDS_AT),
+  one('sidebarMotion', sidebarMotion, 'desktop', SIDEBAR_MOTIONS),
   one('exploreSwitch', exploreSwitch, 'seg', EXPLORE_SWITCHES),
   ...HOME_IDEAS.map((x) => one(x.key, x.store, x.def, HOME_IDEA_SWITCHES)),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),

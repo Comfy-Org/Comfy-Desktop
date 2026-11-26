@@ -15,18 +15,20 @@ const {
   content,
   side = 'top',
   wrap = false,
-  disabled = false
+  disabled = false,
+  delay
 } = defineProps<{
   content: string
   side?: 'top' | 'bottom' | 'left' | 'right'
   wrap?: boolean
   /** Render the trigger without a tooltip (e.g. labels already visible). */
   disabled?: boolean
+  delay?: number
 }>()
 </script>
 
 <template>
-  <TooltipRoot :disabled>
+  <TooltipRoot :disabled :delay-duration="delay">
     <TooltipTrigger v-if="wrap" as="span" class="inline-flex"><slot /></TooltipTrigger>
     <TooltipTrigger v-else as-child><slot /></TooltipTrigger>
     <TooltipPortal :to="PORTAL_TO" defer>
