@@ -76,7 +76,7 @@ function moveVertically(step: 1 | -1): void {
 function smartKey(e: KeyboardEvent): boolean {
   if (e.isComposing) return false
   const across = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
-  if (e.key === 'Escape' && shown.value) finder.close()
+  if (e.key === 'Escape' && query.value) query.value = ''
   else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && query.value.trim())
     moveVertically(e.key === 'ArrowDown' ? 1 : -1)
   else if (across && shown.value && finder.inResults.value) {
