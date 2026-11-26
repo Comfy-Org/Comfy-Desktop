@@ -635,8 +635,9 @@ const linkSays = computed(() => {
               :options="VIEWER_SHORTCUTS"
             />
             <span class="text-ui text-subtle-foreground"
-              >EXR and 3D: a Controls button and the V key switch to the Viewer tab and back. On the
-              picture's corner, or in the bottom bar by the zoom.</span
+              >EXR and 3D: a Controls button opens the Viewer tab and hides while it is open; the V
+              key goes there and back. In the bottom bar by the zoom, or on the picture's
+              corner.</span
             >
           </Row>
           <Row :show="shows('fullAssets')" label="Full Assets">

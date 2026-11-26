@@ -631,7 +631,7 @@ onBeforeUnmount(() => {
                 <AssetCover v-else :name="asset.name" :type="asset.type" />
               </div>
               <button
-                v-if="shortcutShown && viewerShortcut.id === 'stage'"
+                v-if="shortcutShown && !showViewer && viewerShortcut.id === 'stage'"
                 type="button"
                 class="mad-viewer-btn"
                 aria-keyshortcuts="V"
@@ -718,7 +718,7 @@ onBeforeUnmount(() => {
             </nav>
             <div class="mad-foot-tools">
               <button
-                v-if="shortcutShown && viewerShortcut.id === 'bar'"
+                v-if="shortcutShown && !showViewer && viewerShortcut.id === 'bar'"
                 type="button"
                 class="mad-viewer-btn is-bar"
                 aria-keyshortcuts="V"

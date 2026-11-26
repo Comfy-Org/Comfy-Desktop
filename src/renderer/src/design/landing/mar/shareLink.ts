@@ -192,7 +192,7 @@ const PARTS: Part[] = [
   one('folderPicker', folderPicker, 'filters', FOLDER_PICKERS),
   one('rating', ratingStyle, 'stars', RATING_STYLES),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
-  one('viewerShortcut', viewerShortcut, 'stage', VIEWER_SHORTCUTS),
+  one('viewerShortcut', viewerShortcut, 'bar', VIEWER_SHORTCUTS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),

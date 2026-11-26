@@ -337,7 +337,7 @@ export const TWEAKS = {
   rating: one(ratingStyle, 'stars'),
   folderPicker: one(folderPicker, 'filters'),
   folderDepth: one(folderDepth, 'few'),
-  viewerShortcut: one(viewerShortcut, 'stage'),
+  viewerShortcut: one(viewerShortcut, 'bar'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),

@@ -4,8 +4,8 @@ export type ViewerShortcut = 'off' | 'stage' | 'bar'
 
 export const VIEWER_SHORTCUTS: { value: ViewerShortcut; label: string }[] = [
   { value: 'off', label: 'Off' },
-  { value: 'stage', label: 'On picture' },
-  { value: 'bar', label: 'By zoom' }
+  { value: 'bar', label: 'By zoom' },
+  { value: 'stage', label: 'On picture' }
 ]
 
 const KEY = 'comfy.design.mar.viewerShortcut'
@@ -14,9 +14,9 @@ export const viewerShortcut = reactive<{ id: ViewerShortcut }>({
   id: (() => {
     try {
       const saved = localStorage.getItem(KEY)
-      return saved === 'off' || saved === 'bar' ? saved : 'stage'
+      return saved === 'off' || saved === 'stage' ? saved : 'bar'
     } catch {
-      return 'stage'
+      return 'bar'
     }
   })()
 })
