@@ -128,6 +128,7 @@ import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignF
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { runningAppCount, runningApps } from './apps/appPageView'
 import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
+import { releaseWindowWorkspaceClaim } from './apps/workspaceClaims'
 import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
 import { openDraftLink } from './apps/draftLinks'
 import {
@@ -765,6 +766,7 @@ async function prepareBuildWindowFocus(
   requester?: BrowserWindow | null,
   pickerWorkspaceId?: string
 ): Promise<boolean> {
+  if (entry.installationId) releaseWindowWorkspaceClaim(entry.installationId)
   try {
     return (
       (await syncCloudWindowWorkspace(entry, { pickerWorkspaceId })) && !entry.window.isDestroyed()

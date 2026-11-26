@@ -9,7 +9,8 @@ import type {
   ElectronApi,
   HomeTourReplayState,
   ResolvedTheme,
-  AdoptPromptRequest
+  AdoptPromptRequest,
+  CatalogWorkflowDownload
 } from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
@@ -127,7 +128,20 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('assets:open-workflow', source, assetId, name, build),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
+    listCatalogWorkflows: () => ipcRenderer.invoke('catalog:list-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
+    catalogLocalBuildVersions: () => ipcRenderer.invoke('catalog:local-build-versions'),
+    catalogWorkflowNeeds: (id) => ipcRenderer.invoke('catalog:workflow-needs', id),
+    launchCatalogWorkflow: (id, target, workspaceId, options) =>
+      ipcRenderer.invoke('catalog:launch-workflow', id, target, workspaceId, options),
+    cancelCatalogWorkflowDownload: (id, build) =>
+      ipcRenderer.invoke('catalog:cancel-workflow-download', id, build),
+    onCatalogWorkflowDownload: (callback) => {
+      const handler = (_event: unknown, progress: CatalogWorkflowDownload): void =>
+        callback(progress)
+      ipcRenderer.on('catalog:workflow-download', handler)
+      return () => ipcRenderer.removeListener('catalog:workflow-download', handler)
+    },
     listApps: () => ipcRenderer.invoke('apps:list'),
     listHiddenApps: () => ipcRenderer.invoke('apps:list-hidden'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),

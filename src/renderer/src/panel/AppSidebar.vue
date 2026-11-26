@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, provide, ref, shallowRef, toRef, w
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
-  AppWindow,
   Cloud,
+  Compass,
   CornerDownRight,
   FlaskConical,
   House,
@@ -140,7 +140,7 @@ onBeforeUnmount(() => clearTimeout(unmountBuildRows))
 
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
-  { page: 'apps', label: t('sidebar.apps'), icon: AppWindow },
+  { page: 'apps', label: t('sidebar.explore'), icon: Compass },
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
   ...(showStaffApps
     ? [{ page: 'staff-apps' as const, label: t('sidebar.development'), icon: FlaskConical }]
