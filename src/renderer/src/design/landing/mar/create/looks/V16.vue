@@ -50,7 +50,6 @@ const flow = useCreateAgent()
 
 const finder = useSmartSearch(query)
 const dropOpen = ref(false)
-let autofocused = true
 watch(query, (q) => q && (dropOpen.value = true))
 const dropShown = computed(
   () => dropOpen.value && !flow.panel.value && finder.results.value.rows.length > 0
@@ -266,8 +265,7 @@ function key(e: KeyboardEvent): void {
 }
 
 function onFocusIn(): void {
-  if (autofocused) autofocused = false
-  else dropOpen.value = true
+  dropOpen.value = true
 }
 
 function onWindowKey(e: KeyboardEvent): void {
@@ -277,10 +275,7 @@ function onWindowKey(e: KeyboardEvent): void {
   else closeCreate()
 }
 
-onMounted(() => {
-  composer.value?.field?.focus()
-  window.addEventListener('keydown', onWindowKey)
-})
+onMounted(() => window.addEventListener('keydown', onWindowKey))
 onBeforeUnmount(() => {
   stay()
   window.removeEventListener('keydown', onWindowKey)

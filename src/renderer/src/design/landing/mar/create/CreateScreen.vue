@@ -153,10 +153,7 @@ watch(at, (i, was) => {
 function onWindowKey(e: KeyboardEvent): void {
   if (e.key === 'Escape' && document.activeElement !== field.value) closeCreate()
 }
-onMounted(() => {
-  field.value?.focus()
-  window.addEventListener('keydown', onWindowKey)
-})
+onMounted(() => window.addEventListener('keydown', onWindowKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKey))
 </script>
 

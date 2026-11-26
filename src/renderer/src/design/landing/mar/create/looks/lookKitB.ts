@@ -30,10 +30,7 @@ export function useEscapeCloses(field: () => HTMLElement | undefined): void {
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Escape' && document.activeElement !== field()) closeCreate()
   }
-  onMounted(() => {
-    field()?.focus()
-    window.addEventListener('keydown', onKey)
-  })
+  onMounted(() => window.addEventListener('keydown', onKey))
   onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 
