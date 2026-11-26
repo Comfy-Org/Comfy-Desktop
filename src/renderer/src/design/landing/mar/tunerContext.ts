@@ -20,6 +20,7 @@ import { assetFoldersShown } from './assets/assetFolderSwitch'
 import { assetFolderLayout } from './assets/assetFolderLayout'
 import { folderPicker } from './assets/folderPicker'
 import { ratingStyle } from './assets/ratingStyle'
+import { viewerOnScreen, viewerShortcut } from './assets/viewerShortcut'
 import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
@@ -182,6 +183,7 @@ export const when = {
         proto.page === 'assets' &&
         can.value.onboarding)
   ),
+  viewerShortcut: computed(() => viewerOnScreen.count > 0),
   // ComfyUI (Proposal): where the Assets panel's expand button goes.
   fullAssets: computed(() => inGraph.value && comfyLook.id === 'proposal'),
   // Credits: the sidebar foot; Tabs has no sidebar.
@@ -336,6 +338,7 @@ export const TWEAKS = {
   rating: one(ratingStyle, 'stars'),
   folderPicker: one(folderPicker, 'filters'),
   folderDepth: one(folderDepth, 'few'),
+  viewerShortcut: one(viewerShortcut, 'on'),
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
