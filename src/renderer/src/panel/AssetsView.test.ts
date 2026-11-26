@@ -2081,6 +2081,251 @@ describe('AssetsView', () => {
   })
 })
 
+describe('AssetsView image zoom', () => {
+  const BIG_WIDTH = 4000
+  const BIG_HEIGHT = 3000
+
+  function bigPicture(id: string): AssetSummary {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${BIG_WIDTH}" height="${BIG_HEIGHT}"><rect width="100%" height="100%" fill="teal"/></svg>`
+    return asset(id, `${id}.svg`, 'image', {
+      previewUrl: `data:image/svg+xml,${encodeURIComponent(svg)}`
+    })
+  }
+
+  function stage(): HTMLElement {
+    return viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-viewport"]')!
+  }
+
+  function image(): HTMLElement {
+    return viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-image"]')!
+  }
+
+  function zoomLabel(): string {
+    return shownText(viewer()!.querySelector('[data-testid="output-detail-zoom"]'))
+  }
+
+  function pictureBox(): { left: number; top: number; width: number; height: number } {
+    const shown = /translate\((-?[\d.e-]+)px, (-?[\d.e-]+)px\) scale\(([\d.e-]+)\)/.exec(
+      image().style.transform
+    )
+    expect(shown, 'the picture is placed by a transform').not.toBeNull()
+    const [, x, y, scale] = shown!.map(Number)
+    const box = stage().getBoundingClientRect()
+    return {
+      left: box.left + x!,
+      top: box.top + y!,
+      width: BIG_WIDTH * scale!,
+      height: BIG_HEIGHT * scale!
+    }
+  }
+
+  function shownScale(): number {
+    return pictureBox().width / BIG_WIDTH
+  }
+
+  function pictureSpot(x: number, y: number): { u: number; v: number } {
+    const box = pictureBox()
+    return { u: (x - box.left) / box.width, v: (y - box.top) / box.height }
+  }
+
+  function spotOnPicture(u: number, v: number): { x: number; y: number } {
+    const box = pictureBox()
+    return { x: Math.round(box.left + box.width * u), y: Math.round(box.top + box.height * v) }
+  }
+
+  function spotOnStage(u: number, v: number): { x: number; y: number } {
+    const box = stage().getBoundingClientRect()
+    return { x: box.left + box.width * u, y: box.top + box.height * v }
+  }
+
+  async function openBig(wrapper: Awaited<ReturnType<typeof mountAssets>>): Promise<void> {
+    await wrapper.get('[data-testid="asset-open-big"]').trigger('click')
+    await flushPromises()
+    await vi.waitFor(() => expect(image().style.transform).toContain('scale('))
+  }
+
+  async function wheel(x: number, y: number, deltaY: number, ctrlKey = false): Promise<void> {
+    stage().dispatchEvent(
+      new WheelEvent('wheel', {
+        clientX: x,
+        clientY: y,
+        deltaY,
+        ctrlKey,
+        bubbles: true,
+        cancelable: true
+      })
+    )
+    await flushPromises()
+  }
+
+  async function drag(from: { x: number; y: number }, by: { x: number; y: number }): Promise<void> {
+    const target = stage()
+    const pointer = { pointerId: 1, button: 0, bubbles: true, cancelable: true }
+    target.dispatchEvent(
+      new PointerEvent('pointerdown', { ...pointer, clientX: from.x, clientY: from.y })
+    )
+    target.dispatchEvent(
+      new PointerEvent('pointermove', {
+        ...pointer,
+        clientX: from.x + by.x / 2,
+        clientY: from.y + by.y / 2
+      })
+    )
+    target.dispatchEvent(
+      new PointerEvent('pointermove', {
+        ...pointer,
+        clientX: from.x + by.x,
+        clientY: from.y + by.y
+      })
+    )
+    target.dispatchEvent(
+      new PointerEvent('pointerup', { ...pointer, clientX: from.x + by.x, clientY: from.y + by.y })
+    )
+    await flushPromises()
+  }
+
+  async function doubleClick(x: number, y: number): Promise<void> {
+    stage().dispatchEvent(new MouseEvent('dblclick', { clientX: x, clientY: y, bubbles: true }))
+    await flushPromises()
+  }
+
+  it('zooms with the wheel and a pinch around the point under the cursor, and shows the live percentage', async () => {
+    const wrapper = await mountAssets([bigPicture('big')])
+    await openBig(wrapper)
+    expect(zoomLabel()).toBe('Fit')
+    const fitScale = shownScale()
+
+    const at = spotOnPicture(0.3, 0.4)
+    const before = pictureSpot(at.x, at.y)
+    await wheel(at.x, at.y, -200)
+
+    expect(shownScale()).toBeGreaterThan(fitScale)
+    expect(zoomLabel()).toBe(`${Math.round(shownScale() * 100)}%`)
+    expect(pictureBox().width, 'the picture now runs past the stage sideways').toBeGreaterThan(
+      stage().getBoundingClientRect().width
+    )
+    expect(pictureSpot(at.x, at.y).u, 'the same spot stays under the cursor').toBeCloseTo(
+      before.u,
+      2
+    )
+
+    const pinched = shownScale()
+    await wheel(at.x, at.y, -20, true)
+    expect(shownScale(), 'a pinch zooms in too').toBeGreaterThan(pinched)
+
+    await wheel(at.x, at.y, 5000)
+    expect(zoomLabel(), 'zooming out stops at Fit').toBe('Fit')
+    expect(shownScale()).toBeCloseTo(fitScale, 5)
+
+    for (let turn = 0; turn < 10; turn++) await wheel(at.x, at.y, -2000)
+    expect(zoomLabel(), 'zoom stops at 800%').toBe('800%')
+  })
+
+  it('pans a zoomed picture by dragging it, and does not move a fitted one', async () => {
+    const wrapper = await mountAssets([bigPicture('big')])
+    await openBig(wrapper)
+    const middle = spotOnStage(0.5, 0.5)
+
+    expect(stage().className).not.toContain('cursor-grab')
+    const fitted = pictureBox()
+    await drag(middle, { x: -120, y: -60 })
+    expect(pictureBox().left).toBe(fitted.left)
+    expect(pictureBox().top).toBe(fitted.top)
+
+    await doubleClick(middle.x, middle.y)
+    expect(zoomLabel()).toBe('100%')
+    expect(stage().className).toContain('cursor-grab')
+    const zoomed = pictureBox()
+    await drag(middle, { x: -120, y: -60 })
+    expect(pictureBox().left).toBeCloseTo(zoomed.left - 120, 0)
+    expect(pictureBox().top).toBeCloseTo(zoomed.top - 60, 0)
+    expect(stage().className, 'the hand opens again when the drag ends').not.toContain(
+      'cursor-grabbing'
+    )
+
+    await drag(middle, { x: 100_000, y: 100_000 })
+    expect(pictureBox().left, 'the picture is not dragged off the stage').toBeCloseTo(
+      stage().getBoundingClientRect().left,
+      0
+    )
+  })
+
+  it('toggles Fit and 100% around the clicked point with a double-click', async () => {
+    const wrapper = await mountAssets([bigPicture('big')])
+    await openBig(wrapper)
+
+    const at = spotOnPicture(0.35, 0.45)
+    const before = pictureSpot(at.x, at.y)
+    await doubleClick(at.x, at.y)
+    expect(zoomLabel()).toBe('100%')
+    expect(shownScale()).toBeCloseTo(1, 5)
+    const after = pictureSpot(at.x, at.y)
+    expect(after.u).toBeCloseTo(before.u, 2)
+    expect(after.v).toBeCloseTo(before.v, 2)
+
+    await doubleClick(at.x, at.y)
+    expect(zoomLabel()).toBe('Fit')
+  })
+
+  it('zooms in with plus or equals, out with minus, back to Fit with zero, and still steps with the arrows', async () => {
+    const wrapper = await mountAssets([bigPicture('big'), picture('next', 300)])
+    await openBig(wrapper)
+    const fitScale = shownScale()
+
+    await press('+')
+    const once = shownScale()
+    expect(once).toBeGreaterThan(fitScale)
+    await press('=')
+    expect(shownScale()).toBeGreaterThan(once)
+    await press('-')
+    expect(shownScale()).toBeCloseTo(once, 5)
+    expect(zoomLabel()).toMatch(/^\d+%$/)
+    await press('0')
+    expect(zoomLabel()).toBe('Fit')
+
+    await press('=')
+    await press('ArrowRight')
+    expect(viewerTitle()).toBe('next.svg')
+    await press('ArrowLeft')
+    expect(viewerTitle()).toBe('big.svg')
+    await vi.waitFor(() => expect(image().style.transform).toContain('scale('))
+    expect(zoomLabel(), 'another file opens fitted').toBe('Fit')
+
+    await press('Escape')
+    expect(viewer()).toBeNull()
+  })
+
+  it('leaves a video, a sound and a 3D file alone on wheel, drag, double-click and zoom keys', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://surfer' }),
+      asset('/out/voice.wav', 'voice.wav', 'audio', { previewUrl: 'comfy-output://voice' }),
+      asset('/out/bust.glb', 'bust.glb', '3d')
+    ])
+    await wrapper.get('[data-testid="asset-open-/out/surfer.mp4"]').trigger('click')
+    await flushPromises()
+
+    for (const name of ['surfer.mp4', 'voice.wav', 'bust.glb']) {
+      expect(viewerTitle()).toBe(name)
+      const middle = spotOnStage(0.5, 0.5)
+      const wheelEvent = new WheelEvent('wheel', {
+        clientX: middle.x,
+        clientY: middle.y,
+        deltaY: -400,
+        bubbles: true,
+        cancelable: true
+      })
+      stage().dispatchEvent(wheelEvent)
+      expect(wheelEvent.defaultPrevented, `${name} lets the wheel through`).toBe(false)
+      await doubleClick(middle.x, middle.y)
+      await press('=')
+      expect(stage().className).not.toContain('cursor-grab')
+      expect(viewer()!.querySelector('[data-testid="output-detail-zoom"]')).toBeNull()
+      expect(viewer()!.querySelector('[data-testid="output-detail-image"]')).toBeNull()
+      await press('ArrowRight')
+    }
+  })
+})
+
 describe('AssetsView Open workflow', () => {
   function workflowButton(): HTMLElement | null {
     return document.querySelector<HTMLElement>('[data-testid="output-detail-workflow"]')

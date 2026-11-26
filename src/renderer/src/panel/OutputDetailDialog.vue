@@ -26,6 +26,7 @@ import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import OutputDetailThumb from './OutputDetailThumb.vue'
+import { useImageZoom } from './useImageZoom'
 import { formatBytes } from '../lib/downloadFormatters'
 import { revealInFolderKey } from '../composables/usePlatform'
 import type { MenuItem as MenuEntry } from '@comfyorg/design-system/lib/menu/types'
@@ -63,6 +64,7 @@ export interface OutputDetailItem {
 type Zoom = 'fit' | 0.5 | 1 | 2
 
 const ZOOM_STEPS: Zoom[] = ['fit', 0.5, 1, 2]
+const IMAGE_RADIUS_PX = 8
 
 const { items } = defineProps<{
   items: OutputDetailItem[]
@@ -85,7 +87,7 @@ const preferredMotion = usePreferredReducedMotion()
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const panel = useTemplateRef<HTMLElement>('panel')
 const natural = ref<{ width: number; height: number } | null>(null)
-const zoom = ref<Zoom>('fit')
+const viewport = useTemplateRef<HTMLElement>('viewport')
 
 const item = computed(() => items[index.value] ?? items[0]!)
 const moreActions = computed(() => item.value.moreActions ?? [])
@@ -154,19 +156,32 @@ const savedFolder = computed(() => {
   return trimmed.slice(cut + 1) || trimmed
 })
 const zoomable = computed(() => item.value.kind === 'image' && !!item.value.previewUrl)
+const zoomer = useImageZoom(viewport, natural, zoomable)
 const percent = computed(() => new Intl.NumberFormat(locale.value, { style: 'percent' }))
 const zoomLabel = computed(() =>
-  zoom.value === 'fit' ? t('assets.detail.fit') : percent.value.format(zoom.value)
+  zoomer.scale.value === null ? t('assets.detail.fit') : percent.value.format(zoomer.scale.value)
 )
-const zoomedWidth = computed(() =>
-  zoom.value === 'fit' || !natural.value ? null : `${natural.value.width * zoom.value}px`
-)
+const imageStyle = computed(() => {
+  const view = zoomer.view.value
+  const size = natural.value
+  if (!view || !size) return undefined
+  return {
+    width: `${size.width}px`,
+    height: `${size.height}px`,
+    transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+    borderRadius: `${IMAGE_RADIUS_PX / view.scale}px`
+  }
+})
+const viewportCursor = computed(() => {
+  if (!zoomer.canPan.value) return undefined
+  return zoomer.dragging.value ? 'cursor-grabbing' : 'cursor-grab'
+})
 
 watch(
   () => item.value.key,
   async () => {
     natural.value = null
-    zoom.value = 'fit'
+    zoomer.reset()
     await nextTick()
     filmstrip.value
       ?.querySelector('[aria-current="true"]')
@@ -194,6 +209,19 @@ function zoomOptionLabel(option: Zoom): string {
   return option === 'fit' ? t('assets.detail.fit') : percent.value.format(option)
 }
 
+function isZoom(option: Zoom): boolean {
+  return option === 'fit' ? zoomer.fitted.value : zoomer.scale.value === option
+}
+
+function chooseZoom(option: Zoom): void {
+  if (option === 'fit') zoomer.fit(true)
+  else zoomer.zoomTo(option, undefined, true)
+}
+
+function hasModifier(event: KeyboardEvent): boolean {
+  return event.ctrlKey || event.metaKey || event.altKey
+}
+
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   const target = event.target
   if (event.defaultPrevented) return
@@ -204,6 +232,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     return
   if (event.key === 'ArrowLeft') step(-1)
   else if (event.key === 'ArrowRight') step(1)
+  else if (!hasModifier(event) && zoomer.onKey(event.key)) event.preventDefault()
 })
 </script>
 
@@ -218,17 +247,33 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   >
     <section class="flex min-w-0 flex-1 flex-col gap-3 p-3" data-testid="output-detail-stage">
       <div
-        class="flex min-h-0 flex-1 overflow-auto"
-        :class="zoom === 'fit' && 'items-center justify-center'"
+        ref="viewport"
+        class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+        :class="[viewportCursor, zoomable && 'touch-none']"
+        data-testid="output-detail-viewport"
+        @wheel="zoomer.onWheel"
+        @pointerdown="zoomer.onPointerDown"
+        @pointermove="zoomer.onPointerMove"
+        @pointerup="zoomer.onPointerUp"
+        @pointercancel="zoomer.onPointerUp"
+        @dblclick="zoomer.onDoubleClick"
       >
         <img
           v-if="item.previewUrl && item.kind === 'image'"
           :key="item.key"
           :src="item.previewUrl"
           :alt="item.name"
-          class="m-auto rounded-lg"
-          :class="zoom === 'fit' ? 'max-h-full max-w-full object-contain' : 'shrink-0'"
-          :style="zoomedWidth ? { width: zoomedWidth, maxWidth: 'none' } : undefined"
+          draggable="false"
+          :class="
+            imageStyle
+              ? [
+                  'absolute top-0 left-0 max-w-none origin-top-left select-none',
+                  zoomer.animate.value &&
+                    'transition-transform duration-200 ease-out motion-reduce:transition-none'
+                ]
+              : 'm-auto max-h-full max-w-full rounded-lg object-contain'
+          "
+          :style="imageStyle"
           data-testid="output-detail-image"
           @load="onImageLoad"
         />
@@ -300,7 +345,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <ChevronDown :size="14" aria-hidden="true" />
             </Button>
           </template>
-          <DropdownMenuRadioGroup :model-value="String(zoom)">
+          <DropdownMenuRadioGroup
+            :model-value="zoomer.fitted.value ? 'fit' : String(zoomer.scale.value)"
+          >
             <MenuRadioItem
               v-for="option in ZOOM_STEPS"
               :key="option"
@@ -308,10 +355,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               type="button"
               :value="String(option)"
               class="w-full"
-              @select="zoom = option"
+              @select="chooseZoom(option)"
             >
               <span class="flex-1 text-left">{{ zoomOptionLabel(option) }}</span>
-              <Check v-if="zoom === option" :size="15" aria-hidden="true" />
+              <Check v-if="isZoom(option)" :size="15" aria-hidden="true" />
             </MenuRadioItem>
           </DropdownMenuRadioGroup>
         </Menu>
