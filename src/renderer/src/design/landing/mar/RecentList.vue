@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { Cloud, Monitor } from 'lucide-vue-next'
 import WorkflowCover from './brand/WorkflowCover.vue'
+import { recentThumb } from './recentThumb'
 
 export interface RecentListRow {
   id: string
@@ -24,7 +26,11 @@ const emit = defineEmits<{ open: [row: RecentListRow]; hover: [id: string] }>()
         @focus="emit('hover', r.id)"
         @click="emit('open', r)"
       >
-        <span class="v15-thumb">
+        <span v-if="recentThumb.id === 'runsOn'" class="v15-thumb is-icon" aria-hidden="true">
+          <Cloud v-if="/cloud/i.test(r.build)" :size="16" />
+          <Monitor v-else :size="16" />
+        </span>
+        <span v-else class="v15-thumb">
           <img v-if="r.src" :src="r.src" alt="" loading="lazy" />
           <WorkflowCover v-else :name="r.name" />
         </span>
@@ -72,6 +78,11 @@ const emit = defineEmits<{ open: [row: RecentListRow]; hover: [id: string] }>()
   border-radius: 6px;
   background: var(--color-secondary-background);
   box-shadow: inset 0 0 0 1px var(--color-border-default);
+}
+:root .proto-ui.proto-ui.proto-ui .v15-thumb.is-icon {
+  display: grid;
+  place-items: center;
+  color: var(--color-muted-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-thumb > img,
 :root .proto-ui.proto-ui.proto-ui .v15-thumb > .wfc {

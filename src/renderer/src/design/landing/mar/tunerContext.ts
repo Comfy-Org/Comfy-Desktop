@@ -53,6 +53,7 @@ import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
 import { homeLayout } from './home/homeLayout'
+import { recentThumb } from './recentThumb'
 import { homeIdea } from './home/homeIdeas'
 
 /**
@@ -100,6 +101,9 @@ export const when = {
   homeArcMix: computed(() => onHome.value && can.value.explore),
   homeLayout: computed(
     () => onHome.value && can.value.exploreApps && (!onFirstRun.value || firstRun.id === 'original')
+  ),
+  recentThumb: computed(
+    () => (onHome.value && homeLayout.id === 'recents') || createLook.id === 'V15'
   ),
   homeIdeas: computed(
     () => onHome.value && can.value.exploreApps && !onFirstRun.value && homeLayout.id === 'recents'
@@ -282,6 +286,7 @@ export const TWEAKS = {
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'current'),
+  recentThumb: one(recentThumb, 'image'),
   homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
   homeIdeaHeaders: one(homeIdea('headers').store, 'off'),
   homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),

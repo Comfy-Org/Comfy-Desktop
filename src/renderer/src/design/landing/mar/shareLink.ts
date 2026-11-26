@@ -16,6 +16,7 @@ import { FIRST_RUNS, firstRun } from './firstRun'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
+import { RECENT_THUMBS, recentThumb } from './recentThumb'
 import { HOME_IDEAS, HOME_IDEA_SWITCHES } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -160,6 +161,7 @@ const PARTS: Part[] = [
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
   one('arcMix', homeArcMix, 'tabs', HOME_ARC_MIXES),
   one('homeLayout', homeLayout, 'current', HOME_LAYOUTS),
+  one('recentThumb', recentThumb, 'image', RECENT_THUMBS),
   ...HOME_IDEAS.map((x) => one(x.key, x.store, 'off', HOME_IDEA_SWITCHES)),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),
