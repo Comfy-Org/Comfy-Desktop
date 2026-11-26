@@ -61,7 +61,7 @@ const USE_CASES: { id: string; label: string }[] = [
 ]
 const BLANK = 'blank'
 const CARDS = 4
-const RECENTS = 5
+const RECENTS = 8
 const LEAVE_MS = 220
 
 const query = ref('')
@@ -583,8 +583,8 @@ useEscapeCloses(() => composer.value?.field)
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 28px;
-  margin-top: 32px;
+  gap: 48px;
+  margin-top: 44px;
   text-align: left;
   transition: opacity 160ms ease;
 }

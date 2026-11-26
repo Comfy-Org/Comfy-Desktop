@@ -33,7 +33,7 @@ const emit = defineEmits<{ open: []; add: [] }>()
         <Button
           variant="ghost"
           size="icon"
-          class="bg-(--color-secondary-background) text-base-foreground hover:bg-(--color-secondary-background-hover)"
+          class="bg-transparent text-muted-foreground hover:bg-(--color-secondary-background) hover:text-base-foreground"
           :aria-label="addLabel"
           :data-home-tour="addAnchor"
           @click="emit('add')"
