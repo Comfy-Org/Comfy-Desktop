@@ -1647,8 +1647,27 @@ describe('AssetsView', () => {
     await wrapper.get('input').setValue('zzz')
 
     await vi.waitFor(() =>
-      expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
+      expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('Nothing matches')
     )
+    expect(wrapper.find('[data-testid="assets-empty-icon"]').exists()).toBe(true)
+  })
+
+  it('clears the search and the type from the empty result, and the files come back', async () => {
+    const wrapper = await mountAssets([
+      asset('a', 'forest.png', 'image'),
+      asset('b', 'surfer.mp4', 'video')
+    ])
+    await wrapper.get('[data-testid="assets-kind-video"]').trigger('click')
+    await wrapper.get('input').setValue('zzz')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="assets-empty-action"]').text()).toBe('Clear filters')
+    )
+
+    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['forest.png', 'surfer.mp4']))
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.get('[data-testid="assets-kind-all"]').attributes('data-state')).toBe('on')
   })
 
   it('reports a failed load', async () => {
@@ -2710,7 +2729,7 @@ describe('AssetsView Comfy Cloud pages', () => {
 
     expect(asked()).toContainEqual({ ...FIRST_PAGE, kind: 'audio' })
     expect(shownText(wrapper.get('[data-testid="assets-empty"]').element)).toBe(
-      'No matching assets Try another type or search.'
+      'Nothing matches Try another word, or clear the filters to see everything. Clear filters'
     )
   })
 

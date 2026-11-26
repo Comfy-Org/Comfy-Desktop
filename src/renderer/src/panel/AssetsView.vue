@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   ScanSearch,
   Search,
+  SearchX,
   Play,
   Trash2
 } from '@lucide/vue'
@@ -497,6 +499,7 @@ const assetCards = computed(() =>
 )
 
 interface EmptyState {
+  icon?: Component
   title: string
   body: string
   action?: { label: string; run: () => void }
@@ -504,7 +507,12 @@ interface EmptyState {
 
 const emptyState = computed<EmptyState>(() => {
   if (failed.value) return { title: t('assets.loadFailed'), body: '' }
-  const noMatches = { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
+  const noMatches = {
+    icon: SearchX,
+    title: t('assets.noMatches'),
+    body: t('assets.noMatchesHint'),
+    action: { label: t('assets.clearFilters'), run: clearFilters }
+  }
   if (assets.value.length > 0) return noMatches
   if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
     return {
@@ -1010,6 +1018,11 @@ onBeforeUnmount(() => clearTimeout(warmTimer))
 
 async function signIn(): Promise<void> {
   await authStore.signIn().catch(() => {})
+}
+
+function clearFilters(): void {
+  searchQuery.value = ''
+  kindFilter.value = 'all'
 }
 
 function runEmptyAction(event: MouseEvent): void {
@@ -1541,6 +1554,14 @@ function extensionOf(name: string): string {
         class="flex flex-col items-center gap-1.5 px-6 py-16 text-center"
         data-testid="assets-empty"
       >
+        <component
+          :is="emptyState.icon"
+          v-if="emptyState.icon"
+          :size="28"
+          class="mb-3 text-subtle-foreground"
+          aria-hidden="true"
+          data-testid="assets-empty-icon"
+        />
         <h2 class="m-0 text-heading font-semibold text-foreground">
           {{ emptyState.title }}
         </h2>
