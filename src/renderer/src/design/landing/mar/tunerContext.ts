@@ -53,7 +53,6 @@ import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
 import { homeLayout } from './home/homeLayout'
-import { recentThumb } from './recentThumb'
 import { homeIdea } from './home/homeIdeas'
 import { appsSection } from './home/appsSection'
 import { buildsAt } from './home/buildsAt'
@@ -122,9 +121,6 @@ export const when = {
       homeLayout.id === 'recents' &&
       homeIdea('headers').store.id === 'on'
   ),
-  recentThumb: computed(
-    () => (onHome.value && homeLayout.id === 'recents') || createLook.id === 'V15'
-  ),
   homeIdeas: computed(
     () => onHome.value && can.value.exploreApps && !onFirstRun.value && homeLayout.id === 'recents'
   ),
@@ -156,7 +152,7 @@ export const when = {
         proto.page === 'workflows' ||
         (proto.page === 'overview' && !can.value.onboarding))
   ),
-  recentsCover: computed(() => onHome.value && can.value.onboarding),
+  recentsCover: computed(() => (onHome.value && can.value.onboarding) || createLook.id === 'V15'),
   homeTour: computed(() => onHome.value && can.value.onboarding),
   createLook: computed(() => can.value.onboarding && createScreen.open),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
@@ -308,7 +304,6 @@ export const TWEAKS = {
   homeLayout: one(homeLayout, 'recents'),
   appsSection: one(appsSection, 'apps'),
   buildsAt: one(buildsAt, 'bottom'),
-  recentThumb: one(recentThumb, 'runsOn'),
   homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
   homeIdeaHeaders: one(homeIdea('headers').store, 'off'),
   homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),

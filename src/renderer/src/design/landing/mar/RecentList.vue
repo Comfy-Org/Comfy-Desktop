@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Cloud, Monitor } from 'lucide-vue-next'
 import WorkflowCover from './brand/WorkflowCover.vue'
-import { recentThumb } from './recentThumb'
+import { recentsCover } from './cover'
 
 export interface RecentListRow {
   id: string
@@ -27,12 +27,12 @@ const emit = defineEmits<{ open: [row: RecentListRow]; hover: [id: string] }>()
         @click="emit('open', r)"
       >
         <span class="v15-thumb">
-          <img v-if="r.src && recentThumb.id === 'image'" :src="r.src" alt="" loading="lazy" />
+          <img v-if="r.src && recentsCover.id === 'image'" :src="r.src" alt="" loading="lazy" />
           <WorkflowCover v-else :name="r.name" />
         </span>
         <span class="v15-file">{{ r.name }}</span>
         <span class="v15-build"
-          ><template v-if="recentThumb.id === 'runsOn'"
+          ><template v-if="recentsCover.id === 'generic'"
             ><Cloud
               v-if="/cloud/i.test(r.build)"
               :size="13"
