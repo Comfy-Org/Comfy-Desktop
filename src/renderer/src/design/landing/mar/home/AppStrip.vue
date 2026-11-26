@@ -247,7 +247,7 @@ watch(ids, async () => {
 
 <style scoped>
 .mar-strip {
-  --strip-h: clamp(300px, 38vh, 360px);
+  --strip-h: clamp(220px, 28vh, 260px);
   --strip-gap: 10px;
   position: relative;
 }
