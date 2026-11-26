@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import MarSeg from '../../pages/MarSeg.vue'
 import { computed, ref, watch } from 'vue'
-import { ChevronRight, Plus } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance, go, hostActions, proto } from '../../../useProto'
@@ -67,7 +66,6 @@ const LEAVE_MS = 220
 
 const query = ref('')
 const useCase = ref(USE_CASES[0]!.id)
-const USE_CASE_TABS = USE_CASES.map((u) => ({ value: u.id, label: u.label }))
 const composer = ref<InstanceType<typeof CreateComposer>>()
 const results = ref<InstanceType<typeof ResultsB>>()
 const navigated = ref(false)
@@ -364,20 +362,15 @@ useEscapeCloses(() => composer.value?.field)
           @hover="finder.activeIndex.value = $event"
           @pick="act"
         />
-        <div
-          v-else
-          class="v15-starts"
-          :class="dropping && 'is-under'"
-          @pointerleave="hover = ''"
-        >
+        <div v-else class="v15-starts" :class="dropping && 'is-under'" @pointerleave="hover = ''">
           <section class="v15-section" aria-labelledby="v15-templates">
             <h2 id="v15-templates" class="sr-only">Templates</h2>
-            <header class="v15-head">
-              <MarSeg v-model="useCase" :options="USE_CASE_TABS" label="Use case" />
-              <button type="button" class="hsh-link" @click="seeAll">
-                See all<ChevronRight :size="13" aria-hidden="true" />
-              </button>
-            </header>
+            <HomeSectionHeader
+              title="Templates"
+              link-tip="All templates"
+              add-label="New workflow"
+              @open="seeAll"
+            />
             <div :key="useCase" class="v15-row">
               <button
                 v-for="c in templates"
@@ -598,12 +591,6 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v15-starts.is-under {
   opacity: 0;
   pointer-events: none;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-row {
   display: grid;

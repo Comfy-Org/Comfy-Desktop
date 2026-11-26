@@ -5,12 +5,13 @@ import { can } from '../../milestones'
 import { thumb } from '../../mock'
 import { activeInstance, proto } from '../../useProto'
 import { MOCK } from '../assets/mock'
-import { HUB_WORKFLOWS, type HubWorkflow } from '../explore/hubWorkflows'
+import { HUB_WORKFLOWS, hubById, type HubWorkflow } from '../explore/hubWorkflows'
 import { match } from '../search/match'
 import { firstResultFor, fmtDuration } from '../templateModal/firstResult'
 import { fmtGb, targetFor, totalGb } from '../templateModal/templateData'
 import { readiness, starterOf, type Starter } from './createStarters'
 import { buildOf } from './looks/lookKitB'
+import { answer } from './looks/v07Agent'
 
 export type Tone = 'ready' | 'fetch' | 'off'
 export type Takes = 'image' | 'video' | 'text'
@@ -71,10 +72,13 @@ export const SEARCH_DELAY_MS = 300
 export const STRONG_MATCH = 0.85
 const BELOW_THRESHOLD = 0.5
 const WEAK_MATCH_FLOOR = 0.05
+const ALSO_FLOOR_SHORT = 0.42
+const ALSO_FLOOR_LONG = 0.2
+const AGENT_PICK_FIT = 0.45
 const QUICK_CAP = 3
-const CARD_CAP = 9
-const MATCHED_CAP = 9
-const ALSO_CAP = 5
+const CARD_CAP = 7
+const MATCHED_CAP = 7
+const ALSO_CAP = 4
 const LONG = 5
 const STRONG = 200
 
@@ -212,6 +216,9 @@ interface Scored {
   fit: number
 }
 
+const wholeWord = (text: string, t: string): boolean =>
+  new RegExp(`(^|[^a-z0-9])${t.replace(/[.+]/g, '\\$&')}($|[^a-z0-9])`).test(text)
+
 const startsWord = (text: string, t: string): boolean =>
   new RegExp(`(^|[^a-z0-9])${t.replace(/[.+]/g, '\\$&')}`).test(text)
 
@@ -306,7 +313,7 @@ function appHits(q: Query): Found[] {
         kind: 'app',
         app,
         name: app.name,
-        meta: 'App · runs on Cloud',
+        meta: 'Runs on Cloud',
         image: thumb(app.thumbId),
         score: m.score + Math.log10(app.runs + 1) * 3
       }
@@ -380,7 +387,7 @@ function lookup(names: string[]): Pick<SmartAnswer, 'cards' | 'alsoTry'> {
     .sort((a, b) => b.score - a.score)
   const said = names.map((n) => n.toLowerCase())
   const also = HUB_WORKFLOWS.filter(
-    (w) => !names.includes(w.family) && said.some((n) => w.description.toLowerCase().includes(n))
+    (w) => !names.includes(w.family) && said.some((n) => wholeWord(w.description.toLowerCase(), n))
   )
     .map((w) => ({ ...cardOf(w, 0, null), kind: 'also' as const, weak: true }))
     .slice(0, ALSO_CAP)
@@ -404,11 +411,21 @@ function ranked(q: Query): Pick<SmartAnswer, 'cards' | 'alsoTry'> {
     run[0] && top && (run[0].calibrated ?? 0) >= (top.calibrated ?? 0) - 0.08 ? run[0] : top
   const cards = [...run, ...download, ...more].slice(0, CARD_CAP)
   if (lead && !cards.includes(lead)) cards.splice(CARD_CAP - 1, 1, lead)
-  const leadFirst = lead
-    ? [{ ...lead, best: true }, ...cards.filter((c) => c !== lead)]
-    : cards
-  const alsoTry = all
-    .filter((c) => c.kind === 'also')
+  const leadFirst = lead ? [{ ...lead, best: true }, ...cards.filter((c) => c !== lead)] : cards
+  const floor = q.words >= LONG ? ALSO_FLOOR_LONG : ALSO_FLOOR_SHORT
+  const shown = new Set(cards.map((c) => c.key))
+  const agentPicks =
+    q.words >= LONG
+      ? answer(q.raw).picks.flatMap((s) => {
+          const w = hubById(s.id)
+          return w && !shown.has(`t:${w.id}`) ? [cardOf(w, 0, AGENT_PICK_FIT)] : []
+        })
+      : []
+  const picked = new Set(agentPicks.map((c) => c.key))
+  const alsoTry = [
+    ...agentPicks,
+    ...all.filter((c) => c.kind === 'also' && !picked.has(c.key) && (c.calibrated ?? 0) >= floor)
+  ]
     .sort(byFit)
     .slice(0, ALSO_CAP)
   return { cards: familiesTogether(leadFirst), alsoTry }
@@ -418,8 +435,7 @@ export function search(raw: string): SmartAnswer {
   const q = parse(raw)
   const names = modelNames(q)
   const { cards, alsoTry } = names ? lookup(names) : ranked(q)
-  const top = (hits: Found[]): Found[] =>
-    hits.sort((a, b) => b.score - a.score).slice(0, QUICK_CAP)
+  const top = (hits: Found[]): Found[] => hits.sort((a, b) => b.score - a.score).slice(0, QUICK_CAP)
   const best = cards.find((c) => c.best)
   const confident =
     !!best && ((best.calibrated ?? 0) >= STRONG_MATCH || (q.words < LONG && !best.weak))

@@ -159,7 +159,7 @@ defineExpose({ verticalTarget, revealActive })
         <div class="mar-sec hsh" :class="nothing && 'sr-only'" role="presentation">
           <h2 :id="`${listId}-${g.id}`">{{ g.name }}</h2>
         </div>
-        <div class="v15-row">
+        <div class="v15-row grid-cols-4!">
           <div
             v-for="card in g.cards"
             :id="optionId(indexOf(card.key))"
@@ -193,9 +193,7 @@ defineExpose({ verticalTarget, revealActive })
             </span>
             <span class="v15-text">
               <span class="v15-name" :title="card.title">{{ card.title }}</span>
-              <span class="v15-meta">{{
-                needsSignIn(card) ? 'Sign in to use' : card.family
-              }}</span>
+              <span class="v15-meta">{{ needsSignIn(card) ? 'Sign in to use' : card.family }}</span>
             </span>
             <span class="flex flex-wrap gap-1.5 px-0.5">
               <MarStatus
