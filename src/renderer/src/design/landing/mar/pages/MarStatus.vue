@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, type Component } from 'vue'
 import {
   ArrowUpCircle,
   CircleCheck,
@@ -33,12 +33,13 @@ export type ItemStatus =
   | 'update'
   | 'changes'
 
-const { status, label, onMedia } = defineProps<{
+const { status, label, onMedia, icon } = defineProps<{
   status: ItemStatus
   /** Overrides the default word, e.g. "Queued · 2nd". */
   label?: string
   /** Sits on a picture: lighter words, the picture dimmed behind the tint. */
   onMedia?: boolean
+  icon?: Component
 }>()
 
 const WORDS: Record<ItemStatus, string> = {
@@ -69,8 +70,9 @@ const tone = computed(() =>
 
 <template>
   <span class="mar-status" :class="[tone, onMedia && 'on-media']">
+    <component :is="icon" v-if="icon" :size="11" aria-hidden="true" />
     <MarSpin
-      v-if="status === 'executing'"
+      v-else-if="status === 'executing'"
       :icon="LoaderCircle"
       :size="11"
       spin="motion-safe:animate-spin"
