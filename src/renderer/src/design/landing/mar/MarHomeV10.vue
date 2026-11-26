@@ -65,7 +65,12 @@ import NewWorkflowTile from './NewWorkflowTile.vue'
 import { openCreate } from './create/createScreen'
 import { onHome } from './tunerContext'
 import { search } from './search/search'
-import { homeLayout } from './home/homeLayout'
+import { homeLayout, homeVersion } from './home/homeLayout'
+import HomeFeatured from './home/HomeFeatured.vue'
+import HomeEditorial from './home/HomeEditorial.vue'
+import HomeBento from './home/HomeBento.vue'
+import HomeMasonry from './home/HomeMasonry.vue'
+import HomeRecents from './home/HomeRecents.vue'
 import { buildsAt } from './home/buildsAt'
 import { homeIdeaOn } from './home/homeIdeas'
 import RecentList, { type RecentListRow } from './RecentList.vue'
@@ -208,7 +213,11 @@ const ideaHeaders = computed(() => recentsFirst.value && homeIdeaOn('headers'))
 const buildsTop = computed(() => ideaHeaders.value && buildsAt.id === 'top')
 const ideaCleanCards = computed(() => recentsFirst.value && homeIdeaOn('cleanCards'))
 const ideaCompactRecents = computed(() => recentsFirst.value && homeIdeaOn('compactRecents'))
-const ideaSmallGreeting = computed(() => recentsFirst.value && homeIdeaOn('smallGreeting'))
+const version = computed(() => (can.value.exploreApps ? homeVersion(homeLayout.id) : null))
+const VERSION_RECENTS = 4
+const ideaSmallGreeting = computed(
+  () => !!version.value || (recentsFirst.value && homeIdeaOn('smallGreeting'))
+)
 const recentHasRoom = computed(
   () => !ideaCompactRecents.value && recent.value.length < RECENT_COLUMNS
 )
@@ -223,6 +232,11 @@ const compactRows = computed<RecentListRow[]>(() =>
     edited: r.app ? r.when : edited(r.when),
     src: r.app ? r.src : r.output
   }))
+)
+const versionRows = computed(() =>
+  recent.value.length && (can.value.workflows || !can.value.exploreApps)
+    ? compactRows.value.slice(0, VERSION_RECENTS)
+    : []
 )
 const compactActive = ref<string>()
 function openRecent(id: string): void {
@@ -289,6 +303,34 @@ function openRecent(id: string): void {
     <HomeInstall v-if="(installPending || flow.ready) && !cardInBuilds" />
     <template v-if="gated"></template>
     <MarStart v-else-if="firstRun && !cardInBuilds" />
+    <div v-else-if="version" class="mar-home-version mt-6">
+      <template v-if="version === 'featured'">
+        <HomeFeatured />
+        <HomeRecents
+          v-if="versionRows.length"
+          class="mt-9"
+          :rows="versionRows"
+          @open="openRecent"
+        />
+      </template>
+      <HomeEditorial
+        v-else-if="version === 'editorial'"
+        :rows="versionRows"
+        @open-recent="openRecent"
+      />
+      <HomeBento v-else-if="version === 'bento'" :rows="versionRows" @open-recent="openRecent" />
+      <template v-else>
+        <MarBuildsRow v-if="!onCloud" class="mar-home-builds-top" />
+        <HomeRecents
+          v-if="versionRows.length"
+          class="mt-9"
+          :rows="versionRows"
+          @open="openRecent"
+        />
+        <HomeMasonry class="mt-9" />
+      </template>
+      <MarBuildsRow v-if="version !== 'masonry' && !onCloud" />
+    </div>
     <div v-else>
       <!-- The Apps stage: the apps arc leads for everyone from Milestone 2
            on; from Milestone 3 Apps | Workflows tabs sit over it (layout in
@@ -461,6 +503,9 @@ function openRecent(id: string): void {
 </template>
 
 <style>
+:root .proto-ui.proto-ui.proto-ui .mar-home .mar-home-builds-top {
+  margin-top: 0;
+}
 :root .proto-ui.proto-ui.proto-ui .mar-home h1.mar-greeting-small {
   margin-bottom: 20px;
   padding-top: 0;

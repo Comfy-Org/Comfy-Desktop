@@ -52,7 +52,7 @@ import { downloadScenario, templateDownloads } from './downloads/templateDownloa
 import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
-import { homeLayout } from './home/homeLayout'
+import { homeLayout, homeVersion } from './home/homeLayout'
 import { homeIdea } from './home/homeIdeas'
 import { appsSection } from './home/appsSection'
 import { buildsAt } from './home/buildsAt'
@@ -152,7 +152,11 @@ export const when = {
         proto.page === 'workflows' ||
         (proto.page === 'overview' && !can.value.onboarding))
   ),
-  recentsCover: computed(() => (onHome.value && can.value.onboarding) || createLook.id === 'V15'),
+  recentsCover: computed(
+    () =>
+      (onHome.value && (can.value.onboarding || !!homeVersion(homeLayout.id))) ||
+      createLook.id === 'V15'
+  ),
   homeTour: computed(() => onHome.value && can.value.onboarding),
   createLook: computed(() => can.value.onboarding && createScreen.open),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
