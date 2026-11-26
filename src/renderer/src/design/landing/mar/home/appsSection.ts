@@ -4,7 +4,7 @@ export type AppsSection = 'apps' | 'mixed' | 'rows'
 
 export const APPS_SECTIONS: { value: AppsSection; label: string }[] = [
   { value: 'apps', label: 'Apps only' },
-  { value: 'mixed', label: 'Apps and workflows' },
+  { value: 'mixed', label: 'Explore (mixed)' },
   { value: 'rows', label: 'Two rows' }
 ]
 

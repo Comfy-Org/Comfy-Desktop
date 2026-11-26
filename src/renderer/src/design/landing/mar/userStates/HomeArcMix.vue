@@ -211,8 +211,8 @@ function scrollRow(by: number): void {
       <template v-else-if="full">
         <HomeSectionHeader
           v-if="section === 'mixed'"
-          title="Apps and workflows"
-          link-tip="Explore"
+          title="Explore"
+          link-tip="Explore apps and workflows"
           add-label="New app"
           @open="openExplore()"
         />
