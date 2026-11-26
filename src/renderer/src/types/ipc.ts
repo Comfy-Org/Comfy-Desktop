@@ -21,7 +21,6 @@ export type {
   TitleBarApps,
   AssetKind,
   AssetSummary,
-  AssetWorkflowSummary,
   CloudAssetPage,
   LocalAssetListing,
   LocalAssetPageRequest,

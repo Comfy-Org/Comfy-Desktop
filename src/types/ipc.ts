@@ -325,11 +325,6 @@ export interface AssetSummary {
   durationSeconds: number | null
 }
 
-export interface AssetWorkflowSummary {
-  models: string[]
-  prompts: string[]
-}
-
 export type AssetOrder = 'newest' | 'oldest'
 
 export interface CloudAssetPageRequest {
@@ -1390,7 +1385,6 @@ export interface ElectronApi {
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
   hasAssetWorkflow(source: string, assetId: string): Promise<boolean | null>
-  readAssetWorkflowSummary(source: string, assetId: string): Promise<AssetWorkflowSummary | null>
   openAssetWorkflow(
     source: string,
     assetId: string,

@@ -31,7 +31,6 @@ const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
 const hasAssetWorkflow = vi.fn()
-const readAssetWorkflowSummary = vi.fn()
 const openAssetWorkflow = vi.fn()
 const trashAsset = vi.fn()
 const alert = vi.fn()
@@ -262,7 +261,6 @@ beforeEach(() => {
   getSetting.mockResolvedValue(undefined)
   findCloudAsset.mockResolvedValue({ status: 'absent' })
   hasAssetWorkflow.mockResolvedValue(false)
-  readAssetWorkflowSummary.mockResolvedValue(null)
   openAssetWorkflow.mockResolvedValue({ opened: true })
   ;(window as unknown as { api: unknown }).api = {
     listAssets: async (installationId: string, request: unknown) => {
@@ -287,7 +285,6 @@ beforeEach(() => {
     copyAsset,
     readAssetModel,
     hasAssetWorkflow,
-    readAssetWorkflowSummary,
     openAssetWorkflow,
     trashAsset,
     platform: 'darwin',
@@ -1886,8 +1883,6 @@ describe('AssetsView', () => {
     expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe(
       'PNG 2 KB'
     )
-    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
-    expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
     expect(viewer()!.innerHTML).not.toContain('/Users/me')
     const panel = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-panel"]')!
     const emptyRows = [...panel.querySelectorAll<HTMLElement>('p, span, h2')].filter(
@@ -1973,8 +1968,6 @@ describe('AssetsView', () => {
 
     await press('ArrowRight')
     expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe('GLB')
-    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
-    expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
   })
 
   it('titles the panel Details, with More and Close at its top right', async () => {
@@ -2389,96 +2382,6 @@ describe('AssetsView Open workflow', () => {
     })
     await flushPromises()
   }
-
-  it('shows the prompts and the models of the workflow that made the file', async () => {
-    hasAssetWorkflow.mockResolvedValue(true)
-    readAssetWorkflowSummary.mockResolvedValue({
-      models: ['sdxl/base.safetensors', 'film-grain.safetensors'],
-      prompts: ['a harbor at dusk', 'blurry, watermark']
-    })
-    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
-
-    await openViewer(wrapper, '/out/forest.png')
-
-    await vi.waitFor(() =>
-      expect(shownText(viewer()!.querySelector('[data-testid="output-detail-prompts"]'))).toBe(
-        'PROMPTS a harbor at dusk blurry, watermark'
-      )
-    )
-    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-models"]'))).toBe(
-      'MODELS sdxl/base.safetensors film-grain.safetensors'
-    )
-    expect(readAssetWorkflowSummary).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
-  })
-
-  it('leaves the prompts and models out when the file carries no workflow', async () => {
-    const wrapper = await mountAssets([asset('/out/plain.png', 'plain.png', 'image')])
-
-    await openViewer(wrapper, '/out/plain.png')
-
-    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
-    expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
-    expect(readAssetWorkflowSummary).not.toHaveBeenCalled()
-  })
-
-  it('reads the prompts of a file even when no build can open its workflow', async () => {
-    readAssetWorkflowSummary.mockResolvedValue({ models: [], prompts: ['a harbor at dusk'] })
-    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
-      builds: []
-    })
-
-    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
-    await flushPromises()
-
-    await vi.waitFor(() =>
-      expect(shownText(viewer()!.querySelector('[data-testid="output-detail-prompts"]'))).toBe(
-        'PROMPTS a harbor at dusk'
-      )
-    )
-    expect(hasAssetWorkflow).not.toHaveBeenCalled()
-  })
-
-  it('asks again for a summary that failed, when the file is opened a second time', async () => {
-    hasAssetWorkflow.mockResolvedValue(true)
-    readAssetWorkflowSummary.mockRejectedValueOnce(new Error('unreadable'))
-    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
-
-    await openViewer(wrapper, '/out/forest.png')
-    await vi.waitFor(() => expect(readAssetWorkflowSummary).toHaveBeenCalledTimes(1))
-    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
-
-    await press('Escape')
-    readAssetWorkflowSummary.mockResolvedValue({ models: [], prompts: ['a harbor at dusk'] })
-    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
-    await flushPromises()
-
-    await vi.waitFor(() =>
-      expect(shownText(viewer()!.querySelector('[data-testid="output-detail-prompts"]'))).toBe(
-        'PROMPTS a harbor at dusk'
-      )
-    )
-  })
-
-  it('asks again when a file with a workflow comes back without a summary', async () => {
-    hasAssetWorkflow.mockResolvedValue(true)
-    readAssetWorkflowSummary.mockResolvedValueOnce(null)
-    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
-
-    await openViewer(wrapper, '/out/forest.png')
-    await vi.waitFor(() => expect(readAssetWorkflowSummary).toHaveBeenCalledTimes(1))
-    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
-
-    await press('Escape')
-    readAssetWorkflowSummary.mockResolvedValue({ models: [], prompts: ['a harbor at dusk'] })
-    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
-    await flushPromises()
-
-    await vi.waitFor(() =>
-      expect(shownText(viewer()!.querySelector('[data-testid="output-detail-prompts"]'))).toBe(
-        'PROMPTS a harbor at dusk'
-      )
-    )
-  })
 
   it('opens the workflow of a file in a build folder in that build, and closes the viewer', async () => {
     hasAssetWorkflow.mockResolvedValue(true)

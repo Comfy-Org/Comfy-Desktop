@@ -25,6 +25,7 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
 import OutputDetailThumb from './OutputDetailThumb.vue'
 import { useImageZoom } from './useImageZoom'
 import { formatBytes } from '../lib/downloadFormatters'
@@ -41,6 +42,7 @@ export interface OutputDetailItem {
   kind: AssetKind | null
   sizeBytes: number | null
   createdAt: string | null
+  tags: string[]
   previewUrl: string | null
   thumbnailUrl: string | null
   width?: number | null
@@ -48,8 +50,6 @@ export interface OutputDetailItem {
   imported?: boolean
   savedIn?: string | null
   savedBy?: string | null
-  models?: string[]
-  prompts?: string[]
   inCloud?: boolean
   workflow?: boolean
   workflowBuilds?: { id: string; name: string }[]
@@ -442,33 +442,15 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
 
-      <div
-        v-if="item.prompts?.length"
-        class="flex flex-col gap-2.5"
-        data-testid="output-detail-prompts"
-      >
-        <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
-          {{ t('assets.detail.prompts') }}
-        </div>
-        <p
-          v-for="(prompt, at) in item.prompts"
-          :key="at"
-          class="m-0 max-h-40 overflow-y-auto rounded-lg bg-secondary p-3 text-ui break-words text-foreground select-text"
+      <div v-if="item.tags.length > 0" class="flex flex-col gap-2.5">
+        <div
+          class="flex items-center text-xs font-medium tracking-wide text-subtle-foreground uppercase"
         >
-          {{ prompt }}
-        </p>
-      </div>
-
-      <div
-        v-if="item.models?.length"
-        class="flex flex-col gap-2.5"
-        data-testid="output-detail-models"
-      >
-        <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
-          {{ t('assets.detail.models') }}
+          {{ t('assets.detail.tags') }}
+          <InfoTooltip :text="t('assets.detail.tagsHint')" icon="info" />
         </div>
         <div class="flex flex-wrap gap-1.5">
-          <Tag v-for="model in item.models" :key="model" :label="model" />
+          <Tag v-for="tag in item.tags" :key="tag" :label="tag" />
         </div>
       </div>
 
