@@ -75,8 +75,10 @@ const items = computed<ArcItem[]>(() => {
   return ARC_APPS
 })
 
+const exploreTabs = computed(() => full && !sameHeaders.value && mix.value === 'tabs')
+
 const allLabel = computed(() => {
-  if (sameHeaders.value) return ''
+  if (sameHeaders.value || exploreTabs.value) return ''
   if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
   if (byTopic.value && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
@@ -233,7 +235,10 @@ function scrollRow(by: number): void {
           :headless="sameHeaders"
           :clean="cleanCards"
           :kinds="section === 'mixed'"
+          :heading="exploreTabs ? 'Explore' : ''"
+          :corner="exploreTabs"
           @all="seeAll(shown.on)"
+          @heading="openExplore()"
         />
         <section v-if="section === 'rows'" class="mt-10">
           <HomeSectionHeader

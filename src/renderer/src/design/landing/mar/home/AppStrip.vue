@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ChevronRight } from 'lucide-vue-next'
+import { ArrowUpRight, ChevronRight } from 'lucide-vue-next'
 import { useResizeObserver } from '@vueuse/core'
 import MarSeg from '../pages/MarSeg.vue'
 import { reducedMotion } from '../userStates/examples'
@@ -14,7 +14,9 @@ const {
   leaving = false,
   headless = false,
   clean = false,
-  kinds = false
+  kinds = false,
+  heading = '',
+  corner = false
 } = defineProps<{
   items: ArcItem[]
   allLabel?: string
@@ -24,8 +26,10 @@ const {
   headless?: boolean
   clean?: boolean
   kinds?: boolean
+  heading?: string
+  corner?: boolean
 }>()
-const emit = defineEmits<{ all: [] }>()
+const emit = defineEmits<{ all: []; heading: [] }>()
 const tab = defineModel<string>('tab', { default: '' })
 
 const DRAG_THRESHOLD = 6
@@ -157,19 +161,25 @@ watch(ids, async () => {
 <template>
   <div
     class="mar-strip"
-    :class="clean && 'is-clean'"
+    :class="[clean && 'is-clean', corner && 'is-corner']"
     role="region"
     aria-roledescription="carousel"
     :aria-label="title"
   >
     <div v-if="!headless" class="mar-strip-head">
-      <MarSeg v-if="tabs.length" v-model="tab" :options="tabs" :label="title" />
+      <h2 v-if="heading" class="mar-strip-title-head">
+        <button type="button" class="mar-strip-heading" @click="emit('heading')">
+          {{ heading }}<ChevronRight :size="13" aria-hidden="true" />
+        </button>
+      </h2>
+      <MarSeg v-else-if="tabs.length" v-model="tab" :options="tabs" :label="title" />
       <h2 v-else class="mar-strip-title-head">
         <button type="button" class="mar-strip-heading" @click="emit('all')">
           {{ title }}<ChevronRight :size="13" aria-hidden="true" />
         </button>
       </h2>
       <div class="mar-strip-tools">
+        <MarSeg v-if="heading && tabs.length" v-model="tab" :options="tabs" :label="title" />
         <button v-if="allLabel" type="button" class="mar-strip-all" @click="emit('all')">
           {{ allLabel }}<ChevronRight :size="13" aria-hidden="true" />
         </button>
@@ -230,7 +240,15 @@ watch(ids, async () => {
           :style="x.focus && { objectPosition: `${x.focus[1]} 50%` }"
         />
         <span class="mar-strip-scrim" />
-        <span class="mar-strip-text">
+        <span v-if="corner" class="mar-strip-top" aria-hidden="true" />
+        <span v-if="corner" class="mar-strip-cta" aria-hidden="true">
+          <ArrowUpRight :size="16" :stroke-width="2.25" />
+        </span>
+        <span v-if="corner" class="mar-strip-name">
+          <span class="mar-strip-name-title" :class="x.does && 'has-does'">{{ x.label }}</span>
+          <span v-if="x.does" class="mar-strip-name-does">{{ x.does }}</span>
+        </span>
+        <span v-else class="mar-strip-text">
           <span class="mar-strip-title">{{ x.label }}</span>
           <span v-if="kinds" class="mar-strip-kind">{{ KIND_LABEL[x.kind] }}</span>
           <span v-else-if="x.does" class="mar-strip-does">{{ x.does }}</span>
@@ -385,6 +403,87 @@ watch(ids, async () => {
     scale: 1;
   }
   .mar-strip-track {
+    transition: none;
+  }
+}
+
+.mar-strip-top {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 45%;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.62), rgb(0 0 0 / 0.28) 55%, transparent);
+  pointer-events: none;
+}
+.mar-strip.is-corner .mar-strip-scrim {
+  background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.4) 30%, transparent 55%);
+}
+.mar-strip-cta {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 0.2);
+  backdrop-filter: blur(14px) saturate(1.5);
+  color: #fff;
+  opacity: 0;
+  scale: 0.9;
+  pointer-events: none;
+  transition:
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-strip-slide:is(:hover, :focus-visible) .mar-strip-cta {
+  opacity: 1;
+  scale: 1;
+  transition-delay: 100ms;
+}
+.mar-strip-name {
+  position: absolute;
+  right: 14px;
+  bottom: 16px;
+  left: 14px;
+  display: grid;
+  color: #fff;
+  text-align: left;
+  pointer-events: none;
+}
+.mar-strip-name > span {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-strip-name-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 17px;
+  transition: translate 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-strip-name-does {
+  align-self: end;
+  color: rgb(255 255 255 / 0.7);
+  font-size: 13px;
+  line-height: 18px;
+  opacity: 0;
+  translate: 0 6px;
+  transition:
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-strip-slide:is(:hover, :focus-visible) .mar-strip-name-title.has-does {
+  translate: 0 -18px;
+}
+.mar-strip-slide:is(:hover, :focus-visible) .mar-strip-name-does {
+  opacity: 1;
+  translate: 0 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-strip-cta,
+  .mar-strip-name > span {
     transition: none;
   }
 }
