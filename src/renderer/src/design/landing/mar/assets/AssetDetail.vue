@@ -1378,25 +1378,18 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 11px;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.78);
-  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
-  color: #fff;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.38);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: rgb(255 255 255 / 0.7);
   font-size: 13px;
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
   transition:
-    background-color 0.14s ease,
-    color 0.14s ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn:hover {
-  background: rgb(28 28 30 / 0.9);
-}
-:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn[aria-pressed='true'] {
-  background: #fff;
-  box-shadow: none;
-  color: #111;
+    background-color 150ms ease,
+    color 150ms ease;
 }
 .mad-viewer-kbd {
   display: inline-grid;
@@ -1404,14 +1397,34 @@ onBeforeUnmount(() => {
   height: 20px;
   place-items: center;
   padding: 0 5px;
-  border: 1px solid rgb(255 255 255 / 0.22);
-  border-radius: 6px;
-  color: rgb(255 255 255 / 0.66);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 4px;
+  color: rgb(255 255 255 / 0.45);
   font-family: inherit;
   font-size: 11px;
   font-weight: 500;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
 }
-.mad-viewer-btn[aria-pressed='true'] .mad-viewer-kbd {
+:root .proto-ui.proto-ui.proto-ui .mad-stage:hover .mad-viewer-btn,
+:root .proto-ui.proto-ui.proto-ui .mad-stage:has(:focus-visible) .mad-viewer-btn {
+  background: rgb(0 0 0 / 0.75);
+  color: #fff;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-stage .mad-viewer-btn:hover {
+  background: rgb(32 32 34 / 0.88);
+}
+.mad-stage:hover .mad-viewer-kbd,
+.mad-stage:has(:focus-visible) .mad-viewer-kbd {
+  border-color: rgb(255 255 255 / 0.26);
+  color: rgb(255 255 255 / 0.75);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-stage .mad-viewer-btn[aria-pressed='true'] {
+  background: #fff;
+  color: #111;
+}
+.mad-stage .mad-viewer-btn[aria-pressed='true'] .mad-viewer-kbd {
   border-color: rgb(0 0 0 / 0.18);
   color: rgb(0 0 0 / 0.55);
 }
@@ -1420,7 +1433,8 @@ onBeforeUnmount(() => {
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn {
+  :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn,
+  .mad-viewer-kbd {
     transition: none;
   }
 }
