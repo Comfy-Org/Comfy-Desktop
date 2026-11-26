@@ -36,7 +36,7 @@ import GenerationInfo from './GenerationInfo.vue'
 import { addTag, removeTag, tagsOf } from './assetTags'
 import AssetViewerPanel from './AssetViewerPanel.vue'
 import ModelStage from './ModelStage.vue'
-import { exrView, rememberTab, tabFor, viewerKind, type DetailTab } from './assetViewer'
+import { exrView, viewerKind, type DetailTab } from './assetViewer'
 import { LABELS, labelColor, labelOf, setLabel } from './assetLabels'
 import { ratingOf, setRating } from './assetRating'
 import { ratingStyle } from './ratingStyle'
@@ -260,8 +260,10 @@ const SIDE_TABS: { value: DetailTab; label: string }[] = [
   { value: 'viewer', label: 'Viewer' }
 ]
 const sideTab = ref<DetailTab>('details')
-watch(viewer, (k) => (sideTab.value = k ? tabFor(k) : 'details'), { immediate: true })
-watch(sideTab, (t) => viewer.value && rememberTab(viewer.value, t))
+watch(
+  () => asset.id,
+  () => (sideTab.value = 'details')
+)
 const showViewer = computed(() => Boolean(viewer.value) && sideTab.value === 'viewer')
 const shortcutShown = computed(
   () => full.value && side.value && Boolean(viewer.value) && viewerShortcut.id === 'on'

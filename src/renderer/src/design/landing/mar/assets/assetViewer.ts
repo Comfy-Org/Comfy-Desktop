@@ -7,33 +7,6 @@ export type DetailTab = 'details' | 'viewer'
 export const viewerKind = (a: Pick<MarAsset, 'name' | 'type'>): ViewerKind | undefined =>
   a.type === '3d' ? '3d' : /\.exr$/i.test(a.name) ? 'exr' : undefined
 
-const TAB_KEY = 'comfy.design.mar.assetDetailTab'
-
-function loadTabs(): Partial<Record<ViewerKind, DetailTab>> {
-  try {
-    const saved: unknown = JSON.parse(localStorage.getItem(TAB_KEY) ?? '{}')
-    return saved && typeof saved === 'object'
-      ? (saved as Partial<Record<ViewerKind, DetailTab>>)
-      : {}
-  } catch {
-    return {}
-  }
-}
-
-const lastTab = reactive(loadTabs())
-
-export const tabFor = (kind: ViewerKind): DetailTab =>
-  lastTab[kind] === 'viewer' ? 'viewer' : 'details'
-
-export function rememberTab(kind: ViewerKind, tab: DetailTab): void {
-  lastTab[kind] = tab
-  try {
-    localStorage.setItem(TAB_KEY, JSON.stringify(lastTab))
-  } catch {
-    return
-  }
-}
-
 export type ExrChannel = 'rgb' | 'r' | 'g' | 'b' | 'a'
 export const EXR_CHANNELS: { value: ExrChannel; label: string }[] = [
   { value: 'rgb', label: 'RGB' },
