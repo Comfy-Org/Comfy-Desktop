@@ -198,6 +198,15 @@
     },
     "refresh": "Refresh assets",
     "search": "Search by name…",
+    "filters": "Filters",
+    "dateLabel": "Date",
+    "date": {
+      "any": "Any time",
+      "today": "Today",
+      "week": "Past week",
+      "month": "Past month",
+      "year": "This year"
+    },
     "viewOptions": "View options",
     "layoutLabel": "Layout",
     "layout": {

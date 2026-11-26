@@ -14,7 +14,7 @@ import { buildSaveDialogFilters, startFileSave } from './comfyDownloadManager'
 import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
-import { searchTerm } from './assetSearch'
+import { madeSince, searchTerm, sinceTime } from './assetSearch'
 import {
   copyOutputImage,
   openOutputFile,
@@ -405,9 +405,9 @@ async function scanAllRows(
   return { rows: [...rows.values()], scanLimit: MAX_SCAN_PAGES * SCAN_PAGE_SIZE }
 }
 
-async function rowsOfKind(
+async function scannedRows(
   accessToken: string,
-  request: CloudAssetPageRequest & { kind: AssetKind },
+  request: CloudAssetPageRequest,
   signal: AbortSignal,
   slot: ScanSlot
 ): Promise<AssetRowPage> {
@@ -420,7 +420,13 @@ async function rowsOfKind(
     scan = { key, savedAt: Date.now(), ...scanned }
     slot.scan = scan
   }
-  const matches = scan.rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
+  const { kind, since } = request
+  const recent = since ? madeSince(since) : () => true
+  const matches = scan.rows.filter(
+    (row) =>
+      (!kind || assetKind(row.name, row.mime_type) === kind) &&
+      recent({ createdAt: row.created_at ?? null })
+  )
   return {
     rows: matches.slice(request.offset, request.offset + request.limit),
     total: matches.length,
@@ -434,15 +440,15 @@ async function listCloudAssets(
   signal: AbortSignal,
   slot: ScanSlot
 ): Promise<CloudAssetPage> {
-  const { kind } = request
-  const { rows, ...paging } = kind
-    ? await rowsOfKind(accessToken, { ...request, kind }, signal, slot)
-    : await fetchAssetRows(
-        request,
-        { Authorization: `Bearer ${accessToken}` },
-        signal,
-        request.offset === 0 && request.after === undefined
-      )
+  const { rows, ...paging } =
+    request.kind || request.since
+      ? await scannedRows(accessToken, request, signal, slot)
+      : await fetchAssetRows(
+          request,
+          { Authorization: `Bearer ${accessToken}` },
+          signal,
+          request.offset === 0 && request.after === undefined
+        )
   const summaries = rows.map((row) => toSummary(row, null))
   const deadline = AbortSignal.any([AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS), signal])
   await runPool(
@@ -583,23 +589,26 @@ function isCount(value: unknown, min: number, max: number): value is number {
 
 function pageRequest(value: unknown): CloudAssetPageRequest | null {
   if (!value || typeof value !== 'object') return null
-  const { offset, after, limit, order, kind, search } = value as Record<string, unknown>
+  const { offset, after, limit, order, kind, search, since } = value as Record<string, unknown>
   const knownKind = ASSET_KINDS.find((known) => known === kind)
   const term = searchTerm(search)
+  const from = sinceTime(since)
   return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
     isCount(limit, 1, MAX_PAGE_SIZE) &&
     (order === 'newest' || order === 'oldest') &&
     (kind === undefined || knownKind) &&
     term !== null &&
+    from !== null &&
     (after === undefined || (typeof after === 'string' && after.length > 0 && offset > 0)) &&
-    (offset < CLOUD_COUNT_CAP || after !== undefined || knownKind)
+    (offset < CLOUD_COUNT_CAP || after !== undefined || knownKind || from)
     ? {
         offset,
         limit,
         order,
         ...(after && { after }),
         ...(knownKind && { kind: knownKind }),
-        ...(term && { search: term })
+        ...(term && { search: term }),
+        ...(from && { since: from })
       }
     : null
 }

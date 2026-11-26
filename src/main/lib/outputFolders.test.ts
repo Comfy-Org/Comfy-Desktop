@@ -536,6 +536,21 @@ describe('listLocalAssets', () => {
     expect(names).toEqual(['d.png', 'c.png', 'b.png', 'a.png'])
   })
 
+  it('lists only the files changed since a date', async () => {
+    write(path.join(sharedDir, 'new.png'), 'x', new Date('2026-11-20T00:00:00Z'))
+    write(path.join(sharedDir, 'old.png'), 'x', new Date('2026-10-01T00:00:00Z'))
+
+    const page = await listLocalAssets(undefined, {
+      offset: 0,
+      limit: 10,
+      order: 'newest',
+      since: '2026-11-18T00:00:00.000Z'
+    })
+
+    expect(page.assets.map((a) => a.name)).toEqual(['new.png'])
+    expect(page.total).toBe(1)
+  })
+
   it('reads the first page for a page request it does not understand', () => {
     const first = { offset: 0, limit: MAX_LOCAL_ASSETS, order: 'newest' }
     expect(localPageRequest(undefined)).toEqual(first)
@@ -559,6 +574,17 @@ describe('listLocalAssets', () => {
       'the length counts characters, not code units'
     ).toEqual({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) })
     expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: 3 })).toEqual(first)
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', since: 'last week' })).toEqual(
+      first
+    )
+    expect(
+      localPageRequest({
+        offset: 0,
+        limit: 10,
+        order: 'newest',
+        since: '2026-11-18T08:00:00+08:00'
+      })
+    ).toEqual({ offset: 0, limit: 10, order: 'newest', since: '2026-11-18T00:00:00.000Z' })
     expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: ' sea ' })).toEqual({
       offset: 0,
       limit: 10,

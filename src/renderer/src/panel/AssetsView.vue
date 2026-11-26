@@ -16,6 +16,7 @@ import {
   Folder,
   LayoutGrid,
   LayoutDashboard,
+  ListFilter,
   Music,
   RefreshCw,
   ScanSearch,
@@ -132,6 +133,26 @@ void dashboardScope.initialize()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
+type DateFilter = 'any' | 'today' | 'week' | 'month' | 'year'
+const DATE_FILTERS: readonly DateFilter[] = ['any', 'today', 'week', 'month', 'year']
+const DAY_MS = 24 * 60 * 60 * 1000
+const dateFilter = ref<DateFilter>('any')
+const listedSince = ref<string | undefined>()
+
+function startOf(filter: DateFilter, now: Date): Date | undefined {
+  if (filter === 'today') return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (filter === 'week') return new Date(now.getTime() - 7 * DAY_MS)
+  if (filter === 'month') return new Date(now.getTime() - 30 * DAY_MS)
+  if (filter === 'year') return new Date(now.getFullYear(), 0, 1)
+  return undefined
+}
+
+function pickDate(filter: DateFilter): void {
+  dateFilter.value = filter
+  listedSince.value = startOf(filter, new Date())?.toISOString()
+}
+
+const activeFilterCount = computed(() => (dateFilter.value === 'any' ? 0 : 1))
 const listedSearch = refDebounced(
   computed(() => [...searchQuery.value.trim()].slice(0, MAX_SEARCH_LENGTH).join('')),
   SEARCH_DEBOUNCE_MS
@@ -516,7 +537,7 @@ const emptyState = computed<EmptyState>(() => {
   if (selectedBuild.value?.cloud && !cloudBuild.value) {
     return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
   }
-  if (kindFilter.value !== 'all' || listedSearch.value) return noMatches
+  if (kindFilter.value !== 'all' || listedSearch.value || listedSince.value) return noMatches
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -571,6 +592,7 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
     sortOrder.value,
     kind,
     search,
+    listedSince.value,
     pageSize.value,
     pageNumber
   ])
@@ -585,7 +607,8 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
       order: sortOrder.value,
       ...(after && { after }),
       kind,
-      search
+      search,
+      ...(listedSince.value && { since: listedSince.value })
     })
     .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
   pageCache.set(key, { savedAt: Date.now(), page })
@@ -607,7 +630,8 @@ function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAsset
     limit: pageSize.value,
     order: sortOrder.value,
     kind,
-    search: listedSearch.value || undefined
+    search: listedSearch.value || undefined,
+    ...(listedSince.value && { since: listedSince.value })
   })
 }
 
@@ -731,7 +755,13 @@ const listedCloudId = computed(() =>
 )
 const listQuery = computed(() =>
   selectedBuild.value
-    ? [sortOrder.value, kindFilter.value, listedSearch.value, pageSize.value].join('\n')
+    ? [
+        sortOrder.value,
+        kindFilter.value,
+        listedSearch.value,
+        listedSince.value,
+        pageSize.value
+      ].join('\n')
     : ''
 )
 
@@ -1376,6 +1406,46 @@ function extensionOf(name: string): string {
               aria-hidden="true"
             />
           </Button>
+          <Menu :modal="false" align="end" class="z-20 min-w-50" :aria-label="t('assets.filters')">
+            <template #trigger>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                class="shrink-0 gap-1.5 px-2.5 text-[13px]"
+                :aria-label="t('assets.filters')"
+                data-testid="assets-filters"
+              >
+                <ListFilter :size="14" aria-hidden="true" />
+                <span v-if="toolbarCompactness < SEARCH_AS_ICON">{{ t('assets.filters') }}</span>
+                <span
+                  v-if="activeFilterCount > 0"
+                  class="flex size-4.5 items-center justify-center rounded-full bg-foreground text-[11px] font-semibold text-background tabular-nums"
+                  data-testid="assets-filters-count"
+                  >{{ activeFilterCount }}</span
+                >
+                <ChevronDown v-else :size="13" aria-hidden="true" />
+              </Button>
+            </template>
+            <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
+              {{ t('assets.dateLabel') }}
+            </div>
+            <DropdownMenuRadioGroup :model-value="dateFilter">
+              <MenuRadioItem
+                v-for="option in DATE_FILTERS"
+                :key="option"
+                as="button"
+                type="button"
+                :value="option"
+                class="w-full"
+                :data-testid="`assets-date-${option}`"
+                @select="pickDate(option)"
+              >
+                <span class="flex-1 text-left">{{ t(`assets.date.${option}`) }}</span>
+                <Check v-if="dateFilter === option" :size="15" aria-hidden="true" />
+              </MenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </Menu>
           <div v-if="toolbarCompactness < SEARCH_AS_ICON" class="w-[220px] min-w-[150px] shrink">
             <BaseInput
               v-model="searchQuery"

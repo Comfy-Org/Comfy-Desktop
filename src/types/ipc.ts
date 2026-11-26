@@ -334,6 +334,7 @@ export interface CloudAssetPageRequest {
   order: AssetOrder
   kind?: AssetKind
   search?: string
+  since?: string
 }
 
 export interface CloudAssetPage {
@@ -350,6 +351,7 @@ export interface LocalAssetPageRequest {
   order: AssetOrder
   kind?: AssetKind
   search?: string
+  since?: string
 }
 
 export interface OutputFolderPaths {

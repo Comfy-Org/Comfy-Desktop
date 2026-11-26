@@ -198,6 +198,15 @@
     },
     "refresh": "刷新资产",
     "search": "按名称搜索…",
+    "filters": "筛选",
+    "dateLabel": "日期",
+    "date": {
+      "any": "任何时间",
+      "today": "今天",
+      "week": "过去一周",
+      "month": "过去一个月",
+      "year": "今年"
+    },
     "viewOptions": "视图选项",
     "layoutLabel": "布局",
     "layout": {

@@ -70,7 +70,9 @@ function localListing(
 ): LocalAssetListing {
   localPages.push(page)
   const term = page.search?.toLowerCase()
-  const named = term ? all.filter((item) => item.name.toLowerCase().includes(term)) : all
+  const since = page.since
+  const recent = since ? all.filter((item) => (item.createdAt ?? '') >= since) : all
+  const named = term ? recent.filter((item) => item.name.toLowerCase().includes(term)) : recent
   const count = (kind: AssetSummary['kind']) => named.filter((item) => item.kind === kind).length
   const matching = page.kind ? named.filter((item) => item.kind === page.kind) : named
   return {
@@ -744,6 +746,41 @@ describe('AssetsView', () => {
 
     await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['forest.png']))
     expect(input(), 'the same input stays on the page').toBe(typedInto)
+  })
+
+  it('narrows the files to a date range from Filters, and shows that one filter is on', async () => {
+    vi.useFakeTimers({ now: new Date('2026-11-25T15:00:00Z'), toFake: ['Date'] })
+    try {
+      const wrapper = await mountAssets([
+        asset('a', 'today.png', 'image', { createdAt: '2026-11-25T09:00:00Z' }),
+        asset('b', 'lastweek.png', 'image', { createdAt: '2026-11-20T09:00:00Z' }),
+        asset('c', 'old.png', 'image', { createdAt: '2026-06-01T09:00:00Z' })
+      ])
+      const openFilters = async () => {
+        await wrapper.get('[data-testid="assets-filters"]').trigger('keydown', { key: 'Enter' })
+        await flushPromises()
+      }
+      const choose = async (option: string) => {
+        await openFilters()
+        document.querySelector<HTMLElement>(`[data-testid="assets-date-${option}"]`)!.click()
+        await flushPromises()
+      }
+      expect(wrapper.find('[data-testid="assets-filters-count"]').exists()).toBe(false)
+
+      await choose('week')
+      await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['today.png', 'lastweek.png']))
+      expect(localPages.at(-1)?.since).toBe('2026-11-18T15:00:00.000Z')
+      expect(wrapper.get('[data-testid="assets-filters-count"]').text()).toBe('1')
+
+      await choose('any')
+      await vi.waitFor(() =>
+        expect(assetNames(wrapper)).toEqual(['today.png', 'lastweek.png', 'old.png'])
+      )
+      expect(localPages.at(-1)?.since).toBeUndefined()
+      expect(wrapper.find('[data-testid="assets-filters-count"]').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('filters by asset type and by name', async () => {
@@ -2699,6 +2736,20 @@ describe('AssetsView Comfy Cloud pages', () => {
       wrapper.findAll('[data-testid^="assets-kind-"]').map((tab) => tab.text()),
       'Cloud tabs show no counts, with or without a search'
     ).toEqual(['All', 'Images', 'Videos', '3D', 'Audio'])
+  })
+
+  it('asks Comfy Cloud only for the outputs made since the picked date', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+
+    await wrapper.get('[data-testid="assets-filters"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    document.querySelector<HTMLElement>('[data-testid="assets-date-today"]')!.click()
+    await flushPromises()
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    expect(asked().at(-1)).toEqual({ ...FIRST_PAGE, since: today.toISOString() })
   })
 
   it('says nothing matches when Comfy Cloud has no outputs of the picked type', async () => {

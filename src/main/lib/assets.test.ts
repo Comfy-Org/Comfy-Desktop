@@ -376,6 +376,36 @@ describe('listAssets', () => {
       expect(fetchMock).toHaveBeenCalledTimes(3)
     })
 
+    it('keeps only the outputs made since a date, alone or with a type', async () => {
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock.mockImplementation(async () =>
+        jsonResponse({
+          assets: [
+            { id: 'n', name: 'new.png', created_at: '2026-11-20T10:00:00.123456Z' },
+            { id: 'm', name: 'new.glb', created_at: '2026-11-19T10:00:00Z' },
+            { id: 'o', name: 'old.png', created_at: '2026-10-01T10:00:00Z' },
+            { id: 'u', name: 'undated.png' }
+          ],
+          has_more: false
+        })
+      )
+
+      const recent = await listAssets('cloud-1', {
+        ...FIRST_PAGE,
+        since: '2026-11-18T00:00:00.000Z'
+      })
+      const recentImages = await listAssets('cloud-1', {
+        ...FIRST_PAGE,
+        kind: 'image',
+        since: '2026-11-18T00:00:00.000Z'
+      })
+
+      expect(recent.assets.map((a) => a.name)).toEqual(['new.png', 'new.glb'])
+      expect(recent.total).toBe(2)
+      expect(recentImages.assets.map((a) => a.name)).toEqual(['new.png'])
+    })
+
     it('scans by cursor without asking for any count or offset', async () => {
       cloudOfOutputs(1200)
 
