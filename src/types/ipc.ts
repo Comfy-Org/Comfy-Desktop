@@ -518,6 +518,8 @@ export interface ActionDef {
 export interface ConfirmDef {
   title?: string
   message?: string
+  hint?: string
+  note?: string
   confirmLabel?: string
   options?: ConfirmOption[]
   messageDetails?: ModalDetailGroup[]
