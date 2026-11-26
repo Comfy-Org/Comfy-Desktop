@@ -132,6 +132,25 @@ watch(
   }
 )
 
+const stripTabs = computed<{ value: string; label: string }[]>(() => {
+  if (mix.value === 'tabs') return KINDS
+  if (byTopic.value) return TOPICS.value
+  return []
+})
+const stripTitle = computed(() => {
+  if (mix.value === 'tabs') return 'Apps and workflows'
+  if (byTopic.value) return 'Use case'
+  if (mix.value === 'mixed') return 'Apps and workflows'
+  return 'Apps'
+})
+const stripTab = computed<string>({
+  get: () => (mix.value === 'tabs' ? kind.value : topic.value),
+  set: (v) => {
+    if (mix.value === 'tabs') kind.value = v === 'templates' ? 'templates' : 'apps'
+    else topic.value = TOPICS.value.find((t) => t.value === v)?.value ?? 'all'
+  }
+})
+
 const row = ref<InstanceType<typeof ScrollRow> | null>(null)
 function scrollRow(by: number): void {
   const el = (row.value?.$el as HTMLElement | undefined) ?? null
@@ -141,10 +160,15 @@ function scrollRow(by: number): void {
 
 <template>
   <div class="mar-arcmix">
-    <div v-if="mix === 'tabs'" class="mar-arcmix-picker">
+    <div v-if="!full && mix === 'tabs'" class="mar-arcmix-picker">
       <MarSeg v-model="kind" :options="KINDS" label="Show" />
     </div>
-    <div v-else-if="byTopic" class="mar-arcmix-picker" role="tablist" aria-label="Use case">
+    <div
+      v-else-if="!full && byTopic"
+      class="mar-arcmix-picker"
+      role="tablist"
+      aria-label="Use case"
+    >
       <button
         v-for="t in TOPICS"
         :key="t.value"
@@ -160,7 +184,7 @@ function scrollRow(by: number): void {
 
     <div
       class="mar-arcmix-stage"
-      :class="leaving && 'is-leaving'"
+      :class="leaving && !full && 'is-leaving'"
       :data-home-tour="listsApps ? 'apps-carousel' : undefined"
     >
       <HomeLoadFailed
@@ -169,8 +193,12 @@ function scrollRow(by: number): void {
       />
       <AppStrip
         v-else-if="full"
+        v-model:tab="stripTab"
         :items="shown.items"
         :all-label="shown.label"
+        :title="stripTitle"
+        :tabs="stripTabs"
+        :leaving="leaving"
         @all="seeAll(shown.on)"
       />
       <ExampleArc

@@ -1,15 +1,26 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useResizeObserver } from '@vueuse/core'
+import Button from '../../ui/Button.vue'
 import { reducedMotion } from '../userStates/examples'
 import type { ArcItem } from '../userStates/arcItems'
 
-const { items, allLabel = 'See all apps' } = defineProps<{
+const {
+  items,
+  allLabel = 'See all apps',
+  title = 'Apps',
+  tabs = [],
+  leaving = false
+} = defineProps<{
   items: ArcItem[]
   allLabel?: string
+  title?: string
+  tabs?: { value: string; label: string }[]
+  leaving?: boolean
 }>()
 const emit = defineEmits<{ all: [] }>()
+const tab = defineModel<string>('tab')
 
 const DRAG_THRESHOLD = 6
 const isClip = (src: string): boolean => /^data:video|\.(mp4|webm|mov)(\?|#|$)/i.test(src)
@@ -128,6 +139,34 @@ function leave(x: ArcItem, e: Event): void {
   setPlaying(e.currentTarget as HTMLElement, false)
 }
 
+const tabEls = ref<HTMLElement[]>([])
+function pickTab(value: string): void {
+  tab.value = value
+}
+function onTabKey(e: KeyboardEvent, at: number): void {
+  const last = tabs.length - 1
+  const to =
+    e.key === 'ArrowRight'
+      ? at === last
+        ? 0
+        : at + 1
+      : e.key === 'ArrowLeft'
+        ? at === 0
+          ? last
+          : at - 1
+        : e.key === 'Home'
+          ? 0
+          : e.key === 'End'
+            ? last
+            : -1
+  if (to < 0) return
+  e.preventDefault()
+  const next = tabs[to]
+  if (!next) return
+  pickTab(next.value)
+  tabEls.value[to]?.focus()
+}
+
 const ids = computed(() => items.map((x) => x.id).join('|'))
 watch(ids, async () => {
   await nextTick()
@@ -137,11 +176,65 @@ watch(ids, async () => {
 </script>
 
 <template>
-  <div class="mar-strip" role="region" aria-roledescription="carousel" aria-label="Apps">
+  <div class="mar-strip" role="region" aria-roledescription="carousel" :aria-label="title">
+    <div class="mar-strip-head">
+      <div
+        v-if="tabs.length"
+        class="mar-strip-tabs"
+        role="tablist"
+        :aria-label="title"
+        data-no-pill
+      >
+        <button
+          v-for="(t, i) in tabs"
+          :key="t.value"
+          ref="tabEls"
+          type="button"
+          role="tab"
+          class="mar-strip-tab"
+          :aria-selected="tab === t.value"
+          :tabindex="tab === t.value ? 0 : -1"
+          @click="pickTab(t.value)"
+          @keydown="onTabKey($event, i)"
+        >
+          {{ t.label }}
+        </button>
+      </div>
+      <h2 v-else class="mar-strip-title-head">
+        <button type="button" class="mar-strip-tab is-link" @click="emit('all')">
+          {{ title }}<ChevronRight :size="13" aria-hidden="true" />
+        </button>
+      </h2>
+      <div class="mar-strip-tools">
+        <button v-if="allLabel" type="button" class="mar-strip-all" @click="emit('all')">
+          {{ allLabel }}<ChevronRight :size="13" aria-hidden="true" />
+        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          class="mar-strip-step"
+          aria-label="Previous"
+          :disabled="atStart"
+          @click="page(-1)"
+        >
+          <ChevronLeft :size="16" aria-hidden="true" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          class="mar-strip-step"
+          aria-label="Next"
+          :disabled="atEnd"
+          @click="page(1)"
+        >
+          <ChevronRight :size="16" aria-hidden="true" />
+        </Button>
+      </div>
+    </div>
     <div
       ref="track"
       class="mar-strip-track"
-      :class="dragging && 'is-dragging'"
+      :class="[dragging && 'is-dragging', leaving && 'is-leaving']"
       tabindex="-1"
       @scroll.passive="measure"
       @keydown="onKey"
@@ -197,33 +290,6 @@ watch(ids, async () => {
         </span>
       </button>
     </div>
-    <button
-      type="button"
-      class="mar-strip-step is-prev"
-      :class="atStart && 'is-hidden'"
-      :tabindex="atStart ? -1 : 0"
-      :aria-hidden="atStart"
-      aria-label="Previous"
-      @click="page(-1)"
-    >
-      <ChevronLeft :size="20" />
-    </button>
-    <button
-      type="button"
-      class="mar-strip-step is-next"
-      :class="atEnd && 'is-hidden'"
-      :tabindex="atEnd ? -1 : 0"
-      :aria-hidden="atEnd"
-      aria-label="Next"
-      @click="page(1)"
-    >
-      <ChevronRight :size="20" />
-    </button>
-    <div v-if="allLabel" class="mar-strip-actions">
-      <button type="button" class="mar-strip-all" @click="emit('all')">
-        {{ allLabel }}<ArrowRight :size="14" />
-      </button>
-    </div>
   </div>
 </template>
 
@@ -235,6 +301,10 @@ watch(ids, async () => {
 }
 .mar-strip-track {
   display: flex;
+  margin-inline: calc(50% - var(--mar-pane, 100%) / 2);
+  transition:
+    opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
   gap: var(--strip-gap);
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -246,6 +316,12 @@ watch(ids, async () => {
 }
 .mar-strip-track::-webkit-scrollbar {
   display: none;
+}
+.mar-strip-track.is-leaving {
+  opacity: 0;
+  transform: translateY(6px);
+  transition-duration: 150ms;
+  transition-timing-function: ease-in;
 }
 .mar-strip-track.is-dragging {
   scroll-snap-type: none;
@@ -318,12 +394,26 @@ watch(ids, async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mar-strip-actions {
+.mar-strip-head {
   display: flex;
-  height: 40px;
+  height: 24px;
   align-items: center;
-  justify-content: center;
-  margin-top: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mar-strip-tabs,
+.mar-strip-title-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.mar-strip-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
 }
 @media (prefers-reduced-motion: reduce) {
   .mar-strip-slide img,
@@ -333,6 +423,9 @@ watch(ids, async () => {
   }
   .mar-strip-slide:is(:hover, :focus-visible) :is(img, video) {
     scale: 1;
+  }
+  .mar-strip-track {
+    transition: none;
   }
 }
 </style>
@@ -360,71 +453,78 @@ watch(ids, async () => {
   box-shadow: inset 0 0 0 2px var(--color-border-focus);
   content: '';
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step {
-  position: absolute;
-  z-index: 2;
-  top: calc(var(--strip-h) / 2);
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  padding: 0;
-  border-radius: 999px;
-  background: rgb(14 14 16 / 0.42);
-  backdrop-filter: blur(14px) saturate(1.5);
-  color: #fff;
-  opacity: 0.85;
+:root .proto-ui.proto-ui.proto-ui .mar-strip-tab {
+  display: inline-flex;
+  width: auto;
+  height: 32px;
+  align-items: center;
+  gap: 4px;
+  margin: -4px 0;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--color-subtle-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   outline: none;
-  translate: 0 -50%;
   transition:
-    opacity 200ms ease,
     background-color 160ms ease,
-    scale 120ms ease;
+    color 160ms ease;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step.is-prev {
-  left: 16px;
+:root .proto-ui.proto-ui.proto-ui .mar-strip-tabs .mar-strip-tab:first-child,
+:root .proto-ui.proto-ui.proto-ui .mar-strip-tab.is-link {
+  margin-left: -8px;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step.is-next {
-  right: 16px;
+:root .proto-ui.proto-ui.proto-ui .mar-strip-tab.is-link {
+  color: var(--color-muted-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step:is(:hover, :focus-visible) {
-  background: rgb(14 14 16 / 0.6);
-  opacity: 1;
+:root .proto-ui.proto-ui.proto-ui .mar-strip-tab[aria-selected='true'] {
+  color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step:focus-visible {
+:root .proto-ui.proto-ui.proto-ui .mar-strip-tab:hover {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-strip-tab:focus-visible,
+:root .proto-ui.proto-ui.proto-ui .mar-strip-all:focus-visible {
   box-shadow: 0 0 0 2px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step:active {
-  scale: 0.94;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step.is-hidden {
-  opacity: 0;
-  pointer-events: none;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-strip-all {
   display: inline-flex;
   width: auto;
   height: 32px;
   align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  border-radius: var(--radius-control);
+  gap: 4px;
+  margin-right: 4px;
+  padding: 0 8px 0 10px;
+  border-radius: 8px;
   color: var(--color-muted-foreground);
   font-size: 13px;
   font-weight: 500;
   outline: none;
-  transition: background-color 160ms ease;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-strip-all:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  background: var(--color-secondary-background);
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-all:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-border-focus);
+:root .proto-ui.proto-ui.proto-ui .mar-strip-step {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+  transition:
+    background-color 160ms ease,
+    opacity 160ms ease;
 }
-@media (prefers-reduced-motion: reduce) {
-  :root .proto-ui.proto-ui.proto-ui .mar-strip-step {
-    transition: none;
-  }
+:root .proto-ui.proto-ui.proto-ui .mar-strip-step:hover:not(:disabled) {
+  background: var(--color-secondary-background-hover);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-strip-step:disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
 </style>
