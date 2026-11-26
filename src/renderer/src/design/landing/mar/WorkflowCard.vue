@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Cloud, Monitor } from 'lucide-vue-next'
 import MediaCard from '../ui/MediaCard.vue'
 import WorkflowCover from './brand/WorkflowCover.vue'
 import { cover, isBranded, type RecentsCover } from './cover'
@@ -29,7 +30,13 @@ defineEmits<{ open: [] }>()
     </template>
     <p class="truncate text-ui font-medium">{{ title }}</p>
     <p class="mt-1 flex items-center gap-2 text-ui text-subtle-foreground">
-      <span class="min-w-0 flex-1 truncate">{{ meta }}</span>
+      <span class="flex min-w-0 flex-1 items-center gap-1.5">
+        <template v-if="coverKind === 'generic' && !app">
+          <Cloud v-if="/cloud/i.test(meta)" :size="13" class="shrink-0" aria-hidden="true" />
+          <Monitor v-else :size="13" class="shrink-0" aria-hidden="true" />
+        </template>
+        <span class="truncate">{{ meta }}</span>
+      </span>
       <span v-if="right" class="shrink-0">{{ right }}</span>
     </p>
   </MediaCard>

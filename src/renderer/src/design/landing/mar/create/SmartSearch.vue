@@ -139,7 +139,7 @@ defineExpose({ shown, field })
   position: relative;
   z-index: 3;
   width: min(640px, 100%);
-  margin-top: 22px;
+  margin-top: 36px;
   text-align: left;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-starts {
@@ -147,7 +147,7 @@ defineExpose({ shown, field })
   width: 100%;
   flex-direction: column;
   gap: 48px;
-  margin-top: 44px;
+  margin-top: 64px;
   text-align: left;
   transition: opacity 160ms ease;
 }
