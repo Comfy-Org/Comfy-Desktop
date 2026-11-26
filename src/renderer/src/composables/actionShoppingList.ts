@@ -143,6 +143,11 @@ export async function runPromptChain(
   return { ...action, data: { ...action.data, [action.prompt.field]: value } }
 }
 
+function messageWithConfirmNotes(confirm: NonNullable<ActionDef['confirm']>): string {
+  const message = confirm.message || i18n.global.t('modal.areYouSure')
+  return [message, confirm.hint, confirm.note].filter(Boolean).join('\n\n')
+}
+
 export async function runConfirmChain(
   action: ActionDef,
   modal: Modal,
@@ -152,7 +157,7 @@ export async function runConfirmChain(
   if (action.confirm.options) {
     const result = await modal.confirmWithOptions({
       title: action.confirm.title || i18n.global.t('modal.confirm'),
-      message: action.confirm.message || i18n.global.t('modal.areYouSure'),
+      message: messageWithConfirmNotes(action.confirm),
       options: action.confirm.options,
       confirmLabel: action.confirm.confirmLabel || action.label,
       confirmStyle: confirmToneForActionStyle(action.style)
@@ -164,6 +169,8 @@ export async function runConfirmChain(
     const result = await dialogs.confirm({
       title: action.confirm.title || i18n.global.t('modal.confirm'),
       message: action.confirm.message || i18n.global.t('modal.areYouSure'),
+      hint: action.confirm.hint,
+      note: action.confirm.note,
       messageDetails: action.confirm.messageDetails,
       restoreDiff: action.confirm.restoreDiff,
       confirmLabel: action.confirm.confirmLabel || action.label,
@@ -173,7 +180,7 @@ export async function runConfirmChain(
   }
   const confirmed = await modal.confirm({
     title: action.confirm.title || i18n.global.t('modal.confirm'),
-    message: action.confirm.message || i18n.global.t('modal.areYouSure'),
+    message: messageWithConfirmNotes(action.confirm),
     messageDetails: action.confirm.messageDetails,
     confirmLabel: action.label,
     confirmStyle: confirmToneForActionStyle(action.style)

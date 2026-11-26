@@ -108,12 +108,12 @@ function tooltipOf(
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Apps, Assets, then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Explore, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Explore',
       'Assets',
       'Builds',
       ''
@@ -126,14 +126,7 @@ describe('AppSidebar', () => {
   it('marks Apps as the current page and opens it from its row', async () => {
     const wrapper = await mountSidebar('apps')
 
-    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
-      'Home',
-      'Apps',
-      'Assets',
-      'Builds',
-      ''
-    ])
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Explore'])
 
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
 
@@ -154,7 +147,7 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Explore',
       'Assets',
       'Development',
       'Builds',
@@ -178,7 +171,7 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Explore',
       'Character Swap',
       'Assets',
       'Builds',
@@ -195,7 +188,7 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
   })
 
-  it('names an app left open from Development under Development, not Apps', async () => {
+  it('names an app left open from Development under Development, not Explore', async () => {
     const wrapper = mount(AppSidebar, {
       props: {
         activePage: 'home',
@@ -208,7 +201,7 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Explore',
       'Assets',
       'Development',
       'Character Swap',
@@ -276,9 +269,8 @@ describe('AppSidebar', () => {
   })
 
   it('shows no app row with no app left open', async () => {
-    const wrapper = await mountSidebar('home')
-
-    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+    const none = await mountSidebar('home')
+    expect(none.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
   it('folds to the rail while an app is open, lets the toggle reopen it, and keeps the saved choice', async () => {
@@ -572,8 +564,8 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
-    const apps = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
-    expect(apps.top - home.bottom).toBe(4)
+    const explore = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
+    expect(explore.top - home.bottom).toBe(4)
     wrapper.unmount()
   })
 
@@ -637,7 +629,7 @@ describe('AppSidebar', () => {
       await vi.waitFor(() => expect(shownTooltips()).not.toHaveLength(0))
       tooltipsOnTheWay.push(shownTooltips())
     }
-    expect(tooltipsOnTheWay).toEqual([['Home'], ['Apps']])
+    expect(tooltipsOnTheWay).toEqual([['Home'], ['Explore']])
     wrapper.unmount()
   })
 

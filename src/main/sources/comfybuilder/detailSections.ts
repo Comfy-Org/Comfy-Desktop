@@ -121,10 +121,11 @@ function buildUpdateSection(installation: InstallationRecord): Record<string, un
               data: { version: availableUpdate },
               confirm: {
                 title: t('comfybuilder.updateConfirmTitle'),
-                message: `${t('comfybuilder.updateConfirmMessage', {
+                message: t('comfybuilder.updateConfirmMessage', {
                   from: `**v${current}**`,
                   to: `**v${availableUpdate}**`
-                })}\n\n${t('comfybuilder.updateConfirmInfo')}`,
+                }),
+                note: t('comfybuilder.updateConfirmInfo'),
                 confirmLabel: t('comfybuilder.updateNow')
               }
             }

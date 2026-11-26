@@ -55,7 +55,7 @@ export function useArgsAutocomplete(opts: UseArgsAutocompleteOptions) {
     const filter = q === '--' ? '' : q
     const known = parsed.value.known
     return schema.value
-      .filter((a) => (!filter || a.name.includes(filter)) && !known.has(a.name))
+      .filter((a) => !a.hidden && (!filter || a.name.includes(filter)) && !known.has(a.name))
       .slice(0, MAX_MATCHES)
   })
 
