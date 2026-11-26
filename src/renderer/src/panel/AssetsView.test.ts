@@ -1183,7 +1183,7 @@ describe('AssetsView', () => {
         ?.closest('.context-menu-item')
         ?.querySelector(REVEAL_ICON),
       'asset menu'
-    ).not.toBeNull()
+    ).toBeTruthy()
 
     await wrapper.get('[data-testid="asset-open-p"]').trigger('click')
     await flushPromises()
