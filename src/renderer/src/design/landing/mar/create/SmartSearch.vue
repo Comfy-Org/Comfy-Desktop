@@ -147,7 +147,7 @@ defineExpose({ shown, field })
   width: 100%;
   flex-direction: column;
   gap: 48px;
-  margin-top: 64px;
+  margin-top: 32px;
   text-align: left;
   transition: opacity 160ms ease;
 }
