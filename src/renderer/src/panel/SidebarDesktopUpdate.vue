@@ -101,7 +101,7 @@ function onClick(): void {
             <span class="min-w-0 flex-1 overflow-hidden text-left">{{ label }}</span>
             <span
               v-if="state.version"
-              class="shrink-0 text-update-muted-foreground"
+              class="shrink-0 text-muted-foreground"
               data-testid="app-sidebar-desktop-update-version"
               >{{ t('titleBar.desktopUpdateVersion', { version: state.version }) }}</span
             >

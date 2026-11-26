@@ -72,7 +72,7 @@ describe('SidebarDesktopUpdate', () => {
       const button = wrapper.get(indicator)
       expect(button.text()).toContain(label)
       expect(button.get(versionTag).text()).toBe('v2.3.4')
-      expect(button.get(versionTag).classes()).toContain('text-update-muted-foreground')
+      expect(button.get(versionTag).classes()).toContain('text-muted-foreground')
       expect(button.attributes('aria-label')).toBe(label)
       expect(button.attributes('aria-description')).toBe(description)
       expect(button.attributes('data-state')).toBe(kind)
