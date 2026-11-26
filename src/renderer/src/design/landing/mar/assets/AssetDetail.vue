@@ -266,7 +266,7 @@ watch(
 )
 const showViewer = computed(() => Boolean(viewer.value) && sideTab.value === 'viewer')
 const shortcutShown = computed(
-  () => full.value && side.value && Boolean(viewer.value) && viewerShortcut.id === 'on'
+  () => full.value && side.value && Boolean(viewer.value) && viewerShortcut.id !== 'off'
 )
 function toggleViewer(): void {
   sideTab.value = sideTab.value === 'viewer' ? 'details' : 'viewer'
@@ -631,14 +631,14 @@ onBeforeUnmount(() => {
                 <AssetCover v-else :name="asset.name" :type="asset.type" />
               </div>
               <button
-                v-if="shortcutShown"
+                v-if="shortcutShown && viewerShortcut.id === 'stage'"
                 type="button"
                 class="mad-viewer-btn"
                 aria-keyshortcuts="V"
                 :aria-pressed="showViewer"
                 @click="toggleViewer"
               >
-                <SlidersHorizontal :size="14" /><span>Viewer controls</span
+                <SlidersHorizontal :size="14" /><span>Controls</span
                 ><kbd class="mad-viewer-kbd" aria-hidden="true">V</kbd>
               </button>
               <!-- The player: play, the time along a track (a sound's waveform),
@@ -716,15 +716,28 @@ onBeforeUnmount(() => {
                 <AssetCover v-else :name="a.name" :type="a.type" />
               </button>
             </nav>
-            <!-- Zoom: the real-size percentage, as on ComfyUI's canvas. -->
-            <ZoomControl
-              v-if="zoomable"
-              ref="zoomCtl"
-              v-model="zoom"
-              v-model:compare="compareModel"
-              :fit="fit"
-              keys
-            />
+            <div class="mad-foot-tools">
+              <button
+                v-if="shortcutShown && viewerShortcut.id === 'bar'"
+                type="button"
+                class="mad-viewer-btn is-bar"
+                aria-keyshortcuts="V"
+                :aria-pressed="showViewer"
+                @click="toggleViewer"
+              >
+                <SlidersHorizontal :size="14" /><span>Controls</span
+                ><kbd class="mad-viewer-kbd" aria-hidden="true">V</kbd>
+              </button>
+              <!-- Zoom: the real-size percentage, as on ComfyUI's canvas. -->
+              <ZoomControl
+                v-if="zoomable"
+                ref="zoomCtl"
+                v-model="zoom"
+                v-model:compare="compareModel"
+                :fit="fit"
+                keys
+              />
+            </div>
           </footer>
         </section>
 
@@ -1364,11 +1377,11 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 11px;
-  border-radius: 8px;
-  background: rgb(0 0 0 / 0.38);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  color: rgb(255 255 255 / 0.7);
+  color: color-mix(in oklch, var(--color-base-foreground) 70%, transparent);
   font-size: 13px;
   font-weight: 500;
   line-height: 1;
@@ -1383,9 +1396,9 @@ onBeforeUnmount(() => {
   height: 20px;
   place-items: center;
   padding: 0 5px;
-  border: 1px solid rgb(255 255 255 / 0.14);
+  border: 1px solid color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
   border-radius: 4px;
-  color: rgb(255 255 255 / 0.45);
+  color: color-mix(in oklch, var(--color-base-foreground) 45%, transparent);
   font-family: inherit;
   font-size: 11px;
   font-weight: 500;
@@ -1395,16 +1408,16 @@ onBeforeUnmount(() => {
 }
 :root .proto-ui.proto-ui.proto-ui .mad-stage:hover .mad-viewer-btn,
 :root .proto-ui.proto-ui.proto-ui .mad-stage:has(:focus-visible) .mad-viewer-btn {
-  background: rgb(0 0 0 / 0.75);
-  color: #fff;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-stage .mad-viewer-btn:hover {
-  background: rgb(32 32 34 / 0.88);
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
 }
 .mad-stage:hover .mad-viewer-kbd,
 .mad-stage:has(:focus-visible) .mad-viewer-kbd {
-  border-color: rgb(255 255 255 / 0.26);
-  color: rgb(255 255 255 / 0.75);
+  border-color: color-mix(in oklch, var(--color-base-foreground) 24%, transparent);
+  color: color-mix(in oklch, var(--color-base-foreground) 75%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-stage .mad-viewer-btn[aria-pressed='true'] {
   background: #fff;
@@ -1530,6 +1543,32 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
+}
+.mad-foot-tools {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn.is-bar {
+  position: static;
+  height: 32px;
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn.is-bar:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+.mad-viewer-btn.is-bar .mad-viewer-kbd {
+  border-color: color-mix(in oklch, var(--color-base-foreground) 24%, transparent);
+  color: color-mix(in oklch, var(--color-base-foreground) 75%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn.is-bar[aria-pressed='true'] {
+  background: #fff;
+  color: #111;
+}
+.mad-viewer-btn.is-bar[aria-pressed='true'] .mad-viewer-kbd {
+  border-color: rgb(0 0 0 / 0.18);
+  color: rgb(0 0 0 / 0.55);
 }
 .mad-foot .zc {
   justify-self: end;

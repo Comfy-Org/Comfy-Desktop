@@ -38,7 +38,7 @@ import { COMPOSER_POSITIONS, composerPos } from './create/composerPos'
 import { ASSET_FOLDER_LAYOUTS, assetFolderLayout } from './assets/assetFolderLayout'
 import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
 import { RATING_STYLES, ratingStyle } from './assets/ratingStyle'
-import { viewerShortcut } from './assets/viewerShortcut'
+import { VIEWER_SHORTCUTS, viewerShortcut } from './assets/viewerShortcut'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -186,7 +186,7 @@ const PARTS: Part[] = [
   one('folderPicker', folderPicker, 'filters', FOLDER_PICKERS),
   one('rating', ratingStyle, 'stars', RATING_STYLES),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
-  one('viewerShortcut', viewerShortcut, 'on', OFF_ON),
+  one('viewerShortcut', viewerShortcut, 'stage', VIEWER_SHORTCUTS),
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
