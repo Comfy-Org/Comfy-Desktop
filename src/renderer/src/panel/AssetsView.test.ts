@@ -32,6 +32,7 @@ const readAssetModel = vi.fn()
 const hasAssetWorkflow = vi.fn()
 const openAssetWorkflow = vi.fn()
 const trashAsset = vi.fn()
+const navigatePanel = vi.fn()
 const alert = vi.fn()
 const confirm = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
@@ -286,6 +287,7 @@ beforeEach(() => {
     hasAssetWorkflow,
     openAssetWorkflow,
     trashAsset,
+    navigatePanel,
     platform: 'darwin',
     getSetting,
     setSetting: vi.fn().mockResolvedValue(undefined),
@@ -700,7 +702,7 @@ describe('AssetsView', () => {
     useInstallationStore().loading = true
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('Nothing made in lab yet')
     expect(wrapper.find('[data-testid="assets-skeleton"]').exists()).toBe(false)
   })
 
@@ -1130,9 +1132,25 @@ describe('AssetsView', () => {
     const wrapper = await mountAssets()
     await signInWith([])
 
-    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
-    expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
-    expect(wrapper.find('[data-testid="assets-empty-action"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
+      'Nothing made in Comfy Cloud yet'
+    )
+    expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe(
+      'Every image, video and sound you make lands here. Open an app to make your first one.'
+    )
+    expect(wrapper.find('[data-testid="assets-empty-icon"]').exists()).toBe(true)
+  })
+
+  it('sends an empty folder to Apps to make a first asset', async () => {
+    const wrapper = await mountAssets()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('Nothing made in lab yet')
+    const action = wrapper.get('[data-testid="assets-empty-action"]')
+    expect(action.text()).toBe('Open Apps')
+    await action.trigger('click')
+
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {

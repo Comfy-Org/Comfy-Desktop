@@ -15,6 +15,7 @@ import {
   ExternalLink,
   File,
   Folder,
+  Images,
   LayoutGrid,
   LayoutDashboard,
   Music,
@@ -526,8 +527,12 @@ const emptyState = computed<EmptyState>(() => {
   }
   if (kindFilter.value !== 'all' || listedSearch.value) return noMatches
   return {
-    title: t('assets.emptyTitle'),
-    body: t('assets.emptyBody')
+    icon: Images,
+    title: selectedBuild.value
+      ? t('assets.emptyTitleIn', { name: selectedBuild.value.build.name })
+      : t('assets.emptyTitle'),
+    body: t('assets.emptyBody'),
+    action: { label: t('assets.openApps'), run: () => window.api.navigatePanel('apps') }
   }
 })
 
