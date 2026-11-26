@@ -11,6 +11,8 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import {
   IN_PLACE_RELAUNCH,
+  RESTART_NOTICE_ACTION_IDS,
+  addRestartNotice,
   augmentActionWithStopWarning,
   stopAndWaitForExit
 } from '../lib/stopWarning'
@@ -75,10 +77,10 @@ export function useDetailActionPreflight() {
     }
 
     if (requiresStoppedGuard && wasRunning && !ownsPreflight) {
-      next = augmentActionWithStopWarning(
-        next,
-        t('errors.willStopRunning', { name: inst.name || 'ComfyUI' })
-      )
+      const name = inst.name || 'ComfyUI'
+      next = RESTART_NOTICE_ACTION_IDS.has(next.id)
+        ? addRestartNotice(next, t('errors.willRestartRunning', { name }))
+        : augmentActionWithStopWarning(next, t('errors.willStopRunning', { name }))
     }
 
     const afterFieldSelects = await runFieldSelectsChain(next, dialogs, t)
