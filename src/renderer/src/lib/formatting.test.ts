@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatFreeSpace } from './formatting'
+import { formatFreeSpace, joinDistinctFacts } from './formatting'
 
 const GIB = 1073741824
 
@@ -24,5 +24,22 @@ describe('formatFreeSpace', () => {
 
   it('reads a full disk as 0 MB', () => {
     expect(formatFreeSpace(0)).toBe('0 MB')
+  })
+})
+
+describe('joinDistinctFacts', () => {
+  it('joins the facts with a middle dot', () => {
+    expect(joinDistinctFacts(['This computer', 'Standalone', 'v0.38.0'])).toBe(
+      'This computer · Standalone · v0.38.0'
+    )
+  })
+
+  it('shows a fact once when two parts say the same thing', () => {
+    expect(joinDistinctFacts(['Cloud', 'Cloud'])).toBe('Cloud')
+    expect(joinDistinctFacts(['Remote', 'remote', 'v1'])).toBe('Remote · v1')
+  })
+
+  it('drops empty parts', () => {
+    expect(joinDistinctFacts(['Cloud', '', undefined, null, '  '])).toBe('Cloud')
   })
 })

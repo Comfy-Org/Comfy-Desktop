@@ -87,4 +87,22 @@ describe('createUrlSource - settings fields', () => {
     expect(fieldIds).not.toContain('managerSecurityLevel')
     expect(fieldIds).not.toContain('managerNetworkMode')
   })
+
+  it('offers the browser cache as Shared or Separate', () => {
+    const cloud = createUrlSource({
+      id: 'cloud',
+      labelKey: 'cloud.label',
+      descKey: 'cloud.desc',
+      category: 'cloud',
+      defaultUrl: 'https://cloud.comfy.org/'
+    })
+    const sections = cloud.getDetailSections(makeInstall()) as Record<string, unknown>[]
+    const partition = sections
+      .flatMap((s) => (s.fields as { id?: string; options?: unknown }[] | undefined) ?? [])
+      .find((f) => f.id === 'browserPartition')
+    expect(partition?.options).toEqual([
+      { value: 'shared', label: 'common.partitionShared' },
+      { value: 'unique', label: 'common.partitionSeparate' }
+    ])
+  })
 })

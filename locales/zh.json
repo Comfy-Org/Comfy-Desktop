@@ -574,7 +574,6 @@
     "tabOverview": "概览",
     "tabSnapshots": "快照",
     "tabFolders": "文件夹",
-    "tabCloudStorage": "存储",
     "tabTerminal": "终端",
     "relaunch": "重启",
     "more": "更多",
@@ -642,7 +641,9 @@
     "argsUnexpected": "意外的参数：",
     "updateFieldTimeout": "无法连接到应用，请重试",
     "useSharedInput": "使用共享输入",
-    "useSharedOutput": "使用共享输出"
+    "useSharedOutput": "使用共享输出",
+    "cloudOutputsStay": "输出保留在 Comfy Cloud 上。",
+    "browserCacheHint": "与其他构建共享 Cookie 和本地存储，或单独保留。"
   },
   "comfyLifecycle": {
     "preparingTitle": "正在准备…",
@@ -721,6 +722,7 @@
     "browserPartition": "浏览器缓存",
     "partitionShared": "共享",
     "partitionUnique": "仅此构建独有",
+    "partitionSeparate": "独立",
     "startingComfyUI": "正在启动 ComfyUI",
     "portConflict": "如果端口被占用",
     "portConflictAsk": "询问如何处理",
