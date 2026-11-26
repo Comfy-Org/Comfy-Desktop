@@ -39,6 +39,7 @@ async function mountIndicator(initial: AppUpdateState = NO_UPDATE, collapsed = f
 }
 
 const indicator = '[data-testid="app-sidebar-desktop-update"]'
+const versionTag = '[data-testid="app-sidebar-desktop-update-version"]'
 
 describe('SidebarDesktopUpdate', () => {
   it('stays hidden while there is no Desktop update', async () => {
@@ -47,29 +48,47 @@ describe('SidebarDesktopUpdate', () => {
     expect(wrapper.find(indicator).exists()).toBe(false)
   })
 
-  it('shows the update the app already knows about when the sidebar opens', async () => {
+  it('shows the update the app already knows about as a tinted sidebar row', async () => {
     const wrapper = await mountIndicator({ kind: 'available', version: '2.3.4', autoUpdate: false })
 
     const button = wrapper.get(indicator)
-    expect(button.text()).toBe('Desktop update')
-    expect(button.attributes('title')).toBe('Desktop update (v2.3.4)')
-    expect(button.classes()).toContain('text-azure-600')
+    expect(button.classes()).toEqual(
+      expect.arrayContaining(['rounded-lg', 'bg-update/15', 'text-update-foreground'])
+    )
   })
 
   it.each([
-    ['available', false, 'Desktop update'],
-    ['ready', true, 'Desktop update ready'],
-    ['ready', false, 'Desktop update ready']
+    ['available', false, 'Update Desktop', 'v2.3.4 available'],
+    ['ready', true, 'Restart to update', 'v2.3.4 installs on restart'],
+    ['ready', false, 'Restart to update', 'v2.3.4 ready to install']
   ] as const)(
-    'shows the %s state when there is something to do (auto-update %s): "%s"',
-    async (kind, autoUpdate, label) => {
+    'says what a click does for the %s state (auto-update %s): "%s"',
+    async (kind, autoUpdate, label, description) => {
       const wrapper = await mountIndicator()
 
       pushState({ kind, version: '2.3.4', autoUpdate })
       await flushPromises()
 
-      expect(wrapper.get(indicator).text()).toBe(label)
-      expect(wrapper.get(indicator).attributes('data-state')).toBe(kind)
+      const button = wrapper.get(indicator)
+      expect(button.text()).toContain(label)
+      expect(button.get(versionTag).text()).toBe('v2.3.4')
+      expect(button.get(versionTag).classes()).toContain('text-muted-foreground')
+      expect(button.attributes('aria-label')).toBe(label)
+      expect(button.attributes('aria-description')).toBe(description)
+      expect(button.attributes('data-state')).toBe(kind)
+    }
+  )
+
+  it.each([
+    ['available', 'Desktop update'],
+    ['ready', 'Desktop update ready']
+  ] as const)(
+    'falls back to a plain description when the %s update has no version',
+    async (kind, description) => {
+      const wrapper = await mountIndicator({ kind, version: null, autoUpdate: false })
+
+      expect(wrapper.get(indicator).attributes('aria-description')).toBe(description)
+      expect(wrapper.find(versionTag).exists()).toBe(false)
     }
   )
 
@@ -111,7 +130,7 @@ describe('SidebarDesktopUpdate', () => {
     resolveFirstRead(NO_UPDATE)
     await flushPromises()
 
-    expect(wrapper.get(indicator).text()).toBe('Desktop update ready')
+    expect(wrapper.get(indicator).attributes('data-state')).toBe('ready')
   })
 
   it('asks to download when an update is available', async () => {
@@ -145,7 +164,7 @@ describe('SidebarDesktopUpdate', () => {
     expect(prompts.showAppUpdateDownloadPrompt).not.toHaveBeenCalled()
   })
 
-  it('shows only the icon when the sidebar is collapsed, with the label as its name', async () => {
+  it('shows only the icon when the sidebar is collapsed, named for what a click does, with the version as its description', async () => {
     const wrapper = await mountIndicator(
       { kind: 'ready', version: '2.3.4', autoUpdate: true },
       true
@@ -153,8 +172,8 @@ describe('SidebarDesktopUpdate', () => {
 
     const button = wrapper.get(indicator)
     expect(button.text()).toBe('')
-    expect(button.attributes('aria-label')).toBe('Desktop update ready (v2.3.4)')
-    expect(button.attributes('title')).toBe('Desktop update ready (v2.3.4)')
+    expect(button.attributes('aria-label')).toBe('Restart to update')
+    expect(button.attributes('aria-description')).toBe('v2.3.4 installs on restart')
   })
 
   it('stops listening when it unmounts', async () => {

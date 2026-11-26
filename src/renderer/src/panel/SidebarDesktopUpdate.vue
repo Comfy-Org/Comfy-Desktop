@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CloudDownload, RefreshCw } from '@lucide/vue'
+import { CircleArrowUp } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import type { AppUpdateState } from '../types/ipc'
 
@@ -37,19 +38,24 @@ const needsAction = computed(
     state.value.kind === 'ready' || (state.value.kind === 'available' && !state.value.autoUpdate)
 )
 
-const label = computed(() => {
-  return state.value.kind === 'ready'
-    ? t('titleBar.desktopUpdateReady')
-    : t('titleBar.desktopUpdateAvailable')
-})
-
-const tooltip = computed(() =>
-  state.value.version
-    ? t('titleBar.desktopUpdateWithVersion', { label: label.value, version: state.value.version })
-    : label.value
+const label = computed(() =>
+  state.value.kind === 'ready'
+    ? t('titleBar.desktopUpdateRestartButton')
+    : t('titleBar.desktopUpdateDesktopButton')
 )
 
-const icon = computed(() => (state.value.kind === 'ready' ? RefreshCw : CloudDownload))
+const tooltip = computed(() => {
+  const { kind, version, autoUpdate } = state.value
+  if (!version) {
+    return kind === 'ready'
+      ? t('titleBar.desktopUpdateReady')
+      : t('titleBar.desktopUpdateAvailable')
+  }
+  if (kind !== 'ready') return t('titleBar.desktopUpdateAvailableTooltip', { version })
+  return autoUpdate
+    ? t('titleBar.desktopUpdateReadyTooltip', { version })
+    : t('titleBar.desktopUpdateReadyManualTooltip', { version })
+})
 
 function reportActionFailure(err: unknown): void {
   console.error('SidebarDesktopUpdate: update action failed', err)
@@ -63,28 +69,45 @@ function onClick(): void {
 </script>
 
 <template>
-  <Button
+  <Tooltip
     v-if="needsAction"
-    variant="textonly"
-    size="unset"
-    class="h-8 shrink-0 justify-start gap-2.5 rounded-lg text-[13px]/5 font-normal text-azure-600 hover:bg-secondary transition-[width,margin,padding,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-    :class="collapsed ? 'ml-1 w-8 pr-0 pl-2 duration-300' : 'ml-0 w-full px-3 duration-260'"
-    :aria-label="tooltip"
-    :title="tooltip"
-    :data-state="state.kind"
-    data-testid="app-sidebar-desktop-update"
-    @click="onClick"
+    :text="tooltip"
+    :side="collapsed ? 'right' : 'top'"
+    class="shrink-0 transition-[width,margin] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+    :class="collapsed ? 'ml-1 w-8 duration-300' : 'ml-0 w-full duration-260'"
   >
-    <component :is="icon" :size="15" class="shrink-0" aria-hidden="true" />
-    <Transition
-      enter-active-class="transition-opacity duration-180 delay-30 ease-out"
-      enter-from-class="opacity-0"
-      leave-active-class="transition-opacity duration-150 ease-out"
-      leave-to-class="opacity-0"
+    <Button
+      variant="textonly"
+      size="unset"
+      class="h-8 w-full justify-start rounded-lg bg-update/15 px-0 text-[13px]/5 font-normal text-update-foreground hover:bg-update/25 transition-[background-color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+      :aria-label="label"
+      :aria-description="tooltip"
+      :data-state="state.kind"
+      data-testid="app-sidebar-desktop-update"
+      @click="onClick"
     >
-      <span v-if="!collapsed" class="min-w-0 flex-1 overflow-hidden text-left text-nowrap">{{
-        label
-      }}</span>
-    </Transition>
-  </Button>
+      <span
+        class="flex size-full items-center gap-2.5 overflow-hidden transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+        :class="collapsed ? 'pr-0 pl-2 duration-300' : 'px-3 duration-260'"
+      >
+        <CircleArrowUp :size="15" class="shrink-0" aria-hidden="true" />
+        <Transition
+          enter-active-class="transition-opacity duration-180 delay-30 ease-out"
+          enter-from-class="opacity-0"
+          leave-active-class="transition-opacity duration-150 ease-out"
+          leave-to-class="opacity-0"
+        >
+          <span v-if="!collapsed" class="flex min-w-0 flex-1 items-center gap-2 text-nowrap">
+            <span class="min-w-0 flex-1 overflow-hidden text-left">{{ label }}</span>
+            <span
+              v-if="state.version"
+              class="shrink-0 text-muted-foreground"
+              data-testid="app-sidebar-desktop-update-version"
+              >{{ t('titleBar.desktopUpdateVersion', { version: state.version }) }}</span
+            >
+          </span>
+        </Transition>
+      </span>
+    </Button>
+  </Tooltip>
 </template>
