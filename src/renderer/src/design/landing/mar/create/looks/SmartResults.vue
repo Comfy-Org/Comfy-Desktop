@@ -5,15 +5,19 @@ import {
   Download,
   Gauge,
   HardDrive,
+  LayoutGrid,
   Paperclip,
-  SearchX,
+  Plus,
   Star
 } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
-import { AgentChat } from '../../icons/agentChat'
-import MarEmpty from '../../pages/MarEmpty.vue'
+import Button from '../../../ui/Button.vue'
 import MarStatus from '../../pages/MarStatus.vue'
+import { exploreStart } from '../../explore/exploreStart'
+import { go } from '../../../useProto'
+import { closeCreate, startBlank } from '../createScreen'
 import {
+  agentLeads,
   chipsOf,
   needsSignIn,
   resultsTitle,
@@ -25,6 +29,7 @@ import {
   type TemplateCard
 } from '../smartSearch'
 import { playIn, reducedMotion, stopIn } from './lookKitB'
+import SmartAgentRow from './SmartAgentRow.vue'
 
 const { answer, options, active, listId } = defineProps<{
   answer: SmartAnswer
@@ -56,6 +61,8 @@ const foundOption = (found: Found): SmartOption => ({ id: found.id, kind: 'found
 const agentIndex = computed(() => indexOf('agent'))
 const nothing = computed(() => !answer.cards.length && !answer.alsoTry.length)
 const title = computed(() => resultsTitle(answer))
+const lead = computed(() => agentLeads(answer))
+const agentOption: SmartOption = { id: 'agent', kind: 'agent' }
 const quick = computed(() =>
   [
     { id: 'workflows', name: 'Your workflows', hits: answer.workflows },
@@ -66,13 +73,19 @@ const groups = computed(() =>
   [
     { id: 'templates', name: title.value, cards: answer.cards, weak: false },
     { id: 'also', name: 'Also try', cards: answer.alsoTry, weak: true }
-  ].filter((g) => g.id === 'templates' || g.cards.length)
+  ].filter((g) => g.cards.length)
 )
 const status = computed(() =>
   nothing.value
     ? `No templates match “${answer.query}”.`
     : `${answer.cards.length + answer.alsoTry.length} templates`
 )
+
+function browseTemplates(): void {
+  exploreStart.value = 'templates'
+  closeCreate()
+  go('explore')
+}
 
 let last = { x: -1, y: -1 }
 function onPointer(e: PointerEvent, i: number): void {
@@ -105,16 +118,26 @@ defineExpose({ verticalTarget, revealActive })
 </script>
 
 <template>
-  <div class="v15-starts" @mousedown.prevent>
+  <div
+    class="v15-starts"
+    :class="[lead && 'is-agent-first', nothing && 'is-none']"
+    @mousedown.prevent
+  >
     <p class="sr-only" aria-live="polite">{{ status }}</p>
-    <MarEmpty
-      v-if="nothing"
-      compact
-      :icon="SearchX"
-      :title="`No templates match “${answer.query}”.`"
-      text="The agent can build it from scratch."
-    />
+    <p v-if="nothing" class="v15-none" aria-hidden="true">No templates match.</p>
     <div :id="listId" ref="list" role="listbox" class="contents" :aria-label="title">
+      <SmartAgentRow
+        v-if="lead"
+        :id="optionId(agentIndex)"
+        role="option"
+        :aria-selected="active === agentIndex"
+        :data-i="agentIndex"
+        :query="answer.query"
+        :at="active === agentIndex"
+        lead
+        @pointermove="onPointer($event, agentIndex)"
+        @click="emit('pick', agentOption)"
+      />
       <section
         v-for="g in quick"
         :key="g.id"
@@ -156,7 +179,7 @@ defineExpose({ verticalTarget, revealActive })
         role="group"
         :aria-labelledby="`${listId}-${g.id}`"
       >
-        <div class="mar-sec hsh" :class="nothing && 'sr-only'" role="presentation">
+        <div class="mar-sec hsh" role="presentation">
           <h2 :id="`${listId}-${g.id}`">{{ g.name }}</h2>
         </div>
         <div class="v15-row grid-cols-4!">
@@ -205,29 +228,51 @@ defineExpose({ verticalTarget, revealActive })
               />
             </span>
           </div>
-          <div
-            v-if="g.id === 'templates'"
-            :id="optionId(agentIndex)"
-            role="option"
-            :aria-selected="active === agentIndex"
-            :data-i="agentIndex"
-            class="v15-card v15-blank cursor-pointer"
-            :class="active === agentIndex && 'is-at'"
-            @pointermove="onPointer($event, agentIndex)"
-            @click="emit('pick', { id: 'agent', kind: 'agent' })"
-          >
-            <span class="v15-pic">
-              <AgentChat :size="22" class="v15-plus" />
-            </span>
-            <span class="v15-text">
-              <span class="v15-name" :title="`Ask the agent to build “${answer.query}”`"
-                >Ask the agent to build “{{ answer.query }}”</span
-              >
-              <span class="v15-meta">It builds the workflow for you</span>
-            </span>
-          </div>
         </div>
+        <SmartAgentRow
+          v-if="g.id === 'templates' && !lead"
+          :id="optionId(agentIndex)"
+          role="option"
+          class="mt-4"
+          :aria-selected="active === agentIndex"
+          :data-i="agentIndex"
+          :query="answer.query"
+          :at="active === agentIndex"
+          @pointermove="onPointer($event, agentIndex)"
+          @click="emit('pick', agentOption)"
+        />
       </section>
+    </div>
+    <div v-if="nothing" class="v15-ways">
+      <Button variant="ghost" size="sm" @click="startBlank"
+        ><Plus :size="14" />Start with a blank canvas</Button
+      >
+      <Button variant="ghost" size="sm" @click="browseTemplates"
+        ><LayoutGrid :size="14" />Browse all templates</Button
+      >
     </div>
   </div>
 </template>
+
+<style>
+:root .proto-ui.proto-ui.proto-ui .v15-starts.is-agent-first {
+  gap: 24px;
+  margin-top: 16px;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-starts.is-none {
+  width: min(640px, 100%);
+  gap: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-none {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .v15-ways {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: -4px;
+}
+</style>

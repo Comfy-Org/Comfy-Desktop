@@ -499,9 +499,14 @@ export function optionsOf(answer: SmartAnswer): SmartOption[] {
     (f): SmartOption => ({ id: f.id, kind: 'found', found: f })
   )
   const card = (c: TemplateCard): SmartOption => ({ id: c.key, kind: 'template', card: c })
-  if (!answer.cards.length && !answer.alsoTry.length) return [...found, agent]
-  return [...found, ...answer.cards.map(card), agent, ...answer.alsoTry.map(card)]
+  const cards = answer.cards.map(card)
+  const also = answer.alsoTry.map(card)
+  if (agentLeads(answer)) return [agent, ...found, ...cards, ...also]
+  return [...found, ...cards, agent, ...also]
 }
+
+export const agentLeads = (answer: SmartAnswer): boolean =>
+  answer.intent === 'ask' || !answer.cards.length
 
 function defaultActive(answer: SmartAnswer, options: SmartOption[]): number {
   const id =
