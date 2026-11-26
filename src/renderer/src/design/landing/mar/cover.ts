@@ -11,6 +11,9 @@ export const COVERS: { value: Cover; label: string }[] = [
   { value: 'output', label: 'Image' }
 ]
 
+export const defaultCover = (): Cover =>
+  can.value.projects && !can.value.onboarding ? 'output' : 'canvas'
+
 export const isBranded = (c: Cover): boolean => c !== 'output'
 
 const KEY = 'comfy.design.mar.workflowCover'
@@ -40,9 +43,9 @@ watch(
 // Each stage opens on its own: the canvas until the future milestones, where
 // workflows carry the image they make. The tweak still overrides it after.
 watch(
-  () => can.value.projects,
-  (future) => {
-    cover.id = future ? 'output' : 'canvas'
+  defaultCover,
+  (id) => {
+    cover.id = id
   },
   { immediate: true }
 )

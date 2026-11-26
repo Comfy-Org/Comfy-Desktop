@@ -8,7 +8,7 @@ import { marNav, marSideOn, marSidebarClosed } from './shell/marShell'
 import { screen } from './screen'
 // Graphite is applied on load.
 import './palette'
-import { cover, recentsCover } from './cover'
+import { cover, defaultCover, recentsCover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
@@ -317,8 +317,8 @@ export const TWEAKS = {
   templates: one(templateStyle, 'photo'),
   // The milestone picks the cover (cover.ts): the canvas, then the image.
   cover: {
-    isDefault: () => cover.id === (can.value.projects ? 'output' : 'canvas'),
-    reset: () => (cover.id = can.value.projects ? 'output' : 'canvas')
+    isDefault: () => cover.id === defaultCover(),
+    reset: () => (cover.id = defaultCover())
   },
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),

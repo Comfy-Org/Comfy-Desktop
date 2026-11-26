@@ -21,7 +21,7 @@ import { BUILDS_AT, buildsAt } from './home/buildsAt'
 import { HOME_IDEAS, HOME_IDEA_SWITCHES } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
-import { COVERS, RECENTS_COVERS, cover, recentsCover } from './cover'
+import { COVERS, RECENTS_COVERS, cover, defaultCover, recentsCover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
@@ -168,7 +168,7 @@ const PARTS: Part[] = [
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),
   // The cover's default follows the milestone (cover.ts).
-  one('cover', cover, () => (can.value.projects ? 'output' : 'canvas'), COVERS),
+  one('cover', cover, defaultCover, COVERS),
   one('recentsCover', recentsCover, 'generic', RECENTS_COVERS),
   one('tour', homeTour, 'auto', HOME_TOUR_MODES),
   one('buildCard', buildCard, 'rows', BUILD_CARDS),
