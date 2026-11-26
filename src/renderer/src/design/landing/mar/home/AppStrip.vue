@@ -435,8 +435,10 @@ watch(ids, async () => {
     color 160ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-strip-heading:hover {
-  background: var(--color-secondary-background);
   color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-strip-heading:hover > svg {
+  translate: 2px 0;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-strip-heading:focus-visible,
 :root .proto-ui.proto-ui.proto-ui .mar-strip-all:focus-visible {
@@ -460,7 +462,9 @@ watch(ids, async () => {
     color 160ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-strip-all:hover {
-  background: var(--color-secondary-background);
   color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-strip-all:hover > svg {
+  translate: 2px 0;
 }
 </style>
