@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { ArrowRight, Plus } from 'lucide-vue-next'
+import { computed, ref, watch, type Component } from 'vue'
+import {
+  Box,
+  ChevronRight,
+  Flame,
+  Image as ImageIcon,
+  ImageUpscale,
+  Plus,
+  Video,
+  WandSparkles
+} from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
-import { go } from '../../../useProto'
+import { activeInstance, go, proto } from '../../../useProto'
 import { openAppPage } from '../../../appFlow'
 import { exploreStart } from '../../explore/exploreStart'
 import {
@@ -14,6 +23,8 @@ import {
   startWithAgentAsk
 } from '../createScreen'
 import { SHELVES, type Starter } from '../createStarters'
+import { minComfyFor, targetFor, totalGb } from '../../templateModal/templateData'
+import HomeSectionHeader from '../../HomeSectionHeader.vue'
 import { createInput } from '../createInput'
 import { agentOpens } from '../agentOpens'
 import { composerSearch } from '../composerSearch'
@@ -49,13 +60,13 @@ interface RecentRow {
   edited: string
 }
 
-const USE_CASES: { id: string; label: string }[] = [
-  { id: 'popular', label: 'Popular' },
-  { id: 'image', label: 'Image' },
-  { id: 'video', label: 'Video' },
-  { id: 'edit', label: 'Edit' },
-  { id: 'upscale', label: 'Upscale' },
-  { id: '3d', label: '3D' }
+const USE_CASES: { id: string; label: string; glyph: Component }[] = [
+  { id: 'popular', label: 'Popular', glyph: Flame },
+  { id: 'image', label: 'Image', glyph: ImageIcon },
+  { id: 'video', label: 'Video', glyph: Video },
+  { id: 'edit', label: 'Edit', glyph: WandSparkles },
+  { id: 'upscale', label: 'Upscale', glyph: ImageUpscale },
+  { id: '3d', label: '3D', glyph: Box }
 ]
 const BLANK = 'blank'
 const CARDS = 4
@@ -90,15 +101,38 @@ const activeOption = computed(() =>
 const modelOf = (s: Starter): string =>
   s.template.title.includes(':') ? s.template.title.split(':')[0]!.trim() : s.model
 
+const needsUpdate = (s: Starter): boolean =>
+  targetFor(s.template, activeInstance.value, proto.signedIn).state === 'update'
+
+function runRank(s: Starter): number {
+  const tone = templateMeta(s).tone
+  if (tone === 'ready') return 0
+  if (needsUpdate(s)) return 1
+  return tone === 'fetch' ? 2 : 3
+}
+
+const runnableFirst = (starters: Starter[]): Starter[] =>
+  starters
+    .map((starter) => ({ starter, rank: runRank(starter), gb: totalGb(starter.template) }))
+    .sort((a, b) => a.rank - b.rank || (a.rank === 2 ? a.gb - b.gb : 0))
+    .map((x) => x.starter)
+
+function metaOf(s: Starter): Pick<TemplateCard, 'meta' | 'tone'> {
+  const meta = templateMeta(s)
+  return needsUpdate(s)
+    ? { ...meta, meta: `Needs ComfyUI ${minComfyFor(s.template)} or newer` }
+    : meta
+}
+
 const templates = computed<TemplateCard[]>(() => {
   const shelf = SHELVES.find((s) => s.id === useCase.value) ?? SHELVES[0]!
-  const starters = shelf.starters().slice(0, CARDS)
+  const starters = runnableFirst(shelf.starters()).slice(0, CARDS)
   const repeats = (makes: string): boolean => starters.filter((s) => s.makes === makes).length > 1
   return starters.map((starter) => ({
     id: starter.id,
     starter,
     name: repeats(starter.makes) ? `${modelOf(starter)} ${starter.makes}` : starter.makes,
-    ...templateMeta(starter)
+    ...metaOf(starter)
   }))
 })
 
@@ -114,7 +148,7 @@ const recents = computed<RecentRow[]>(() =>
     }))
 )
 
-const cardIds = computed(() => [BLANK, ...templates.value.map((c) => c.id)])
+const cardIds = computed(() => [...templates.value.map((c) => c.id), BLANK])
 
 const order = computed(() => [...cardIds.value, ...recents.value.map((r) => r.id)])
 
@@ -148,6 +182,11 @@ function seeAll(): void {
   exploreStart.value = 'templates'
   closeCreate()
   go('explore')
+}
+
+function openLibrary(): void {
+  closeCreate()
+  go('workflows')
 }
 
 function onAsk(a: AgentAnswer): void {
@@ -320,40 +359,26 @@ useEscapeCloses(() => composer.value?.field)
           <section class="v15-section" aria-labelledby="v15-templates">
             <h2 id="v15-templates" class="sr-only">Templates</h2>
             <header class="v15-head">
-              <div class="v15-pills" role="group" aria-label="Use case">
+              <div class="v15-pills" role="tablist" aria-label="Use case">
                 <button
                   v-for="u in USE_CASES"
                   :key="u.id"
                   type="button"
+                  role="tab"
                   class="v15-pill"
                   :class="useCase === u.id && 'is-on'"
-                  :aria-pressed="useCase === u.id"
+                  :aria-selected="useCase === u.id"
                   @click="useCase = u.id"
                 >
+                  <component :is="u.glyph" :size="16" aria-hidden="true" />
                   {{ u.label }}
                 </button>
               </div>
-              <button type="button" class="v15-all" @click="seeAll">
-                See all<ArrowRight :size="13" />
+              <button type="button" class="hsh-link" @click="seeAll">
+                See all<ChevronRight :size="13" aria-hidden="true" />
               </button>
             </header>
             <div :key="useCase" class="v15-row">
-              <button
-                type="button"
-                class="v15-card v15-blank"
-                :class="hover === BLANK && 'is-at'"
-                @pointerenter="hover = BLANK"
-                @focus="hover = BLANK"
-                @click="pickBlank"
-              >
-                <span class="v15-pic">
-                  <Plus :size="22" class="v15-plus" />
-                </span>
-                <span class="v15-text">
-                  <span class="v15-name">Blank canvas</span>
-                  <span class="v15-meta">Start from scratch</span>
-                </span>
-              </button>
               <button
                 v-for="c in templates"
                 :key="c.id"
@@ -383,11 +408,32 @@ useEscapeCloses(() => composer.value?.field)
                   <span class="v15-meta" :class="`is-${c.tone}`" :title="c.meta">{{ c.meta }}</span>
                 </span>
               </button>
+              <button
+                type="button"
+                class="v15-card v15-blank"
+                :class="hover === BLANK && 'is-at'"
+                @pointerenter="hover = BLANK"
+                @focus="hover = BLANK"
+                @click="pickBlank"
+              >
+                <span class="v15-pic">
+                  <Plus :size="22" class="v15-plus" />
+                </span>
+                <span class="v15-text">
+                  <span class="v15-name">Blank canvas</span>
+                  <span class="v15-meta">Start from scratch</span>
+                </span>
+              </button>
             </div>
           </section>
 
-          <section v-if="recents.length" class="v15-section" aria-labelledby="v15-recents">
-            <h2 id="v15-recents" class="v15-label">Recents</h2>
+          <section v-if="recents.length" class="v15-section" aria-label="Recents">
+            <HomeSectionHeader
+              title="Recents"
+              link-tip="All workflows"
+              add-label="New workflow"
+              @open="openLibrary"
+            />
             <ul class="v15-list">
               <li v-for="r in recents" :key="r.id">
                 <button
@@ -536,8 +582,6 @@ useEscapeCloses(() => composer.value?.field)
   scrollbar-width: thin;
   animation: v15-fade 160ms ease both;
 }
-:root .proto-ui.proto-ui.proto-ui .v15-pill:focus-visible,
-:root .proto-ui.proto-ui.proto-ui .v15-all:focus-visible,
 :root .proto-ui.proto-ui.proto-ui .v15-item:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-border-focus);
@@ -580,48 +624,37 @@ useEscapeCloses(() => composer.value?.field)
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 8px;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-pill {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-secondary-background) 60%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 3%, transparent);
   color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
   transition:
-    background-color 140ms ease,
-    color 140ms ease,
-    box-shadow 140ms ease;
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-pill:hover {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
+  border-color: color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
-:root .proto-ui.proto-ui.proto-ui .v15-pill.is-on {
-  background: var(--color-base-foreground);
-  box-shadow: none;
-  color: var(--color-content-background);
+:root .proto-ui.proto-ui.proto-ui .v15-pill:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
 }
-:root .proto-ui.proto-ui.proto-ui .v15-pill.is-on:focus-visible {
-  box-shadow:
-    0 0 0 2px var(--color-content-background),
-    0 0 0 4px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-all {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  border-radius: 4px;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 500;
-  transition: color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-all:hover {
+:root .proto-ui.proto-ui.proto-ui .v15-pill.is-on,
+:root .proto-ui.proto-ui.proto-ui .v15-pill.is-on:hover {
+  border-color: color-mix(in oklch, var(--color-base-foreground) 45%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
   color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-row {
@@ -724,12 +757,6 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v15-meta {
   color: var(--color-subtle-foreground);
   font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-label {
-  padding: 0 2px;
-  color: var(--color-base-foreground);
-  font-size: var(--text-ui);
-  font-weight: 600;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-list {
   display: flex;
