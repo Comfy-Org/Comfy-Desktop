@@ -23,6 +23,7 @@
   --color-status-starting: #f59e0b;
   --color-update: var(--color-azure-600);
   --color-update-foreground: var(--color-azure-400);
+  --color-update-muted-foreground: var(--color-azure-300);
   --color-window-background: oklch(0.119 0 0);
   --color-sidebar-background: oklch(0.196 0 0);
   --color-content-background: oklch(0.14 0 0);
