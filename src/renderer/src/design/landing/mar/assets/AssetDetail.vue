@@ -634,13 +634,12 @@ onBeforeUnmount(() => {
                 v-if="shortcutShown"
                 type="button"
                 class="mad-viewer-btn"
-                aria-label="Viewer controls"
-                title="Viewer controls (V)"
                 aria-keyshortcuts="V"
                 :aria-pressed="showViewer"
                 @click="toggleViewer"
               >
-                <SlidersHorizontal :size="16" />
+                <SlidersHorizontal :size="14" /><span>Viewer controls</span
+                ><kbd class="mad-viewer-kbd" aria-hidden="true">V</kbd>
               </button>
               <!-- The player: play, the time along a track (a sound's waveform),
                    and the sound. -->
@@ -1375,24 +1374,46 @@ onBeforeUnmount(() => {
   right: 10px;
   bottom: 10px;
   display: inline-flex;
-  width: 32px;
   height: 32px;
   align-items: center;
-  justify-content: center;
-  padding: 0;
+  gap: 6px;
+  padding: 0 6px 0 11px;
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.55);
+  background: rgb(0 0 0 / 0.78);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08);
   color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
   transition:
     background-color 0.14s ease,
     color 0.14s ease;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn:hover {
-  background: rgb(0 0 0 / 0.72);
+  background: rgb(28 28 30 / 0.9);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn[aria-pressed='true'] {
   background: #fff;
+  box-shadow: none;
   color: #111;
+}
+.mad-viewer-kbd {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0 5px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 6px;
+  color: rgb(255 255 255 / 0.66);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+}
+.mad-viewer-btn[aria-pressed='true'] .mad-viewer-kbd {
+  border-color: rgb(0 0 0 / 0.18);
+  color: rgb(0 0 0 / 0.55);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn:focus-visible {
   outline: 2px solid var(--color-border-focus);
