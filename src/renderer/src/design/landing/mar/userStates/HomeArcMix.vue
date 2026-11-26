@@ -13,9 +13,6 @@ import MarSeg from '../pages/MarSeg.vue'
 import { ARC_TEMPLATES, arcApps, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
-import HomeSectionHeader from '../HomeSectionHeader.vue'
-import { homeIdeaOn } from '../home/homeIdeas'
-import { appsSection } from '../home/appsSection'
 import { exploreSwitch } from '../home/exploreSwitch'
 
 const { full = false } = defineProps<{ full?: boolean }>()
@@ -50,15 +47,9 @@ const TOPICS = computed(() =>
 )
 
 const mix = computed(() => homeArcMix.id)
-const sameHeaders = computed(() => full && homeIdeaOn('headers'))
-const cleanCards = computed(() => full && homeIdeaOn('cleanCards'))
-const section = computed(() => (sameHeaders.value ? appsSection.id : 'apps'))
-const WORKFLOWS_ROW = ARC_TEMPLATES.slice(0, FEATURED)
 const byTopic = computed(() => mix.value === 'topics' || mix.value === 'topics-kind')
 
 const items = computed<ArcItem[]>(() => {
-  if (section.value === 'mixed') return interleave(ARC_APPS, ARC_TEMPLATES, FEATURED)
-  if (sameHeaders.value) return ARC_APPS.slice(0, FEATURED)
   switch (mix.value) {
     case 'tabs':
       return (kind.value === 'apps' ? ARC_APPS : ARC_TEMPLATES).slice(0, FEATURED)
@@ -76,10 +67,10 @@ const items = computed<ArcItem[]>(() => {
   return ARC_APPS
 })
 
-const exploreTabs = computed(() => full && !sameHeaders.value && mix.value === 'tabs')
+const exploreTabs = computed(() => full && mix.value === 'tabs')
 
 const allLabel = computed(() => {
-  if (sameHeaders.value || exploreTabs.value) return ''
+  if (exploreTabs.value) return ''
   if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
   if (byTopic.value && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
@@ -88,8 +79,7 @@ const allLabel = computed(() => {
 })
 
 const listsApps = computed(
-  () =>
-    sameHeaders.value || mix.value === 'row' || (mix.value === 'tabs' && shown.value.on === 'apps')
+  () => mix.value === 'row' || (mix.value === 'tabs' && shown.value.on === 'apps')
 )
 
 function seeAll(on: 'apps' | 'templates'): void {
@@ -101,7 +91,7 @@ function openExplore(): void {
   go('explore')
 }
 const allOn = computed<'apps' | 'templates'>(() =>
-  !sameHeaders.value && mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
+  mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
 )
 
 /**
@@ -151,13 +141,11 @@ watch(
 )
 
 const stripTabs = computed<{ value: string; label: string }[]>(() => {
-  if (sameHeaders.value) return []
   if (mix.value === 'tabs') return KINDS
   if (byTopic.value) return TOPICS.value
   return []
 })
 const stripTitle = computed(() => {
-  if (sameHeaders.value) return 'Apps'
   if (mix.value === 'tabs') return 'Apps and workflows'
   if (byTopic.value) return 'Use case'
   if (mix.value === 'mixed') return 'Apps and workflows'
@@ -212,20 +200,6 @@ function scrollRow(by: number): void {
         :kind="mix === 'tabs' && kind === 'templates' ? 'workflows' : 'apps'"
       />
       <template v-else-if="full">
-        <HomeSectionHeader
-          v-if="section === 'mixed'"
-          title="Explore"
-          link-tip="Explore apps and workflows"
-          add-label="New app"
-          @open="openExplore()"
-        />
-        <HomeSectionHeader
-          v-else-if="sameHeaders"
-          title="Apps"
-          link-tip="All apps"
-          add-label="New app"
-          @open="seeAll('apps')"
-        />
         <AppStrip
           v-model:tab="stripTab"
           :items="shown.items"
@@ -233,9 +207,6 @@ function scrollRow(by: number): void {
           :title="stripTitle"
           :tabs="stripTabs"
           :leaving="leaving"
-          :headless="sameHeaders"
-          :clean="cleanCards"
-          :kinds="section === 'mixed'"
           :heading="exploreTabs ? 'Explore' : ''"
           :corner="exploreTabs"
           :switch-tone="
@@ -245,15 +216,6 @@ function scrollRow(by: number): void {
           @all="seeAll(shown.on)"
           @heading="openExplore()"
         />
-        <section v-if="section === 'rows'" class="mt-10">
-          <HomeSectionHeader
-            title="Workflows"
-            link-tip="All workflows"
-            add-label="New workflow"
-            @open="seeAll('templates')"
-          />
-          <AppStrip :items="WORKFLOWS_ROW" title="Workflows" :headless="true" :clean="cleanCards" />
-        </section>
       </template>
       <ExampleArc
         v-else

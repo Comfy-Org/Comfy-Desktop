@@ -12,9 +12,6 @@ const {
   title = 'Apps',
   tabs = [],
   leaving = false,
-  headless = false,
-  clean = false,
-  kinds = false,
   heading = '',
   corner = false,
   switchTone = 'default',
@@ -25,9 +22,6 @@ const {
   title?: string
   tabs?: { value: string; label: string }[]
   leaving?: boolean
-  headless?: boolean
-  clean?: boolean
-  kinds?: boolean
   heading?: string
   corner?: boolean
   switchTone?: 'default' | 'ghost' | 'text'
@@ -37,7 +31,6 @@ const emit = defineEmits<{ all: []; heading: [] }>()
 const tab = defineModel<string>('tab', { default: '' })
 
 const DRAG_THRESHOLD = 6
-const KIND_LABEL: Record<ArcItem['kind'], string> = { app: 'App', template: 'Workflow' }
 const isClip = (src: string): boolean => /^data:video|\.(mp4|webm|mov)(\?|#|$)/i.test(src)
 
 const track = ref<HTMLElement>()
@@ -165,12 +158,12 @@ watch(ids, async () => {
 <template>
   <div
     class="mar-strip"
-    :class="[clean && 'is-clean', corner && 'is-corner']"
+    :class="corner && 'is-corner'"
     role="region"
     aria-roledescription="carousel"
     :aria-label="title"
   >
-    <div v-if="!headless" class="mar-strip-head">
+    <div class="mar-strip-head">
       <div v-if="heading" class="mar-strip-title-head" :class="switchBeside && 'is-beside'">
         <h2 class="mar-strip-title-head">
           <button type="button" class="mar-strip-heading" @click="emit('heading')">
@@ -222,9 +215,7 @@ watch(ids, async () => {
         ref="slides"
         type="button"
         class="mar-strip-slide"
-        :aria-label="
-          kinds ? `Open ${x.label}: ${x.does}. ${KIND_LABEL[x.kind]}` : `Open ${x.label}: ${x.does}`
-        "
+        :aria-label="`Open ${x.label}: ${x.does}`"
         @click="open(x)"
         @pointerenter="enter(x, $event)"
         @pointerleave="leave(x, $event)"
@@ -269,8 +260,7 @@ watch(ids, async () => {
         </span>
         <span v-else class="mar-strip-text">
           <span class="mar-strip-title">{{ x.label }}</span>
-          <span v-if="kinds" class="mar-strip-kind">{{ KIND_LABEL[x.kind] }}</span>
-          <span v-else-if="x.does" class="mar-strip-does">{{ x.does }}</span>
+          <span v-if="x.does" class="mar-strip-does">{{ x.does }}</span>
         </span>
       </button>
     </div>
@@ -369,7 +359,6 @@ watch(ids, async () => {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   white-space: nowrap;
 }
-.mar-strip-kind,
 .mar-strip-does {
   overflow: hidden;
   color: rgb(255 255 255 / 0.78);
@@ -401,21 +390,7 @@ watch(ids, async () => {
   align-items: center;
   gap: 4px;
 }
-.mar-strip.is-clean .mar-strip-does {
-  max-height: 0;
-  opacity: 0;
-  transition:
-    max-height 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 200ms ease;
-}
-.mar-strip.is-clean .mar-strip-slide:is(:hover, :focus-visible) .mar-strip-does {
-  max-height: 1.3em;
-  opacity: 1;
-}
 @media (prefers-reduced-motion: reduce) {
-  .mar-strip.is-clean .mar-strip-does {
-    transition: none;
-  }
   .mar-strip-slide img,
   .mar-strip-slide video,
   .mar-strip-slide .mar-strip-after {

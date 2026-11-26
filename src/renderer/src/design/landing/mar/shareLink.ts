@@ -1,7 +1,7 @@
 import { nextTick, watch } from 'vue'
 import { appsProto, openAppUrl } from '../appFlow'
 import { look } from '../look'
-import { MILESTONES, can } from '../milestones'
+import { MILESTONES } from '../milestones'
 import { go, hostActions, instanceById, instances, proto, type Page } from '../useProto'
 import { graphOpen } from './graph/graphOpen'
 import { TWEAKS, type TweakId } from './tunerContext'
@@ -16,7 +16,6 @@ import { FIRST_RUNS, firstRun } from './firstRun'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
-import { APPS_SECTIONS, appsSection } from './home/appsSection'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
 import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
 import { HOME_IDEAS, HOME_IDEA_SWITCHES } from './home/homeIdeas'
@@ -164,7 +163,6 @@ const PARTS: Part[] = [
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
   one('arcMix', homeArcMix, 'tabs', HOME_ARC_MIXES),
   one('homeLayout', homeLayout, 'recents', HOME_LAYOUTS),
-  one('appsSection', appsSection, 'apps', APPS_SECTIONS),
   one('buildsAt', buildsAt, 'bottom', BUILDS_AT),
   one('exploreSwitch', exploreSwitch, 'seg', EXPLORE_SWITCHES),
   ...HOME_IDEAS.map((x) => one(x.key, x.store, x.def, HOME_IDEA_SWITCHES)),

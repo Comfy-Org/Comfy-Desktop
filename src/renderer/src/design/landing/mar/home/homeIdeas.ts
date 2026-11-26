@@ -3,7 +3,7 @@ import { homeLayout } from './homeLayout'
 
 export type HomeIdeaSwitch = 'off' | 'on'
 
-export type HomeIdeaId = 'thumbs' | 'headers' | 'cleanCards' | 'compactRecents' | 'smallGreeting'
+export type HomeIdeaId = 'compactRecents' | 'smallGreeting'
 
 export interface HomeIdea {
   id: HomeIdeaId
@@ -30,24 +30,6 @@ const idea = (
 })
 
 export const HOME_IDEAS: HomeIdea[] = [
-  idea(
-    'thumbs',
-    'hi1',
-    'Real thumbnails in Recently used',
-    'Each recent workflow shows its last output instead of the graph illustration.'
-  ),
-  idea(
-    'headers',
-    'hi2',
-    'Same headers everywhere',
-    'APPS › like RECENTLY USED ›, apps only, no tabs or See all link.'
-  ),
-  idea(
-    'cleanCards',
-    'hi3',
-    'Cleaner app cards',
-    'Only the name at rest; the one line fades in on hover or focus.'
-  ),
   idea(
     'compactRecents',
     'hi4',

@@ -55,7 +55,6 @@ import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
 import { homeLayout, homeVersion } from './home/homeLayout'
 import { homeIdea } from './home/homeIdeas'
-import { appsSection } from './home/appsSection'
 import { buildsAt } from './home/buildsAt'
 import { exploreSwitch } from './home/exploreSwitch'
 
@@ -105,15 +104,6 @@ export const when = {
   homeLayout: computed(
     () => onHome.value && can.value.exploreApps && (!onFirstRun.value || firstRun.id === 'original')
   ),
-  appsSection: computed(
-    () =>
-      onHome.value &&
-      can.value.explore &&
-      can.value.exploreApps &&
-      !onFirstRun.value &&
-      homeLayout.id === 'recents' &&
-      homeIdea('headers').store.id === 'on'
-  ),
   exploreSwitch: computed(
     () => onHome.value && can.value.explore && !onFirstRun.value && homeArcMix.id === 'tabs'
   ),
@@ -123,8 +113,7 @@ export const when = {
       can.value.explore &&
       can.value.exploreApps &&
       !onFirstRun.value &&
-      homeLayout.id === 'recents' &&
-      homeIdea('headers').store.id === 'on'
+      homeLayout.id === 'recents'
   ),
   homeIdeas: computed(
     () => onHome.value && can.value.exploreApps && !onFirstRun.value && homeLayout.id === 'recents'
@@ -312,12 +301,8 @@ export const TWEAKS = {
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'recents'),
-  appsSection: one(appsSection, 'apps'),
   buildsAt: one(buildsAt, 'bottom'),
   exploreSwitch: one(exploreSwitch, 'seg'),
-  homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
-  homeIdeaHeaders: one(homeIdea('headers').store, 'off'),
-  homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),
   homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
   homeIdeaSmallGreeting: one(homeIdea('smallGreeting').store, 'off'),
   editorEntry: one(editorEntry, 'rows'),

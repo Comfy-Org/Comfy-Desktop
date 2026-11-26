@@ -60,7 +60,6 @@ import {
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
-import { APPS_SECTIONS, appsSection } from './home/appsSection'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
 import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
 import { HOME_IDEAS, type HomeIdeaId } from './home/homeIdeas'
@@ -185,7 +184,6 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'exampleLook', show: () => when.exampleLook.value },
   { id: 'homeArcMix', show: () => when.homeArcMix.value },
   { id: 'homeLayout', show: () => when.homeLayout.value },
-  { id: 'appsSection', show: () => when.appsSection.value },
   { id: 'buildsAt', show: () => when.buildsAt.value },
   { id: 'exploreSwitch', show: () => when.exploreSwitch.value },
   { id: 'appPage', show: () => when.appPage.value },
@@ -220,9 +218,6 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
 ]
 const MORE: TweakId[] = ['screen', 'look', 'knobs']
 const HOME_IDEA_TWEAKS: Record<HomeIdeaId, TweakId> = {
-  thumbs: 'homeIdeaThumbs',
-  headers: 'homeIdeaHeaders',
-  cleanCards: 'homeIdeaCleanCards',
   compactRecents: 'homeIdeaCompactRecents',
   smallGreeting: 'homeIdeaSmallGreeting'
 }
@@ -492,9 +487,6 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('homeLayout')" label="Home layout">
             <Select v-model="homeLayout.id" :options="HOME_LAYOUTS" class="w-full" />
-          </Row>
-          <Row :show="shows('appsSection')" label="Apps section">
-            <Select v-model="appsSection.id" :options="APPS_SECTIONS" class="w-full" />
           </Row>
           <Row :show="shows('exploreSwitch')" label="Explore switch">
             <Select v-model="exploreSwitch.id" :options="EXPLORE_SWITCHES" class="w-full" />

@@ -208,10 +208,7 @@ const homeStyle = computed(() =>
 )
 const RECENT_COLUMNS = 5
 const COMPACT_RECENTS = 5
-const ideaThumbs = computed(() => recentsFirst.value && homeIdeaOn('thumbs'))
-const ideaHeaders = computed(() => recentsFirst.value && homeIdeaOn('headers'))
-const buildsTop = computed(() => ideaHeaders.value && buildsAt.id === 'top')
-const ideaCleanCards = computed(() => recentsFirst.value && homeIdeaOn('cleanCards'))
+const buildsTop = computed(() => recentsFirst.value && buildsAt.id === 'top')
 const ideaCompactRecents = computed(() => recentsFirst.value && homeIdeaOn('compactRecents'))
 const version = computed(() => (can.value.exploreApps ? homeVersion(homeLayout.id) : null))
 const VERSION_RECENTS = 4
@@ -221,9 +218,6 @@ const ideaSmallGreeting = computed(
 const recentHasRoom = computed(
   () => !ideaCompactRecents.value && recent.value.length < RECENT_COLUMNS
 )
-const recentCoverOf = (r: Recent) =>
-  ideaThumbs.value && r.output ? 'image' : recentsCoverKind.value
-const recentSrcOf = (r: Recent): string => (ideaThumbs.value && r.output) || r.src
 const compactRows = computed<RecentListRow[]>(() =>
   recent.value.slice(0, COMPACT_RECENTS).map((r) => ({
     id: r.id,
@@ -413,12 +407,12 @@ function openRecent(id: string): void {
           <WorkflowCard
             v-for="r in recent"
             :key="r.id"
-            :src="recentSrcOf(r)"
+            :src="r.src"
             :title="r.title"
             :meta="r.meta"
             :right="r.when"
             :app="r.app"
-            :cover-kind="recentCoverOf(r)"
+            :cover-kind="recentsCoverKind"
             @open="r.open()"
           />
           <NewWorkflowTile v-if="can.onboarding && recentHasRoom" @open="openCreate()" />
@@ -431,23 +425,7 @@ function openRecent(id: string): void {
         <div class="mt-10">
           <HomeArcMix v-if="can.explore" full />
           <HomeLoadFailed v-else-if="offline" />
-          <template v-else>
-            <HomeSectionHeader
-              v-if="ideaHeaders"
-              title="Apps"
-              link-tip="All apps"
-              add-label="New app"
-              @open="go('apps')"
-            />
-            <AppStrip
-              :items="arcApps()"
-              :headless="ideaHeaders"
-              :all-label="ideaHeaders ? '' : undefined"
-              :clean="ideaCleanCards"
-              data-home-tour="apps-carousel"
-              @all="go('apps')"
-            />
-          </template>
+          <AppStrip v-else :items="arcApps()" data-home-tour="apps-carousel" @all="go('apps')" />
         </div>
         <MarBuildsRow v-if="!buildsTop && !onCloud" />
       </template>
