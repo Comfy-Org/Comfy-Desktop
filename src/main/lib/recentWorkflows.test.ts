@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   installs: [] as Record<string, unknown>[],
   localBuilds: [] as { id: string; name: string }[],
   signedIn: false,
+  subject: null as string | null,
+  sessionWorkspace: { workspaceType: 'personal' } as Record<string, string>,
+  onToken: () => {},
   fromPanel: true,
   openSavedWorkflow: vi.fn()
 }))
@@ -26,8 +29,12 @@ vi.mock('../host/registry', () => ({ isPanelSender: () => mocks.fromPanel }))
 vi.mock('./i18n', () => ({ t: (key: string) => key }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({
-    status: () => ({ signedIn: mocks.signedIn }),
-    getAccessToken: async () => (mocks.signedIn ? 'token' : null)
+    status: () => ({ signedIn: mocks.signedIn, ...mocks.sessionWorkspace }),
+    currentSubject: () => mocks.subject,
+    getAccessToken: async () => {
+      mocks.onToken()
+      return mocks.signedIn ? 'token' : null
+    }
   })
 }))
 vi.mock('../installations', () => ({
@@ -37,6 +44,7 @@ vi.mock('../installations', () => ({
 }))
 
 import {
+  accountKey,
   epochMs,
   isSavedWorkflowPath,
   newestFirst,
@@ -49,25 +57,61 @@ import type { RecentWorkflow } from '../../types/ipc'
 
 const GRAPH = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
 const EVENT = { sender: {} }
+const EMPTY_GRAPH = { nodes: [], links: [], groups: [{ title: 'Inputs', bounding: [0, 0, 1, 1] }] }
 const CLOUD = { id: 'inst-cloud', name: 'Comfy Cloud', sourceId: 'cloud', status: 'installed' }
+const TEAM_SESSION = { workspaceId: 'team-a', workspaceName: 'Team A', workspaceType: 'team' }
 
 let root: string
 
-function list(buildIds?: string[]): Promise<RecentWorkflow[]> {
-  return mocks.handlers.get(RECENT_WORKFLOW_CHANNELS.list)!(EVENT, buildIds) as Promise<
-    RecentWorkflow[]
-  >
+function list(buildIds?: string[], workspaceId = 'personal'): Promise<RecentWorkflow[]> {
+  return mocks.handlers.get(RECENT_WORKFLOW_CHANNELS.list)!(
+    EVENT,
+    buildIds,
+    workspaceId
+  ) as Promise<RecentWorkflow[]>
 }
 
-function open(installationId: string, savedPath: string) {
-  return mocks.handlers.get(RECENT_WORKFLOW_CHANNELS.open)!(EVENT, installationId, savedPath)
+function open(
+  installationId: string,
+  savedPath: string,
+  { workspaceId = 'personal', account = accountKey(mocks.subject) } = {}
+) {
+  return mocks.handlers.get(RECENT_WORKFLOW_CHANNELS.open)!(EVENT, {
+    installationId,
+    path: savedPath,
+    workspaceId,
+    account
+  })
 }
 
-async function localBuild(id: string, name: string): Promise<string> {
+function signIn(subject = 'user-a'): void {
+  mocks.signedIn = true
+  mocks.subject = subject
+}
+
+function openedScope(): { workspaceId: string; isCurrent: () => boolean } {
+  return mocks.openSavedWorkflow.mock.calls[0]![2] as {
+    workspaceId: string
+    isCurrent: () => boolean
+  }
+}
+
+async function localBuild(
+  id: string,
+  name: string,
+  extra: Record<string, unknown> = {}
+): Promise<string> {
   const installPath = path.join(root, id)
   const workflows = path.join(installPath, 'ComfyUI', 'user', 'default', 'workflows')
   await mkdir(workflows, { recursive: true })
-  mocks.installs.push({ id, name, sourceId: 'standalone', status: 'installed', installPath })
+  mocks.installs.push({
+    id,
+    name,
+    sourceId: 'standalone',
+    status: 'installed',
+    installPath,
+    ...extra
+  })
   mocks.localBuilds.push({ id, name })
   return workflows
 }
@@ -85,6 +129,9 @@ beforeEach(async () => {
   mocks.installs = []
   mocks.localBuilds = []
   mocks.signedIn = false
+  mocks.subject = null
+  mocks.sessionWorkspace = { workspaceType: 'personal' }
+  mocks.onToken = () => {}
   mocks.fromPanel = true
   mocks.openSavedWorkflow.mockResolvedValue({ opened: true })
   registerRecentWorkflowHandlers()
@@ -149,7 +196,7 @@ describe('recent workflows on this computer', () => {
     expect(mocks.openSavedWorkflow).not.toHaveBeenCalled()
   })
 
-  it('opens the saved file in its own build under its saved name', async () => {
+  it('opens the saved file itself in its own build, by its saved path and not as a renamed copy', async () => {
     const lab = await localBuild('inst-lab', 'Lab')
     await saved(lab, 'video/wan loop.json', 5)
 
@@ -157,9 +204,55 @@ describe('recent workflows on this computer', () => {
 
     expect(mocks.openSavedWorkflow).toHaveBeenCalledExactlyOnceWith(
       { where: 'local', build: 'inst-lab' },
-      GRAPH,
-      'video/wan loop'
+      'video/wan loop.json',
+      expect.objectContaining({ workspaceId: 'personal', minComfyUIVersion: null })
     )
+  })
+
+  it('opens a workflow saved blank or with only groups', async () => {
+    const lab = await localBuild('inst-lab', 'Lab')
+    await saved(lab, 'blank.json', 5, EMPTY_GRAPH as never)
+
+    expect(await open('inst-lab', 'blank.json')).toEqual({ opened: true })
+    expect(mocks.openSavedWorkflow).toHaveBeenCalledOnce()
+  })
+
+  it('lists and opens only the builds of the workspace Home shows', async () => {
+    const lab = await localBuild('inst-lab', 'Lab')
+    const team = await localBuild('inst-team', 'Team build', { workspaceId: 'team-a' })
+    await saved(lab, 'portrait.json', 5)
+    await saved(team, 'storyboard.json', 10)
+
+    expect((await list(undefined, 'team-a')).map((w) => [w.title, w.workspaceId])).toEqual([
+      ['storyboard', 'team-a']
+    ])
+    expect(await open('inst-lab', 'portrait.json', { workspaceId: 'team-a' })).toEqual({
+      opened: false,
+      error: 'apps.local.openUnknownBuild'
+    })
+    expect(mocks.openSavedWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('finds the workflows of a build started with --base-directory', async () => {
+    await localBuild('inst-lab', 'Lab', { launchArgs: '--base-directory project' })
+    const workflows = path.join(root, 'inst-lab', 'project', 'user', 'default', 'workflows')
+    await saved(workflows, 'portrait.json', 5)
+
+    expect((await list()).map((w) => w.path)).toEqual(['portrait.json'])
+    expect(await open('inst-lab', 'portrait.json')).toEqual({ opened: true })
+  })
+
+  it('refuses a row listed for another account', async () => {
+    const lab = await localBuild('inst-lab', 'Lab')
+    await saved(lab, 'portrait.json', 5)
+    const [row] = await list()
+    signIn('user-b')
+
+    expect(await open('inst-lab', 'portrait.json', { account: row!.account })).toEqual({
+      opened: false,
+      error: 'workflowLaunch.openFailed'
+    })
+    expect(mocks.openSavedWorkflow).not.toHaveBeenCalled()
   })
 
   it('refuses a path that leaves the workflows folder', async () => {
@@ -199,6 +292,45 @@ describe('recent workflows on this computer', () => {
 })
 
 describe('recent workflows on Comfy Cloud', () => {
+  it('lists none while Cloud is signed in to another workspace than Home shows', async () => {
+    signIn()
+    mocks.installs.push(CLOUD)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await list(undefined, 'team-a')).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('drops the listing when Cloud moves to another workspace while it is read', async () => {
+    signIn()
+    mocks.installs.push(CLOUD)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        mocks.sessionWorkspace = TEAM_SESSION
+        return Response.json([{ path: 'personal.json', modified: Date.now() }])
+      })
+    )
+
+    expect(await list()).toEqual([])
+  })
+
+  it('tags each Cloud row with the workspace and account it was listed for', async () => {
+    signIn()
+    mocks.sessionWorkspace = TEAM_SESSION
+    mocks.installs.push(CLOUD)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json([{ path: 'team.json', modified: Date.now() }]))
+    )
+
+    const [row] = await list(undefined, 'team-a')
+
+    expect(row).toMatchObject({ workspaceId: 'team-a', account: accountKey('user-a') })
+    expect(row!.account).not.toBe(accountKey('user-b'))
+  })
+
   it('lists none while signed out, without asking Cloud', async () => {
     mocks.installs.push(CLOUD)
     const fetchMock = vi.fn()
@@ -209,7 +341,7 @@ describe('recent workflows on Comfy Cloud', () => {
   })
 
   it('lists the saved workflows Cloud returns, mixed with the local ones by date', async () => {
-    mocks.signedIn = true
+    signIn()
     mocks.installs.push(CLOUD)
     const lab = await localBuild('inst-lab', 'Lab')
     await saved(lab, 'portrait.json', 30)
@@ -230,7 +362,7 @@ describe('recent workflows on Comfy Cloud', () => {
   })
 
   it('does not ask Cloud when the workspace has no Comfy Cloud build', async () => {
-    mocks.signedIn = true
+    signIn()
     mocks.installs.push(CLOUD)
     const lab = await localBuild('inst-lab', 'Lab')
     await saved(lab, 'portrait.json', 30)
@@ -242,7 +374,7 @@ describe('recent workflows on Comfy Cloud', () => {
   })
 
   it('still lists the local ones when Cloud fails', async () => {
-    mocks.signedIn = true
+    signIn()
     mocks.installs.push(CLOUD)
     const lab = await localBuild('inst-lab', 'Lab')
     await saved(lab, 'portrait.json', 30)
@@ -254,20 +386,58 @@ describe('recent workflows on Comfy Cloud', () => {
     expect((await list()).map((w) => w.title)).toEqual(['portrait'])
   })
 
-  it('opens a Cloud workflow on Comfy Cloud from its saved copy', async () => {
-    mocks.signedIn = true
+  it('opens a Cloud workflow on Comfy Cloud by its saved path, scoped to the listed workspace', async () => {
+    signIn()
+    mocks.sessionWorkspace = TEAM_SESSION
     mocks.installs.push(CLOUD)
     const fetchMock = vi.fn(async (_url: string) => Response.json(GRAPH))
     vi.stubGlobal('fetch', fetchMock)
 
-    expect(await open('inst-cloud', 'team/upscale.json')).toEqual({ opened: true })
+    expect(await open('inst-cloud', 'team/upscale.json', { workspaceId: 'team-a' })).toEqual({
+      opened: true
+    })
 
     expect(fetchMock.mock.calls[0]![0]).toContain('/api/userdata/workflows%2Fteam%2Fupscale.json')
     expect(mocks.openSavedWorkflow).toHaveBeenCalledExactlyOnceWith(
       { where: 'cloud' },
-      GRAPH,
-      'team/upscale'
+      'team/upscale.json',
+      expect.objectContaining({ workspaceId: 'team-a' })
     )
+    expect(openedScope().isCurrent()).toBe(true)
+    mocks.sessionWorkspace = { workspaceType: 'personal' }
+    expect(openedScope().isCurrent()).toBe(false)
+  })
+
+  it('refuses to open a Team row while Cloud is signed in to Personal, without reading it', async () => {
+    signIn()
+    mocks.installs.push(CLOUD)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await open('inst-cloud', 'upscale.json', { workspaceId: 'team-a' })).toEqual({
+      opened: false,
+      error: 'workflowLaunch.openFailed'
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mocks.openSavedWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('refuses to open what was read once Cloud moved to another workspace meanwhile', async () => {
+    signIn()
+    mocks.installs.push(CLOUD)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        mocks.sessionWorkspace = TEAM_SESSION
+        return Response.json(GRAPH)
+      })
+    )
+
+    expect(await open('inst-cloud', 'upscale.json')).toEqual({
+      opened: false,
+      error: 'workflowLaunch.openFailed'
+    })
+    expect(mocks.openSavedWorkflow).not.toHaveBeenCalled()
   })
 })
 
@@ -295,6 +465,22 @@ describe('reading saved workflows', () => {
     )
     expect(userDirOf({ ...base, adoptedBaseDir: '/old' } as never)).toBe(path.join('/old', 'user'))
     expect(userDirOf(base as never)).toBe(path.join('/builds/a', 'ComfyUI', 'user'))
+  })
+
+  it('takes --user-directory over --base-directory, and either over an adopted folder', () => {
+    const base = { id: 'a', installPath: '/builds/a', adoptedBaseDir: '/old' }
+    expect(userDirOf({ ...base, launchArgs: '--base-directory /data/project' } as never)).toBe(
+      path.resolve('/data/project', 'user')
+    )
+    expect(userDirOf({ ...base, launchArgs: '--base-directory=relative' } as never)).toBe(
+      path.resolve('/builds/a', 'relative', 'user')
+    )
+    expect(
+      userDirOf({
+        ...base,
+        launchArgs: '--base-directory /data/project --user-directory /data/me'
+      } as never)
+    ).toBe(path.resolve('/data/me'))
   })
 
   it('puts the newest first', () => {

@@ -390,7 +390,9 @@ function savedWorkflow(
     installationId,
     buildName,
     where: installationId === 'inst-comfy-cloud' ? 'cloud' : 'local',
-    modifiedAt: Date.now() - minutesAgo * MINUTE_MS
+    modifiedAt: Date.now() - minutesAgo * MINUTE_MS,
+    workspaceId: 'personal',
+    account: 'preview'
   }
 }
 

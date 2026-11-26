@@ -28,6 +28,7 @@ import {
   isComfyPage,
   MARK_PAGE_STALE_SCRIPT,
   openGraphScript,
+  openPersistedWorkflowScript,
   openWorkflowScript,
   readOpenRequest,
   workflowName
@@ -350,13 +351,18 @@ async function openGraphIn(
 
 export async function openSavedWorkflow(
   place: WorkflowPlace,
-  graph: Record<string, unknown>,
-  savedName: string
+  savedPath: string,
+  scope: CatalogWorkflowScope
 ): Promise<ComfyDesktopOpenInComfy> {
   try {
     const target =
-      place.where === 'local' ? await localTarget(null, place.build) : await cloudTarget()
-    return await openScriptIn(target, openGraphScript(graph, savedName))
+      place.where === 'local'
+        ? await localTarget(null, place.build, scope)
+        : await cloudTarget(scope)
+    return await openScriptIn(target, openPersistedWorkflowScript(savedPath), {
+      scope,
+      where: place.where
+    })
   } catch {
     return { opened: false, error: i18n.t('apps.local.openNotTaken') }
   }

@@ -27,6 +27,7 @@ export type {
   OutputFolderPaths,
   CatalogWorkflow,
   RecentWorkflow,
+  RecentWorkflowOpen,
   CatalogWorkflowDownload,
   CatalogWorkflowLicense,
   CatalogWorkflowMedia,

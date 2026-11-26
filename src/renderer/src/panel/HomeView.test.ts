@@ -9,14 +9,15 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useAuthStore } from '../stores/authStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, Installation, RecentWorkflow } from '../types/ipc'
+import type { AppCard, Installation, RecentWorkflow, RecentWorkflowOpen } from '../types/ipc'
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
 const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
-const listRecentWorkflows = vi.fn<(buildIds: string[]) => Promise<RecentWorkflow[]>>()
+const listRecentWorkflows =
+  vi.fn<(buildIds: string[], workspaceId: string) => Promise<RecentWorkflow[]>>()
 const openRecentWorkflow =
-  vi.fn<(installationId: string, path: string) => Promise<{ opened: boolean; error?: string }>>()
+  vi.fn<(workflow: RecentWorkflowOpen) => Promise<{ opened: boolean; error?: string }>>()
 
 function app(id: string, title: string): AppCard {
   return { id, title, description: '', covers: [] }
@@ -1198,6 +1199,8 @@ function recent(over: Partial<RecentWorkflow> & { title: string }): RecentWorkfl
     buildName: 'My Local 1',
     where: 'local',
     modifiedAt: NOW - 2 * HOUR_MS,
+    workspaceId: 'personal',
+    account: 'account-a',
     ...over
   }
 }
@@ -1224,7 +1227,8 @@ describe('Home recent workflows', () => {
 
     expect(recentTitles(wrapper)).toEqual(['Wan loop', 'Upscale'])
     expect(listRecentWorkflows).toHaveBeenLastCalledWith(
-      expect.arrayContaining(['newest', 'cloud'])
+      expect.arrayContaining(['newest', 'cloud']),
+      'personal'
     )
     const first = wrapper.get('[data-testid="home-recent-workflow"]')
     expect(first.text()).toContain('My Local 1')
@@ -1265,7 +1269,50 @@ describe('Home recent workflows', () => {
     await wrapper.get('[data-testid="home-recent-workflow"]').trigger('click')
     await flushPromises()
 
-    expect(openRecentWorkflow).toHaveBeenCalledExactlyOnceWith('newest', 'video/Wan loop.json')
+    expect(openRecentWorkflow).toHaveBeenCalledExactlyOnceWith({
+      installationId: 'newest',
+      path: 'video/Wan loop.json',
+      workspaceId: 'personal',
+      account: 'account-a'
+    })
+  })
+
+  it('drops the listed workflows when Home moves to another workspace, and lists that one', async () => {
+    getInstallations.mockResolvedValue([NEWEST, CLOUD])
+    listRecentWorkflows.mockResolvedValue([recent({ title: 'Personal portrait' })])
+    const wrapper = await openHome()
+    expect(recentTitles(wrapper)).toEqual(['Personal portrait'])
+
+    let answerTeam: (rows: RecentWorkflow[]) => void = () => {}
+    listRecentWorkflows.mockImplementation(() => new Promise((resolve) => (answerTeam = resolve)))
+    useDashboardScopeStore().selectedWorkspaceId = 'team-a'
+    await flushPromises()
+
+    expect(recentTitles(wrapper)).toEqual([])
+    expect(listRecentWorkflows).toHaveBeenLastCalledWith(['cloud'], 'team-a')
+
+    answerTeam([
+      recent({ title: 'Late personal row', installationId: 'cloud', workspaceId: 'personal' }),
+      recent({ title: 'Team upscale', installationId: 'cloud', workspaceId: 'team-a' })
+    ])
+    await flushPromises()
+
+    expect(recentTitles(wrapper)).toEqual(['Team upscale'])
+  })
+
+  it('drops the listed workflows when the signed-in account changes', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    listRecentWorkflows.mockResolvedValue([recent({ title: 'Wan loop' })])
+    const wrapper = await openHome()
+    expect(recentTitles(wrapper)).toEqual(['Wan loop'])
+    const calls = listRecentWorkflows.mock.calls.length
+
+    listRecentWorkflows.mockReturnValue(new Promise(() => {}))
+    useAuthStore().status = { signedIn: true, email: 'someone@example.com' }
+    await flushPromises()
+
+    expect(recentTitles(wrapper)).toEqual([])
+    expect(listRecentWorkflows.mock.calls.length).toBeGreaterThan(calls)
   })
 
   it('paints no build tone on a workflow card, local or Cloud, leaving the icon as the cue', async () => {

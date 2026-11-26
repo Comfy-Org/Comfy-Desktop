@@ -7,14 +7,19 @@ import Button from '@comfyorg/design-system/button/Button'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import WorkflowCover from './WorkflowCover.vue'
 import { useModal } from '../../composables/useModal'
+import { useAuthStore } from '../../stores/authStore'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 import type { RecentWorkflow } from '../../types/ipc'
 
-const { buildIds } = defineProps<{ buildIds: ReadonlySet<string> }>()
+const { buildIds, workspaceId } = defineProps<{
+  buildIds: ReadonlySet<string>
+  workspaceId: string
+}>()
 
 const { t } = useI18n()
 const modal = useModal()
+const authStore = useAuthStore()
 
 const all = ref<RecentWorkflow[]>([])
 const opening = ref<string | null>(null)
@@ -24,7 +29,9 @@ const ROW_LIMIT = 10
 const EDGE_SLACK_PX = 2
 
 const shown = computed(() =>
-  all.value.filter((w) => buildIds.has(w.installationId)).slice(0, ROW_LIMIT)
+  all.value
+    .filter((w) => w.workspaceId === workspaceId && buildIds.has(w.installationId))
+    .slice(0, ROW_LIMIT)
 )
 
 const row = ref<HTMLElement | null>(null)
@@ -50,7 +57,7 @@ let latestLoad = 0
 
 async function listInScope(): Promise<RecentWorkflow[]> {
   try {
-    const listed: unknown = await window.api.listRecentWorkflows([...buildIds])
+    const listed: unknown = await window.api.listRecentWorkflows([...buildIds], workspaceId)
     return Array.isArray(listed) ? (listed as RecentWorkflow[]) : []
   } catch {
     return []
@@ -73,7 +80,12 @@ async function open(workflow: RecentWorkflow): Promise<void> {
   if (opening.value !== null) return
   opening.value = workflow.id
   const result = await window.api
-    .openRecentWorkflow(workflow.installationId, workflow.path)
+    .openRecentWorkflow({
+      installationId: workflow.installationId,
+      path: workflow.path,
+      workspaceId: workflow.workspaceId,
+      account: workflow.account
+    })
     .catch(() => ({ opened: false, error: undefined }))
   opening.value = null
   if (result.opened) return
@@ -90,6 +102,20 @@ function onFocus(): void {
 watch(
   () => [...buildIds].sort().join('\n'),
   () => void load()
+)
+
+watch(
+  () =>
+    JSON.stringify([
+      workspaceId,
+      authStore.status.signedIn,
+      authStore.status.email ?? null,
+      authStore.status.workspaceId ?? null
+    ]),
+  () => {
+    all.value = []
+    void load()
+  }
 )
 
 onMounted(() => {

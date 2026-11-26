@@ -391,7 +391,10 @@ onMounted(() => {
         </ul>
       </section>
 
-      <HomeRecentWorkflows :build-ids="workspaceBuildIds" />
+      <HomeRecentWorkflows
+        :build-ids="workspaceBuildIds"
+        :workspace-id="dashboardScope.selectedWorkspaceId"
+      />
     </div>
   </div>
 </template>

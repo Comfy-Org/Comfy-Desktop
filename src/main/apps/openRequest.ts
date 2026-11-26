@@ -169,6 +169,31 @@ export function openGraphScript(
   return loadScript(call, graph, name)
 }
 
+const OPEN_PERSISTED_WORKFLOW =
+  `var workflows=app.extensionManager&&app.extensionManager.workflow;` +
+  `if(!workflows||typeof workflows.getWorkflowByPath!=='function'` +
+  `||typeof app.loadGraphData!=='function')return false;` +
+  `var find=function(){return workflows.getWorkflowByPath(path)};` +
+  `var listed=find()?null:typeof workflows.syncWorkflows==='function'?workflows.syncWorkflows():null;` +
+  `return Promise.resolve(listed).then(function(){` +
+  `var workflow=find();if(!workflow)return false;` +
+  `var active=workflows.activeWorkflow;` +
+  `if(active&&active.path===workflow.path)return true;` +
+  `return Promise.resolve(workflow.isLoaded?null:workflow.load()).then(function(){` +
+  `var state=workflow.activeState||workflow.initialState;` +
+  `return state?app.loadGraphData(state,true,true,workflow):false})})`
+
+export function openPersistedWorkflowScript(savedPath: string): string {
+  return (
+    `(function(path){` +
+    FIND_COMFY_APP +
+    `if(!usable)return false;` +
+    `return Promise.resolve().then(function(){${OPEN_PERSISTED_WORKFLOW}})` +
+    `.then(function(r){return r!==false},function(){return false});` +
+    `})(${JSON.stringify(`workflows/${savedPath}`)})`
+  )
+}
+
 export function isComfyPage(pageUrl: string, comfyUrl: string): boolean {
   try {
     const page = new URL(pageUrl)
