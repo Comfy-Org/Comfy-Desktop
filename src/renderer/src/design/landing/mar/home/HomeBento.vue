@@ -43,7 +43,7 @@ const recentSrc = (r: RecentListRow): string | undefined =>
     </div>
   </section>
 
-  <section class="hvb" :class="rows.length && 'mt-9'" data-home-tour="apps-carousel">
+  <section class="hvb" :class="rows.length > 0 && 'mt-9'" data-home-tour="apps-carousel">
     <HomeSectionHeader
       title="Apps and workflows"
       link-tip="Explore"

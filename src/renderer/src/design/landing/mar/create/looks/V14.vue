@@ -85,12 +85,14 @@ function templateMeta(s: Starter): { meta: string; tone: string } {
 }
 
 const templates = computed<Card[]>(() => {
-  const all = SHELVES[0]!.starters().map((starter): Card => ({
-    id: starter.id,
-    type: 'template',
-    starter,
-    ...templateMeta(starter)
-  }))
+  const all = SHELVES[0]!.starters().map(
+    (starter): Card => ({
+      id: starter.id,
+      type: 'template',
+      starter,
+      ...templateMeta(starter)
+    })
+  )
   return [
     ...all.filter((c) => c.tone === 'ready'),
     ...all.filter((c) => c.tone === 'fetch'),

@@ -105,7 +105,8 @@ export function feedCatalog(kind: FeedKind): FeedItem[] {
   return feedWorkflows().map((x) => ({ ...x, line: hub(x.id)?.family ?? x.line }))
 }
 
-const ratioOf = (r: string): number | undefined => {
+const ratioOf = (r: string | undefined): number | undefined => {
+  if (!r) return undefined
   const [w, h] = r.split('/').map((n) => Number(n.trim()))
   return w && h ? w / h : undefined
 }

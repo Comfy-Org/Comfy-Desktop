@@ -55,9 +55,7 @@ function sorted(list: FeedItem[], page: number): FeedItem[] {
 
 const q = computed(() => query.value.trim().toLowerCase())
 const catalog = computed(() =>
-  feedCatalog(kind.value).filter((x) =>
-    `${x.title} ${x.line} ${x.model ?? ''}`.toLowerCase().includes(q.value)
-  )
+  feedCatalog(kind.value).filter((x) => `${x.title} ${x.line}`.toLowerCase().includes(q.value))
 )
 const endless = computed(() => !q.value)
 const items = computed(() =>
