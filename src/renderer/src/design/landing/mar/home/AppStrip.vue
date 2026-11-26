@@ -232,7 +232,6 @@ watch(ids, async () => {
 }
 .mar-strip-track {
   display: flex;
-  margin-inline: calc(50% - var(--mar-pane, 100%) / 2);
   transition:
     opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
     transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
