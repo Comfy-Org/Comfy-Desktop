@@ -255,7 +255,7 @@ defineExpose({ focus, dismiss, field })
 :root .proto-ui.proto-ui.proto-ui .cc.is-agent .cc-field {
   height: 44px;
   background: color-mix(in oklch, var(--color-card-background) 80%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   backdrop-filter: blur(var(--blur-glass));
 }
 :root .proto-ui.proto-ui.proto-ui .cc.is-agent .cc-field:focus-within {
@@ -276,7 +276,7 @@ defineExpose({ focus, dismiss, field })
   gap: 12px;
   padding: 0 8px 0 18px;
   background: color-mix(in oklch, var(--color-card-background) 86%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   backdrop-filter: blur(var(--blur-glass));
 }
 :root .proto-ui.proto-ui.proto-ui .cc.is-hero .cc-field:focus-within {
@@ -385,7 +385,7 @@ defineExpose({ focus, dismiss, field })
   padding: 12px;
   border-radius: var(--radius-panel);
   background: color-mix(in oklch, var(--color-card-background) 92%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   backdrop-filter: blur(var(--blur-glass));
   animation: cc-in 320ms var(--ease-out-expo) both;
 }
@@ -489,7 +489,7 @@ defineExpose({ focus, dismiss, field })
   padding: 8px;
   border-radius: var(--radius-panel);
   background: color-mix(in oklch, var(--color-card-background) 94%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   backdrop-filter: blur(var(--blur-glass));
   animation: cc-fade 200ms ease both;
 }
