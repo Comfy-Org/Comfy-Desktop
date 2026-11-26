@@ -7,4 +7,4 @@ export const HOME_LAYOUTS: { value: HomeLayout; label: string }[] = [
   { value: 'recents', label: 'Recents first' }
 ]
 
-export const homeLayout = reactive<{ id: HomeLayout }>({ id: 'current' })
+export const homeLayout = reactive<{ id: HomeLayout }>({ id: 'recents' })

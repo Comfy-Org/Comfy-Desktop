@@ -40,8 +40,7 @@ export const HOME_IDEAS: HomeIdea[] = [
     'headers',
     'hi2',
     'Same headers everywhere',
-    'APPS › like RECENTLY USED ›, apps only, no tabs or See all link.',
-    'on'
+    'APPS › like RECENTLY USED ›, apps only, no tabs or See all link.'
   ),
   idea(
     'cleanCards',
