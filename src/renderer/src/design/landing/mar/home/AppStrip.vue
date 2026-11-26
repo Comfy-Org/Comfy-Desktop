@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useResizeObserver } from '@vueuse/core'
 import Button from '../../ui/Button.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import { reducedMotion } from '../userStates/examples'
 import type { ArcItem } from '../userStates/arcItems'
 
@@ -20,7 +21,7 @@ const {
   leaving?: boolean
 }>()
 const emit = defineEmits<{ all: [] }>()
-const tab = defineModel<string>('tab')
+const tab = defineModel<string>('tab', { default: '' })
 
 const DRAG_THRESHOLD = 6
 const isClip = (src: string): boolean => /^data:video|\.(mp4|webm|mov)(\?|#|$)/i.test(src)
@@ -139,34 +140,6 @@ function leave(x: ArcItem, e: Event): void {
   setPlaying(e.currentTarget as HTMLElement, false)
 }
 
-const tabEls = ref<HTMLElement[]>([])
-function pickTab(value: string): void {
-  tab.value = value
-}
-function onTabKey(e: KeyboardEvent, at: number): void {
-  const last = tabs.length - 1
-  const to =
-    e.key === 'ArrowRight'
-      ? at === last
-        ? 0
-        : at + 1
-      : e.key === 'ArrowLeft'
-        ? at === 0
-          ? last
-          : at - 1
-        : e.key === 'Home'
-          ? 0
-          : e.key === 'End'
-            ? last
-            : -1
-  if (to < 0) return
-  e.preventDefault()
-  const next = tabs[to]
-  if (!next) return
-  pickTab(next.value)
-  tabEls.value[to]?.focus()
-}
-
 const ids = computed(() => items.map((x) => x.id).join('|'))
 watch(ids, async () => {
   await nextTick()
@@ -178,30 +151,9 @@ watch(ids, async () => {
 <template>
   <div class="mar-strip" role="region" aria-roledescription="carousel" :aria-label="title">
     <div class="mar-strip-head">
-      <div
-        v-if="tabs.length"
-        class="mar-strip-tabs"
-        role="tablist"
-        :aria-label="title"
-        data-no-pill
-      >
-        <button
-          v-for="(t, i) in tabs"
-          :key="t.value"
-          ref="tabEls"
-          type="button"
-          role="tab"
-          class="mar-strip-tab"
-          :aria-selected="tab === t.value"
-          :tabindex="tab === t.value ? 0 : -1"
-          @click="pickTab(t.value)"
-          @keydown="onTabKey($event, i)"
-        >
-          {{ t.label }}
-        </button>
-      </div>
+      <MarSeg v-if="tabs.length" v-model="tab" :options="tabs" :label="title" />
       <h2 v-else class="mar-strip-title-head">
-        <button type="button" class="mar-strip-tab is-link" @click="emit('all')">
+        <button type="button" class="mar-strip-heading" @click="emit('all')">
           {{ title }}<ChevronRight :size="13" aria-hidden="true" />
         </button>
       </h2>
@@ -396,13 +348,12 @@ watch(ids, async () => {
 }
 .mar-strip-head {
   display: flex;
-  height: 24px;
+  min-height: 24px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
 }
-.mar-strip-tabs,
 .mar-strip-title-head {
   display: flex;
   min-width: 0;
@@ -453,16 +404,16 @@ watch(ids, async () => {
   box-shadow: inset 0 0 0 2px var(--color-border-focus);
   content: '';
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-tab {
+:root .proto-ui.proto-ui.proto-ui .mar-strip-heading {
   display: inline-flex;
   width: auto;
   height: 32px;
   align-items: center;
   gap: 4px;
-  margin: -4px 0;
+  margin: -4px 0 -4px -8px;
   padding: 0 8px;
   border-radius: 8px;
-  color: var(--color-subtle-foreground);
+  color: var(--color-muted-foreground);
   font-family: inherit;
   font-size: 11px;
   font-weight: 500;
@@ -474,21 +425,11 @@ watch(ids, async () => {
     background-color 160ms ease,
     color 160ms ease;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-tabs .mar-strip-tab:first-child,
-:root .proto-ui.proto-ui.proto-ui .mar-strip-tab.is-link {
-  margin-left: -8px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-tab.is-link {
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-tab[aria-selected='true'] {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-tab:hover {
+:root .proto-ui.proto-ui.proto-ui .mar-strip-heading:hover {
   background: var(--color-secondary-background);
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-strip-tab:focus-visible,
+:root .proto-ui.proto-ui.proto-ui .mar-strip-heading:focus-visible,
 :root .proto-ui.proto-ui.proto-ui .mar-strip-all:focus-visible {
   box-shadow: 0 0 0 2px var(--color-border-focus);
 }
