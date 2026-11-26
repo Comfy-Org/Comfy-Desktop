@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
+import zh from '@locales/zh.json'
+import { resetAppLocale, switchAppLocaleToChinese } from '../lib/switchAppLocale'
 
 const modalMock = {
   confirm: vi.fn(),
@@ -119,6 +121,19 @@ it('groups common desktop-card actions in the requested order', () => {
     'share',
     'untrack'
   ])
+})
+
+describe('menu language', () => {
+  afterEach(resetAppLocale)
+
+  it('names Show in Finder in the app language', () => {
+    switchAppLocaleToChinese()
+    const { menu } = mountHarness(makeInstall())
+
+    expect(findItem(menu.ctxMenuItems.value, 'reveal-in-folder')?.label).toBe(
+      zh.assets.showInFinder
+    )
+  })
 })
 
 it('leaves Forget out for a build adopted from an existing folder', () => {

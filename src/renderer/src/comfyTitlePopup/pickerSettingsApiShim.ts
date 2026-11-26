@@ -30,6 +30,7 @@ const API_MAP = {
   openGlobalSettings: 'pickerSettingsOpenGlobalSettings',
   previewLocalMigration: 'pickerSettingsPreviewLocalMigration',
   onReleaseCacheEnriched: 'pickerSettingsOnReleaseCacheEnriched',
+  onLocaleChanged: 'pickerSettingsOnLocaleChanged',
   terminalSubscribe: 'terminalSubscribe',
   terminalUnsubscribe: 'terminalUnsubscribe',
   terminalWrite: 'terminalWrite',

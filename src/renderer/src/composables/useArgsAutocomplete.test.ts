@@ -46,6 +46,16 @@ const SCHEMA: ComfyArgDef[] = [
   }
 ]
 
+const FEATURE_FLAG: ComfyArgDef = {
+  name: 'feature-flag',
+  flag: '--feature-flag',
+  help: 'Set a server feature flag.',
+  type: 'value',
+  metavar: 'KEY',
+  category: 'other',
+  hidden: true
+}
+
 function setup(initial = '', initialFocus = true) {
   const value = ref(initial)
   const schema = ref<ComfyArgDef[]>(SCHEMA)
@@ -94,6 +104,12 @@ describe('useArgsAutocomplete — searchQuery', () => {
     expect(ac.searchQuery.value).toBe('')
   })
 
+  it("suppresses while filling a hidden flag's value, so Enter cannot swap it for --cpu", () => {
+    const { ac, schema } = setup('--feature-flag cp')
+    schema.value = [...SCHEMA, FEATURE_FLAG]
+    expect(ac.searchQuery.value).toBe('')
+  })
+
   it('does NOT suppress after an optional-value flag', () => {
     const { ac } = setup('--listen lo')
     expect(ac.searchQuery.value).toBe('lo')
@@ -134,6 +150,12 @@ describe('useArgsAutocomplete — matches', () => {
     const names = ac.matches.value.map((m) => m.name)
     expect(names).not.toContain('lowvram')
     expect(names).toContain('novram')
+  })
+
+  it('never suggests a hidden flag', () => {
+    const { ac, schema } = setup('--feat')
+    schema.value = [...SCHEMA, FEATURE_FLAG]
+    expect(ac.matches.value).toEqual([])
   })
 
   it("returns the full unused list for bare '--'", () => {

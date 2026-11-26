@@ -115,6 +115,20 @@ describe('installPickerSettingsApiShim — terminal forwarding', () => {
   })
 })
 
+describe('installPickerSettingsApiShim — language changes', () => {
+  it('tells the build details in the picker when the app language changes', () => {
+    const bridge = installBridge()
+    installPickerSettingsApiShim()
+
+    const api = (window as unknown as { api: { onLocaleChanged: (cb: () => void) => () => void } })
+      .api
+    const cb = vi.fn()
+    api.onLocaleChanged(cb)
+
+    expect(bridge.pickerSettingsOnLocaleChanged).toHaveBeenCalledExactlyOnceWith(cb)
+  })
+})
+
 describe('installPickerSettingsApiShim — Global Settings deep link', () => {
   it('forwards openGlobalSettings to the popup bridge with its tab and highlight', () => {
     const bridge = installBridge()

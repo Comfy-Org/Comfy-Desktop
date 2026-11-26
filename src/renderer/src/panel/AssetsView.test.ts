@@ -24,6 +24,7 @@ const listAssets = vi.fn()
 const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
+const REVEAL_ICON = 'svg[class*="lucide-folder-search"]'
 const revealAsset = vi.fn()
 const openAsset = vi.fn()
 const openOutputFolder = vi.fn()
@@ -120,13 +121,13 @@ function localBuild(id: string, name = id, extra: Partial<Installation> = {}): I
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
     hasOutputFolder: true,
-    useSharedOutput: false,
+    savesToSharedOutput: false,
     ...extra
   }
 }
 
 function sharedBuild(id: string, name = id): Installation {
-  return localBuild(id, name, { useSharedOutput: true })
+  return localBuild(id, name, { savesToSharedOutput: true })
 }
 
 function shownText(element: Element | null): string {
@@ -866,6 +867,34 @@ describe('AssetsView', () => {
     ).toBe(true)
   })
 
+  it("shows a build's new output folder after its launch arguments change, and on Refresh", async () => {
+    let labOutput = '/Volumes/Work/Video Lab/output'
+    const api = window.api as unknown as { listOutputFolders: () => Promise<unknown> }
+    api.listOutputFolders = async () => ({
+      home: '/Users/me',
+      shared: '/Users/me/ComfyUI/output',
+      ofBuild: { lab: labOutput }
+    })
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    const tooltipShows = (text: string) =>
+      wrapper.findAllComponents(Tooltip).some((tip) => tip.props('text') === text)
+
+    labOutput = '/Volumes/Other/renders'
+    useInstallationStore().installations = [
+      { ...localBuild('lab', 'Video Lab'), launchArgs: '--output-directory /Volumes/Other/renders' }
+    ]
+    await flushPromises()
+    await openBuildPicker(wrapper)
+    expect(tooltipShows('/Volumes/Other/renders'), 'new launch arguments').toBe(true)
+
+    labOutput = '/Volumes/Third/out'
+    await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+    await flushPromises()
+    if (wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded') !== 'true')
+      await openBuildPicker(wrapper)
+    expect(tooltipShows('/Volumes/Third/out'), 'Refresh').toBe(true)
+  })
+
   it('moves between rows with the arrow keys and never stops on Show in Finder', async () => {
     const wrapper = await mountAssets([], {
       builds: [localBuild('lab', 'Video Lab'), localBuild('art', 'Art Lab')]
@@ -1002,6 +1031,20 @@ describe('AssetsView', () => {
     expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
   })
 
+  it('opens a git build with its own output folder in Startup arguments on that folder, not Shared folder', async () => {
+    const gitBuild = localBuild('git', 'Git Clone', { sourceLabel: 'Git clone' })
+    const wrapper = await mountAssets([], {
+      builds: [sharedBuild('a', 'Shared A'), gitBuild],
+      installationId: 'git'
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Git Clone')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('git')
+
+    await openBuildPicker(wrapper)
+    expect(buildRows().map((row) => row.split(' ')[0])).toEqual(['Comfy', 'Shared', 'Git'])
+  })
+
   it('says the workspace has no Comfy Cloud build', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
     const wrapper = await mountAssets([], { builds: [localBuild('lab')] })
@@ -1123,6 +1166,48 @@ describe('AssetsView', () => {
     await wrapper.get('[data-testid="asset-reveal-m"]').trigger('click')
 
     expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'm')
+  })
+
+  it('draws the folder icon the rest of Desktop uses wherever it shows a file in its folder', async () => {
+    const wrapper = await mountAssets([
+      asset('m', 'mesh.glb', '3d'),
+      asset('p', 'forest.png', 'image')
+    ])
+
+    expect(
+      wrapper.get('[data-testid="asset-reveal-m"]').find(REVEAL_ICON).exists(),
+      'card button'
+    ).toBe(true)
+
+    await rightClick(wrapper.get('[data-testid="asset-p"]').element)
+    expect(
+      document
+        .querySelector('[data-testid="context-menu-item-reveal"]')
+        ?.closest('.context-menu-item')
+        ?.querySelector(REVEAL_ICON),
+      'asset menu'
+    ).not.toBeNull()
+
+    await wrapper.get('[data-testid="asset-open-p"]').trigger('click')
+    await flushPromises()
+    expect(
+      viewer()!.querySelector(`[data-testid="output-detail-show-in-folder"] ${REVEAL_ICON}`),
+      'viewer button'
+    ).not.toBeNull()
+  })
+
+  it('draws the folder icon the rest of Desktop uses next to each folder in the picker', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab')]
+    })
+    await openBuildPicker(wrapper)
+
+    for (const id of ['shared', 'lab']) {
+      expect(
+        document.querySelector(`[data-testid="assets-place-reveal-${id}"] ${REVEAL_ICON}`),
+        id
+      ).not.toBeNull()
+    }
   })
 
   it('shows an SVG or a file of no media kind in its folder instead of opening it', async () => {

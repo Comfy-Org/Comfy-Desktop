@@ -29,8 +29,16 @@ const SAME_PAGE_LINKS = {
 
 const NEW_TAB_FILE_LINK = 'open-file-in-new-tab'
 
+const CLAUDE_LINK = 'claude://code/new?q=Deploy%20my%20workflow'
+const CODEX_LINK = 'codex://new?prompt=Deploy%20my%20workflow'
+
+const HIDDEN_FRAME_LINKS = {
+  'frame-claude': CLAUDE_LINK,
+  'frame-codex': CODEX_LINK
+}
+
 function pageHtml(): string {
-  const buttons = Object.keys(NEW_WINDOW_LINKS)
+  const buttons = [...Object.keys(NEW_WINDOW_LINKS), ...Object.keys(HIDDEN_FRAME_LINKS)]
     .map((id) => `<p><button id="${id}" type="button">${id}</button></p>`)
     .join('\n    ')
   const anchors = Object.entries(SAME_PAGE_LINKS)
@@ -47,6 +55,14 @@ function pageHtml(): string {
       const links = ${JSON.stringify(NEW_WINDOW_LINKS)}
       for (const [id, url] of Object.entries(links)) {
         document.getElementById(id).addEventListener('click', () => window.open(url))
+      }
+      const frameLinks = ${JSON.stringify(HIDDEN_FRAME_LINKS)}
+      const frame = document.body.appendChild(document.createElement('iframe'))
+      frame.hidden = true
+      for (const [id, url] of Object.entries(frameLinks)) {
+        document.getElementById(id).addEventListener('click', () => {
+          frame.src = url
+        })
       }
     </script>
   </body>
@@ -136,7 +152,7 @@ test.afterAll(async () => {
   await stopSite()
 })
 
-test('A page in a ComfyUI window gets web and mail links opened outside the app, and no file, share or app link @macos @windows @linux', async () => {
+test('A page in a ComfyUI window gets web, mail, Claude and Codex links opened outside the app, and no file, share or other app link @macos @windows @linux', async () => {
   const openedBefore = (await getShellOpenExternalCalls(running().app)).length
   const windowsBefore = await windowCount()
   const openedSince = async (): Promise<string[]> =>
@@ -159,6 +175,15 @@ test('A page in a ComfyUI window gets web and mail links opened outside the app,
     await clickEach(['go-share', 'go-app'])
     await clickEach(['go-mail'])
     await expect.poll(openedSince, LONG_WAIT).toEqual([DOCS_LINK, MAIL_LINK])
+  })
+
+  await test.step('links loaded in a hidden frame', async () => {
+    await clickEach(['frame-claude'])
+    await expect.poll(openedSince, LONG_WAIT).toEqual([DOCS_LINK, MAIL_LINK, CLAUDE_LINK])
+    await clickEach(['frame-codex'])
+    await expect
+      .poll(openedSince, LONG_WAIT)
+      .toEqual([DOCS_LINK, MAIL_LINK, CLAUDE_LINK, CODEX_LINK])
   })
 
   expect(await comfyPage().url(), 'the page stayed where it was').toBe(`${siteUrl}/`)

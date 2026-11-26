@@ -403,7 +403,7 @@ export function registerSnapshotHandlers(): void {
     if (!win) return { ok: false, message: 'No window.' }
 
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-      filters: [{ name: 'Snapshot', extensions: ['json'] }],
+      filters: [{ name: i18n.t('snapshots.fileTypeName'), extensions: ['json'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return { ok: false }

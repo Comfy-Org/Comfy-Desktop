@@ -714,6 +714,21 @@ describe('openOrFocusHomeHostWindow', () => {
     expect(createChooser).toHaveBeenCalledTimes(1)
   })
 
+  it('opens a new Desktop window on the page asked for', () => {
+    const createChooser = trackChooserFactory()
+    registerHostEntry(makeEntry({ installationId: 'inst-A' }))
+
+    openOrFocusHomeHostWindow('home')
+    expect(createChooser).toHaveBeenCalledWith('home')
+  })
+
+  it('leaves the page to the start page setting when none is asked for', () => {
+    const createChooser = trackChooserFactory()
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledWith(undefined)
+  })
+
   it('opens a Desktop window when the only one is turning into a build window', () => {
     const createChooser = trackChooserFactory()
     const claimed = makeEntry({ installationId: null })

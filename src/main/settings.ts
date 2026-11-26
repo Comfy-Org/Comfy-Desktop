@@ -10,6 +10,7 @@ import {
   setInstallDirResolver
 } from './lib/paths'
 import { MODEL_FOLDER_TYPES } from './lib/models'
+import { isNewWindowDashboardPage, type NewWindowDashboardPage } from '../shared/dashboardPages'
 import {
   readFileSafe,
   readFileSafeAsync,
@@ -32,6 +33,7 @@ export interface KnownSettings {
   autoLaunchOnStartup?: string
   autoStartAwaitingFirstStart?: string
   confirmBeforeClosingWindow?: boolean
+  startPage?: NewWindowDashboardPage
   keepComfyRunningWhenWindowCloses?: boolean
   warnBeforeRunningMultipleInstances?: boolean
   hardwareAcceleration?: boolean
@@ -107,6 +109,13 @@ type SettingSchemaEntry<K extends keyof KnownSettings> = {
   telemetry: SettingTelemetryPolicy<K>
 }
 
+const START_PAGE_NAMES: Record<NewWindowDashboardPage, string> = {
+  home: 'home',
+  chooser: 'builds',
+  apps: 'apps',
+  assets: 'assets'
+}
+
 const SETTINGS_SCHEMA = {
   cacheDir: { nullable: false, telemetry: { policy: 'presence' } },
   maxCachedDownloads: {
@@ -149,6 +158,14 @@ const SETTINGS_SCHEMA = {
   confirmBeforeClosingWindow: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
+  },
+  startPage: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      toTelemetry: (raw) =>
+        raw === undefined ? 'home' : isNewWindowDashboardPage(raw) ? START_PAGE_NAMES[raw] : null
+    }
   },
   keepComfyRunningWhenWindowCloses: { nullable: false, telemetry: { policy: 'omit' } },
   warnBeforeRunningMultipleInstances: {
@@ -495,10 +512,16 @@ export function get(key: string): unknown {
   return value
 }
 
+export function startPage(): NewWindowDashboardPage {
+  const page: unknown = get('startPage')
+  return isNewWindowDashboardPage(page) ? page : 'home'
+}
+
 const EMPTY_STRING_MEANS_UNSET: ReadonlySet<string> = new Set<KnownSettingKey>(['pypiMirror'])
 
 const DEFAULT_VALUE_MEANS_UNSET: ReadonlyMap<string, unknown> = new Map<KnownSettingKey, unknown>([
-  ['autoLaunchOnStartup', AUTO_LAUNCH_NONE]
+  ['autoLaunchOnStartup', AUTO_LAUNCH_NONE],
+  ['startPage', 'home']
 ])
 
 export function set<K extends string>(
