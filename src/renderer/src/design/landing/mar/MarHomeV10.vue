@@ -522,7 +522,7 @@ function openRecent(id: string): void {
   max-width: 840px;
   flex-direction: column;
   align-items: center;
-  margin-inline: auto;
+  margin: 14px auto 24px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-home .mar-smart-slot > .v15-ask {
   margin-top: 0;
