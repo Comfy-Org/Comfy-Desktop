@@ -74,7 +74,9 @@ describe('HomeCarousel app badges', () => {
     expect([card.offsetWidth - arrow.offsetLeft - arrow.offsetWidth, arrow.offsetTop]).toEqual([
       12, 12
     ])
-    expect(badges.offsetWidth).toBe(28)
+    const drawn = [...badges.querySelectorAll<HTMLElement>('[data-badge-style]')]
+    expect(drawn.map((badge) => badge.dataset.badgeStyle)).toEqual(['crown', 'chip'])
+    expect(new Set(drawn.map((badge) => badge.getBoundingClientRect().top)).size).toBe(1)
     expect(badges.offsetLeft + badges.offsetWidth).toBeLessThan(arrow.offsetLeft)
   })
 
