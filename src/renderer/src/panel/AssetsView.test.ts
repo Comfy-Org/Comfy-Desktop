@@ -24,6 +24,7 @@ const listAssets = vi.fn()
 const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
+const REVEAL_ICON = 'svg[class*="lucide-folder-search"]'
 const revealAsset = vi.fn()
 const openAsset = vi.fn()
 const openOutputFolder = vi.fn()
@@ -1162,6 +1163,48 @@ describe('AssetsView', () => {
     await wrapper.get('[data-testid="asset-reveal-m"]').trigger('click')
 
     expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'm')
+  })
+
+  it('draws the folder icon the rest of Desktop uses wherever it shows a file in its folder', async () => {
+    const wrapper = await mountAssets([
+      asset('m', 'mesh.glb', '3d'),
+      asset('p', 'forest.png', 'image')
+    ])
+
+    expect(
+      wrapper.get('[data-testid="asset-reveal-m"]').find(REVEAL_ICON).exists(),
+      'card button'
+    ).toBe(true)
+
+    await rightClick(wrapper.get('[data-testid="asset-p"]').element)
+    expect(
+      document
+        .querySelector('[data-testid="context-menu-item-reveal"]')
+        ?.closest('.context-menu-item')
+        ?.querySelector(REVEAL_ICON),
+      'asset menu'
+    ).not.toBeNull()
+
+    await wrapper.get('[data-testid="asset-open-p"]').trigger('click')
+    await flushPromises()
+    expect(
+      viewer()!.querySelector(`[data-testid="output-detail-show-in-folder"] ${REVEAL_ICON}`),
+      'viewer button'
+    ).not.toBeNull()
+  })
+
+  it('draws the folder icon the rest of Desktop uses next to each folder in the picker', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab')]
+    })
+    await openBuildPicker(wrapper)
+
+    for (const id of ['shared', 'lab']) {
+      expect(
+        document.querySelector(`[data-testid="assets-place-reveal-${id}"] ${REVEAL_ICON}`),
+        id
+      ).not.toBeNull()
+    }
   })
 
   it('shows an SVG or a file of no media kind in its folder instead of opening it', async () => {
