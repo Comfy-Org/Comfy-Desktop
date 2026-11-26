@@ -12,7 +12,8 @@ export const NEW_TAB_TITLE = 'New tab'
 export const createScreen = reactive({
   open: false,
   after: null as string | null,
-  back: 'home'
+  back: 'home',
+  ask: ''
 })
 
 export const createInTab = computed(() => marTabsOn.value)
@@ -41,6 +42,11 @@ export function openCreate(): void {
   }
   if (proto.activeTab !== NEW_TAB_ID) createScreen.back = proto.activeTab
   proto.activeTab = NEW_TAB_ID
+}
+
+export function openCreateAsking(prompt: string): void {
+  createScreen.ask = prompt
+  openCreate()
 }
 
 function backTab(): string {

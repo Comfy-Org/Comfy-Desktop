@@ -62,7 +62,15 @@ import { recentsCover } from './cover'
 import MarHomeTour from './homeTour/MarHomeTour.vue'
 import HomeSectionHeader from './HomeSectionHeader.vue'
 import NewWorkflowTile from './NewWorkflowTile.vue'
-import { openCreate } from './create/createScreen'
+import {
+  openCreate,
+  openCreateAsking,
+  openWorkflow,
+  startWithAgentAsk
+} from './create/createScreen'
+import SmartSearch from './create/SmartSearch.vue'
+import { agentOpens } from './create/agentOpens'
+import { agentStart, type AgentAnswer } from './create/looks/v07Agent'
 import { onHome } from './tunerContext'
 import { search } from './search/search'
 import { homeLayout, homeVersion } from './home/homeLayout'
@@ -116,9 +124,26 @@ const builds = computed(() => recentInstances.value.slice(0, 3))
 // The top keeps the same room whether or not a build is installing: the
 // Home never changes height between states.
 const tight = computed(() => parts.value.top === 'tight')
+const homeQuery = ref('')
+const homeSearch = ref<InstanceType<typeof SmartSearch>>()
+const homeSearching = computed(() => !!homeSearch.value?.shown)
+const smartOnHome = computed(() => can.value.onboarding && !can.value.agent && !gated.value)
+
+function homeAsk(a: AgentAnswer): void {
+  if (agentOpens.id === 'comfy') startWithAgentAsk(agentStart(a.prompt))
+  else openCreateAsking(a.prompt)
+}
+
+function homeSearchKey(e: KeyboardEvent): void {
+  if (e.key !== 'Escape' || !homeQuery.value) return
+  e.preventDefault()
+  homeQuery.value = ''
+}
+
 const tourActive = computed(
   () =>
     can.value.onboarding &&
+    !homeSearching.value &&
     onHome.value &&
     proto.mode === 'create' &&
     !(flow.open && flow.takeover) &&
@@ -253,7 +278,7 @@ function openRecent(id: string): void {
   <div
     ref="homeEl"
     class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16"
-    :class="recentsFirst && 'is-recents-first'"
+    :class="[recentsFirst && 'is-recents-first', homeSearching && 'is-searching']"
     :style="homeStyle"
   >
     <!-- First run or not, the top is the same: the greeting and the prompt
@@ -281,6 +306,16 @@ function openRecent(id: string): void {
         <!-- One line tall; while you type it grows over what's below. -->
         <div v-if="can.agent && !gated" class="mar-prompt-slot">
           <PromptBox target class="mar-prompt" />
+        </div>
+        <div v-else-if="smartOnHome" class="mar-smart-slot">
+          <SmartSearch
+            ref="homeSearch"
+            v-model="homeQuery"
+            list-id="home-smart-list"
+            @key="homeSearchKey"
+            @ask="homeAsk"
+            @workflow="openWorkflow"
+          />
         </div>
         <template v-if="!firstRun">
           <BuildHealthRow v-if="p20.builds === 'health'" />
@@ -503,6 +538,24 @@ function openRecent(id: string): void {
 </template>
 
 <style>
+:root .proto-ui.proto-ui.proto-ui .mar-home .mar-smart-slot {
+  display: flex;
+  width: 100%;
+  max-width: 840px;
+  flex-direction: column;
+  align-items: center;
+  margin-inline: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-home .mar-smart-slot > .v15-ask {
+  margin-top: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-home .mar-smart-slot [role='group'] {
+  background: none;
+  backdrop-filter: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-home.is-searching > :not(section:first-child) {
+  display: none;
+}
 :root .proto-ui.proto-ui.proto-ui .mar-home .mar-home-builds-top {
   margin-top: 0;
 }
