@@ -10,6 +10,9 @@ import {
   WORKFLOW_NEEDS,
   everydayBuilds,
   localAssets,
+  buildWithUpdate,
+  managedBuildUpdateConfirm,
+  standaloneUpdateConfirm,
   type PreviewMachine
 } from './fixtures'
 
@@ -85,6 +88,32 @@ async function openCloudStorageTab(stage: PreviewStage): Promise<void> {
   })
   await stage.click(`[data-testid="app-sidebar-build-${CLOUD_BUILD_ID}"]`)
   await stage.click('[data-testid="settings-tab-config"]')
+}
+
+function runningBuildUpdateSeed(machine: PreviewMachine): BridgeSeed {
+  const { installation, sections } = buildWithUpdate(machine, standaloneUpdateConfirm())
+  return {
+    installations: [installation],
+    replies: {
+      getRunningInstances: async () => [
+        { installationId: installation.id, installationName: installation.name, mode: 'console' }
+      ],
+      getDetailSections: async () => sections
+    }
+  }
+}
+
+function managedBuildUpdateSeed(machine: PreviewMachine): BridgeSeed {
+  const { installation, sections } = buildWithUpdate(machine, managedBuildUpdateConfirm())
+  return {
+    installations: [installation],
+    replies: { getDetailSections: async () => sections }
+  }
+}
+
+async function confirmUpdateFromBuildPage({ click }: PreviewStage): Promise<void> {
+  await click('[data-testid="app-sidebar-build-inst-comfyui"]')
+  await click('[data-testid="update-action-update-comfyui"]')
 }
 
 async function acceptTermsAndInstall({ see, click }: PreviewStage): Promise<void> {
@@ -252,6 +281,20 @@ export const SCENARIOS: PreviewScenario[] = [
         }
       }
     }
+  },
+  {
+    id: 'update-confirm',
+    title: 'Update a running build, confirm',
+    ready: '.base-alert-panel',
+    seed: runningBuildUpdateSeed,
+    arrange: confirmUpdateFromBuildPage
+  },
+  {
+    id: 'update-build-confirm',
+    title: 'Update a managed build, confirm',
+    ready: '.base-alert-panel',
+    seed: managedBuildUpdateSeed,
+    arrange: confirmUpdateFromBuildPage
   },
   {
     id: 'home-empty',

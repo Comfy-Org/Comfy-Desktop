@@ -1,8 +1,11 @@
+import { i18n } from '../i18n'
 import type {
+  ActionDef,
   AppCard,
   HiddenAppCard,
   AssetSummary,
   CatalogWorkflow,
+  ConfirmDef,
   DetailField,
   DetailSection,
   CatalogWorkflowNeeds,
@@ -473,6 +476,79 @@ export function localAssets(): AssetSummary[] {
     height: 1024,
     durationSeconds: null
   }))
+}
+
+export const UPDATE_FROM_TAG = 'v0.46.1'
+export const UPDATE_TO_TAG = 'v0.46.3'
+
+export function standaloneUpdateConfirm(): ConfirmDef {
+  const t = i18n.global.t
+  return {
+    title: t('standalone.updateConfirmTitleTo', { version: UPDATE_TO_TAG }),
+    message: t('standalone.updateConfirmVersionChange', {
+      installed: `**${UPDATE_FROM_TAG}**`,
+      latest: `**${UPDATE_TO_TAG}**`
+    }),
+    note: t('standalone.updateSnapshotUndoHint')
+  }
+}
+
+export function managedBuildUpdateConfirm(): ConfirmDef {
+  const t = i18n.global.t
+  return {
+    title: t('comfybuilder.updateConfirmTitle'),
+    message: t('comfybuilder.updateConfirmMessage', {
+      from: `**${UPDATE_FROM_TAG}**`,
+      to: `**${UPDATE_TO_TAG}**`
+    }),
+    note: t('comfybuilder.updateConfirmInfo'),
+    confirmLabel: t('comfybuilder.updateNow')
+  }
+}
+
+export function buildWithUpdate(
+  machine: PreviewMachine,
+  confirm: ConfirmDef
+): {
+  installation: Installation
+  sections: DetailSection[]
+} {
+  const t = i18n.global.t
+  const installation = localBuild(machine, {
+    name: 'ComfyUI',
+    version: UPDATE_FROM_TAG,
+    statusTag: { style: 'update', label: 'Update available', version: UPDATE_TO_TAG }
+  })
+  const update: ActionDef = {
+    id: 'update-comfyui',
+    label: t('standalone.updateNow'),
+    style: 'primary',
+    enabled: true,
+    showProgress: true,
+    cancellable: true,
+    progressTitle: t('standalone.updatingTitle', { version: UPDATE_TO_TAG }),
+    data: { channel: 'stable', isDowngrade: false },
+    confirm
+  }
+  const channel: DetailField = {
+    id: 'updateChannel',
+    label: t('standalone.updateChannel'),
+    editType: 'channel-cards',
+    value: 'stable',
+    options: [
+      {
+        value: 'stable',
+        label: 'Stable',
+        data: {
+          installedVersion: UPDATE_FROM_TAG,
+          latestVersion: UPDATE_TO_TAG,
+          updateAvailable: true,
+          actions: [update]
+        }
+      }
+    ]
+  }
+  return { installation, sections: [{ tab: 'update', fields: [channel] }] }
 }
 
 export const EXPLORE_WORKFLOWS: CatalogWorkflow[] = [

@@ -858,7 +858,7 @@ describe('AppsView', () => {
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
   })
 
-  it("draws an app's badges on the top left of its picture, the crown alone in the credits gold, and none on an app without badges", async () => {
+  it("draws an app's badges on the top left of its picture, the crown in the credits gold beside the chip, and none on an app without badges", async () => {
     const wrapper = await mountApps()
 
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
@@ -869,8 +869,12 @@ describe('AppsView', () => {
     expect(Math.round(badgesBox.top - picture.top)).toBe(8)
     expect(
       badges.findAll('[data-badge-style]').map((badge) => badge.attributes('data-badge-style'))
-    ).toEqual(['crown'])
-    expect(Math.round(badgesBox.width)).toBe(28)
+    ).toEqual(['crown', 'chip'])
+    const crownBox = badges.get('[data-testid="app-badge-square"]').element.getBoundingClientRect()
+    const chipBox = badges.get('[data-testid="app-badge-new"]').element.getBoundingClientRect()
+    expect(Math.round(crownBox.width)).toBe(28)
+    expect(chipBox.top).toBe(crownBox.top)
+    expect(chipBox.left).toBeGreaterThan(crownBox.right)
     document.documentElement.dataset.theme = 'dark'
     expect(getComputedStyle(badges.get('[data-testid="app-badge-crown"]').element).color).toBe(
       'rgb(233, 196, 34)'

@@ -462,6 +462,7 @@ export interface ComfyArgDef {
   choices?: string[]
   exclusiveGroup?: string
   category: string
+  hidden?: boolean
 }
 
 export interface DetailField {
@@ -518,6 +519,8 @@ export interface ActionDef {
 export interface ConfirmDef {
   title?: string
   message?: string
+  hint?: string
+  note?: string
   confirmLabel?: string
   options?: ConfirmOption[]
   messageDetails?: ModalDetailGroup[]
