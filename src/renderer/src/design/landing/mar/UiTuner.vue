@@ -59,6 +59,8 @@ import {
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
+import { APPS_SECTIONS, appsSection } from './home/appsSection'
+import { BUILDS_AT, buildsAt } from './home/buildsAt'
 import { RECENT_THUMBS, recentThumb } from './recentThumb'
 import { HOME_IDEAS, type HomeIdeaId } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
@@ -182,6 +184,8 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'exampleLook', show: () => when.exampleLook.value },
   { id: 'homeArcMix', show: () => when.homeArcMix.value },
   { id: 'homeLayout', show: () => when.homeLayout.value },
+  { id: 'appsSection', show: () => when.appsSection.value },
+  { id: 'buildsAt', show: () => when.buildsAt.value },
   { id: 'recentThumb', show: () => when.recentThumb.value },
   { id: 'appPage', show: () => when.appPage.value },
   { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
@@ -486,6 +490,12 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('homeLayout')" label="Home layout">
             <Seg v-model="homeLayout.id" label="Home layout" :options="HOME_LAYOUTS" />
+          </Row>
+          <Row :show="shows('appsSection')" label="Apps section">
+            <Select v-model="appsSection.id" :options="APPS_SECTIONS" class="w-full" />
+          </Row>
+          <Row :show="shows('buildsAt')" label="Builds position">
+            <Select v-model="buildsAt.id" :options="BUILDS_AT" class="w-full" />
           </Row>
           <Row :show="shows('recentThumb')" label="Recents thumbnail">
             <Seg v-model="recentThumb.id" label="Recents thumbnail" :options="RECENT_THUMBS" />
