@@ -184,6 +184,30 @@ describe('BaseAlert', async () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
+  it('renders the note as one muted line led by the Info icon, after the hint', async () => {
+    const wrapper = await mountAlert({
+      showCancel: true,
+      hint: 'ComfyUI is running and will restart.',
+      note: 'If custom nodes break, restore the previous version from Snapshots.'
+    })
+    const note = wrapper.find('[data-testid="base-alert-note"]')
+    expect(note.text()).toBe('If custom nodes break, restore the previous version from Snapshots.')
+    expect(note.find('[data-testid="base-alert-note-icon"]').element.tagName.toLowerCase()).toBe(
+      'svg'
+    )
+    const message = wrapper.find('.base-alert-message').element
+    const hint = wrapper.find('.base-alert-hint').element
+    expect(hint.compareDocumentPosition(note.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    expect(message.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
+  })
+
+  it('renders no note line when note is empty', async () => {
+    const wrapper = await mountAlert()
+    expect(wrapper.find('[data-testid="base-alert-note"]').exists()).toBe(false)
+  })
+
   it('emits `cancel` on ESC when showCloseIcon is true (close icon is a cancel affordance)', async () => {
     const wrapper = await mountAlert({ showCloseIcon: true, showCancel: false })
     await wrapper.find('.base-alert-panel').trigger('keydown', { key: 'Escape' })

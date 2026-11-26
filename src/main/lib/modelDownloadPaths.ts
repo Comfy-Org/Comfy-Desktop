@@ -107,22 +107,34 @@ export async function regularFileExists(filePath: string): Promise<boolean> {
   }
 }
 
+export async function missingModelFiles<T extends { directory: string; filename: string }>(
+  installationId: string | null,
+  models: ReadonlyArray<T>
+): Promise<T[]> {
+  const ctx = await resolveDownloadContextById(installationId)
+  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
+  const checks = await Promise.all(
+    models.map(async (model) => {
+      for (const candidate of buildExistenceCandidates(
+        ctx,
+        baseDir,
+        model.directory,
+        model.filename
+      )) {
+        if (await regularFileExists(candidate)) return null
+      }
+      return model
+    })
+  )
+  return checks.filter((model): model is Awaited<T> => model !== null)
+}
+
 export async function areModelsPresent(
   installationId: string | null,
   models: ReadonlyArray<{ directory: string; filename: string }>
 ): Promise<boolean> {
   if (models.length === 0) return false
-  const ctx = await resolveDownloadContextById(installationId)
-  const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
-  const checks = await Promise.all(
-    models.map(async ({ directory, filename }) => {
-      for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
-        if (await regularFileExists(candidate)) return true
-      }
-      return false
-    })
-  )
-  return checks.every(Boolean)
+  return (await missingModelFiles(installationId, models)).length === 0
 }
 
 export async function resolveModelsPresence(

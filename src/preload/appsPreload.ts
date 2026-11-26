@@ -38,6 +38,7 @@ const local: ComfyDesktopHostedLocalBridge = {
   localDownload: (model) => ipcRenderer.invoke('apps-local:download', model),
   openInComfy: (request) => ipcRenderer.invoke('apps-local:open-in-comfy', request),
   localBuilds: () => ipcRenderer.invoke('apps-local:builds'),
+  machine: () => ipcRenderer.invoke('apps-local:machine'),
   onLocalBuildsChanged: (callback) => {
     const handler = (_event: IpcRendererEvent, builds: ComfyDesktopLocalBuild[]): void =>
       callback(builds)

@@ -34,7 +34,7 @@ export function tokenize(raw: string): string[] {
 
 export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
   const tokens = tokenize(raw)
-  const schemaMap = new Map(schema.map((a) => [a.name, a]))
+  const schemaMap = new Map(schema.filter((a) => !a.hidden).map((a) => [a.name, a]))
   const known = new Map<string, string>()
   const extra: string[] = []
 

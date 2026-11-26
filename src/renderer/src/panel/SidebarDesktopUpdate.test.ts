@@ -17,7 +17,6 @@ const NO_UPDATE: AppUpdateState = { kind: null, version: null, autoUpdate: true 
 
 let pushState: (state: AppUpdateState) => void = () => {}
 const unsubscribe = vi.fn()
-const openGlobalSettings = vi.fn()
 const getAppUpdateState = vi.fn<() => Promise<AppUpdateState>>()
 
 beforeEach(() => {
@@ -28,8 +27,7 @@ beforeEach(() => {
     onAppUpdateStateChanged: vi.fn((cb: (state: AppUpdateState) => void) => {
       pushState = cb
       return unsubscribe
-    }),
-    openGlobalSettings
+    })
   }
 })
 
@@ -59,18 +57,37 @@ describe('SidebarDesktopUpdate', () => {
   })
 
   it.each([
-    ['available', 'Desktop update'],
-    ['downloading', 'Downloading update…'],
-    ['ready', 'Desktop update ready']
-  ] as const)('labels the %s state "%s"', async (kind, label) => {
-    const wrapper = await mountIndicator()
+    ['available', false, 'Desktop update'],
+    ['ready', true, 'Desktop update ready'],
+    ['ready', false, 'Desktop update ready']
+  ] as const)(
+    'shows the %s state when there is something to do (auto-update %s): "%s"',
+    async (kind, autoUpdate, label) => {
+      const wrapper = await mountIndicator()
 
-    pushState({ kind, version: '2.3.4', autoUpdate: true })
-    await flushPromises()
+      pushState({ kind, version: '2.3.4', autoUpdate })
+      await flushPromises()
 
-    expect(wrapper.get(indicator).text()).toBe(label)
-    expect(wrapper.get(indicator).attributes('data-state')).toBe(kind)
-  })
+      expect(wrapper.get(indicator).text()).toBe(label)
+      expect(wrapper.get(indicator).attributes('data-state')).toBe(kind)
+    }
+  )
+
+  it.each([
+    ['available', true],
+    ['downloading', true],
+    ['downloading', false]
+  ] as const)(
+    'stays hidden while the %s update needs nothing from the user (auto-update %s)',
+    async (kind, autoUpdate) => {
+      const wrapper = await mountIndicator()
+
+      pushState({ kind, version: '2.3.4', autoUpdate })
+      await flushPromises()
+
+      expect(wrapper.find(indicator).exists()).toBe(false)
+    }
+  )
 
   it('hides again when the update state clears', async () => {
     const wrapper = await mountIndicator({ kind: 'ready', version: '2.3.4', autoUpdate: true })
@@ -126,20 +143,6 @@ describe('SidebarDesktopUpdate', () => {
 
     expect(prompts.showAppUpdateRestartPrompt).toHaveBeenCalledWith('2.3.4')
     expect(prompts.showAppUpdateDownloadPrompt).not.toHaveBeenCalled()
-  })
-
-  it('opens the Updates settings while the update downloads', async () => {
-    const wrapper = await mountIndicator({
-      kind: 'downloading',
-      version: '2.3.4',
-      autoUpdate: true
-    })
-
-    await wrapper.get(indicator).trigger('click')
-
-    expect(openGlobalSettings).toHaveBeenCalledWith('updates')
-    expect(prompts.showAppUpdateDownloadPrompt).not.toHaveBeenCalled()
-    expect(prompts.showAppUpdateRestartPrompt).not.toHaveBeenCalled()
   })
 
   it('shows only the icon when the sidebar is collapsed, with the label as its name', async () => {

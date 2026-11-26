@@ -350,6 +350,41 @@ describe('useComfyUISettings — refreshing after an operation', () => {
   })
 })
 
+describe('useComfyUISettings — app language', () => {
+  beforeEach(() => {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+  })
+
+  it('re-reads the build page text in the new language when the app language changes', async () => {
+    const api = installMockApi()
+    let announceLocale: (() => void) | undefined
+    const unsubscribe = vi.fn()
+    Object.assign(api, {
+      onLocaleChanged: vi.fn((cb: () => void) => {
+        announceLocale = cb
+        return unsubscribe
+      })
+    })
+    const scope = effectScope()
+    scope.run(() => {
+      useComfyUISettings({
+        installation: ref<Installation | null>(makeInstall('a', 'A')),
+        onShowProgress: vi.fn()
+      })
+    })
+    await nextTick()
+    await Promise.resolve()
+    vi.mocked(api.getDetailSections).mockClear()
+
+    announceLocale?.()
+    await nextTick()
+    expect(api.getDetailSections).toHaveBeenCalledExactlyOnceWith('a')
+
+    scope.stop()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+})
+
 describe('useComfyUISettings.runAction — stop-warning augment + self-stopping apiCall (FLOW 1 + FLOW 3)', () => {
   beforeEach(() => {
     setActivePinia(createTestingPinia({ stubActions: false }))
@@ -405,15 +440,48 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     const { composable, scope } = mountComposable(makeInstall('a', 'A'))
 
     await composable.runAction({
-      id: 'update-comfyui',
-      label: 'Update ComfyUI',
-      confirm: { title: 'Update?', message: 'This will pull the latest ComfyUI.' }
+      id: 'change-pytorch',
+      label: 'Change PyTorch',
+      confirm: { title: 'Change?', message: 'This will swap PyTorch.' }
     } as ActionDef)
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
     const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { message: string }
     expect(callArg.message).toBe(
-      'A is running and will be stopped first.\n\nThis will pull the latest ComfyUI.'
+      'A is running and will be stopped first.\n\nThis will swap PyTorch.'
+    )
+    scope.stop()
+  })
+
+  it('shows the update confirm restart notice as a hint below the version change, with the note kept apart', async () => {
+    installMockApi()
+    markRunning('a', 'A')
+    dialogsSpies.confirm.mockResolvedValue(false)
+    const { composable, scope } = mountComposable(makeInstall('a', 'A'))
+
+    await composable.runAction({
+      id: 'update-comfyui',
+      label: 'Update now',
+      confirm: {
+        title: 'Update ComfyUI to v0.46.3?',
+        message: '**v0.46.1** → **v0.46.3**',
+        note: 'If custom nodes break, restore the previous version from Snapshots.'
+      }
+    } as ActionDef)
+
+    expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
+    const callArg = dialogsSpies.confirm.mock.calls[0]![0] as {
+      title: string
+      message: string
+      hint: string
+      note: string
+    }
+    expect(callArg.title).toBe('Update ComfyUI to v0.46.3?')
+    expect(callArg.message).toBe('**v0.46.1** → **v0.46.3**')
+    expect(callArg.hint).toBe('A is running and will restart.')
+    expect(callArg.note).toBe('If custom nodes break, restore the previous version from Snapshots.')
+    expect(`${callArg.message}${callArg.hint}${callArg.note}`).not.toMatch(
+      /\p{Extended_Pictographic}/u
     )
     scope.stop()
   })

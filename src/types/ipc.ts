@@ -1,5 +1,4 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
-import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 import type { GpuTier } from '../shared/gpuTier'
 import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
@@ -25,6 +24,7 @@ import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
 import type { KnownSettingKey, KnownSettings } from '../main/settings'
+import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 
 export interface CoachmarkBeakPayload {
   beakFraction: number
@@ -135,6 +135,7 @@ export interface Installation {
   launchArgs?: string
   hasConsole?: boolean
   hasOutputFolder?: boolean
+  savesToSharedOutput?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number
@@ -144,7 +145,7 @@ export interface Installation {
 }
 
 export type DashboardPage =
-  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+  'home' | 'apps' | 'assets' | 'chooser' | 'staff-apps' | 'benchmarks' | 'performance-test'
 
 export type AppBadgeStyle = 'crown' | 'chip' | 'label'
 
@@ -172,6 +173,20 @@ export interface AppCard {
   covers: AppCover[]
   badges?: AppBadge[]
   coverPlayback?: 'always'
+}
+
+export type HiddenAppReason = 'off' | 'draft' | 'hub_only' | 'unpublished'
+
+export type HiddenAppPage = 'live' | 'missing' | 'unchecked'
+
+export interface HiddenAppCard extends AppCard {
+  reasons: HiddenAppReason[]
+  page: HiddenAppPage
+}
+
+export interface HiddenAppsList {
+  apps: HiddenAppCard[]
+  stale?: true
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
@@ -239,12 +254,56 @@ export interface AppOutputAction {
   index: number
 }
 
+export interface CatalogWorkflowMedia {
+  url: string
+  kind: 'image' | 'video'
+  width: number | null
+  height: number | null
+}
+
+export type CatalogWorkflowLicense = 'open-source' | 'partner'
+
 export interface CatalogWorkflow {
   id: string
   title: string
   description: string
   thumbnailUrl: string | null
+  canOpenLocal: boolean
+  canOpenCloud: boolean
+  minComfyUIVersion: string | null
+  hubUrl: string
+  longDescription: string | null
+  author: string | null
+  generationType: string | null
+  useCases: string[]
+  models: string[]
+  uses: number | null
+  license: CatalogWorkflowLicense | null
+  publishedAt: string | null
+  media: CatalogWorkflowMedia[]
+  tutorialUrl: string | null
 }
+
+export interface CatalogWorkflowModel {
+  filename: string
+  directory: string
+  sizeBytes: number | null
+}
+
+export interface CatalogWorkflowNeeds {
+  graph: Record<string, unknown> | null
+  models: CatalogWorkflowModel[]
+  missingByBuild: Record<string, string[]>
+}
+
+export interface CatalogWorkflowDownload {
+  id: string
+  build: string
+  receivedBytes: number
+  totalBytes: number
+}
+
+export type CatalogWorkflowTarget = { where: 'cloud' } | { where: 'local'; build: string }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
@@ -403,6 +462,7 @@ export interface ComfyArgDef {
   choices?: string[]
   exclusiveGroup?: string
   category: string
+  hidden?: boolean
 }
 
 export interface DetailField {
@@ -459,6 +519,8 @@ export interface ActionDef {
 export interface ConfirmDef {
   title?: string
   message?: string
+  hint?: string
+  note?: string
   confirmLabel?: string
   options?: ConfirmOption[]
   messageDetails?: ModalDetailGroup[]
@@ -1331,8 +1393,20 @@ export interface ElectronApi {
   ): Promise<ComfyDesktopOpenInComfy>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  listCatalogWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  catalogLocalBuildVersions(): Promise<Record<string, string | null>>
+  catalogWorkflowNeeds(id: string): Promise<CatalogWorkflowNeeds | null>
+  launchCatalogWorkflow(
+    id: string,
+    target: CatalogWorkflowTarget,
+    workspaceId: string,
+    options?: { downloadMissing?: boolean }
+  ): Promise<ComfyDesktopOpenInComfy>
+  cancelCatalogWorkflowDownload(id: string, build: string): Promise<boolean>
+  onCatalogWorkflowDownload(callback: (progress: CatalogWorkflowDownload) => void): () => void
   listApps(): Promise<AppCard[]>
+  listHiddenApps(): Promise<HiddenAppsList>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
   getAppRuns(): Promise<AppRun[]>
@@ -1378,6 +1452,9 @@ export interface ElectronApi {
   releaseAttachHostPreview(): Promise<boolean>
   getRunningInstances(): Promise<RunningInstance[]>
   getLaunchingInstances(): Promise<{ installationId: string; installationName: string }[]>
+  getAutoStartReady(): Promise<string | null>
+  dismissAutoStartReady(installationId: string): Promise<void>
+  onAutoStartReadyChanged(callback: (data: { installationId: string | null }) => void): Unsubscribe
   getStoppingInstances(): Promise<string[]>
   getActiveOperations(): Promise<{ installationId: string; actionId: string; sessionId?: string }[]>
   getLastCrashError(installationId: string): Promise<ComfyExitedData | null>

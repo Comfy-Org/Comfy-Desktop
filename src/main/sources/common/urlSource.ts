@@ -139,7 +139,11 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
           tab: 'status',
           title: t('remote.connectionInfo'),
           fields: [
-            { label: t('common.installMethod'), value: installation.sourceLabel as string },
+            {
+              key: 'install-method',
+              label: t('common.installMethod'),
+              value: installation.sourceLabel as string
+            },
             urlField,
             {
               label: t('remote.added'),
@@ -159,7 +163,7 @@ export function createUrlSource(config: UrlSourceConfig): SourcePlugin {
               editType: 'select',
               options: [
                 { value: 'shared', label: t('common.partitionShared') },
-                { value: 'unique', label: t('common.partitionUnique') }
+                { value: 'unique', label: t('common.partitionSeparate') }
               ],
               tooltip: t('tooltips.browserPartition')
             },

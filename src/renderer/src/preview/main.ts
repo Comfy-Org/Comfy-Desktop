@@ -57,7 +57,10 @@ async function showScenario(scenario: PreviewScenario, platform: PreviewPlatform
   const stage: PreviewStage = {
     bridge,
     see: appear,
-    click: async (selector) => (await appear(selector)).click()
+    click: async (selector) => (await appear(selector)).click(),
+    press: async (selector, key) => {
+      ;(await appear(selector)).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    }
   }
   await bridge.quiet()
   await scenario.arrange?.(stage)

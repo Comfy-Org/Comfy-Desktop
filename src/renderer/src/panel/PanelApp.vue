@@ -12,6 +12,8 @@ import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import AssetsView from './AssetsView.vue'
 import AppsView from './AppsView.vue'
+import CatalogWorkflowDialog from './CatalogWorkflowDialog.vue'
+import StaffAppsView from './StaffAppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -53,10 +55,18 @@ import { provideBuildMenuHost } from './home/useBuildMenu'
 import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
+import { provideOpenWhenReady } from './home/useOpenWhenReady'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { runningAppIds, watchAppRuns } from './appRuns'
 import { useAppSwitchConfirm } from './useAppSwitchConfirm'
-import type { AppCard, DashboardPage, DraftAppRequest, Installation } from '../types/ipc'
+import { useStaffApps } from './useStaffApps'
+import type {
+  AppCard,
+  CatalogWorkflow,
+  DashboardPage,
+  DraftAppRequest,
+  Installation
+} from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -183,7 +193,15 @@ if (params.get('e2e') === '1') {
   })
 }
 
-type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
+type DashboardHomePage = Extract<
+  DashboardPage,
+  'home' | 'apps' | 'chooser' | 'assets' | 'staff-apps'
+>
+
+type AppHomePage = Extract<DashboardHomePage, 'apps' | 'staff-apps'>
+
+const staffApps = useStaffApps()
+const liveStaffApps = computed(() => staffApps.apps.value.filter((app) => app.page === 'live'))
 
 const urlDashboardPage = params.get('dashboardPage')
 const dashboardHomePage = ref<DashboardHomePage>(
@@ -192,12 +210,21 @@ const dashboardHomePage = ref<DashboardHomePage>(
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
-  if (panel === 'chooser') return dashboardHomePage.value
+  if (panel === 'chooser') {
+    const openedFromDevelopment =
+      dashboardHomePage.value === 'apps' && appIsOpen.value && appHome.value === 'staff-apps'
+    return openedFromDevelopment ? 'staff-apps' : dashboardHomePage.value
+  }
   return panel === 'benchmarks' || panel === 'performance-test' ? panel : null
 })
 
 const buildDetailsId = ref<string | null>(null)
 const dashboardScope = useDashboardScopeStore()
+const workspaceInstallations = computed(() =>
+  installationStore.installations.filter((inst) =>
+    isInstallationInWorkspace(inst, dashboardScope.selectedWorkspaceId)
+  )
+)
 const buildDetailsInstall = computed(() => {
   const inst = buildDetailsId.value ? installationStore.getById(buildDetailsId.value) : undefined
   return inst && isInstallationInWorkspace(inst, dashboardScope.selectedWorkspaceId) ? inst : null
@@ -283,14 +310,44 @@ const appsVisits = ref(0)
 const appIsOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
+const exploreTab = ref<'apps' | 'workflows'>('apps')
+const selectedWorkflow = ref<CatalogWorkflow | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
+let stayOnAppsAfterClose = false
+
+function homePageOf(app: AppCard): AppHomePage {
+  if (listedApps.value?.some((listed) => listed.id === app.id)) return 'apps'
+  return liveStaffApps.value.some((staffApp) => staffApp.id === app.id) ? 'staff-apps' : 'apps'
+}
+
+const openedAppHome = ref<AppHomePage>('apps')
+const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHome.value : 'apps'))
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
+function showExplore(tab: 'apps' | 'workflows'): void {
+  exploreTab.value = tab
+  handleSidebarNavigate('apps')
+}
+
 function showApp(app: AppCard): void {
+  exploreTab.value = 'apps'
+  stayOnAppsAfterClose = false
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
+}
+
+function noteCurrentApp(app: AppCard | null): void {
+  appInProgress.value = app
+  if (app) openedAppHome.value = homePageOf(app)
+}
+
+function noteAppOpen(open: boolean): void {
+  const closed = appIsOpen.value && !open
+  appIsOpen.value = open
+  if (!closed || stayOnAppsAfterClose || dashboardHomePage.value !== 'apps') return
+  if (appHome.value === 'staff-apps') dashboardHomePage.value = 'staff-apps'
 }
 
 let navigation = 0
@@ -309,9 +366,26 @@ async function openAppFromHome(app: AppCard): Promise<void> {
   if (await switchStillWanted(app)) showApp(app)
 }
 
-async function openRunningApp(appId: string): Promise<void> {
+watch(staffApps.shown, (shown) => {
+  if (shown || dashboardHomePage.value !== 'staff-apps') return
+  if (sidebarPage.value !== 'staff-apps') {
+    dashboardHomePage.value = 'apps'
+    return
+  }
+  window.api.navigatePanel('apps')
+  handleSidebarNavigate('apps')
+})
+
+async function runningAppCard(appId: string): Promise<AppCard | undefined> {
   const apps = listedApps.value ?? (await window.api.listApps().catch(() => []))
-  const app = apps.find((listed) => listed.id === appId)
+  return (
+    apps.find((listed) => listed.id === appId) ??
+    liveStaffApps.value.find((staffApp) => staffApp.id === appId)
+  )
+}
+
+async function openRunningApp(appId: string): Promise<void> {
+  const app = await runningAppCard(appId)
   if (!app || !(await switchStillWanted(app))) return
   if (activePanel.value !== 'chooser') {
     window.api.navigatePanel('apps')
@@ -326,8 +400,8 @@ async function openRunningApp(appId: string): Promise<void> {
 async function confirmLeavingRuns(): Promise<boolean> {
   const running = [...runningAppIds.value]
   if (running.length === 0) return true
-  const onlyApp =
-    running.length === 1 ? listedApps.value?.find((app) => app.id === running[0]) : null
+  const [onlyId] = running
+  const onlyApp = running.length === 1 && onlyId ? await runningAppCard(onlyId) : null
   const choice = await dialogs.confirm({
     title: t('apps.closeWhileRunning.title'),
     message: onlyApp
@@ -391,8 +465,18 @@ function viewInAssets(name: string): void {
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   assetsFocusName.value = null
-  if (page === 'apps') appsVisits.value += 1
-  if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
+  if (page === 'apps') {
+    stayOnAppsAfterClose = true
+    appsVisits.value += 1
+  }
+  if (page === 'staff-apps' && !staffApps.shown.value) return
+  if (
+    page === 'home' ||
+    page === 'apps' ||
+    page === 'chooser' ||
+    page === 'assets' ||
+    page === 'staff-apps'
+  )
     dashboardHomePage.value = page
 }
 
@@ -444,6 +528,7 @@ chooserHandoff = useChooserHandoff({
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
 provideAutoStartBuild()
+provideOpenWhenReady((build) => void handleChooserPick(build))
 provideBuildMenuHost({
   launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
   openDetails: openBuildFromSidebar,
@@ -670,10 +755,10 @@ onUnmounted(() => {
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
         :app-in-progress="appInProgress"
-        :apps="listedApps"
+        :app-home="appHome"
+        :show-staff-apps="staffApps.shown.value"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
-        @switch-app="openAppFromHome"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
@@ -703,17 +788,26 @@ onUnmounted(() => {
               @pick="handleChooserPick"
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
-              @show-apps="handleSidebarNavigate('apps')"
+              @show-apps="showExplore('apps')"
+              @show-workflows="showExplore('workflows')"
+              @open-workflow="selectedWorkflow = $event"
               @new-build="handleChooserShowNewInstall"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
               v-model:start-with="appPickedOnHome"
+              v-model:tab="exploreTab"
               :revisit="appsVisits"
-              @app-open-change="appIsOpen = $event"
-              @current-app="appInProgress = $event"
+              @app-open-change="noteAppOpen"
+              @current-app="noteCurrentApp"
               @apps-loaded="listedApps = $event"
               @view-in-assets="viewInAssets"
+              @open-workflow="selectedWorkflow = $event"
+            />
+            <StaffAppsView
+              v-else-if="dashboardHomePage === 'staff-apps' && staffApps.shown.value"
+              :apps="staffApps.apps.value"
+              @open-app="openAppFromHome"
             />
             <AssetsView
               v-else-if="dashboardHomePage === 'assets'"
@@ -749,6 +843,15 @@ onUnmounted(() => {
         </div>
       </main>
     </div>
+
+    <CatalogWorkflowDialog
+      v-if="selectedWorkflow"
+      :key="selectedWorkflow.id"
+      :workflow="selectedWorkflow"
+      :installations="workspaceInstallations"
+      :workspace-id="dashboardScope.selectedWorkspaceId"
+      @close="selectedWorkflow = null"
+    />
 
     <template v-if="currentOverlay?.kind === 'takeover'">
       <ProgressModal

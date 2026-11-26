@@ -314,7 +314,7 @@ const footerStats = computed<string[]>(() =>
                 <span
                   class="dlm-sub truncate text-[12px] text-text-muted tabular-nums"
                   :title="d.savePath"
-                  >{{ modalSubtitle(d, now) }}</span
+                  >{{ modalSubtitle(d, t, now) }}</span
                 >
               </div>
 

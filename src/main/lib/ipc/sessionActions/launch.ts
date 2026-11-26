@@ -58,6 +58,7 @@ import {
   dropValuelessArgs,
   filterUnsupportedArgs,
   getComfyFeatureFlagRegistry,
+  sessionLifecycleEvents,
   _broadcastToRenderer
 } from '../shared'
 import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
@@ -170,6 +171,15 @@ import {
 } from '../../coreBetaCampaignFlags'
 import { getIdClass } from '../../deviceId'
 import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
+import {
+  FOLDER_FLAG,
+  comfyStartDir,
+  lastArgValue,
+  resolveFolderArg,
+  sharedFolder,
+  usesStartupArgFolders,
+  type ComfyFolderKind
+} from '../../startupArgFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 export function desktopFeatureFlags(inst: InstallationRecord): Record<string, string> {
@@ -484,6 +494,30 @@ export interface StorageLaunchState {
   modelSyncOptions: ModelPathsOptions
 }
 
+function createArgFolder(dir: string): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+  } catch (err) {
+    console.warn(`could not create the folder ${dir} named in Startup arguments:`, err)
+  }
+}
+
+function applySharedFolderUnlessArgsSetIt(
+  inst: InstallationRecord,
+  { args, cwd }: { args: string[]; cwd?: string },
+  kind: ComfyFolderKind,
+  storage: Pick<settings.Settings, 'inputDir' | 'outputDir'>
+): void {
+  const fromArgs = lastArgValue(args, FOLDER_FLAG[kind])
+  if (fromArgs) {
+    createArgFolder(resolveFolderArg(fromArgs, () => cwd ?? comfyStartDir(inst)))
+    return
+  }
+  const dir = sharedFolder(kind, storage)
+  fs.mkdirSync(dir, { recursive: true })
+  args.push(FOLDER_FLAG[kind], dir)
+}
+
 export function applyStorageLaunchArgs(
   inst: InstallationRecord,
   installationId: string,
@@ -518,7 +552,16 @@ export function applyStorageLaunchArgs(
     const baselineSet = new Set([...(config?.extraFolders ?? []), ...installExtras])
     preLaunchExtras = [...baselineSet].sort()
   }
-  if (argsAvailable) {
+  if (argsAvailable && usesStartupArgFolders(inst)) {
+    for (const kind of ['input', 'output'] as const) {
+      applySharedFolderUnlessArgsSetIt(
+        inst,
+        { args: launchCmd.args!, cwd: launchCmd.cwd },
+        kind,
+        storage
+      )
+    }
+  } else if (argsAvailable) {
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
     if (useSharedInput) {
       const inputDir = storage.inputDir || settings.defaults.inputDir
@@ -2290,6 +2333,7 @@ async function runLaunch(
       if (pendingModelFolderRelaunch || checkRebootMarker(sessionPath)) {
         const isModelRelaunch = pendingModelFolderRelaunch
         pendingModelFolderRelaunch = false
+        sessionLifecycleEvents.emit('restarting', sessionId)
         if (!isModelRelaunch) {
           sendOutput('\n--- ComfyUI restarting ---\n\n')
         }
@@ -2381,8 +2425,8 @@ async function runLaunch(
       execTap.flushSummary()
       hwTap.flushSummary()
       assetsTap.flushSummary()
+      _removeSession(sessionId, crashed)
       const crashDiagnosis = crashed ? await diagnoseCrash(code) : {}
-      _removeSession(sessionId)
       const exitedPayload = {
         installationId: sessionId,
         crashed,

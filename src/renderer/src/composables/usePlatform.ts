@@ -17,14 +17,3 @@ export function revealInFolderKey(platform: string | undefined | null): string {
       return 'assets.showInFolder'
   }
 }
-
-export function revealInFolderLabel(platform: string | undefined | null): string {
-  switch (normalizePlatform(platform)) {
-    case 'mac':
-      return 'Show in Finder'
-    case 'windows':
-      return 'Show in Explorer'
-    default:
-      return 'Show in folder'
-  }
-}
