@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useEventListener, usePreferredReducedMotion } from '@vueuse/core'
-import { DropdownMenuRadioGroup } from 'reka-ui'
+import { useEventListener, usePreferredReducedMotion, useResizeObserver } from '@vueuse/core'
 import {
   Box,
-  Check,
   ChevronDown,
   Download,
   File,
@@ -20,9 +18,10 @@ import Button from '@comfyorg/design-system/button/Button'
 import Tag from '@comfyorg/design-system/chip/Tag'
 import AudioPreview from '@comfyorg/design-system/media/AudioPreview'
 import Menu from '@comfyorg/design-system/menu/Menu'
-import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import OutputDetailThumb from './OutputDetailThumb.vue'
+import AssetZoomControl from './AssetZoomControl.vue'
+import type { AssetZoom } from './AssetZoomControl.vue'
 import { formatBytes } from '../lib/downloadFormatters'
 import { revealInFolderKey } from '../composables/usePlatform'
 import type { MenuItem } from '@comfyorg/design-system/lib/menu/types'
@@ -51,10 +50,6 @@ export interface OutputDetailItem {
   loadModel?: () => Promise<Uint8Array | null>
 }
 
-type Zoom = 'fit' | 0.5 | 1 | 2
-
-const ZOOM_STEPS: Zoom[] = ['fit', 0.5, 1, 2]
-
 const { items } = defineProps<{
   items: OutputDetailItem[]
 }>()
@@ -75,7 +70,9 @@ const preferredMotion = usePreferredReducedMotion()
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const panel = useTemplateRef<HTMLElement>('panel')
 const natural = ref<{ width: number; height: number } | null>(null)
-const zoom = ref<Zoom>('fit')
+const zoom = ref<AssetZoom>('fit')
+const image = useTemplateRef<HTMLImageElement>('image')
+const fitScale = ref(1)
 
 const item = computed(() => items[index.value] ?? items[0]!)
 const workflowChoices = computed<MenuItem[]>(() => {
@@ -136,10 +133,6 @@ const savedFolder = computed(() => {
   const cut = Math.max(folder.lastIndexOf('/'), folder.lastIndexOf('\\'))
   return { name: folder.slice(cut + 1) || folder, parent: cut > 0 ? folder.slice(0, cut) : '' }
 })
-const percent = computed(() => new Intl.NumberFormat(locale.value, { style: 'percent' }))
-const zoomLabel = computed(() =>
-  zoom.value === 'fit' ? t('assets.detail.fit') : percent.value.format(zoom.value)
-)
 const zoomedWidth = computed(() =>
   zoom.value === 'fit' || !natural.value ? null : `${natural.value.width * zoom.value}px`
 )
@@ -160,7 +153,16 @@ watch(
 function onImageLoad(event: Event): void {
   const img = event.target as HTMLImageElement
   natural.value = { width: img.naturalWidth, height: img.naturalHeight }
+  measureFit()
 }
+
+function measureFit(): void {
+  const img = image.value
+  if (zoom.value !== 'fit' || !img || !natural.value?.width) return
+  fitScale.value = img.clientWidth / natural.value.width
+}
+
+useResizeObserver(image, measureFit)
 
 function onVideoLoad(event: Event): void {
   const video = event.target as HTMLVideoElement
@@ -170,10 +172,6 @@ function onVideoLoad(event: Event): void {
 function step(delta: number): void {
   if (items.length === 0) return
   index.value = (index.value + delta + items.length) % items.length
-}
-
-function zoomOptionLabel(option: Zoom): string {
-  return option === 'fit' ? t('assets.detail.fit') : percent.value.format(option)
 }
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -206,6 +204,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <img
           v-if="item.previewUrl && item.kind === 'image'"
           :key="item.key"
+          ref="image"
           :src="item.previewUrl"
           :alt="item.name"
           class="m-auto rounded-lg"
@@ -262,41 +261,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             </button>
           </li>
         </ol>
-        <Menu
-          v-if="item.kind === 'image'"
-          :modal="false"
-          align="end"
-          class="z-70 min-w-[120px]"
-          :aria-label="t('assets.detail.zoom')"
-        >
-          <template #trigger>
-            <Button
-              type="button"
-              variant="secondary"
-              size="md"
-              class="min-w-20 justify-between gap-1.5 px-3 text-[13px]/5 tabular-nums"
-              :aria-label="t('assets.detail.zoomLevel', { level: zoomLabel })"
-              data-testid="output-detail-zoom"
-            >
-              {{ zoomLabel }}
-              <ChevronDown :size="14" aria-hidden="true" />
-            </Button>
-          </template>
-          <DropdownMenuRadioGroup :model-value="String(zoom)">
-            <MenuRadioItem
-              v-for="option in ZOOM_STEPS"
-              :key="option"
-              as="button"
-              type="button"
-              :value="String(option)"
-              class="w-full"
-              @select="zoom = option"
-            >
-              <span class="flex-1 text-left">{{ zoomOptionLabel(option) }}</span>
-              <Check v-if="zoom === option" :size="15" aria-hidden="true" />
-            </MenuRadioItem>
-          </DropdownMenuRadioGroup>
-        </Menu>
+        <AssetZoomControl v-if="item.kind === 'image'" v-model="zoom" :fit-scale="fitScale" />
       </footer>
     </section>
 

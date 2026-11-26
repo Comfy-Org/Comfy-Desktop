@@ -1749,6 +1749,47 @@ describe('AssetsView', () => {
     expect(viewerTitle()).toBe('mid.png')
   })
 
+  it('reads the zoom as a percentage of the real size, and zooms from its menu and the keyboard', async () => {
+    const wrapper = await mountAssets([picture('tall', 4000)])
+    await wrapper.get('[data-testid="asset-open-tall"]').trigger('click')
+    const zoomButton = () =>
+      viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-zoom"]')!
+    const image = () =>
+      viewer()!.querySelector<HTMLImageElement>('[data-testid="output-detail-image"]')!
+    await vi.waitFor(() => expect(image().naturalWidth).toBe(200))
+
+    await vi.waitFor(() => {
+      const fitted = Math.round((image().clientWidth / 200) * 100)
+      expect(fitted, 'the tall picture is shrunk to fit').toBeLessThan(100)
+      expect(zoomButton().textContent?.trim()).toBe(`${fitted}%`)
+    })
+
+    zoomButton().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    const choices = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(choices.map((choice) => choice.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'Zoom in⌘+',
+      'Zoom out⌘−',
+      'Zoom 100%⌘0',
+      'Zoom to fitD'
+    ])
+    document.querySelector<HTMLElement>('[data-testid="output-detail-zoom-actual"]')!.click()
+    await flushPromises()
+    expect(zoomButton().textContent?.trim()).toBe('100%')
+    expect(image().style.width).toBe('200px')
+
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '=', metaKey: true, cancelable: true })
+    )
+    await flushPromises()
+    expect(zoomButton().textContent?.trim()).toBe('125%')
+    expect(image().style.width).toBe('250px')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', cancelable: true }))
+    await flushPromises()
+    expect(image().style.width).toBe('')
+  })
+
   it('plays a video in the viewer with its controls', async () => {
     const wrapper = await mountAssets([
       asset('clip', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://file/surfer' })
