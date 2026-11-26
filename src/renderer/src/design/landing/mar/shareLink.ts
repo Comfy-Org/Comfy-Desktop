@@ -18,6 +18,7 @@ import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { APPS_SECTIONS, appsSection } from './home/appsSection'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
+import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
 import { HOME_IDEAS, HOME_IDEA_SWITCHES } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -165,6 +166,7 @@ const PARTS: Part[] = [
   one('homeLayout', homeLayout, 'recents', HOME_LAYOUTS),
   one('appsSection', appsSection, 'apps', APPS_SECTIONS),
   one('buildsAt', buildsAt, 'bottom', BUILDS_AT),
+  one('exploreSwitch', exploreSwitch, 'seg', EXPLORE_SWITCHES),
   ...HOME_IDEAS.map((x) => one(x.key, x.store, x.def, HOME_IDEA_SWITCHES)),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),

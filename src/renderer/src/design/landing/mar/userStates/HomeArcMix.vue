@@ -16,6 +16,7 @@ import { exploreStart } from '../explore/exploreStart'
 import HomeSectionHeader from '../HomeSectionHeader.vue'
 import { homeIdeaOn } from '../home/homeIdeas'
 import { appsSection } from '../home/appsSection'
+import { exploreSwitch } from '../home/exploreSwitch'
 
 const { full = false } = defineProps<{ full?: boolean }>()
 
@@ -237,6 +238,10 @@ function scrollRow(by: number): void {
           :kinds="section === 'mixed'"
           :heading="exploreTabs ? 'Explore' : ''"
           :corner="exploreTabs"
+          :switch-tone="
+            exploreSwitch.id === 'seg' ? 'default' : exploreSwitch.id === 'ghost' ? 'ghost' : 'text'
+          "
+          :switch-beside="exploreSwitch.id === 'beside'"
           @all="seeAll(shown.on)"
           @heading="openExplore()"
         />
