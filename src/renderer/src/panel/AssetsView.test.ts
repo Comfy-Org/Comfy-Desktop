@@ -1724,6 +1724,93 @@ describe('AssetsView', () => {
     expect(close.top).toBeGreaterThanOrEqual(box.top)
   })
 
+  it('puts the round close button on the top right corner of the picture area, left of the Details panel', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    const stage = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-stage"]')!
+    const panel = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-panel"]')!
+    const button = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-close"]')!
+    expect(stage.contains(button), 'the close button belongs to the picture area').toBe(true)
+    expect(panel.contains(button), 'the Details panel has no close button').toBe(false)
+
+    const close = button.getBoundingClientRect()
+    const area = stage.getBoundingClientRect()
+    expect(close.width).toBe(36)
+    expect(close.height).toBe(36)
+    expect(getComputedStyle(button).borderRadius).not.toBe('0px')
+    expect(close.top - area.top).toBe(16)
+    expect(area.right - close.right).toBe(16)
+    expect(close.right).toBeLessThan(panel.getBoundingClientRect().left)
+    expect(button.getAttribute('aria-label')).toBe('Close')
+
+    button.click()
+    await flushPromises()
+    expect(viewer()).toBeNull()
+  })
+
+  it('offers zoom for a picture only, not for a video, a sound, a 3D file or a file with no viewer', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', { previewUrl: 'comfy-output://forest' }),
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://surfer' }),
+      asset('/out/voice.wav', 'voice.wav', 'audio', { previewUrl: 'comfy-output://voice' }),
+      asset('/out/bust.glb', 'bust.glb', '3d'),
+      asset('/out/notes.txt', 'notes.txt', null),
+      asset('/out/broken.png', 'broken.png', 'image')
+    ])
+    const zoom = (): Element | null => viewer()!.querySelector('[data-testid="output-detail-zoom"]')
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    expect(zoom(), 'a picture has zoom').not.toBeNull()
+    expect(shownText(zoom())).toBe('Fit')
+
+    const shown: Record<string, boolean> = {}
+    for (const name of ['surfer.mp4', 'voice.wav', 'bust.glb', 'notes.txt', 'broken.png']) {
+      await press('ArrowRight')
+      expect(viewerTitle()).toBe(name)
+      shown[name] = zoom() !== null
+    }
+    expect(shown).toEqual({
+      'surfer.mp4': false,
+      'voice.wav': false,
+      'bust.glb': false,
+      'notes.txt': false,
+      'broken.png': false
+    })
+
+    await press('ArrowRight')
+    expect(viewerTitle()).toBe('forest.png')
+    expect(zoom(), 'zoom comes back with the picture').not.toBeNull()
+  })
+
+  it('hides every Details row a file has no value for and never shows its path on disk', async () => {
+    const file = '/Users/me/output/2026-11/bare.png'
+    const wrapper = await mountAssets([
+      asset(file, 'bare.png', 'image', { sizeBytes: 2048, width: null, height: null })
+    ])
+
+    await wrapper.get(`[data-testid="asset-open-${file}"]`).trigger('click')
+    await flushPromises()
+
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))).toBe(
+      'Image'
+    )
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe(
+      'PNG 2 KB'
+    )
+    expect(viewer()!.querySelector('[data-testid="output-detail-prompts"]')).toBeNull()
+    expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
+    expect(viewer()!.innerHTML).not.toContain('/Users/me')
+    const panel = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-panel"]')!
+    const emptyRows = [...panel.querySelectorAll<HTMLElement>('p, span, h2')].filter(
+      (row) => row.children.length === 0 && !row.classList.contains('sr-only') && !shownText(row)
+    )
+    expect(emptyRows, 'no row is left on screen without a value').toEqual([])
+  })
+
   it('steps through the files in page order with the arrow keys and the filmstrip', async () => {
     const wrapper = await mountAssets([
       asset('new', 'new.png', 'image', { createdAt: '2026-11-03T00:00:00Z' }),
@@ -1805,7 +1892,7 @@ describe('AssetsView', () => {
     expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
   })
 
-  it('titles the panel Details, with More and Close at its top right', async () => {
+  it('titles the panel Details, with More at its top right and no close button', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 
     await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
@@ -1816,7 +1903,7 @@ describe('AssetsView', () => {
     const buttons = [...header.querySelectorAll('button')].map((button) =>
       button.getAttribute('aria-label')
     )
-    expect(buttons).toEqual(['More actions', 'Close'])
+    expect(buttons).toEqual(['More actions'])
   })
 
   it('offers the card actions the panel has no button for under More, and runs them on the shown file', async () => {

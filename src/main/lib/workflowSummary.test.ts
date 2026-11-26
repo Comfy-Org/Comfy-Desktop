@@ -11,6 +11,30 @@ function api(nodes: Record<string, unknown>): Parameters<typeof summarizeWorkflo
 }
 
 describe('summarizeWorkflow', () => {
+  it('names a model loaded from a full path on disk by its file name only', () => {
+    expect(
+      summarizeWorkflow(
+        graph([
+          {
+            id: 1,
+            type: 'CheckpointLoaderSimple',
+            widgets_values: ['/Users/me/models/base.safetensors']
+          },
+          { id: 2, type: 'LoraLoader', widgets_values: ['C:\\Comfy\\loras\\grain.safetensors'] },
+          { id: 3, type: 'LoraLoader', widgets_values: ['\\\\nas\\models\\shared.ckpt'] },
+          { id: 4, type: 'LoraLoader', widgets_values: ['~/models/home.gguf'] },
+          { id: 5, type: 'VAELoader', widgets_values: ['sdxl/vae.safetensors'] }
+        ])
+      ).models
+    ).toEqual([
+      'base.safetensors',
+      'grain.safetensors',
+      'shared.ckpt',
+      'home.gguf',
+      'sdxl/vae.safetensors'
+    ])
+  })
+
   it('takes the prompts and the model files out of a saved graph', () => {
     expect(
       summarizeWorkflow(

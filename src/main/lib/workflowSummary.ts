@@ -12,8 +12,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+const DISK_PATH = /^(\/|~[\\/]|[a-z]:[\\/]|\\\\)/i
+
+function fileName(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1)
+}
+
 function modelName(value: unknown): string | null {
-  return typeof value === 'string' && MODEL_FILE.test(value.trim()) ? value.trim() : null
+  if (typeof value !== 'string') return null
+  const name = value.trim()
+  if (!MODEL_FILE.test(name)) return null
+  return DISK_PATH.test(name) ? fileName(name) : name
 }
 
 function promptText(value: unknown): string | null {
