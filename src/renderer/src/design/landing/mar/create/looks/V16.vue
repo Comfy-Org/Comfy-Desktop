@@ -13,7 +13,7 @@ import {
 } from '../createScreen'
 import { SHELVES, type Starter } from '../createStarters'
 import { agentOpens } from '../agentOpens'
-import { lastOutput, remember, useSmartSearch, type Row } from '../smartSearch'
+import { lastOutput, remember, useSmartSearch, type Row } from '../smartDrop'
 import { agentStart, answer, type AgentAnswer } from './v07Agent'
 import { useCreateAgent } from './createAgent'
 import CreateComposer from './CreateComposer.vue'
