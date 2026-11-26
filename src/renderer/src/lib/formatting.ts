@@ -25,3 +25,14 @@ export function formatFreeSpace(bytes: number): string {
   if (gb >= 1000) return `${(bytes / 1099511627776).toFixed(1)} TB`
   return `${gb} GB`
 }
+
+export function joinDistinctFacts(facts: (string | null | undefined)[], separator = ' · '): string {
+  const kept: string[] = []
+  for (const fact of facts) {
+    const text = fact?.trim()
+    if (!text) continue
+    if (kept.some((k) => k.toLocaleLowerCase() === text.toLocaleLowerCase())) continue
+    kept.push(text)
+  }
+  return kept.join(separator)
+}

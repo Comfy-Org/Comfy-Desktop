@@ -10,10 +10,10 @@ import {
   Download,
   Ellipsis,
   File,
+  FolderSearch,
   Images,
   LoaderCircle,
   Music,
-  ScanSearch,
   Workflow,
   X
 } from '@lucide/vue'
@@ -513,7 +513,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           data-testid="output-detail-show-in-folder"
           @click="emit('show-in-folder', index)"
         >
-          <ScanSearch :size="15" aria-hidden="true" />
+          <FolderSearch :size="15" aria-hidden="true" />
           {{ t(revealKey) }}
         </Button>
         <span class="sr-only" aria-live="polite" data-testid="output-detail-workflow-status">{{

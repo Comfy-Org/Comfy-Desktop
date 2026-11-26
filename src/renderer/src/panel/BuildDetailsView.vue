@@ -20,6 +20,7 @@ import {
   useBuildProgress
 } from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
+import { joinDistinctFacts } from '../lib/formatting'
 import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
@@ -75,7 +76,7 @@ const whereLabel = computed(() => {
   return t('chooser.filterThisComputer')
 })
 const metaLine = computed(() =>
-  [whereLabel.value, t(typeMeta.value.labelKey), installation.version].filter(Boolean).join(' · ')
+  joinDistinctFacts([whereLabel.value, t(typeMeta.value.labelKey), installation.version])
 )
 
 const failure = computed(() => buildFailure(installation, sessionStore, progressStore, t))
