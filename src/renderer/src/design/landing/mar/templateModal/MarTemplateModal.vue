@@ -20,7 +20,6 @@ import {
   Plug,
   Puzzle,
   RefreshCw,
-  Star,
   Timer,
   TriangleAlert,
   Type,
@@ -50,7 +49,6 @@ import { opensTemplate, openAction, openNote, openWithExample } from '../templat
 import { openPrepTab } from '../templateOpen/prepTabs'
 import { installThenOpen } from '../templateOpen/installThenOpen'
 import { isDownloaded, markDownloaded } from '../templateOpen/installed'
-import { isFavorite, toggleFavorite } from '../favorites'
 import { workflows } from '../pages/workflowsStore'
 import { thumb } from '../../mock'
 import { ComfyModel } from '../icons/comfyIcons'
@@ -255,13 +253,6 @@ function pickBuild(x: Target): void {
   selectedId.value = x.inst.id
   buildMenu.value = false
 }
-const favorited = computed(() =>
-  saved.value
-    ? Boolean(saved.value.fav)
-    : template.value
-      ? isFavorite(template.value.id, 'template')
-      : false
-)
 const selected = computed(() => targets.value.find((x) => x.inst.id === selectedId.value))
 const tplDownload = computed(() =>
   proto.detail?.kind === 'template' && template.value ? downloadFor(template.value.id) : undefined
@@ -451,10 +442,6 @@ function creditsResolved(): void {
   else confirm()
 }
 
-function favorite(): void {
-  if (saved.value) workflows.star(saved.value.id)
-  else if (template.value) toggleFavorite(template.value.id, 'template')
-}
 function share(): void {
   void navigator.clipboard
     ?.writeText(`https://comfy.org/templates/${template.value?.id}`)
@@ -730,25 +717,6 @@ const full = computed(() => can.value.onboarding)
                   }}
                 </DialogDescription>
               </div>
-              <!-- Favorite and the link, out in the open at the top right. -->
-              <Tooltip :content="favorited ? 'Remove from favorites' : 'Add to favorites'">
-                <button
-                  type="button"
-                  class="mad-icon mar-tpl-head-btn"
-                  :class="favorited && 'is-on'"
-                  data-tpl-like
-                  :aria-label="favorited ? 'Remove from favorites' : 'Add to favorites'"
-                  :aria-pressed="favorited"
-                  @click="favorite"
-                >
-                  <Star
-                    :key="String(favorited)"
-                    :size="15"
-                    :fill="favorited ? 'currentColor' : 'none'"
-                    :class="favorited && 'mar-tpl-fav'"
-                  />
-                </button>
-              </Tooltip>
               <Tooltip v-if="!saved" content="Copy link">
                 <button
                   type="button"
