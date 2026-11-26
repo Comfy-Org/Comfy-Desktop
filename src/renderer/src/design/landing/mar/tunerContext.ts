@@ -55,6 +55,8 @@ import { dlFooter } from './downloads/dlFooter'
 import { homeLayout } from './home/homeLayout'
 import { recentThumb } from './recentThumb'
 import { homeIdea } from './home/homeIdeas'
+import { appsSection } from './home/appsSection'
+import { buildsAt } from './home/buildsAt'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -101,6 +103,24 @@ export const when = {
   homeArcMix: computed(() => onHome.value && can.value.explore),
   homeLayout: computed(
     () => onHome.value && can.value.exploreApps && (!onFirstRun.value || firstRun.id === 'original')
+  ),
+  appsSection: computed(
+    () =>
+      onHome.value &&
+      can.value.explore &&
+      can.value.exploreApps &&
+      !onFirstRun.value &&
+      homeLayout.id === 'recents' &&
+      homeIdea('headers').store.id === 'on'
+  ),
+  buildsAt: computed(
+    () =>
+      onHome.value &&
+      can.value.explore &&
+      can.value.exploreApps &&
+      !onFirstRun.value &&
+      homeLayout.id === 'recents' &&
+      homeIdea('headers').store.id === 'on'
   ),
   recentThumb: computed(
     () => (onHome.value && homeLayout.id === 'recents') || createLook.id === 'V15'
@@ -286,6 +306,8 @@ export const TWEAKS = {
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'current'),
+  appsSection: one(appsSection, 'apps'),
+  buildsAt: one(buildsAt, 'bottom'),
   recentThumb: one(recentThumb, 'runsOn'),
   homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
   homeIdeaHeaders: one(homeIdea('headers').store, 'on'),

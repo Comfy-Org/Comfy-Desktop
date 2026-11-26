@@ -66,6 +66,7 @@ import { openCreate } from './create/createScreen'
 import { onHome } from './tunerContext'
 import { search } from './search/search'
 import { homeLayout } from './home/homeLayout'
+import { buildsAt } from './home/buildsAt'
 import { homeIdeaOn } from './home/homeIdeas'
 import RecentList, { type RecentListRow } from './RecentList.vue'
 import { edited, lastOutput } from './create/smartSearch'
@@ -204,6 +205,7 @@ const RECENT_COLUMNS = 5
 const COMPACT_RECENTS = 5
 const ideaThumbs = computed(() => recentsFirst.value && homeIdeaOn('thumbs'))
 const ideaHeaders = computed(() => recentsFirst.value && homeIdeaOn('headers'))
+const buildsTop = computed(() => ideaHeaders.value && buildsAt.id === 'top')
 const ideaCleanCards = computed(() => recentsFirst.value && homeIdeaOn('cleanCards'))
 const ideaCompactRecents = computed(() => recentsFirst.value && homeIdeaOn('compactRecents'))
 const ideaSmallGreeting = computed(() => recentsFirst.value && homeIdeaOn('smallGreeting'))
@@ -381,6 +383,8 @@ function openRecent(id: string): void {
         </ScrollRow>
       </section>
 
+      <MarBuildsRow v-if="buildsTop && !onCloud" />
+
       <template v-if="recentsFirst">
         <div class="mt-10">
           <HomeArcMix v-if="can.explore" full />
@@ -403,7 +407,7 @@ function openRecent(id: string): void {
             />
           </template>
         </div>
-        <MarBuildsRow v-if="!onCloud" />
+        <MarBuildsRow v-if="!buildsTop && !onCloud" />
       </template>
 
       <section v-if="parts.examples === 'rows'" class="mt-10">

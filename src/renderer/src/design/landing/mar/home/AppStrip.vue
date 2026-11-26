@@ -13,7 +13,8 @@ const {
   tabs = [],
   leaving = false,
   headless = false,
-  clean = false
+  clean = false,
+  kinds = false
 } = defineProps<{
   items: ArcItem[]
   allLabel?: string
@@ -22,11 +23,13 @@ const {
   leaving?: boolean
   headless?: boolean
   clean?: boolean
+  kinds?: boolean
 }>()
 const emit = defineEmits<{ all: [] }>()
 const tab = defineModel<string>('tab', { default: '' })
 
 const DRAG_THRESHOLD = 6
+const KIND_LABEL: Record<ArcItem['kind'], string> = { app: 'App', template: 'Workflow' }
 const isClip = (src: string): boolean => /^data:video|\.(mp4|webm|mov)(\?|#|$)/i.test(src)
 
 const track = ref<HTMLElement>()
@@ -190,7 +193,9 @@ watch(ids, async () => {
         ref="slides"
         type="button"
         class="mar-strip-slide"
-        :aria-label="`Open ${x.label}: ${x.does}`"
+        :aria-label="
+          kinds ? `Open ${x.label}: ${x.does}. ${KIND_LABEL[x.kind]}` : `Open ${x.label}: ${x.does}`
+        "
         @click="open(x)"
         @pointerenter="enter(x, $event)"
         @pointerleave="leave(x, $event)"
@@ -227,7 +232,8 @@ watch(ids, async () => {
         <span class="mar-strip-scrim" />
         <span class="mar-strip-text">
           <span class="mar-strip-title">{{ x.label }}</span>
-          <span v-if="x.does" class="mar-strip-does">{{ x.does }}</span>
+          <span v-if="kinds" class="mar-strip-kind">{{ KIND_LABEL[x.kind] }}</span>
+          <span v-else-if="x.does" class="mar-strip-does">{{ x.does }}</span>
         </span>
       </button>
     </div>
@@ -326,6 +332,7 @@ watch(ids, async () => {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   white-space: nowrap;
 }
+.mar-strip-kind,
 .mar-strip-does {
   overflow: hidden;
   color: rgb(255 255 255 / 0.78);
