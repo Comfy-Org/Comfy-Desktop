@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
-import { activeInstance, go, proto } from '../../../useProto'
+import { activeInstance, go, hostActions, proto } from '../../../useProto'
 import { openAppPage } from '../../../appFlow'
 import { exploreStart } from '../../explore/exploreStart'
 import {
@@ -22,10 +22,10 @@ import { composerSearch } from '../composerSearch'
 import {
   edited,
   lastOutput,
-  remember,
+  needsSignIn,
   templateMeta,
   useSmartSearch,
-  type Row
+  type SmartOption
 } from '../smartSearch'
 import { buildOf, playIn, reducedMotion, stopIn, useEscapeCloses } from './lookKitB'
 import { agentStart, answer, type AgentAnswer } from './v07Agent'
@@ -34,7 +34,7 @@ import CreateComposer from './CreateComposer.vue'
 import CreateAgentPanel from './CreateAgentPanel.vue'
 import GhostGraph from './GhostGraph.vue'
 import ResultsB from './ResultsB.vue'
-import SmartDrop from './SmartDrop.vue'
+import SmartResults from './SmartResults.vue'
 
 interface TemplateCard {
   id: string
@@ -78,15 +78,24 @@ watch(useCase, () => (hover.value = ''))
 const smart = computed(() => composerSearch.id === 'smart')
 const LIST_ID = 'v15-smart-list'
 const finder = useSmartSearch(query)
-const dropOpen = ref(false)
-let autofocused = true
-watch(query, (q) => q && (dropOpen.value = true))
+const found = ref<InstanceType<typeof SmartResults>>()
+const over = ref<HTMLElement>()
+const pinTop = ref<number | null>(null)
 
-const smartShown = computed(
-  () => smart.value && dropOpen.value && !flow.panel.value && finder.results.value.rows.length > 0
-)
+const smartShown = computed(() => smart.value && finder.shown.value && !flow.panel.value)
 const activeOption = computed(() =>
-  smartShown.value && finder.current.value ? `${LIST_ID}-opt-${finder.active.value}` : undefined
+  smartShown.value && finder.active.value ? `${LIST_ID}-${finder.activeIndex.value}` : undefined
+)
+
+watch(
+  smartShown,
+  (on) => {
+    const el = over.value
+    const main = el?.parentElement
+    pinTop.value =
+      on && el && main ? el.offsetTop - parseFloat(getComputedStyle(main).paddingTop) : null
+  },
+  { flush: 'pre' }
 )
 
 const modelOf = (s: Starter): string =>
@@ -185,39 +194,50 @@ function onAsk(a: AgentAnswer): void {
   else flow.ask(a)
 }
 
-function act(row: Row | undefined): void {
-  const text = finder.q.value
-  if (row?.kind === 'suggest') {
-    query.value = row.text
-    dropOpen.value = true
-    composer.value?.field?.focus()
-    return
-  }
+function act(option: SmartOption | null): void {
+  const text = query.value.trim()
   if (!text) return
-  remember(text)
-  dropOpen.value = false
-  if (!row || row.kind === 'agent') onAsk(answer(text))
-  else if (row.kind === 'template') openTemplate(row.starter.template)
-  else if (row.kind === 'workflow') leave(() => openWorkflow(row.workflow))
-  else openAppPage(row.app.id)
+  if (option?.kind === 'template' && needsSignIn(option.card)) return hostActions.signIn()
+  finder.close()
+  if (!option || option.kind === 'agent') return onAsk(answer(text))
+  if (option.kind === 'template') return openTemplate(option.card.starter.template)
+  const { workflow, app } = option.found
+  if (workflow) leave(() => openWorkflow(workflow))
+  else if (app) openAppPage(app.id)
+}
+
+function smartEnter(): void {
+  if (!query.value.trim()) return
+  finder.flush()
+  act(finder.active.value)
+}
+
+function moveVertically(step: 1 | -1): void {
+  if (!smartShown.value) {
+    finder.open()
+    finder.moveTo(finder.activeIndex.value)
+  } else {
+    const target = found.value?.verticalTarget(step) ?? null
+    if (target === null || target === finder.activeIndex.value) finder.move(step)
+    else finder.moveTo(target)
+  }
+  found.value?.revealActive()
 }
 
 function smartKey(e: KeyboardEvent): boolean {
-  if (e.key === 'Escape' && smartShown.value) dropOpen.value = false
-  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    if (!smartShown.value && !query.value.trim()) return false
-    if (smartShown.value) finder.move(e.key === 'ArrowDown' ? 1 : -1)
-    dropOpen.value = true
-  } else if (e.key === 'Enter' && (smartShown.value || query.value.trim()))
-    act(smartShown.value ? finder.current.value : undefined)
-  else return false
+  if (e.isComposing) return false
+  const across = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+  if (e.key === 'Escape' && smartShown.value) finder.close()
+  else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && query.value.trim())
+    moveVertically(e.key === 'ArrowDown' ? 1 : -1)
+  else if (across && smartShown.value && finder.inResults.value) {
+    finder.move(e.key === 'ArrowRight' ? 1 : -1)
+    found.value?.revealActive()
+  } else if (e.key === 'Enter' && query.value.trim()) {
+    if (!e.repeat) smartEnter()
+  } else return false
   e.preventDefault()
   return true
-}
-
-function onFocusIn(): void {
-  if (autofocused) autofocused = false
-  else dropOpen.value = true
 }
 
 function moveAcross(step: number): void {
@@ -302,8 +322,10 @@ useEscapeCloses(() => composer.value?.field)
       />
 
       <div
+        ref="over"
         class="v15-over"
         :class="[leaving && 'is-leaving', flow.panel.value && 'is-hidden']"
+        :style="pinTop === null ? undefined : { marginTop: `${pinTop}px`, marginBottom: 'auto' }"
         :aria-hidden="flow.panel.value"
       >
         <h1 class="v15-title">What do you want to make?</h1>
@@ -322,31 +344,25 @@ useEscapeCloses(() => composer.value?.field)
             external
             @key="key"
             @ask="onAsk"
-            @enter="act(smartShown ? finder.current.value : undefined)"
-            @focusin="smart && onFocusIn()"
-            @focusout="dropOpen = false"
-            @pointerdown="smart && (dropOpen = true)"
+            @enter="smartEnter"
+            @focusin="smart && finder.open()"
           />
           <div v-if="dropping" class="v15-drop">
             <ResultsB ref="results" :query />
           </div>
-          <div v-else-if="smartShown" class="v15-drop is-smart">
-            <SmartDrop
-              :results="finder.results.value"
-              :active="finder.active.value"
-              :query="finder.q.value"
-              :list-id="LIST_ID"
-              @hover="finder.active.value = $event"
-              @pick="act"
-            />
-          </div>
         </div>
 
-        <div
-          class="v15-starts"
-          :class="[dropping && 'is-under', smartShown && 'is-dim']"
-          @pointerleave="hover = ''"
-        >
+        <SmartResults
+          v-if="smartShown && finder.answer.value"
+          ref="found"
+          :answer="finder.answer.value"
+          :options="finder.options.value"
+          :active="finder.activeIndex.value"
+          :list-id="LIST_ID"
+          @hover="finder.activeIndex.value = $event"
+          @pick="act"
+        />
+        <div v-else class="v15-starts" :class="dropping && 'is-under'" @pointerleave="hover = ''">
           <section class="v15-section" aria-labelledby="v15-templates">
             <h2 id="v15-templates" class="sr-only">Templates</h2>
             <HomeSectionHeader
@@ -575,21 +591,6 @@ useEscapeCloses(() => composer.value?.field)
 :root .proto-ui.proto-ui.proto-ui .v15-starts.is-under {
   opacity: 0;
   pointer-events: none;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-starts.is-dim {
-  opacity: 0.28;
-  pointer-events: none;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-title {
-  transition: opacity 160ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-over:has(.v15-drop.is-smart) .v15-title {
-  opacity: 0.5;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-drop.is-smart {
-  width: 100%;
-  max-height: min(500px, calc(100vh - 300px));
-  padding: 6px;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-row {
   display: grid;

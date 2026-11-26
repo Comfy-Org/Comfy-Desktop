@@ -4,7 +4,7 @@ import { CornerDownLeft, History, Search } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { AgentChat } from '../../icons/agentChat'
 import { segments } from '../../search/match'
-import type { Results, Row } from '../smartSearch'
+import type { Results, Row } from '../smartDrop'
 
 const { results, active, query, listId } = defineProps<{
   results: Results
