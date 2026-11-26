@@ -66,6 +66,9 @@ import { openCreate } from './create/createScreen'
 import { onHome } from './tunerContext'
 import { search } from './search/search'
 import { homeLayout } from './home/homeLayout'
+import { homeIdeaOn } from './home/homeIdeas'
+import RecentList, { type RecentListRow } from './RecentList.vue'
+import { edited, lastOutput } from './create/smartSearch'
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -141,6 +144,7 @@ const USED_APPS: { x: Example; age: number; when: string }[] = [
 type Recent = {
   id: string
   src: string
+  output?: string
   title: string
   meta: string
   when: string
@@ -156,6 +160,7 @@ const recent = computed<Recent[]>(() =>
         id: w.id,
         // The workflow's own picture, the one it has everywhere.
         src: thumb(w.thumbId),
+        output: lastOutput(w),
         title: w.name.replace(/\.json$/, ''),
         meta: env?.name ?? '',
         when: w.modified,
@@ -196,7 +201,31 @@ const homeStyle = computed(() =>
   recentsFirst.value && paneWidth.value ? { '--mar-pane': `${paneWidth.value}px` } : undefined
 )
 const RECENT_COLUMNS = 5
-const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
+const COMPACT_RECENTS = 5
+const ideaThumbs = computed(() => recentsFirst.value && homeIdeaOn('thumbs'))
+const ideaHeaders = computed(() => recentsFirst.value && homeIdeaOn('headers'))
+const ideaCleanCards = computed(() => recentsFirst.value && homeIdeaOn('cleanCards'))
+const ideaCompactRecents = computed(() => recentsFirst.value && homeIdeaOn('compactRecents'))
+const ideaSmallGreeting = computed(() => recentsFirst.value && homeIdeaOn('smallGreeting'))
+const recentHasRoom = computed(
+  () => !ideaCompactRecents.value && recent.value.length < RECENT_COLUMNS
+)
+const recentCoverOf = (r: Recent) =>
+  ideaThumbs.value && r.output ? 'image' : recentsCoverKind.value
+const recentSrcOf = (r: Recent): string => (ideaThumbs.value && r.output) || r.src
+const compactRows = computed<RecentListRow[]>(() =>
+  recent.value.slice(0, COMPACT_RECENTS).map((r) => ({
+    id: r.id,
+    name: r.title,
+    build: r.meta,
+    edited: r.app ? r.when : edited(r.when),
+    src: r.app ? r.src : r.output
+  }))
+)
+const compactActive = ref<string>()
+function openRecent(id: string): void {
+  recent.value.find((r) => r.id === id)?.open()
+}
 </script>
 
 <template>
@@ -213,9 +242,26 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
   >
     <!-- First run or not, the top is the same: the greeting and the prompt
          sit where a returning user finds them. -->
-    <section :class="['flex flex-col', tight ? 'pt-14 pb-4' : 'pt-12 pb-4']">
-      <div :class="['flex flex-1 flex-col', !tight ? 'justify-center pt-10' : '']">
-        <Greeting :text="greeting" :class="['mar-greeting', tight ? 'mb-4! pt-0!' : '']" />
+    <section
+      :class="[
+        'flex flex-col',
+        ideaSmallGreeting ? 'pt-10 pb-2' : tight ? 'pt-14 pb-4' : 'pt-12 pb-4'
+      ]"
+    >
+      <div
+        :class="[
+          'flex flex-1 flex-col',
+          !tight && !ideaSmallGreeting ? 'justify-center pt-10' : ''
+        ]"
+      >
+        <Greeting
+          :text="greeting"
+          :class="[
+            'mar-greeting',
+            ideaSmallGreeting && 'mar-greeting-small',
+            tight ? 'mb-4! pt-0!' : ''
+          ]"
+        />
         <!-- One line tall; while you type it grows over what's below. -->
         <div v-if="can.agent && !gated" class="mar-prompt-slot">
           <PromptBox target class="mar-prompt" />
@@ -312,16 +358,23 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
         />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
         <TableRow v-else-if="p20.recent === 'table'" />
+        <RecentList
+          v-else-if="ideaCompactRecents"
+          :rows="compactRows"
+          :active="compactActive"
+          @hover="(id) => (compactActive = id)"
+          @open="(row) => openRecent(row.id)"
+        />
         <ScrollRow v-else :columns="RECENT_COLUMNS" class="mar-recent-row">
           <WorkflowCard
             v-for="r in recent"
             :key="r.id"
-            :src="r.src"
+            :src="recentSrcOf(r)"
             :title="r.title"
             :meta="r.meta"
             :right="r.when"
             :app="r.app"
-            :cover-kind="recentsCoverKind"
+            :cover-kind="recentCoverOf(r)"
             @open="r.open()"
           />
           <NewWorkflowTile v-if="can.onboarding && recentHasRoom" @open="openCreate()" />
@@ -332,7 +385,23 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
         <div class="mt-10">
           <HomeArcMix v-if="can.explore" full />
           <HomeLoadFailed v-else-if="offline" />
-          <AppStrip v-else :items="arcApps()" data-home-tour="apps-carousel" @all="go('apps')" />
+          <template v-else>
+            <HomeSectionHeader
+              v-if="ideaHeaders"
+              title="Apps"
+              link-tip="All apps"
+              add-label="New app"
+              @open="go('apps')"
+            />
+            <AppStrip
+              :items="arcApps()"
+              :headless="ideaHeaders"
+              :all-label="ideaHeaders ? '' : undefined"
+              :clean="ideaCleanCards"
+              data-home-tour="apps-carousel"
+              @all="go('apps')"
+            />
+          </template>
         </div>
         <MarBuildsRow v-if="!onCloud" />
       </template>
@@ -386,3 +455,14 @@ const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
   />
   <MarHomeTour v-if="can.onboarding" :active="tourActive" />
 </template>
+
+<style>
+:root .proto-ui.proto-ui.proto-ui .mar-home h1.mar-greeting-small {
+  margin-bottom: 20px;
+  padding-top: 0;
+  font-size: var(--text-title, 24px);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  text-align: left;
+}
+</style>

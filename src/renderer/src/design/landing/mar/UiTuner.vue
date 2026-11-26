@@ -59,6 +59,7 @@ import {
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
+import { HOME_IDEAS, type HomeIdeaId } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
@@ -210,6 +211,14 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
 const MORE: TweakId[] = ['screen', 'look', 'knobs']
+const HOME_IDEA_TWEAKS: Record<HomeIdeaId, TweakId> = {
+  thumbs: 'homeIdeaThumbs',
+  headers: 'homeIdeaHeaders',
+  cleanCards: 'homeIdeaCleanCards',
+  compactRecents: 'homeIdeaCompactRecents',
+  smallGreeting: 'homeIdeaSmallGreeting'
+}
+const homeIdeaIds = Object.values(HOME_IDEA_TWEAKS)
 const pageIds = computed(() => PAGE.filter((p) => p.show()).map((p) => p.id))
 const stateIds = computed(() => STATES.filter((p) => p.show()).map((p) => p.id))
 const shows = (id: TweakId): boolean => pageIds.value.includes(id) || stateIds.value.includes(id)
@@ -617,6 +626,25 @@ const linkSays = computed(() => {
             }}</span>
           </Row>
           <Row :show="shows('ports')"><NavOptionsTuner /></Row>
+        </section>
+
+        <section v-if="when.homeIdeas.value" aria-label="Home ideas" class="mt-6 flex flex-col">
+          <GroupHead
+            title="Home ideas"
+            :changed="dirty(homeIdeaIds)"
+            @reset="resetGroup(homeIdeaIds)"
+          />
+          <Row v-for="x in HOME_IDEAS" :key="x.id">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">{{ x.label }}</span>
+              <Switch
+                :model-value="x.store.id === 'on'"
+                :aria-label="x.label"
+                @update:model-value="x.store.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground">{{ x.note }}</span>
+          </Row>
         </section>
 
         <!-- More: the screen simulator, the token knobs and the Figma

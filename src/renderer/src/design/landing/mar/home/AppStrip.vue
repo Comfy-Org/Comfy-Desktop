@@ -11,13 +11,17 @@ const {
   allLabel = 'See all apps',
   title = 'Apps',
   tabs = [],
-  leaving = false
+  leaving = false,
+  headless = false,
+  clean = false
 } = defineProps<{
   items: ArcItem[]
   allLabel?: string
   title?: string
   tabs?: { value: string; label: string }[]
   leaving?: boolean
+  headless?: boolean
+  clean?: boolean
 }>()
 const emit = defineEmits<{ all: [] }>()
 const tab = defineModel<string>('tab', { default: '' })
@@ -148,8 +152,14 @@ watch(ids, async () => {
 </script>
 
 <template>
-  <div class="mar-strip" role="region" aria-roledescription="carousel" :aria-label="title">
-    <div class="mar-strip-head">
+  <div
+    class="mar-strip"
+    :class="clean && 'is-clean'"
+    role="region"
+    aria-roledescription="carousel"
+    :aria-label="title"
+  >
+    <div v-if="!headless" class="mar-strip-head">
       <MarSeg v-if="tabs.length" v-model="tab" :options="tabs" :label="title" />
       <h2 v-else class="mar-strip-title-head">
         <button type="button" class="mar-strip-heading" @click="emit('all')">
@@ -344,7 +354,21 @@ watch(ids, async () => {
   align-items: center;
   gap: 4px;
 }
+.mar-strip.is-clean .mar-strip-does {
+  max-height: 0;
+  opacity: 0;
+  transition:
+    max-height 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease;
+}
+.mar-strip.is-clean .mar-strip-slide:is(:hover, :focus-visible) .mar-strip-does {
+  max-height: 1.3em;
+  opacity: 1;
+}
 @media (prefers-reduced-motion: reduce) {
+  .mar-strip.is-clean .mar-strip-does {
+    transition: none;
+  }
   .mar-strip-slide img,
   .mar-strip-slide video,
   .mar-strip-slide .mar-strip-after {

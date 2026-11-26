@@ -53,6 +53,7 @@ import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
 import { homeLayout } from './home/homeLayout'
+import { homeIdea } from './home/homeIdeas'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -99,6 +100,9 @@ export const when = {
   homeArcMix: computed(() => onHome.value && can.value.explore),
   homeLayout: computed(
     () => onHome.value && can.value.exploreApps && (!onFirstRun.value || firstRun.id === 'original')
+  ),
+  homeIdeas: computed(
+    () => onHome.value && can.value.exploreApps && !onFirstRun.value && homeLayout.id === 'recents'
   ),
   // The node editor's way in, under the examples of the Original first run.
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
@@ -278,6 +282,11 @@ export const TWEAKS = {
   exampleLook: one(exampleLook, 'arc'),
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'current'),
+  homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
+  homeIdeaHeaders: one(homeIdea('headers').store, 'off'),
+  homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),
+  homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
+  homeIdeaSmallGreeting: one(homeIdea('smallGreeting').store, 'off'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   // The milestone picks the cover (cover.ts): the canvas, then the image.

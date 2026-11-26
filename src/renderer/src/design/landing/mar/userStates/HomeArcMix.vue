@@ -13,6 +13,8 @@ import MarSeg from '../pages/MarSeg.vue'
 import { ARC_TEMPLATES, arcApps, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
+import HomeSectionHeader from '../HomeSectionHeader.vue'
+import { homeIdeaOn } from '../home/homeIdeas'
 
 const { full = false } = defineProps<{ full?: boolean }>()
 
@@ -46,9 +48,12 @@ const TOPICS = computed(() =>
 )
 
 const mix = computed(() => homeArcMix.id)
+const sameHeaders = computed(() => full && homeIdeaOn('headers'))
+const cleanCards = computed(() => full && homeIdeaOn('cleanCards'))
 const byTopic = computed(() => mix.value === 'topics' || mix.value === 'topics-kind')
 
 const items = computed<ArcItem[]>(() => {
+  if (sameHeaders.value) return ARC_APPS.slice(0, FEATURED)
   switch (mix.value) {
     case 'tabs':
       return (kind.value === 'apps' ? ARC_APPS : ARC_TEMPLATES).slice(0, FEATURED)
@@ -67,6 +72,7 @@ const items = computed<ArcItem[]>(() => {
 })
 
 const allLabel = computed(() => {
+  if (sameHeaders.value) return ''
   if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
   if (byTopic.value && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
@@ -75,7 +81,8 @@ const allLabel = computed(() => {
 })
 
 const listsApps = computed(
-  () => mix.value === 'row' || (mix.value === 'tabs' && shown.value.on === 'apps')
+  () =>
+    sameHeaders.value || mix.value === 'row' || (mix.value === 'tabs' && shown.value.on === 'apps')
 )
 
 function seeAll(on: 'apps' | 'templates'): void {
@@ -83,7 +90,7 @@ function seeAll(on: 'apps' | 'templates'): void {
   go('explore')
 }
 const allOn = computed<'apps' | 'templates'>(() =>
-  mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
+  !sameHeaders.value && mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
 )
 
 /**
@@ -133,11 +140,13 @@ watch(
 )
 
 const stripTabs = computed<{ value: string; label: string }[]>(() => {
+  if (sameHeaders.value) return []
   if (mix.value === 'tabs') return KINDS
   if (byTopic.value) return TOPICS.value
   return []
 })
 const stripTitle = computed(() => {
+  if (sameHeaders.value) return 'Apps'
   if (mix.value === 'tabs') return 'Apps and workflows'
   if (byTopic.value) return 'Use case'
   if (mix.value === 'mixed') return 'Apps and workflows'
@@ -191,16 +200,26 @@ function scrollRow(by: number): void {
         v-if="offline"
         :kind="mix === 'tabs' && kind === 'templates' ? 'workflows' : 'apps'"
       />
-      <AppStrip
-        v-else-if="full"
-        v-model:tab="stripTab"
-        :items="shown.items"
-        :all-label="shown.label"
-        :title="stripTitle"
-        :tabs="stripTabs"
-        :leaving="leaving"
-        @all="seeAll(shown.on)"
-      />
+      <template v-else-if="full">
+        <HomeSectionHeader
+          v-if="sameHeaders"
+          title="Apps"
+          link-tip="All apps"
+          add-label="New app"
+          @open="seeAll('apps')"
+        />
+        <AppStrip
+          v-model:tab="stripTab"
+          :items="shown.items"
+          :all-label="shown.label"
+          :title="stripTitle"
+          :tabs="stripTabs"
+          :leaving="leaving"
+          :headless="sameHeaders"
+          :clean="cleanCards"
+          @all="seeAll(shown.on)"
+        />
+      </template>
       <ExampleArc
         v-else
         :items="shown.items"
