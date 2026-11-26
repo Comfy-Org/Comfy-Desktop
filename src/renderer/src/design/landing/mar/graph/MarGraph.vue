@@ -74,6 +74,7 @@ import { closeMissingModels, downloadMissingModels, missingModelsOn } from './mi
 import SettingsDialog from './panels/SettingsDialog.vue'
 import NodeSearch from './NodeSearch.vue'
 import ScratchSearch from './ScratchSearch.vue'
+import { blankStart } from './blankStart'
 import type { Template } from '../../mock'
 import AgentPanel from './AgentPanel.vue'
 import McpNudge from '../mcp/McpNudge.vue'
@@ -925,7 +926,7 @@ function startFromScratch(): void {
   if (start) startWith(start.kind, start.model)
   else if (agentAsk) onMounted(() => nextTick(() => openAgentWith(agentAsk)))
   else if (recipe || ask || find) onMounted(() => nextTick(() => openWith(recipe, ask)))
-  else scratch.value = true
+  else scratch.value = blankStart.id === 'search'
 }
 function openWith(recipe: Recipe | null, ask: boolean): void {
   if (recipe) build(recipe)

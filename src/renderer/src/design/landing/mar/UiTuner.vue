@@ -61,6 +61,7 @@ import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
+import { BLANK_STARTS, blankStart } from './graph/blankStart'
 import { SIDEBAR_MOTIONS, sidebarMotion } from './shell/sidebarMotion'
 import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
 import { HOME_IDEAS, type HomeIdeaId } from './home/homeIdeas'
@@ -186,6 +187,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeArcMix', show: () => when.homeArcMix.value },
   { id: 'homeLayout', show: () => when.homeLayout.value },
   { id: 'buildsAt', show: () => when.buildsAt.value },
+  { id: 'blankStart', show: () => when.blankStart.value },
   { id: 'exploreSwitch', show: () => when.exploreSwitch.value },
   { id: 'appPage', show: () => when.appPage.value },
   { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
@@ -494,6 +496,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('exploreSwitch')" label="Explore switch">
             <Select v-model="exploreSwitch.id" :options="EXPLORE_SWITCHES" class="w-full" />
+          </Row>
+          <Row :show="shows('blankStart')" label="Blank canvas opens">
+            <Select v-model="blankStart.id" :options="BLANK_STARTS" class="w-full" />
           </Row>
           <Row :show="shows('buildsAt')" label="Builds position">
             <Select v-model="buildsAt.id" :options="BUILDS_AT" class="w-full" />

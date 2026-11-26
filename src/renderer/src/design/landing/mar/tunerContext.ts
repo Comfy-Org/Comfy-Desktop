@@ -50,6 +50,7 @@ import { composerSearch } from './create/composerSearch'
 import { agentOpens } from './create/agentOpens'
 import { composerPos } from './create/composerPos'
 import { createScreen } from './create/createScreen'
+import { blankStart } from './graph/blankStart'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
 import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
@@ -155,6 +156,7 @@ export const when = {
   ),
   homeTour: computed(() => onHome.value && can.value.onboarding),
   createLook: computed(() => can.value.onboarding && createScreen.open),
+  blankStart: computed(() => can.value.onboarding && (createScreen.open || inGraph.value)),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
@@ -318,6 +320,7 @@ export const TWEAKS = {
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),
   createLook: one(createLook, DEFAULT_CREATE_LOOK),
+  blankStart: one(blankStart, 'empty'),
   createInput: one(createInput, 'agent'),
   composerSearch: one(composerSearch, 'smart'),
   agentOpens: one(agentOpens, 'create'),
