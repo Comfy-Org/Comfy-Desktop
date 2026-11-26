@@ -38,6 +38,7 @@ import PerformanceTestSystemFacts from './performanceTest/PerformanceTestSystemF
 import PerformanceTestWorkflowMenu from './performanceTest/PerformanceTestWorkflowMenu.vue'
 import { durationLabels, systemFactLabels } from './performanceTest/labels'
 import { revealInFolderKey } from '../composables/usePlatform'
+import { MODAL_TITLE_CLASS } from '../lib/modalTitle'
 
 const emit = defineEmits<{
   'run-active-change': [active: boolean]
@@ -481,7 +482,7 @@ async function exportResultsImage(): Promise<void> {
     >
       <template #header>
         <div>
-          <h2 class="m-0 text-base leading-[1.3] font-semibold text-neutral-100">
+          <h2 class="m-0 text-neutral-100" :class="MODAL_TITLE_CLASS">
             {{ t('performanceTest.exampleWorkflowPickerTitle') }}
           </h2>
           <p class="m-0 mt-1.5 text-[13px] text-text-muted">

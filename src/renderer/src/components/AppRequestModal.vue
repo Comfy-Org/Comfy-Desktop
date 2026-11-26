@@ -6,6 +6,7 @@ import Textarea from '@comfyorg/design-system/textarea/Textarea'
 import { Check } from '@lucide/vue'
 import BaseModal from './ui/BaseModal.vue'
 import requestArt from '../assets/app-request/request-art.webp'
+import { MODAL_TITLE_CLASS } from '../lib/modalTitle'
 
 type RequestStatus = 'idle' | 'sending' | 'sent' | 'failed'
 
@@ -113,7 +114,7 @@ watch(
       </div>
     </template>
     <template #header>
-      <h2 :id="titleId" class="m-0 text-base leading-[1.3] font-semibold text-neutral-100">
+      <h2 :id="titleId" class="m-0 text-neutral-100" :class="MODAL_TITLE_CLASS">
         {{ t('apps.request.title') }}
       </h2>
       <p class="m-0 mt-1.5 text-sm leading-[1.5] text-text-muted">

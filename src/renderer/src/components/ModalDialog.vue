@@ -13,6 +13,7 @@ import BaseAlert from './ui/BaseAlert.vue'
 import { linkify, handleModalLinkClick } from '../lib/modalLinkify'
 import { formatNodeVersion } from '../lib/snapshots'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
+import { MODAL_TITLE_CLASS } from '../lib/modalTitle'
 
 const { t } = useI18n()
 
@@ -193,11 +194,7 @@ watch(
     >
       <div
         class="dialog-title -mx-5 px-5"
-        :class="
-          isMigrateConfirm
-            ? 'mb-4 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : 'mb-4 text-[16px] font-semibold'
-        "
+        :class="['mb-4', MODAL_TITLE_CLASS, isMigrateConfirm && 'text-text']"
       >
         {{ state.title }}
       </div>
@@ -430,7 +427,7 @@ watch(
       v-else-if="state.type === 'confirmWithOptions'"
       class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-5 pt-5 pb-4"
     >
-      <div class="dialog-title -mx-5 mb-4 px-5 text-[16px] font-semibold">
+      <div class="dialog-title -mx-5 mb-4 px-5" :class="MODAL_TITLE_CLASS">
         {{ state.title }}
       </div>
       <div
@@ -474,7 +471,7 @@ watch(
       class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-5 pt-5 pb-4"
       :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-full' : 'max-w-[400px]'"
     >
-      <div class="dialog-title -mx-5 mb-4 px-5 text-[16px] font-semibold">
+      <div class="dialog-title -mx-5 mb-4 px-5" :class="MODAL_TITLE_CLASS">
         {{ state.title }}
       </div>
       <div
@@ -544,7 +541,7 @@ watch(
       v-else-if="state.type === 'select'"
       class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-5 pt-5 pb-4"
     >
-      <div class="dialog-title -mx-5 mb-4 px-5 text-[16px] font-semibold">
+      <div class="dialog-title -mx-5 mb-4 px-5" :class="MODAL_TITLE_CLASS">
         {{ state.title }}
       </div>
       <div
