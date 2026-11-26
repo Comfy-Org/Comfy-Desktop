@@ -1709,6 +1709,86 @@ describe('AssetsView', () => {
     )
   })
 
+  it('selects files with their check boxes, and a click on a card adds to the selection', async () => {
+    const wrapper = await mountAssets([picture('a', 300), picture('b', 300), picture('c', 300)])
+    const bar = () => wrapper.find('[data-testid="assets-selection-bar"]')
+    expect(bar().exists()).toBe(false)
+
+    await wrapper.get('[data-testid="asset-select-a"]').trigger('click')
+    expect(bar().get('[data-testid="assets-selection-count"]').text()).toBe('1 selected')
+    expect(wrapper.get('[data-testid="asset-select-a"]').attributes('aria-pressed')).toBe('true')
+
+    await wrapper.get('[data-testid="asset-open-b"]').trigger('click')
+    expect(viewer(), 'a click while selecting selects, it does not open the viewer').toBeNull()
+    expect(bar().get('[data-testid="assets-selection-count"]').text()).toBe('2 selected')
+
+    await bar().get('[data-testid="assets-selection-all"]').trigger('click')
+    expect(bar().get('[data-testid="assets-selection-count"]').text()).toBe('3 selected')
+    expect(bar().find('[data-testid="assets-selection-all"]').exists()).toBe(false)
+
+    await bar().get('[data-testid="assets-selection-clear"]').trigger('click')
+    expect(bar().exists()).toBe(false)
+  })
+
+  it('clears the selection with Escape', async () => {
+    const wrapper = await mountAssets([picture('a', 300)])
+    await wrapper.get('[data-testid="asset-select-a"]').trigger('click')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="assets-selection-bar"]').exists()).toBe(false)
+  })
+
+  it('moves the selected files to the Trash together, after one question', async () => {
+    trashAsset.mockResolvedValue(true)
+    const wrapper = await mountAssets([picture('keep', 300), picture('a', 300), picture('b', 300)])
+    await wrapper.get('[data-testid="asset-select-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-select-b"]').trigger('click')
+
+    confirm.mockResolvedValueOnce(true)
+    listLocalAssets.mockResolvedValue([picture('keep', 300)])
+    await wrapper.get('[data-testid="assets-selection-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(confirm.mock.calls[0]![0]).toMatchObject({
+      title: 'Delete 2 files?',
+      message: 'They move to the Trash.',
+      confirmStyle: 'danger'
+    })
+    expect(trashAsset.mock.calls).toEqual([
+      ['local', 'a'],
+      ['local', 'b']
+    ])
+    expect(assetNames(wrapper)).toEqual(['keep.svg'])
+    expect(wrapper.find('[data-testid="assets-selection-bar"]').exists()).toBe(false)
+  })
+
+  it('keeps a file that could not be deleted selected, and says which', async () => {
+    trashAsset.mockImplementation(async (_source: string, id: string) => id !== 'stuck')
+    const wrapper = await mountAssets([picture('a', 300), picture('stuck', 300)])
+    await wrapper.get('[data-testid="asset-select-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-select-stuck"]').trigger('click')
+
+    confirm.mockResolvedValueOnce(true)
+    await wrapper.get('[data-testid="assets-selection-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't delete asset",
+      message: 'stuck.svg'
+    })
+    expect(wrapper.get('[data-testid="assets-selection-count"]').text()).toBe('1 selected')
+  })
+
+  it('offers no check box for a Cloud file', async () => {
+    const wrapper = await mountAssets()
+    await signInWith([picture('c', 300)])
+
+    expect(wrapper.find('[data-testid="asset-select-c"]').exists()).toBe(false)
+  })
+
   it('tells the user when a picture could not be copied', async () => {
     copyAsset.mockResolvedValue(false)
     const wrapper = await mountAssets([picture('b', 300)])

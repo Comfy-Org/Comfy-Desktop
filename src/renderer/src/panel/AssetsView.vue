@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
+import {
+  onKeyStroke,
+  refDebounced,
+  useLocalStorage,
+  useResizeObserver,
+  useScroll
+} from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
   Box,
@@ -21,7 +27,8 @@ import {
   ScanSearch,
   Search,
   Play,
-  Trash2
+  Trash2,
+  X
 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -979,6 +986,84 @@ async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> 
   })
 }
 
+const selectedKeys = ref(new Set<string>())
+const selecting = computed(() => selectedKeys.value.size > 0)
+const selectedAssets = computed(() =>
+  visibleAssets.value.filter((asset) => selectedKeys.value.has(cardKey(asset)))
+)
+const selectableAssets = computed(() => visibleAssets.value.filter(isLocal))
+const deletingSelection = ref(false)
+
+watch([visibleAssets, currentPage], () => {
+  const shown = new Set(visibleAssets.value.map(cardKey))
+  const kept = [...selectedKeys.value].filter((key) => shown.has(key))
+  if (kept.length !== selectedKeys.value.size) selectedKeys.value = new Set(kept)
+})
+watch([loadKey, listQuery, currentPage], () => clearSelection())
+
+function isSelected(asset: GalleryAsset): boolean {
+  return selectedKeys.value.has(cardKey(asset))
+}
+
+function toggleSelected(asset: GalleryAsset): void {
+  const next = new Set(selectedKeys.value)
+  const key = cardKey(asset)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  selectedKeys.value = next
+}
+
+function selectAll(): void {
+  selectedKeys.value = new Set(selectableAssets.value.map(cardKey))
+}
+
+function clearSelection(): void {
+  if (selectedKeys.value.size > 0) selectedKeys.value = new Set()
+}
+
+onKeyStroke('Escape', () => {
+  if (selecting.value && detailIndex.value === null) clearSelection()
+})
+
+function onCardClick(asset: GalleryAsset): void {
+  if (selecting.value && isLocal(asset)) toggleSelected(asset)
+  else openDetail(asset)
+}
+
+async function deleteSelected(): Promise<void> {
+  const chosen = selectedAssets.value
+  if (chosen.length === 0 || deletingSelection.value) return
+  const confirmed = await modal.confirm({
+    title: t('assets.deleteSelectedTitle', { count: chosen.length }, chosen.length),
+    message:
+      window.api.platform === 'win32'
+        ? t('assets.deleteSelectedToRecycleBin', {}, chosen.length)
+        : t('assets.deleteSelectedToTrash', {}, chosen.length),
+    confirmLabel: t('assets.delete'),
+    confirmStyle: 'danger'
+  })
+  if (!confirmed) return
+  deletingSelection.value = true
+  try {
+    const results = await Promise.all(
+      chosen.map((asset) => window.api.trashAsset(asset.source, asset.id).catch(() => false))
+    )
+    const removed = new Set(chosen.filter((_, i) => results[i]).map(cardKey))
+    const failed = chosen.filter((asset) => !removed.has(cardKey(asset)))
+    assets.value = assets.value.filter((asset) => !removed.has(cardKey(asset)))
+    selectedKeys.value = new Set(failed.map(cardKey))
+    if (removed.size > 0) void loadAssets()
+    if (failed.length > 0) {
+      await modal.alert({
+        title: t('assets.deleteFailed'),
+        message: failed.map((asset) => asset.name).join('\n')
+      })
+    }
+  } finally {
+    deletingSelection.value = false
+  }
+}
+
 function openDetail(asset: GalleryAsset): void {
   lookedUpDetail.value = null
   detailKey.value = cardKey(asset)
@@ -1575,6 +1660,8 @@ function extensionOf(name: string): string {
           :ref="measureCard"
           :data-index="card.index"
           class="group rounded-card bg-[rgb(29_29_29/0.72)] p-1 has-[[data-card-key]:focus-visible]:shadow-[0_0_0_2px_var(--color-ring)]"
+          :class="isSelected(asset) && 'shadow-[0_0_0_2px_var(--color-foreground)]'"
+          :aria-selected="selecting && isLocal(asset) ? isSelected(asset) : undefined"
           :style="cardStyle(card)"
           :data-testid="`asset-${asset.id}`"
           @contextmenu.prevent="openAssetMenu(asset, $event)"
@@ -1591,7 +1678,7 @@ function extensionOf(name: string): string {
               :aria-label="t('assets.inspect', { name: asset.name })"
               :data-testid="`asset-open-${asset.id}`"
               :data-card-key="cardKey(asset)"
-              @click="openDetail(asset)"
+              @click="onCardClick(asset)"
             >
               <span
                 class="relative block overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
@@ -1657,6 +1744,25 @@ function extensionOf(name: string): string {
             </button>
           </Tooltip>
 
+          <button
+            v-if="isLocal(asset)"
+            type="button"
+            class="absolute top-3 left-3 flex size-[22px] items-center justify-center rounded-md border-[1.5px] border-solid outline-none backdrop-blur-[12px] transition-[opacity,background-color] duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+            :class="
+              isSelected(asset)
+                ? 'border-foreground bg-foreground text-background opacity-100'
+                : [
+                    'border-[rgb(255_255_255/0.75)] bg-[rgb(27_27_28/0.35)] text-transparent',
+                    selecting ? 'opacity-100' : 'opacity-0'
+                  ]
+            "
+            :aria-label="t('assets.selectAsset', { name: asset.name })"
+            :aria-pressed="isSelected(asset)"
+            :data-testid="`asset-select-${asset.id}`"
+            @click="toggleSelected(asset)"
+          >
+            <Check :size="14" :stroke-width="3" aria-hidden="true" />
+          </button>
           <div
             class="absolute top-3 right-3 flex gap-1 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
             :class="isMenuOpenFor(asset) && 'opacity-100'"
@@ -1703,6 +1809,55 @@ function extensionOf(name: string): string {
         :page-sizes="CLOUD_PAGE_SIZES"
       />
     </div>
+
+    <Transition
+      enter-from-class="translate-y-3 opacity-0"
+      leave-to-class="translate-y-3 opacity-0"
+      enter-active-class="transition duration-200 ease-out motion-reduce:transition-none"
+      leave-active-class="transition duration-150 ease-in motion-reduce:transition-none"
+    >
+      <div
+        v-if="selecting"
+        role="toolbar"
+        :aria-label="t('assets.selectedCount', { count: selectedKeys.size }, selectedKeys.size)"
+        class="fixed bottom-6 left-1/2 z-30 flex h-11 -translate-x-1/2 items-center gap-1 rounded-[14px] bg-foreground px-1.5 text-[13px] text-background shadow-[0_8px_24px_rgb(0_0_0/0.3)]"
+        data-testid="assets-selection-bar"
+      >
+        <button
+          type="button"
+          class="flex size-8 items-center justify-center rounded-[9px] text-background/60 outline-none hover:bg-background/10 focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+          :aria-label="t('assets.clearSelection')"
+          data-testid="assets-selection-clear"
+          @click="clearSelection"
+        >
+          <X :size="14" aria-hidden="true" />
+        </button>
+        <span
+          class="pr-2 pl-0.5 font-medium whitespace-nowrap tabular-nums"
+          data-testid="assets-selection-count"
+          >{{ t('assets.selectedCount', { count: selectedKeys.size }, selectedKeys.size) }}</span
+        >
+        <button
+          v-if="selectedKeys.size < selectableAssets.length"
+          type="button"
+          class="flex h-8 items-center rounded-[9px] px-2.5 whitespace-nowrap text-background/60 outline-none hover:bg-background/10 focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+          data-testid="assets-selection-all"
+          @click="selectAll"
+        >
+          {{ t('assets.selectAll') }}
+        </button>
+        <button
+          type="button"
+          class="flex h-8 items-center gap-1.5 rounded-[9px] px-2.5 whitespace-nowrap text-destructive outline-none hover:bg-background/10 focus-visible:shadow-[0_0_0_2px_var(--color-ring)] disabled:opacity-50"
+          :disabled="deletingSelection"
+          data-testid="assets-selection-delete"
+          @click="deleteSelected"
+        >
+          <Trash2 :size="14" aria-hidden="true" />
+          {{ t('assets.delete') }}
+        </button>
+      </div>
+    </Transition>
 
     <OutputDetailDialog
       v-if="detailIndex !== null"
