@@ -1,0 +1,43 @@
+.hv-media {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hv-media > img,
+.hv-media > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 220ms ease;
+}
+.hv-media > video.is-hidden {
+  opacity: 0;
+}
+
+.hv-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  border-radius: 999px;
+  background: rgb(14 14 16 / 0.28);
+  backdrop-filter: blur(14px) saturate(1.5);
+  color: oklch(1 0 0);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hv-media > img,
+  .hv-media > video {
+    transition: none;
+  }
+}

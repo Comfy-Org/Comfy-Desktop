@@ -489,7 +489,7 @@ const linkSays = computed(() => {
             <Select v-model="homeArcMix.id" :options="HOME_ARC_MIXES" class="w-full" />
           </Row>
           <Row :show="shows('homeLayout')" label="Home layout">
-            <Seg v-model="homeLayout.id" label="Home layout" :options="HOME_LAYOUTS" />
+            <Select v-model="homeLayout.id" :options="HOME_LAYOUTS" class="w-full" />
           </Row>
           <Row :show="shows('appsSection')" label="Apps section">
             <Select v-model="appsSection.id" :options="APPS_SECTIONS" class="w-full" />

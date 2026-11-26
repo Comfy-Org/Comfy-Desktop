@@ -52,7 +52,7 @@ import { downloadScenario, templateDownloads } from './downloads/templateDownloa
 import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
 import { dlFooter } from './downloads/dlFooter'
-import { homeLayout } from './home/homeLayout'
+import { homeLayout, homeVersion } from './home/homeLayout'
 import { recentThumb } from './recentThumb'
 import { homeIdea } from './home/homeIdeas'
 import { appsSection } from './home/appsSection'
@@ -123,7 +123,9 @@ export const when = {
       homeIdea('headers').store.id === 'on'
   ),
   recentThumb: computed(
-    () => (onHome.value && homeLayout.id === 'recents') || createLook.id === 'V15'
+    () =>
+      (onHome.value && (homeLayout.id === 'recents' || !!homeVersion(homeLayout.id))) ||
+      createLook.id === 'V15'
   ),
   homeIdeas: computed(
     () => onHome.value && can.value.exploreApps && !onFirstRun.value && homeLayout.id === 'recents'
