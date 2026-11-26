@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ChevronRight } from 'lucide-vue-next'
 import { useResizeObserver } from '@vueuse/core'
-import Button from '../../ui/Button.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import { reducedMotion } from '../userStates/examples'
 import type { ArcItem } from '../userStates/arcItems'
@@ -161,26 +160,6 @@ watch(ids, async () => {
         <button v-if="allLabel" type="button" class="mar-strip-all" @click="emit('all')">
           {{ allLabel }}<ChevronRight :size="13" aria-hidden="true" />
         </button>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="mar-strip-step"
-          aria-label="Previous"
-          :disabled="atStart"
-          @click="page(-1)"
-        >
-          <ChevronLeft :size="16" aria-hidden="true" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="mar-strip-step"
-          aria-label="Next"
-          :disabled="atEnd"
-          @click="page(1)"
-        >
-          <ChevronRight :size="16" aria-hidden="true" />
-        </Button>
       </div>
     </div>
     <div
@@ -261,6 +240,7 @@ watch(ids, async () => {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
+  mask-image: linear-gradient(90deg, transparent, #000 72px, #000 calc(100% - 72px), transparent);
   scrollbar-width: none;
   outline: none;
   cursor: grab;
@@ -389,7 +369,7 @@ watch(ids, async () => {
   height: var(--strip-h);
   overflow: hidden;
   padding: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: var(--color-card-background);
   outline: none;
   cursor: pointer;
@@ -453,19 +433,5 @@ watch(ids, async () => {
 :root .proto-ui.proto-ui.proto-ui .mar-strip-all:hover {
   background: var(--color-secondary-background);
   color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
-  transition:
-    background-color 160ms ease,
-    opacity 160ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step:hover:not(:disabled) {
-  background: var(--color-secondary-background-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-strip-step:disabled {
-  opacity: 0.4;
-  pointer-events: none;
 }
 </style>
