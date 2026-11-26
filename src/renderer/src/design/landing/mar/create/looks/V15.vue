@@ -3,11 +3,11 @@ import { computed, ref, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import RecentList, { type RecentListRow } from '../../RecentList.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
-import { activeInstance, go, hostActions, proto } from '../../../useProto'
-import { openAppPage } from '../../../appFlow'
+import { activeInstance, go, proto } from '../../../useProto'
 import { exploreStart } from '../../explore/exploreStart'
 import {
   closeCreate,
+  createScreen,
   openTemplate,
   openWorkflow,
   startBlank,
@@ -19,22 +19,14 @@ import HomeSectionHeader from '../../HomeSectionHeader.vue'
 import { createInput } from '../createInput'
 import { agentOpens } from '../agentOpens'
 import { composerSearch } from '../composerSearch'
-import {
-  edited,
-  lastOutput,
-  needsSignIn,
-  templateMeta,
-  useSmartSearch,
-  type SmartOption
-} from '../smartSearch'
+import { edited, lastOutput, templateMeta } from '../smartSearch'
 import { buildOf, playIn, reducedMotion, stopIn, useEscapeCloses } from './lookKitB'
 import { agentStart, answer, type AgentAnswer } from './v07Agent'
 import { useCreateAgent } from './createAgent'
-import CreateComposer from './CreateComposer.vue'
 import CreateAgentPanel from './CreateAgentPanel.vue'
 import GhostGraph from './GhostGraph.vue'
 import ResultsB from './ResultsB.vue'
-import SmartResults from './SmartResults.vue'
+import SmartSearch from '../SmartSearch.vue'
 
 interface TemplateCard {
   id: string
@@ -66,7 +58,7 @@ const LEAVE_MS = 220
 
 const query = ref('')
 const useCase = ref(USE_CASES[0]!.id)
-const composer = ref<InstanceType<typeof CreateComposer>>()
+const search = ref<InstanceType<typeof SmartSearch>>()
 const results = ref<InstanceType<typeof ResultsB>>()
 const navigated = ref(false)
 const hover = ref('')
@@ -77,15 +69,10 @@ watch(useCase, () => (hover.value = ''))
 
 const smart = computed(() => composerSearch.id === 'smart')
 const LIST_ID = 'v15-smart-list'
-const finder = useSmartSearch(query)
-const found = ref<InstanceType<typeof SmartResults>>()
 const over = ref<HTMLElement>()
 const pinTop = ref<number | null>(null)
 
-const smartShown = computed(() => smart.value && finder.shown.value && !flow.panel.value)
-const activeOption = computed(() =>
-  smartShown.value && finder.active.value ? `${LIST_ID}-${finder.activeIndex.value}` : undefined
-)
+const smartShown = computed(() => !!search.value?.shown)
 
 watch(
   smartShown,
@@ -204,51 +191,16 @@ function onAsk(a: AgentAnswer): void {
   else flow.ask(a)
 }
 
-function act(option: SmartOption | null): void {
-  const text = query.value.trim()
-  if (!text) return
-  if (option?.kind === 'template' && needsSignIn(option.card)) return hostActions.signIn()
-  finder.close()
-  if (!option || option.kind === 'agent') return onAsk(answer(text))
-  if (option.kind === 'template') return openTemplate(option.card.starter.template)
-  const { workflow, app } = option.found
-  if (workflow) leave(() => openWorkflow(workflow))
-  else if (app) openAppPage(app.id)
-}
-
-function smartEnter(): void {
-  if (!query.value.trim()) return
-  finder.flush()
-  act(finder.active.value)
-}
-
-function moveVertically(step: 1 | -1): void {
-  if (!smartShown.value) {
-    finder.open()
-    finder.moveTo(finder.activeIndex.value)
-  } else {
-    const target = found.value?.verticalTarget(step) ?? null
-    if (target === null || target === finder.activeIndex.value) finder.move(step)
-    else finder.moveTo(target)
-  }
-  found.value?.revealActive()
-}
-
-function smartKey(e: KeyboardEvent): boolean {
-  if (e.isComposing) return false
-  const across = e.key === 'ArrowLeft' || e.key === 'ArrowRight'
-  if (e.key === 'Escape' && smartShown.value) finder.close()
-  else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && query.value.trim())
-    moveVertically(e.key === 'ArrowDown' ? 1 : -1)
-  else if (across && smartShown.value && finder.inResults.value) {
-    finder.move(e.key === 'ArrowRight' ? 1 : -1)
-    found.value?.revealActive()
-  } else if (e.key === 'Enter' && query.value.trim()) {
-    if (!e.repeat) smartEnter()
-  } else return false
-  e.preventDefault()
-  return true
-}
+watch(
+  () => createScreen.ask,
+  (prompt) => {
+    if (!prompt) return
+    createScreen.ask = ''
+    query.value = prompt
+    onAsk(answer(prompt))
+  },
+  { immediate: true }
+)
 
 function moveAcross(step: number): void {
   const ids = cardIds.value
@@ -270,7 +222,6 @@ function moveDown(step: number): void {
 }
 
 function key(e: KeyboardEvent): void {
-  if (smart.value && smartKey(e)) return
   if (e.key === 'Escape') {
     e.preventDefault()
     if (flow.panel.value) flow.close()
@@ -292,14 +243,10 @@ function key(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
-const inputMode = computed(() => (smart.value ? 'agent' : createInput.id))
-
 const placeholder = computed(() =>
-  smart.value
-    ? 'Describe what you want to make, or search templates and apps'
-    : createInput.id === 'agent'
-      ? 'Describe what you want to make, or search templates'
-      : 'Search templates, workflows and nodes'
+  createInput.id === 'agent'
+    ? 'Describe what you want to make, or search templates'
+    : 'Search templates, workflows and nodes'
 )
 
 const dropping = computed(() => !smart.value && createInput.id === 'search' && !!query.value.trim())
@@ -309,7 +256,7 @@ function enter(id: string, el: EventTarget | null): void {
   if (!reducedMotion()) playIn(el)
 }
 
-useEscapeCloses(() => composer.value?.field)
+useEscapeCloses(() => search.value?.field)
 </script>
 
 <template>
@@ -339,112 +286,100 @@ useEscapeCloses(() => composer.value?.field)
         :aria-hidden="flow.panel.value"
       >
         <h1 class="v15-title">What do you want to make?</h1>
-        <div class="v15-ask">
-          <CreateComposer
-            ref="composer"
-            v-model="query"
-            class="v15-composer"
-            :mode="inputMode"
-            :navigated
-            :placeholder
-            :enter-label="smart ? finder.enterLabel.value : ''"
-            :combo="smart ? { open: smartShown, list: LIST_ID, active: activeOption } : undefined"
-            hero
-            send
-            external
-            @key="key"
-            @ask="onAsk"
-            @enter="smartEnter"
-            @focusin="smart && finder.open()"
-          />
-          <div v-if="dropping" class="v15-drop">
-            <ResultsB ref="results" :query />
-          </div>
-        </div>
-
-        <SmartResults
-          v-if="smartShown && finder.answer.value"
-          ref="found"
-          :answer="finder.answer.value"
-          :options="finder.options.value"
-          :active="finder.activeIndex.value"
+        <SmartSearch
+          ref="search"
+          v-model="query"
           :list-id="LIST_ID"
-          @hover="finder.activeIndex.value = $event"
-          @pick="act"
-        />
-        <div v-else class="v15-starts" :class="dropping && 'is-under'" @pointerleave="hover = ''">
-          <section class="v15-section" aria-labelledby="v15-templates">
-            <h2 id="v15-templates" class="sr-only">Templates</h2>
-            <HomeSectionHeader
-              title="Templates"
-              link-tip="All templates"
-              add-label="New workflow"
-              @open="seeAll"
-            />
-            <div :key="useCase" class="v15-row">
-              <button
-                v-for="c in templates"
-                :key="c.id"
-                type="button"
-                class="v15-card"
-                :class="hover === c.id && 'is-at'"
-                @pointerenter="enter(c.id, $event.currentTarget)"
-                @pointerleave="stopIn($event.currentTarget)"
-                @focus="enter(c.id, $event.currentTarget)"
-                @blur="stopIn($event.currentTarget)"
-                @click="pickTemplate(c)"
-              >
-                <span class="v15-pic">
-                  <img :src="c.starter.poster" alt="" loading="lazy" />
-                  <video
-                    v-if="c.starter.clip"
-                    :src="c.starter.clip"
-                    :poster="c.starter.poster"
-                    muted
-                    loop
-                    playsinline
-                    preload="none"
-                  />
-                </span>
-                <span class="v15-text">
-                  <span class="v15-name" :title="c.name">{{ c.name }}</span>
-                  <span class="v15-meta" :class="`is-${c.tone}`" :title="c.meta">{{ c.meta }}</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                class="v15-card v15-blank"
-                :class="hover === BLANK && 'is-at'"
-                @pointerenter="hover = BLANK"
-                @focus="hover = BLANK"
-                @click="pickBlank"
-              >
-                <span class="v15-pic">
-                  <Plus :size="22" class="v15-plus" />
-                </span>
-                <span class="v15-text">
-                  <span class="v15-name">Blank canvas</span>
-                  <span class="v15-meta">Start from scratch</span>
-                </span>
-              </button>
+          :smart
+          :suspended="flow.panel.value"
+          :mode="createInput.id"
+          :placeholder
+          :navigated
+          @key="key"
+          @ask="onAsk"
+          @workflow="(w) => leave(() => openWorkflow(w))"
+        >
+          <template #drop>
+            <div v-if="dropping" class="v15-drop">
+              <ResultsB ref="results" :query />
             </div>
-          </section>
+          </template>
+          <div class="v15-starts" :class="dropping && 'is-under'" @pointerleave="hover = ''">
+            <section class="v15-section" aria-labelledby="v15-templates">
+              <h2 id="v15-templates" class="sr-only">Templates</h2>
+              <HomeSectionHeader
+                title="Templates"
+                link-tip="All templates"
+                add-label="New workflow"
+                @open="seeAll"
+              />
+              <div :key="useCase" class="v15-row">
+                <button
+                  v-for="c in templates"
+                  :key="c.id"
+                  type="button"
+                  class="v15-card"
+                  :class="hover === c.id && 'is-at'"
+                  @pointerenter="enter(c.id, $event.currentTarget)"
+                  @pointerleave="stopIn($event.currentTarget)"
+                  @focus="enter(c.id, $event.currentTarget)"
+                  @blur="stopIn($event.currentTarget)"
+                  @click="pickTemplate(c)"
+                >
+                  <span class="v15-pic">
+                    <img :src="c.starter.poster" alt="" loading="lazy" />
+                    <video
+                      v-if="c.starter.clip"
+                      :src="c.starter.clip"
+                      :poster="c.starter.poster"
+                      muted
+                      loop
+                      playsinline
+                      preload="none"
+                    />
+                  </span>
+                  <span class="v15-text">
+                    <span class="v15-name" :title="c.name">{{ c.name }}</span>
+                    <span class="v15-meta" :class="`is-${c.tone}`" :title="c.meta">{{
+                      c.meta
+                    }}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="v15-card v15-blank"
+                  :class="hover === BLANK && 'is-at'"
+                  @pointerenter="hover = BLANK"
+                  @focus="hover = BLANK"
+                  @click="pickBlank"
+                >
+                  <span class="v15-pic">
+                    <Plus :size="22" class="v15-plus" />
+                  </span>
+                  <span class="v15-text">
+                    <span class="v15-name">Blank canvas</span>
+                    <span class="v15-meta">Start from scratch</span>
+                  </span>
+                </button>
+              </div>
+            </section>
 
-          <section v-if="recents.length" class="v15-section" aria-label="Recents">
-            <HomeSectionHeader
-              title="Recents"
-              link-tip="All workflows"
-              add-label="New workflow"
-              @open="openLibrary"
-            />
-            <RecentList
-              :rows="recentRows"
-              :active="hover"
-              @hover="(id) => (hover = id)"
-              @open="(row) => openAt(row.id)"
-            />
-          </section>
-        </div>
+            <section v-if="recents.length" class="v15-section" aria-label="Recents">
+              <HomeSectionHeader
+                title="Recents"
+                link-tip="All workflows"
+                add-label="New workflow"
+                @open="openLibrary"
+              />
+              <RecentList
+                :rows="recentRows"
+                :active="hover"
+                @hover="(id) => (hover = id)"
+                @open="(row) => openAt(row.id)"
+              />
+            </section>
+          </div>
+        </SmartSearch>
       </div>
     </div>
 
@@ -540,13 +475,6 @@ useEscapeCloses(() => composer.value?.field)
   letter-spacing: -0.022em;
   line-height: 38px;
 }
-:root .proto-ui.proto-ui.proto-ui .v15-ask {
-  position: relative;
-  z-index: 3;
-  width: min(640px, 100%);
-  margin-top: 22px;
-  text-align: left;
-}
 :root .proto-ui.proto-ui.proto-ui .v15-drop {
   position: absolute;
   top: calc(100% + 10px);
@@ -566,117 +494,9 @@ useEscapeCloses(() => composer.value?.field)
   scrollbar-width: thin;
   animation: v15-fade 160ms ease both;
 }
-:root .proto-ui.proto-ui.proto-ui .v15-starts {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 48px;
-  margin-top: 44px;
-  text-align: left;
-  transition: opacity 160ms ease;
-}
 :root .proto-ui.proto-ui.proto-ui .v15-starts.is-under {
   opacity: 0;
   pointer-events: none;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-row {
-  display: grid;
-  width: 100%;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 14px;
-  animation: v15-fade 200ms ease both;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-card {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 8px;
-  text-align: left;
-  outline: none;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pic {
-  position: relative;
-  display: block;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  border-radius: var(--radius-card);
-  background: var(--color-secondary-background);
-  box-shadow: inset 0 0 0 1px var(--color-border-default);
-  transition:
-    transform 260ms var(--ease-out-expo),
-    box-shadow 200ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pic > img,
-:root .proto-ui.proto-ui.proto-ui .v15-pic > video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pic > video {
-  opacity: 0;
-  transition: opacity 240ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-card.is-at .v15-pic > video {
-  opacity: 1;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-card.is-at .v15-pic {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-elev-hover);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-blank .v15-pic {
-  display: grid;
-  place-items: center;
-  border: 1px dashed color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
-  background: transparent;
-  box-shadow: none;
-  transition:
-    transform 260ms var(--ease-out-expo),
-    box-shadow 200ms ease,
-    border-color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-plus {
-  color: var(--color-muted-foreground);
-  transition: color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-blank.is-at .v15-pic {
-  border-color: color-mix(in oklch, var(--color-base-foreground) 34%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-blank.is-at .v15-plus {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-card:focus-visible .v15-pic {
-  box-shadow:
-    0 0 0 2px var(--color-content-background),
-    0 0 0 4px var(--color-border-focus);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 2px;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-name,
-:root .proto-ui.proto-ui.proto-ui .v15-meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-name {
-  color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
-  font-weight: 500;
-  transition: color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-card.is-at .v15-name {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-meta {
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
 }
 @keyframes v15-in {
   from {
@@ -684,28 +504,13 @@ useEscapeCloses(() => composer.value?.field)
     transform: translateY(10px);
   }
 }
-@keyframes v15-fade {
-  from {
-    opacity: 0;
-  }
-}
-@media (max-width: 1180px) {
-  :root .proto-ui.proto-ui.proto-ui .v15-row {
-    gap: 12px;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   :root .proto-ui.proto-ui.proto-ui .v15-over,
   :root .proto-ui.proto-ui.proto-ui .v15-drop,
-  :root .proto-ui.proto-ui.proto-ui .v15-row,
-  :root .proto-ui.proto-ui.proto-ui .v15-pic,
   :root .proto-ui.proto-ui.proto-ui .v15-scrim,
   :root .proto-ui.proto-ui.proto-ui .v15-built {
     animation: none;
     transition: none;
-  }
-  :root .proto-ui.proto-ui.proto-ui .v15-card.is-at .v15-pic {
-    transform: none;
   }
 }
 </style>
