@@ -288,7 +288,7 @@ export const TWEAKS = {
   homeLayout: one(homeLayout, 'current'),
   recentThumb: one(recentThumb, 'image'),
   homeIdeaThumbs: one(homeIdea('thumbs').store, 'off'),
-  homeIdeaHeaders: one(homeIdea('headers').store, 'off'),
+  homeIdeaHeaders: one(homeIdea('headers').store, 'on'),
   homeIdeaCleanCards: one(homeIdea('cleanCards').store, 'off'),
   homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
   homeIdeaSmallGreeting: one(homeIdea('smallGreeting').store, 'off'),

@@ -11,14 +11,22 @@ export interface HomeIdea {
   label: string
   note: string
   store: { id: HomeIdeaSwitch }
+  def: HomeIdeaSwitch
 }
 
-const idea = (id: HomeIdeaId, key: string, label: string, note: string): HomeIdea => ({
+const idea = (
+  id: HomeIdeaId,
+  key: string,
+  label: string,
+  note: string,
+  def: HomeIdeaSwitch = 'off'
+): HomeIdea => ({
   id,
   key,
   label,
   note,
-  store: reactive({ id: 'off' as HomeIdeaSwitch })
+  def,
+  store: reactive({ id: def })
 })
 
 export const HOME_IDEAS: HomeIdea[] = [
@@ -32,7 +40,8 @@ export const HOME_IDEAS: HomeIdea[] = [
     'headers',
     'hi2',
     'Same headers everywhere',
-    'APPS › like RECENTLY USED ›, apps only, no tabs or See all link.'
+    'APPS › like RECENTLY USED ›, apps only, no tabs or See all link.',
+    'on'
   ),
   idea(
     'cleanCards',
