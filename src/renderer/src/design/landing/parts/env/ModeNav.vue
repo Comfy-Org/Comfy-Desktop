@@ -18,11 +18,13 @@ import {
 } from 'lucide-vue-next'
 import { ComfyAssets } from '../../mar/icons/comfyIcons'
 import Button from '../../ui/Button.vue'
+import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
 import { go, isNewUser, proto, toast, type Mode, type Page } from '../../useProto'
 import { can } from '../../milestones'
 import { search } from '../../mar/search/search'
 import { openPageMenu } from '../../mar/shell/pageMenu'
+import { RAIL_TOOLTIP_DELAY_MS, railTooltips } from '../../mar/shell/sidebarMotion'
 
 /**
  * Navigation for one lens. Create: make things. Build: ship them as an API.
@@ -169,38 +171,52 @@ function open(i: Item): void {
       <!-- The global search (⌘K) right under the first place (Home), by
            default. Search finds Create things: not in Build, and not before
            Learn (Milestones 2 and 3 ship without it). -->
-      <Button
+      <Tooltip
         v-if="idx === 1 && mode !== 'build' && can.search && !can.onboarding"
-        variant="ghost"
-        class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
-        @click="search.open = true"
+        content="Search"
+        side="right"
+        :delay="RAIL_TOOLTIP_DELAY_MS"
+        :disabled="!railTooltips"
       >
-        <Search :size="15" />
-        <span class="sidebar-label text-left">Search</span>
-      </Button>
+        <Button
+          variant="ghost"
+          class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
+          @click="search.open = true"
+        >
+          <Search :size="15" />
+          <span class="sidebar-label text-left">Search</span>
+        </Button>
+      </Tooltip>
       <div
         v-if="i.section"
         class="mt-5.5 flex h-6.5 items-center px-3 text-ui font-medium tracking-wider text-subtle-foreground uppercase"
       >
         <span>{{ i.section }}</span>
       </div>
-      <Button
-        variant="ghost"
-        :aria-current="active(i) ? 'page' : undefined"
-        :data-home-tour="tourAnchor(i)"
-        :class="
-          cn(
-            'h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal',
-            active(i) && 'bg-secondary-background-hover text-base-foreground'
-          )
-        "
-        @click="open(i)"
-        @contextmenu="i.page && can.builds && openPageMenu($event, i.label)"
+      <Tooltip
+        :content="i.label"
+        side="right"
+        :delay="RAIL_TOOLTIP_DELAY_MS"
+        :disabled="!railTooltips"
       >
-        <component :is="i.icon" :size="15" />
-        <span class="sidebar-label text-left">{{ i.label }}</span>
-        <SquareArrowOutUpRight v-if="i.href" :size="12" class="text-subtle-foreground" />
-      </Button>
+        <Button
+          variant="ghost"
+          :aria-current="active(i) ? 'page' : undefined"
+          :data-home-tour="tourAnchor(i)"
+          :class="
+            cn(
+              'h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal',
+              active(i) && 'bg-secondary-background-hover text-base-foreground'
+            )
+          "
+          @click="open(i)"
+          @contextmenu="i.page && can.builds && openPageMenu($event, i.label)"
+        >
+          <component :is="i.icon" :size="15" />
+          <span class="sidebar-label text-left">{{ i.label }}</span>
+          <SquareArrowOutUpRight v-if="i.href" :size="12" class="text-subtle-foreground" />
+        </Button>
+      </Tooltip>
     </template>
   </nav>
 </template>

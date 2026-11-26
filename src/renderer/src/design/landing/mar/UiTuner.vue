@@ -62,6 +62,8 @@ import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
+import { BLANK_STARTS, blankStart } from './graph/blankStart'
+import { SIDEBAR_MOTIONS, sidebarMotion } from './shell/sidebarMotion'
 import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
 import { HOME_IDEAS, type HomeIdeaId } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
@@ -159,7 +161,7 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['brandMotif']
+const GLOBAL: TweakId[] = ['brandMotif', 'sidebarMotion']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
@@ -186,6 +188,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeArcMix', show: () => when.homeArcMix.value },
   { id: 'homeLayout', show: () => when.homeLayout.value },
   { id: 'buildsAt', show: () => when.buildsAt.value },
+  { id: 'blankStart', show: () => when.blankStart.value },
   { id: 'exploreSwitch', show: () => when.exploreSwitch.value },
   { id: 'appPage', show: () => when.appPage.value },
   { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
@@ -382,6 +385,9 @@ const linkSays = computed(() => {
           <Row label="Brand motif">
             <Seg v-model="brandMotif.id" label="Brand motif" :options="BRAND_MOTIFS" />
           </Row>
+          <Row :show="when.sidebarMotion.value" label="Sidebar motion">
+            <Seg v-model="sidebarMotion.id" label="Sidebar motion" :options="SIDEBAR_MOTIONS" />
+          </Row>
           <Row v-if="can.breadcrumb" label="Title bar">
             <Seg v-model="titleTabs.style" label="Title bar" :options="TITLE_BARS" />
           </Row>
@@ -492,6 +498,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('exploreSwitch')" label="Explore switch">
             <Select v-model="exploreSwitch.id" :options="EXPLORE_SWITCHES" class="w-full" />
+          </Row>
+          <Row :show="shows('blankStart')" label="Blank canvas opens">
+            <Select v-model="blankStart.id" :options="BLANK_STARTS" class="w-full" />
           </Row>
           <Row :show="shows('buildsAt')" label="Builds position">
             <Select v-model="buildsAt.id" :options="BUILDS_AT" class="w-full" />

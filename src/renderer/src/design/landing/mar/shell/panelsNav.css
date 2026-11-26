@@ -59,28 +59,52 @@
    of icons, like Magnific. Labels, group titles and the lists under them
    hide; the main links, the Create / Build switch and the foot stay as
    icons, with their names as tooltips. */
-:root[data-mar-rail] .proto-ui aside.proto-sidebar.proto-sidebar {
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui
+  aside.proto-sidebar.proto-sidebar {
   width: 56px;
   padding-inline: 8px;
   transition: width 240ms var(--mar-ease-io, ease);
 }
-:root[data-mar-rail] .proto-ui aside.proto-sidebar > div {
+:root[data-mar-rail]:not([data-mar-side-motion='desktop']) .proto-ui aside.proto-sidebar > div {
   width: 40px;
 }
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .sidebar-label,
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .tabular-nums,
-:root[data-mar-rail] .proto-ui aside.proto-sidebar > div > .mt-5\.5 {
+:root[data-mar-rail] .proto-ui aside.proto-sidebar > div > .mt-5\.5,
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui
+  aside.proto-sidebar
+  .sidebar-label,
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui
+  aside.proto-sidebar
+  .tabular-nums {
   display: none;
 }
-:root[data-mar-rail] .proto-ui aside.proto-sidebar nav > button,
-:root[data-mar-rail] .proto-ui aside.proto-sidebar .mt-auto button {
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui
+  aside.proto-sidebar
+  nav
+  > button,
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui
+  aside.proto-sidebar
+  .mt-auto
+  button {
   justify-content: center;
   padding-inline: 0;
 }
 /* Every link, the credits and the workspace: one 36px square on the
    rail's centre line, so a hover or the current page is a square too. */
-:root[data-mar-rail] .proto-ui.proto-ui.proto-ui aside.proto-sidebar nav > button,
-:root[data-mar-rail] .proto-ui.proto-ui.proto-ui aside.proto-sidebar .mt-auto button {
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui.proto-ui.proto-ui
+  aside.proto-sidebar
+  nav
+  > button,
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui.proto-ui.proto-ui
+  aside.proto-sidebar
+  .mt-auto
+  button {
   width: 36px;
   height: 36px;
   align-self: center;
@@ -101,8 +125,13 @@
   background: var(--color-secondary-background);
 }
 /* The workspace chevron, and Docs' out-of-app arrow. */
-:root[data-mar-rail] .proto-ui aside.proto-sidebar nav > button > svg:last-child:not(:first-child),
-:root[data-mar-rail]
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
+  .proto-ui
+  aside.proto-sidebar
+  nav
+  > button
+  > svg:last-child:not(:first-child),
+:root[data-mar-rail]:not([data-mar-side-motion='desktop'])
   .proto-ui
   aside.proto-sidebar
   .mt-auto
@@ -132,4 +161,109 @@
 :root[data-mar-rail] .proto-ui aside.proto-sidebar .mms-agent {
   width: 36px;
   height: 36px;
+}
+
+:root[data-mar-nav='panels'] {
+  --mar-side-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --mar-side-label-ease: cubic-bezier(0, 0, 0.2, 1);
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop']
+  .proto-ui
+  aside.proto-sidebar:not(.w-0) {
+  interpolate-size: allow-keywords;
+  transition:
+    width 260ms var(--mar-side-ease),
+    margin 260ms var(--mar-side-ease),
+    padding 260ms var(--mar-side-ease),
+    opacity 200ms ease;
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop'][data-mar-rail]
+  .proto-ui
+  aside.proto-sidebar.proto-sidebar:not(.w-0) {
+  width: 64px;
+  padding-inline: 12px;
+  transition-duration: 300ms, 300ms, 300ms, 200ms;
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop']
+  .proto-ui
+  aside.proto-sidebar:not(.w-0)
+  > div {
+  width: 100%;
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop']
+  .proto-ui.proto-ui.proto-ui
+  aside.proto-sidebar
+  :is(nav > button, .mar-credits-row, .mt-auto button) {
+  width: 100%;
+  overflow: hidden;
+  transition:
+    background-color 150ms var(--mar-side-ease),
+    color 150ms var(--mar-side-ease),
+    width 260ms var(--mar-side-ease),
+    margin 260ms var(--mar-side-ease),
+    padding 260ms var(--mar-side-ease),
+    height 260ms var(--mar-side-ease);
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop'][data-mar-rail]
+  .proto-ui.proto-ui.proto-ui
+  aside.proto-sidebar
+  :is(nav > button, .mar-credits-row) {
+  width: 32px;
+  height: 32px;
+  margin-left: 4px;
+  padding-right: 0;
+  padding-left: 8px;
+  transition-duration: 150ms, 150ms, 300ms, 300ms, 300ms, 300ms;
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop'][data-mar-rail]
+  .proto-ui.proto-ui.proto-ui
+  aside.proto-sidebar
+  .mt-auto
+  button:not(.mar-credits-row) {
+  width: 40px;
+  height: 40px;
+  transition-duration: 150ms, 150ms, 300ms, 300ms, 300ms, 300ms;
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop']
+  .proto-ui
+  aside.proto-sidebar
+  :is(
+    .sidebar-label,
+    .tabular-nums,
+    nav > button > svg:last-child:not(:first-child),
+    .mt-auto button > svg:last-child:not(:first-child)
+  ) {
+  transition: opacity 180ms var(--mar-side-label-ease) 30ms;
+}
+:root[data-mar-nav='panels'][data-mar-side-motion='desktop'][data-mar-rail]
+  .proto-ui
+  aside.proto-sidebar
+  :is(
+    .sidebar-label,
+    .tabular-nums,
+    nav > button > svg:last-child:not(:first-child),
+    .mt-auto button > svg:last-child:not(:first-child)
+  ) {
+  opacity: 0;
+  transition: opacity 150ms var(--mar-side-label-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-nav='panels'][data-mar-side-motion='desktop']
+    .proto-ui
+    aside.proto-sidebar.proto-sidebar,
+  :root[data-mar-nav='panels'][data-mar-side-motion='desktop'][data-mar-rail]
+    .proto-ui
+    aside.proto-sidebar.proto-sidebar:not(.w-0) {
+    transition: opacity 200ms ease;
+  }
+  :root[data-mar-nav='panels'][data-mar-side-motion='desktop']
+    .proto-ui.proto-ui.proto-ui
+    aside.proto-sidebar
+    :is(nav > button, .mar-credits-row, .mt-auto button),
+  :root[data-mar-nav='panels'][data-mar-side-motion='desktop'][data-mar-rail]
+    .proto-ui.proto-ui.proto-ui
+    aside.proto-sidebar
+    :is(nav > button, .mar-credits-row, .mt-auto button) {
+    transition: none;
+  }
 }

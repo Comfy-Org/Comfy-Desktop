@@ -4,7 +4,8 @@ import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
 import { resetTuning, tuning } from './uiTuner'
 import { surface } from './shell/surface'
-import { marNav, marSideOn, marSidebarClosed } from './shell/marShell'
+import { marNav, marPanelsOn, marSideOn, marSidebarClosed } from './shell/marShell'
+import { sidebarMotion } from './shell/sidebarMotion'
 import { screen } from './screen'
 // Graphite is applied on load.
 import './palette'
@@ -50,6 +51,7 @@ import { agentOpens } from './create/agentOpens'
 import { composerPos } from './create/composerPos'
 import { graphHover } from './create/graphHover'
 import { createScreen } from './create/createScreen'
+import { blankStart } from './graph/blankStart'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
 import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
@@ -108,6 +110,7 @@ export const when = {
   exploreSwitch: computed(
     () => onHome.value && can.value.explore && !onFirstRun.value && homeArcMix.id === 'tabs'
   ),
+  sidebarMotion: computed(() => sidebarShown.value && marPanelsOn.value),
   buildsAt: computed(
     () =>
       onHome.value &&
@@ -155,6 +158,7 @@ export const when = {
   homeTour: computed(() => onHome.value && can.value.onboarding),
   createLook: computed(() => can.value.onboarding && createScreen.open),
   graphHover: computed(() => can.value.onboarding && createScreen.open && createLook.id === 'V15'),
+  blankStart: computed(() => can.value.onboarding && (createScreen.open || inGraph.value)),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
@@ -304,6 +308,7 @@ export const TWEAKS = {
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'recents'),
   buildsAt: one(buildsAt, 'bottom'),
+  sidebarMotion: one(sidebarMotion, 'desktop'),
   exploreSwitch: one(exploreSwitch, 'seg'),
   homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
   homeIdeaSmallGreeting: one(homeIdea('smallGreeting').store, 'off'),
@@ -317,6 +322,7 @@ export const TWEAKS = {
   recentsCover: one(recentsCover, 'generic'),
   homeTour: one(homeTour, 'auto'),
   createLook: one(createLook, DEFAULT_CREATE_LOOK),
+  blankStart: one(blankStart, 'empty'),
   createInput: one(createInput, 'agent'),
   composerSearch: one(composerSearch, 'smart'),
   agentOpens: one(agentOpens, 'create'),
