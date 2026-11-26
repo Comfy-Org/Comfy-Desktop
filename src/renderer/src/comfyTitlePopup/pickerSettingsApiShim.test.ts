@@ -115,6 +115,20 @@ describe('installPickerSettingsApiShim — terminal forwarding', () => {
   })
 })
 
+describe('installPickerSettingsApiShim — language changes', () => {
+  it('tells the build details in the picker when the app language changes', () => {
+    const bridge = installBridge()
+    installPickerSettingsApiShim()
+
+    const api = (window as unknown as { api: { onLocaleChanged: (cb: () => void) => () => void } })
+      .api
+    const cb = vi.fn()
+    api.onLocaleChanged(cb)
+
+    expect(bridge.pickerSettingsOnLocaleChanged).toHaveBeenCalledExactlyOnceWith(cb)
+  })
+})
+
 describe('installPickerSettingsApiShim — Global Settings deep link', () => {
   it('forwards openGlobalSettings to the popup bridge with its tab and highlight', () => {
     const bridge = installBridge()
@@ -158,4 +172,45 @@ describe('installPickerSettingsApiShim — folder actions', () => {
       '/models/extra_model_paths.yaml'
     )
   })
+})
+
+it("gives the picker the app's openExternal, sent through the settings link channel", async () => {
+  const bridge = installBridge()
+  installPickerSettingsApiShim()
+
+  await window.api.openExternal('https://docs.comfy.org/')
+
+  expect(bridge.globalSettingsOpenExternal).toHaveBeenCalledExactlyOnceWith(
+    'https://docs.comfy.org/'
+  )
+})
+
+it('gives the picker onSettingsChanged, so a setting changed elsewhere reaches it', () => {
+  const unsubscribe = vi.fn()
+  const bridge = installBridge({ pickerSettingsOnSettingsChanged: vi.fn(() => unsubscribe) })
+  installPickerSettingsApiShim()
+  const changed = vi.fn()
+
+  const off = window.api.onSettingsChanged(changed)
+  const [[forward]] = vi.mocked(bridge.pickerSettingsOnSettingsChanged as (cb: unknown) => unknown)
+    .mock.calls as unknown as [[(data: { key: string }) => void]]
+  forward({ key: 'coreBetaFeatures' })
+  off()
+
+  expect(changed).toHaveBeenCalledExactlyOnceWith({ key: 'coreBetaFeatures' })
+  expect(unsubscribe).toHaveBeenCalledOnce()
+})
+
+it('passes the field-options context through to the picker bridge', async () => {
+  const bridge = installBridge({ pickerSettingsGetFieldOptions: vi.fn().mockResolvedValue([]) })
+  installPickerSettingsApiShim()
+
+  await window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })
+
+  expect(bridge.pickerSettingsGetFieldOptions).toHaveBeenCalledExactlyOnceWith(
+    'standalone',
+    'release',
+    {},
+    { includeLatestStable: true }
+  )
 })

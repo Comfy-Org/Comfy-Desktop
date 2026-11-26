@@ -32,7 +32,7 @@ describe('DevelopmentSection', () => {
     installBridge({ kind: 'asked' })
     const wrapper = mount(DevelopmentSection)
     expect(wrapper.get('.gs-draft-app-input input').attributes('placeholder')).toBe(
-      'https://pr-706.drafts.comfy.org/apps/depth-swap/'
+      'https://comfy-website-preview-pr-759.vercel.app/apps/text-to-image/desktop.html'
     )
     expect(wrapper.find('.gs-draft-app-hint').exists()).toBe(false)
   })

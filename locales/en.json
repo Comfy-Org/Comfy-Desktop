@@ -21,8 +21,11 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "explore": "Explore",
+    "workflows": "Workflows",
     "backToApp": "Back to {app}",
     "assets": "Assets",
+    "development": "Development",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
@@ -106,6 +109,75 @@
     "rail": {
       "running": "{app}, making something",
       "finished": "{app}, ready"
+    }
+  },
+  "workflows": {
+    "search": "Search workflows",
+    "failedTitle": "Workflows didn't load",
+    "failedBody": "Check your internet connection, then try again.",
+    "emptyTitle": "No workflows yet",
+    "emptyBody": "New catalog workflows will show up here.",
+    "noMatches": "No workflows match “{query}”",
+    "noFilterMatches": "Try another filter, or clear them to see every workflow.",
+    "filters": {
+      "label": "Filters",
+      "useCase": "Use case",
+      "model": "Model",
+      "runsOn": "Runs on",
+      "all": "All",
+      "clear": "Clear filters",
+      "runsOnOption": {
+        "local": "This computer",
+        "cloud": "Comfy Cloud"
+      }
+    },
+    "layout": {
+      "label": "Layout",
+      "size": "Size",
+      "smaller": "Smaller cards",
+      "larger": "Larger cards",
+      "sizes": {
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large"
+      },
+      "sortBy": "Sort by",
+      "sorts": {
+        "popular": "Popular",
+        "newest": "Newest",
+        "name": "Name"
+      }
+    },
+    "useCase": {
+      "edit-images": "Image editing",
+      "upscale-and-restore": "Upscale & restore",
+      "product-fashion-and-ads": "Product, fashion & ads",
+      "generate-video": "Video generation",
+      "edit-video": "Video editing",
+      "generate-images": "Image generation",
+      "animate-characters": "Character animation",
+      "vfx-and-motion-transfer": "VFX & motion transfer",
+      "storyboards": "Storyboards",
+      "controlnet-and-tools": "ControlNet & tools",
+      "lip-sync-and-avatars": "Lip sync & avatars",
+      "swap-faces-and-characters": "Face & character swap",
+      "sprite-sheets-and-game-assets": "Sprites & game assets",
+      "voice-and-speech": "Voice & speech",
+      "music-and-sound": "Music & sound"
+    },
+    "generation": {
+      "edit-images": "Image editing",
+      "generate-images": "Image generation",
+      "edit-videos": "Video editing",
+      "generate-videos": "Video generation",
+      "animate-images": "Image to video",
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio"
+    },
+    "license": {
+      "open-source": "Open source",
+      "partner": "Partner API"
     }
   },
   "assets": {
@@ -208,9 +280,91 @@
       "file": "File"
     }
   },
+  "workflowLaunch": {
+    "updateBuild": "This workflow needs ComfyUI {version} or newer. Update a local build in Comfy Desktop.",
+    "noLocalBuild": "Add a compatible local build to open this workflow on your computer.",
+    "unavailable": "You can view this workflow on Comfy Hub.",
+    "openHub": "View on Comfy Hub",
+    "opening": "Opening…",
+    "openFailed": "Couldn't open the workflow. Try again.",
+    "hubFailed": "Couldn't open this workflow on Comfy Hub. Try again.",
+    "preview": "Preview",
+    "result": "Result",
+    "graph": "Graph",
+    "zoom": "Zoom",
+    "zoomFit": "Fit",
+    "noPreview": "No preview for this workflow.",
+    "noGraph": "The graph isn't available for this workflow.",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "more": "More",
+    "less": "Less",
+    "openIn": "Open in",
+    "whatItNeeds": "What it needs",
+    "details": "Details",
+    "partnerOnly": "Uses a partner model that only runs on Comfy Cloud.",
+    "noTarget": "Add a build to open this workflow, or view it on Comfy Hub.",
+    "downloadFailed": "Some models didn't download. Check Downloads, then try again.",
+    "noDiskSpace": "There is not enough disk space for this workflow's models. Free up space, then try again.",
+    "downloadCancelled": "Download cancelled.",
+    "status": {
+      "outdated": "Needs ComfyUI {version} or newer",
+      "notOnCloud": "Not on Cloud yet",
+      "offline": "You're offline",
+      "signedOut": "Needs a Comfy account",
+      "cloudReady": "Every model ready",
+      "running": "Running",
+      "stopped": "Stopped",
+      "checking": "checking models",
+      "everyModel": "every model here",
+      "missing": "{count} model missing | {count} models missing",
+      "unchecked": "models not checked"
+    },
+    "needs": {
+      "partner": "Partner API on Comfy Cloud",
+      "checking": "Checking models…",
+      "none": "No model downloads",
+      "models": "{count} model | {count} models",
+      "state": {
+        "installed": "Installed",
+        "downloads": "Downloads first",
+        "cloud": "On Comfy Cloud"
+      },
+      "failed": "Couldn't check the models",
+      "retry": "Try again"
+    },
+    "action": {
+      "logIn": "Log in to Comfy Cloud",
+      "runOnCloud": "Run on Comfy Cloud",
+      "downloadAndLaunch": "Download and launch",
+      "openIn": "Open in {name}",
+      "launch": "Launch {name}",
+      "downloading": "Downloading…",
+      "downloadingBytes": "Downloading {done} of {total}",
+      "cancelDownload": "Cancel download"
+    },
+    "note": {
+      "freeCredits": "New accounts get free credits.",
+      "offline": "Comfy Cloud needs a connection.",
+      "downloadModels": "Downloads {count} model once, then launches {name}. | Downloads {count} models once, then launches {name}.",
+      "downloadBytes": "Downloads {size} once, then launches {name}."
+    },
+    "detail": {
+      "author": "Author",
+      "model": "Model",
+      "uses": "Uses",
+      "license": "License",
+      "comfyui": "ComfyUI",
+      "tutorial": "Tutorial"
+    }
+  },
   "home": {
     "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
+    "opensWhenReady": "Starting… opens when it's ready",
+    "comfyReady": "ComfyUI is ready",
+    "comfyReadyOpen": "Open",
+    "comfyReadyDismiss": "Dismiss",
     "chooseBuildToOpen": "Choose the build to open",
     "openComfyUIIn": "Open ComfyUI in {name}",
     "opensIn": "Opens in {name}",
@@ -220,7 +374,7 @@
     "turnOffAutoStart": "Turn off auto start",
     "autoStartOn": "Auto start",
     "buildRunning": "Running",
-    "buildStarting": "Starting",
+    "buildStarting": "Starting…",
     "buildNeverUsed": "Never used",
     "cloudNoSetupNeeded": "No setup needed",
     "buildUsedJustNow": "Used just now",
@@ -234,9 +388,11 @@
     "buildCrashed": "Crashed",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
+    "carouselTabs": "Browse featured content",
     "seeAllApps": "See all apps",
+    "seeAllWorkflows": "See all workflows",
     "showWorkflow": "Show {title}",
-    "openWorkflow": "Open {title} on Comfy Hub",
+    "openWorkflow": "Open {title}",
     "previousWorkflow": "Previous workflow",
     "nextWorkflow": "Next workflow",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
@@ -389,6 +545,12 @@
     "desktopUpdateDownloading": "Downloading update…",
     "desktopUpdateReady": "Desktop update ready",
     "desktopUpdateWithVersion": "{label} (v{version})",
+    "desktopUpdateDesktopButton": "Update Desktop",
+    "desktopUpdateRestartButton": "Restart to update",
+    "desktopUpdateVersion": "v{version}",
+    "desktopUpdateReadyTooltip": "v{version} installs on restart",
+    "desktopUpdateReadyManualTooltip": "v{version} ready to install",
+    "desktopUpdateAvailableTooltip": "v{version} available",
     "installUpdateVersion": "ComfyUI {version}",
     "refreshInstanceTooltip": "Refresh",
     "resetZoomTooltip": "Reset zoom to 100%",
@@ -418,7 +580,6 @@
     "tabOverview": "Overview",
     "tabSnapshots": "Snapshots",
     "tabFolders": "Folders",
-    "tabCloudStorage": "Storage",
     "tabTerminal": "Terminal",
     "relaunch": "Restart",
     "more": "More",
@@ -426,6 +587,8 @@
     "envVarsCount": "{n} defined",
     "emptyInstallLess": "Open a ComfyUI build to view its settings.",
     "storageRestartNote": "Restart the application (or close and reopen) for these changes to take effect.",
+    "startupArgFoldersNote": "Git builds use the shared input and output folders. To use your own, add {inputFlag} or {outputFlag} in Startup arguments.",
+    "folderAfterRestart": "After a restart: {path}",
     "dirMissingTitle": "Folder not found: {dir}",
     "viewCustomPathDetails": "View custom path details",
     "yamlTag": "YAML",
@@ -484,7 +647,9 @@
     "argsUnexpected": "Unexpected:",
     "updateFieldTimeout": "Couldn't reach app. Try again",
     "useSharedInput": "Use shared input",
-    "useSharedOutput": "Use shared output"
+    "useSharedOutput": "Use shared output",
+    "cloudOutputsStay": "Outputs stay on Comfy Cloud.",
+    "browserCacheHint": "Shares cookies and local storage with your other builds, or keeps them separate."
   },
   "comfyLifecycle": {
     "preparingTitle": "Preparing…",
@@ -563,6 +728,7 @@
     "browserPartition": "Browser cache",
     "partitionShared": "Shared",
     "partitionUnique": "Unique to this build",
+    "partitionSeparate": "Separate",
     "startingComfyUI": "Starting ComfyUI",
     "portConflict": "If port is busy",
     "portConflictAsk": "Ask what to do",
@@ -618,7 +784,9 @@
     "nothingMatches": "Nothing matches",
     "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
     "clearFilters": "Clear filters",
-    "clearSearch": "Clear search"
+    "clearSearch": "Clear search",
+    "copyToClipboard": "Copy to clipboard",
+    "exportHere": "Export here"
   },
   "comfybuilder": {
     "build": "Build",
@@ -635,7 +803,7 @@
     "updatingTo": "Updating to v{version}",
     "updateConfirmTitle": "Update build",
     "updateConfirmMessage": "Update from {from} to {to}?",
-    "updateConfirmInfo": "ℹ️ This replaces the managed environment with the new Build version. Your workflows and staged models will be kept.",
+    "updateConfirmInfo": "This replaces the managed environment with the new Build version. Your workflows and staged models will be kept.",
     "updateNow": "Update now",
     "errorNoVersion": "No target version was given.",
     "errorVersionUnavailable": "Version v{version} has no build for this machine."
@@ -907,6 +1075,8 @@
     "autoInstallUpdates": "Automatically install Desktop updates",
     "appBehavior": "App behavior",
     "generalSection": "General",
+    "startPage": "Open Desktop on",
+    "startPageDescription": "The page a new Desktop window opens on.",
     "confirmBeforeClosingWindow": "Confirm before closing a window",
     "confirmBeforeClosingWindowDescription": "Ask before closing a window when that stops ComfyUI or quits Comfy Desktop.",
     "warnBeforeRunningMultipleInstances": "Warn before running multiple builds",
@@ -954,7 +1124,7 @@
     "developmentTab": "Development",
     "draftAppsTitle": "Draft apps",
     "draftAppAddress": "App address",
-    "draftAppPlaceholder": "https://pr-706.drafts.comfy.org/apps/depth-swap/",
+    "draftAppPlaceholder": "https://comfy-website-preview-pr-759.vercel.app/apps/text-to-image/desktop.html",
     "draftAppFailedTitle": "Couldn't open this draft app",
     "draftAppFailedMessage": "Comfy Desktop could not check this address. Try again.",
     "sharedFolders": "Shared folders",
@@ -1462,10 +1632,11 @@
     "upToDateMessage": "No updates available. You're already up to date.",
     "updateNow": "Update now",
     "updateConfirmTitle": "Update ComfyUI",
-    "updateConfirmMessage": "Update from {installed} to {latest}?",
+    "updateConfirmTitleTo": "Update ComfyUI to {version}?",
+    "updateConfirmVersionChange": "{installed} → {latest}",
     "updateConfirmMessageLatest": "Update {installed} to the latest master commit ({latest})?",
     "updateConfirmMessageDowngrade": "Roll back from {installed} to stable {latest}? Newer commits will be removed.",
-    "updateSnapshotUndoHint": "ℹ️ If this update breaks your custom nodes, you can restore the previous version of the build from the Snapshots tab.",
+    "updateSnapshotUndoHint": "If custom nodes break, restore the previous version from Snapshots.",
     "updateConfirmMessagePicked": "Update ComfyUI to **{tag}**?",
     "updatingTitle": "Updating to {version}",
     "downgradingTitle": "Downgrading to {version}",
@@ -1642,7 +1813,8 @@
     "latestLabel": "Latest:",
     "noneYet": "No snapshots yet",
     "restoreCancelled": "Restore cancelled",
-    "restoreCancelledBody": "The imported snapshot was not applied."
+    "restoreCancelledBody": "The imported snapshot was not applied.",
+    "fileTypeName": "Snapshot"
   },
   "portable": {
     "label": "Portable",
@@ -1832,6 +2004,7 @@
     "cancelOperation": "Cancel operation",
     "stopRequired": "This build is currently running and must be stopped first.",
     "willStopRunning": "{name} is running and will be stopped first.",
+    "willRestartRunning": "{name} is running and will restart.",
     "folderPermissionDenied": "macOS denied access to \"{path}\". Please open System Settings → Privacy & Security → Files and Folders, grant access to Comfy Desktop, then retry.",
     "recoveryFailed": "ComfyUI recovery failed: {message}",
     "executableNotFound": "Executable not found: {cmd}"
@@ -1932,7 +2105,7 @@
     "returnToDashboard": "Back to Home",
     "closeAllWindows": "Close all windows",
     "exitWindow": "Close window",
-    "exitAllWindows": "Quit Desktop",
+    "exitAllWindows": "Quit Comfy Desktop",
     "skipOnboarding": "Skip onboarding"
   },
   "feedback": {
@@ -2023,7 +2196,8 @@
     "medianSummary": "Median run · {count} measured · {failed} failed",
     "runCounts": "{count} measured · {failed} failed",
     "runPhaseWarmup": "warm-up run",
-    "runPhaseMeasured": "measured run {current} of {total}"
+    "runPhaseMeasured": "measured run {current} of {total}",
+    "exportDialogTitle": "Export performance test results"
   },
   "benchmarks": {
     "title": "Benchmarks",
@@ -2105,7 +2279,8 @@
     "exportLimit": "Up to {max} runs",
     "clearSelection": "Clear selection",
     "memory": "{gigabytes} GB RAM",
-    "referenceHidden": "Compared with session {session}, which the filters hide."
+    "referenceHidden": "Compared with session {session}, which the filters hide.",
+    "exportDialogTitle": "Export benchmark comparison"
   },
   "downloadsPopup": {
     "title": "Downloads",
@@ -2119,7 +2294,22 @@
     "viewAll": "View all",
     "viewAllLabel": "View all downloads",
     "completed": "Completed",
-    "thumbnailAlt": "Thumbnail of {name}"
+    "thumbnailAlt": "Thumbnail of {name}",
+    "statusWaiting": "Waiting…",
+    "statusPaused": "Paused · {progress}",
+    "statusDownloaded": "Downloaded",
+    "statusDownloadedSize": "Downloaded · {size}",
+    "statusCancelled": "Cancelled",
+    "statusFailed": "Download failed",
+    "bytesOf": "{received} of {total}",
+    "timeLeftUnderMinute": "Less than a minute left",
+    "timeLeftMinutes": "{minutes} min left",
+    "timeLeftHours": "{hours} h left",
+    "timeLeftHoursMinutes": "{hours} h {minutes} min left",
+    "etaLeft": "~{eta} left",
+    "etaSeconds": "{seconds}s",
+    "etaMinutes": "{minutes}m {seconds}s",
+    "etaHours": "{hours}h {minutes}m"
   },
   "downloadsTab": {
     "title": "Downloads",
@@ -2244,5 +2434,44 @@
     "detailMany": "{count} apps are still making something. Quitting stops them.",
     "quit": "Quit",
     "cancel": "Cancel"
+  },
+  "quitDesktop": {
+    "messageOne": "Quit Comfy Desktop? This will close the running ComfyUI build.",
+    "messageMany": "Quit Comfy Desktop? This will close {count} running ComfyUI builds.",
+    "openBuilds": "Open builds",
+    "operations": "In-progress operations",
+    "downloads": "Active downloads",
+    "untitled": "Untitled build"
+  },
+  "closeWindow": {
+    "message": "Close this window?",
+    "messageQuits": "Close this window? This quits Comfy Desktop.",
+    "messageStops": "Close this window? This stops the running ComfyUI build.",
+    "messageStopsAndQuits": "Close this window? This stops ComfyUI and quits Comfy Desktop."
+  },
+  "appMenu": {
+    "view": "View",
+    "window": "Window",
+    "checkForUpdates": "Check for Updates…"
+  },
+  "staffApps": {
+    "title": "Development",
+    "body": "Apps in the catalog that are not on the Apps page. Only Comfy staff see this page.",
+    "search": "Search development apps",
+    "noMatchesHint": "Try another word.",
+    "noPage": "No page on comfy.org yet",
+    "pageUnchecked": "Couldn't check the page on comfy.org",
+    "reason": {
+      "off": "Off",
+      "draft": "Draft",
+      "hubOnly": "Hub only",
+      "unpublished": "Unpublished edits"
+    },
+    "reasonDescription": {
+      "off": "Turned off in the catalog",
+      "draft": "Never published",
+      "hubOnly": "Not listed for Desktop",
+      "unpublished": "Has saved edits that are not published"
+    }
   }
 }

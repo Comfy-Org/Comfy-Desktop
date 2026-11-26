@@ -5,7 +5,6 @@ type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   isAppsPage: true,
-  appsEnabled: true,
   pageAdmitted: true,
   localState: vi.fn(),
   startLocal: vi.fn(),
@@ -19,7 +18,8 @@ const mocks = vi.hoisted(() => ({
   whileChecking: () => {},
   pages: [] as { send: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }[],
   refusedPages: new Set<unknown>(),
-  runsChanged: null as (() => void) | null
+  runsChanged: null as (() => void) | null,
+  machine: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -27,18 +27,15 @@ vi.mock('electron', () => ({
     handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler)
   }
 }))
-vi.mock('../../apps/appsConfig', () => ({
-  areAppsEnabled: async () => {
-    mocks.whileChecking()
-    return mocks.appsEnabled
-  }
-}))
 vi.mock('../../apps/appPageView', () => ({
   loadedAppPage: () =>
     mocks.loadedApp ? { appId: mocks.loadedApp, document: mocks.document } : null
 }))
 vi.mock('../../apps/appsPages', () => ({
-  appsPageAdmits: async (page: unknown) => mocks.pageAdmitted && !mocks.refusedPages.has(page),
+  appsPageAdmits: async (page: unknown) => {
+    mocks.whileChecking()
+    return mocks.pageAdmitted && !mocks.refusedPages.has(page)
+  },
   isAppsPageSender: () => mocks.isAppsPage,
   liveAppsPages: () => mocks.pages
 }))
@@ -48,6 +45,7 @@ vi.mock('../../apps/localAppEvents', () => ({
     return () => {}
   }
 }))
+vi.mock('../../apps/machine', () => ({ machine: mocks.machine }))
 vi.mock('../../apps/localComfy', () => ({
   localState: mocks.localState,
   startLocal: mocks.startLocal,
@@ -72,6 +70,7 @@ const OPEN = {
   name: 'Remove Background'
 }
 const BUILDS = [{ id: 'inst-1', name: 'Studio' }]
+const MACHINE = { platform: 'win32', gpuMemoryGb: 8 }
 
 function call(channel: string, ...args: unknown[]): Promise<unknown> {
   const handler = mocks.handlers.get(channel)
@@ -83,7 +82,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.handlers.clear()
   mocks.isAppsPage = true
-  mocks.appsEnabled = true
   mocks.pageAdmitted = true
   mocks.loadedApp = 'product-ads'
   mocks.document = 1
@@ -97,6 +95,7 @@ beforeEach(() => {
   mocks.openInComfy.mockResolvedValue({ opened: true })
   mocks.localBuilds.mockResolvedValue(BUILDS)
   mocks.localBuildsForEach.mockImplementation(async (askers: unknown[]) => askers.map(() => BUILDS))
+  mocks.machine.mockResolvedValue(MACHINE)
   registerAppsLocalHandlers()
 })
 
@@ -154,17 +153,14 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
   it('opens a workflow in ComfyUI and lists this computer builds for the page', async () => {
     expect(await call(APPS_LOCAL_CHANNELS.openInComfy, OPEN)).toEqual({ opened: true })
     expect(await call(APPS_LOCAL_CHANNELS.builds)).toEqual(BUILDS)
+    expect(await call(APPS_LOCAL_CHANNELS.machine)).toEqual(MACHINE)
 
     expect(mocks.openInComfy).toHaveBeenCalledWith(EVENT.sender, OPEN)
   })
 
   it.each([
-    ['a sender that is not the hosted Apps page', { isAppsPage: false, appsEnabled: true }],
-    ['the Apps page while Apps is switched off', { isAppsPage: true, appsEnabled: false }],
-    [
-      'a draft app page whose draft was dropped',
-      { isAppsPage: true, appsEnabled: true, pageAdmitted: false }
-    ]
+    ['a sender that is not the hosted Apps page', { isAppsPage: false }],
+    ['a draft app page whose draft was dropped', { isAppsPage: true, pageAdmitted: false }]
   ])('does nothing for %s', async (_who, state) => {
     Object.assign(mocks, state)
 
@@ -177,6 +173,7 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
       error: 'apps.local.notRunning'
     })
     expect(await call(APPS_LOCAL_CHANNELS.builds)).toEqual([])
+    await expect(call(APPS_LOCAL_CHANNELS.machine)).rejects.toThrow()
 
     expect(mocks.localState).not.toHaveBeenCalled()
     expect(mocks.startLocal).not.toHaveBeenCalled()
@@ -184,6 +181,7 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(mocks.localDownload).not.toHaveBeenCalled()
     expect(mocks.openInComfy).not.toHaveBeenCalled()
     expect(mocks.localBuilds).not.toHaveBeenCalled()
+    expect(mocks.machine).not.toHaveBeenCalled()
   })
 })
 
@@ -256,17 +254,6 @@ describe('telling app pages that a build became busy or free', () => {
 
     expect(page.send).toHaveBeenCalledExactlyOnceWith(APPS_LOCAL_CHANNELS.buildsChanged, BUILDS)
     expect(refused.send).not.toHaveBeenCalled()
-  })
-
-  it('tells no page once Apps is turned off', async () => {
-    const page = { send: vi.fn(), isDestroyed: () => false }
-    mocks.pages = [page]
-    mocks.appsEnabled = false
-
-    await runsChange()
-
-    expect(page.send).not.toHaveBeenCalled()
-    expect(mocks.localBuildsForEach).not.toHaveBeenCalled()
   })
 
   it('does not look up the builds when no app page is open', async () => {

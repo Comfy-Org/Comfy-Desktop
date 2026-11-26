@@ -3,6 +3,9 @@ import path from 'path'
 import * as settings from '../../settings'
 import { download } from '../../lib/download'
 import { stripQueryParams } from '../../lib/downloadFilename'
+import { installInputDir } from '../../lib/models'
+import { effectiveFolder } from '../../lib/outputFolders'
+import { startupArgOrSharedFolder, usesStartupArgFolders } from '../../lib/startupArgFolders'
 import { loadTemplateJson } from './templateModels'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
@@ -122,10 +125,15 @@ function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[]
 }
 
 export function resolveInputDir(installation: InstallationRecord): string {
+  const effective = effectiveFolder(installation, 'input')
+  if (effective) return effective.path
+  if (usesStartupArgFolders(installation)) {
+    return startupArgOrSharedFolder(installation, 'input').path
+  }
   if (installation.useSharedInput !== false) {
     return settings.get('inputDir') || settings.defaults.inputDir
   }
-  return installation.inputDir || path.join(installation.installPath, 'ComfyUI', 'input')
+  return installation.inputDir || installInputDir(installation.installPath)
 }
 
 export interface TemplateInputAssetAvailability {

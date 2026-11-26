@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import zh from '@locales/zh.json'
+import { i18n } from '../i18n'
 import type { ModalSelectItem, ModalOption } from './useModal'
 
 vi.mock('../main', () => ({
@@ -143,6 +145,29 @@ describe('useModal', () => {
       modal.close(null)
 
       await expect(promise).resolves.toBeNull()
+    })
+  })
+
+  describe('default button names in the app language', () => {
+    beforeEach(() => {
+      i18n.global.setLocaleMessage('zh', zh)
+      i18n.global.locale.value = 'zh'
+    })
+    afterEach(() => {
+      i18n.global.locale.value = 'en'
+    })
+
+    it('names the prompt, select and options buttons in Chinese', () => {
+      modal.prompt({ title: 'T', message: 'M' })
+      expect(modal.state.confirmLabel).toBe(zh.modal.ok)
+      modal.close(null)
+
+      modal.select({ title: 'T', items: [{ value: 'a', label: 'A' }] })
+      expect(modal.state.confirmLabel).toBe(zh.modal.ok)
+      modal.close(null)
+
+      modal.confirmWithOptions({ title: 'T', message: 'M', options: [] })
+      expect(modal.state.confirmLabel).toBe(zh.modal.confirm)
     })
   })
 

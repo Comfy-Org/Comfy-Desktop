@@ -28,6 +28,7 @@ import {
   installCloseNeedsConfirm
 } from './createHostWindow'
 import type { CloseWindowChoice } from './createHostWindow'
+import * as i18n from '../lib/i18n'
 
 export const preClearedClose = new WeakSet<BrowserWindow>()
 
@@ -179,10 +180,10 @@ async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): 
   return openSystemModalAsync({
     parent: entry.window,
     spec: {
-      title: 'Back to Home?',
-      message: 'This will stop the current ComfyUI.',
-      confirmLabel: 'Back to Home',
-      cancelLabel: 'Cancel',
+      title: i18n.t('dashboard.confirmStopLocal.title'),
+      message: i18n.t('dashboard.confirmStopLocal.message'),
+      confirmLabel: i18n.t('dashboard.confirmStopLocal.confirmLabel'),
+      cancelLabel: i18n.t('common.cancel'),
       confirmStyle: 'primary',
       theme: entry.lastTheme
     }
@@ -204,22 +205,25 @@ export async function confirmAndCloseAllHostWindows(
   const titles = [
     ...entries
       .filter((e) => shouldConfirmKillForEntry(e))
-      .map((e) => e.titleBarText || 'Untitled instance'),
+      .map((e) => e.titleBarText || i18n.t('quitDesktop.untitled')),
     ...windowlessComfyNames()
   ]
   if (titles.length === 0) {
     performQuit()
     return
   }
-  const details: SystemModalDetailGroup[] = [{ label: 'Open instances', items: titles }]
+  const details: SystemModalDetailGroup[] = [
+    { label: i18n.t('quitDesktop.openBuilds'), items: titles }
+  ]
   if (ipc.hasActiveOperations()) {
     try {
       const items = await ipc.getActiveDetails()
       const operations = items.filter((i) => i.type === 'operation').map((i) => i.name)
       const downloads = items.filter((i) => i.type === 'download').map((i) => i.name)
       if (operations.length > 0)
-        details.push({ label: 'In-progress operations', items: operations })
-      if (downloads.length > 0) details.push({ label: 'Active downloads', items: downloads })
+        details.push({ label: i18n.t('quitDesktop.operations'), items: operations })
+      if (downloads.length > 0)
+        details.push({ label: i18n.t('quitDesktop.downloads'), items: downloads })
     } catch {}
   }
   const overlayParentEntry =
@@ -234,14 +238,14 @@ export async function confirmAndCloseAllHostWindows(
   const confirmed = await openSystemModalAsync({
     parent: overlayParentEntry.window,
     spec: {
-      title: 'Quit Desktop',
+      title: i18n.t('fileMenu.exitAllWindows'),
       message:
         count === 1
-          ? 'Quit Desktop? This will close the running ComfyUI instance.'
-          : `Quit Desktop? This will close ${count} running ComfyUI instances.`,
+          ? i18n.t('quitDesktop.messageOne')
+          : i18n.t('quitDesktop.messageMany', { count }),
       details,
-      confirmLabel: 'Quit',
-      cancelLabel: 'Cancel',
+      confirmLabel: i18n.t('settings.closeQuitConfirm'),
+      cancelLabel: i18n.t('common.cancel'),
       confirmStyle: 'primary',
       theme: overlayParentEntry.lastTheme
     }
@@ -257,18 +261,18 @@ export async function confirmCloseInstanceWindow(
 ): Promise<CloseWindowChoice> {
   const message = quitsDesktop
     ? stopsLocalComfy
-      ? 'Close this window? This stops ComfyUI and quits Comfy Desktop.'
-      : 'Close this window? This quits Comfy Desktop.'
+      ? i18n.t('closeWindow.messageStopsAndQuits')
+      : i18n.t('closeWindow.messageQuits')
     : stopsLocalComfy
-      ? 'Close this window? This stops the running ComfyUI instance.'
-      : 'Close this window?'
+      ? i18n.t('closeWindow.messageStops')
+      : i18n.t('closeWindow.message')
   const confirmed = await openSystemModalAsync({
     parent: window,
     spec: {
-      title: 'Close Window',
+      title: i18n.t('fileMenu.exitWindow'),
       message,
-      confirmLabel: 'Close Window',
-      cancelLabel: 'Cancel',
+      confirmLabel: i18n.t('fileMenu.exitWindow'),
+      cancelLabel: i18n.t('common.cancel'),
       confirmStyle: 'primary',
       theme
     }

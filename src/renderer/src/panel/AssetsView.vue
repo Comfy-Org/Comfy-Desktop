@@ -14,11 +14,11 @@ import {
   ExternalLink,
   File,
   Folder,
+  FolderSearch,
   LayoutGrid,
   LayoutDashboard,
   Music,
   RefreshCw,
-  ScanSearch,
   Search,
   Play,
   Trash2
@@ -197,7 +197,7 @@ function inWorkspace(build: Installation): boolean {
 }
 
 function savesToSharedFolder(build: Installation): boolean {
-  return build.useSharedOutput !== false
+  return build.savesToSharedOutput !== false
 }
 
 function placeOption(id: string, name: string, cloud: boolean): AssetBuild {
@@ -297,15 +297,22 @@ const outputFolders = ref<OutputFolderPaths | null>(null)
 const outputFoldersLoaded = ref(false)
 let outputFoldersRequest = 0
 
+async function loadOutputFolders(): Promise<void> {
+  const request = ++outputFoldersRequest
+  const folders = await window.api.listOutputFolders().catch(() => null)
+  if (request !== outputFoldersRequest) return
+  outputFolders.value = folders
+  outputFoldersLoaded.value = true
+}
+
 watch(
-  () => localBuilds.value.map((build) => build.id).join('\n'),
-  async () => {
-    const request = ++outputFoldersRequest
-    const folders = await window.api.listOutputFolders().catch(() => null)
-    if (request !== outputFoldersRequest) return
-    outputFolders.value = folders
-    outputFoldersLoaded.value = true
-  },
+  () =>
+    localBuilds.value
+      .map((build) =>
+        [build.id, build.launchArgs ?? '', sessionStore.isRunning(build.id)].join('\t')
+      )
+      .join('\n'),
+  () => void loadOutputFolders(),
   { immediate: true }
 )
 
@@ -754,6 +761,7 @@ watch(
 )
 
 function refresh(): void {
+  void loadOutputFolders()
   resetCloudPaging()
   if (currentPage.value === 1) {
     void loadAssets(true)
@@ -1062,7 +1070,7 @@ function cardTool(asset: GalleryAsset) {
     return {
       id: 'reveal',
       label: t(revealInFolderKey(window.api.platform)),
-      icon: ScanSearch,
+      icon: FolderSearch,
       run: reveal
     }
   }
@@ -1079,7 +1087,7 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
       ? [{ id: 'download', label: t('assets.download'), icon: Download }]
       : []),
     ...(isLocal(asset)
-      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
+      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: FolderSearch }]
       : []),
     ...(asset.kind === 'image' && asset.previewUrl
       ? [{ id: 'copy', label: t('assets.copy'), icon: Copy }]
@@ -1297,7 +1305,7 @@ function extensionOf(name: string): string {
                     :data-testid="`assets-place-reveal-${option.build.id}`"
                     @click="openPlaceFolder(option)"
                   >
-                    <ScanSearch :size="15" aria-hidden="true" />
+                    <FolderSearch :size="15" aria-hidden="true" />
                   </Button>
                 </Tooltip>
               </div>

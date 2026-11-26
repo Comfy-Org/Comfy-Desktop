@@ -1,6 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import { startManagedModelJob, type ModelJobOutcome } from '../../lib/comfyDownloadManager'
+import {
+  startManagedModelJob,
+  type ModelJobOutcome,
+  type ModelJobReleaseIntent
+} from '../../lib/comfyDownloadManager'
 import {
   areModelsPresent,
   getModelsBaseDir,
@@ -8,7 +12,7 @@ import {
 } from '../../lib/modelDownloadPaths'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
-import { resolveTemplateModelsFromJson } from './templateModels'
+import { resolveTemplateModelsFromJson, type TemplateModelDownload } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
@@ -30,7 +34,7 @@ const MODEL_DOWNLOAD_RETRIES = 2
 
 const _templateDownloads = new Map<string, TemplateDownloadState>()
 const _templateAborts = new Map<string, AbortController>()
-const _templateJobLeases = new Map<string, Set<() => void>>()
+const _templateJobLeases = new Map<string, Set<(intent?: ModelJobReleaseIntent) => void>>()
 
 export function hasActiveTemplateDownloads(): boolean {
   for (const state of _templateDownloads.values()) {
@@ -39,15 +43,19 @@ export function hasActiveTemplateDownloads(): boolean {
   return false
 }
 
-function abortTemplateDownload(taskId: string): void {
+function releaseIntentOf(signal: AbortSignal): ModelJobReleaseIntent {
+  return signal.reason === 'cancel' ? 'cancel' : 'pause'
+}
+
+function abortTemplateDownload(taskId: string, intent: ModelJobReleaseIntent): void {
   const ctrl = _templateAborts.get(taskId)
   if (ctrl) {
-    ctrl.abort()
+    ctrl.abort(intent)
     _templateAborts.delete(taskId)
   }
   const leases = _templateJobLeases.get(taskId)
   if (leases) {
-    for (const release of [...leases]) release()
+    for (const release of [...leases]) release(intent)
     _templateJobLeases.delete(taskId)
   }
   const state = _templateDownloads.get(taskId)
@@ -58,6 +66,8 @@ function abortTemplateDownload(taskId: string): void {
 
 interface StartOpts {
   sendOutput: (text: string) => void
+  models?: TemplateModelDownload[]
+  skipInputAssets?: boolean
 }
 
 export function startTemplateDownloadTask(
@@ -80,7 +90,7 @@ export function startTemplateDownloadTask(
   }
   _templateDownloads.set(taskId, state)
   const abort = new AbortController()
-  const jobLeases = new Set<() => void>()
+  const jobLeases = new Set<(intent?: ModelJobReleaseIntent) => void>()
   _templateAborts.set(taskId, abort)
   _templateJobLeases.set(taskId, jobLeases)
 
@@ -88,7 +98,11 @@ export function startTemplateDownloadTask(
     console.log(`[templateDownload:${taskId}] ${text.trimEnd()}`)
     opts.sendOutput(text)
   }
-  const taskOpts: StartOpts = { sendOutput: log }
+  const taskOpts: StartOpts = {
+    sendOutput: log,
+    models: opts.models,
+    skipInputAssets: opts.skipInputAssets
+  }
 
   log(
     `[templates] Starting background download for "${templateId}" (est. ${gbStr(estimatedSizeBytes)} GB)...\n`
@@ -151,7 +165,13 @@ export function subscribeTemplateDownload(
 }
 
 export function forgetTemplateDownload(taskId: string): void {
-  abortTemplateDownload(taskId)
+  abortTemplateDownload(taskId, 'pause')
+  _templateDownloads.delete(taskId)
+  _templateListeners.delete(taskId)
+}
+
+export function cancelTemplateDownload(taskId: string): void {
+  abortTemplateDownload(taskId, 'cancel')
   _templateDownloads.delete(taskId)
   _templateListeners.delete(taskId)
 }
@@ -184,17 +204,19 @@ async function runTask(
   templateId: string,
   state: TemplateDownloadState,
   signal: AbortSignal,
-  { sendOutput }: StartOpts,
+  { sendOutput, models: chosenModels, skipInputAssets }: StartOpts,
   workflowJson: unknown
 ): Promise<void> {
-  await downloadTemplateInputAssets(installation, workflowJson, sendOutput, signal)
+  if (!skipInputAssets) {
+    await downloadTemplateInputAssets(installation, workflowJson, sendOutput, signal)
+  }
   if (signal.aborted) {
     state.status = 'cancelled'
     return
   }
 
   sendOutput(`[templates] Resolving model list for "${templateId}"...\n`)
-  const models = resolveTemplateModelsFromJson(workflowJson)
+  const models = chosenModels ?? resolveTemplateModelsFromJson(workflowJson)
 
   if (signal.aborted) {
     state.status = 'cancelled'
@@ -313,11 +335,11 @@ async function runTask(
               }
             })
             activeJobLeases?.add(handle.release)
-            if (signal.aborted) handle.release()
+            if (signal.aborted) handle.release(releaseIntentOf(signal))
             try {
               const outcome = await raceCompletionWithAbort(handle.completion, signal)
               if (outcome === 'aborted') {
-                handle.release()
+                handle.release(releaseIntentOf(signal))
                 throw new ModelJobCancelledError()
               }
               if (outcome.status === 'error') throw new Error(outcome.error)

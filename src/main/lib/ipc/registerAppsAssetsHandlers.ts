@@ -3,7 +3,6 @@ import type { IpcMainInvokeEvent } from 'electron'
 
 import { assetFromPath, assetRunValue, readAsset, recentAssets } from '../../apps/appAssets'
 import type { AssetResult } from '../../apps/appAssets'
-import { areAppsEnabled } from '../../apps/appsConfig'
 import { appsPageAdmits, isAppsPageSender } from '../../apps/appsPages'
 import type { ComfyDesktopAssetFailure } from '../../../types/comfyDesktopBridge'
 
@@ -18,11 +17,7 @@ const MISSING: ComfyDesktopAssetFailure = { error: 'missing' }
 const FAILED: ComfyDesktopAssetFailure = { error: 'elsewhere' }
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
-  return (
-    isAppsPageSender(event.sender, event.senderFrame) &&
-    (await areAppsEnabled()) &&
-    (await appsPageAdmits(event.sender))
-  )
+  return isAppsPageSender(event.sender, event.senderFrame) && (await appsPageAdmits(event.sender))
 }
 
 function forAppsPage<T>(

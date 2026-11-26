@@ -45,9 +45,7 @@ beforeAll(() => browserPage.viewport(1440, 900))
 
 function installApi(installations: Installation[]): void {
   ;(window as unknown as { api: unknown }).api = {
-    listHomeWorkflows: vi.fn().mockResolvedValue([]),
-    openCatalogWorkflow: vi.fn().mockResolvedValue(true),
-    getAppsEnabled: vi.fn().mockResolvedValue(false),
+    listApps: vi.fn().mockResolvedValue([]),
     getInstallations: vi.fn().mockResolvedValue(installations),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),

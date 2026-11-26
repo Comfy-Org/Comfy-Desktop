@@ -257,7 +257,21 @@ export interface ComfyDesktopLocalDownload {
  * A model download's progress (`type: 'download'`, with `name`, `done` and
  * `total` bytes in `data`), or one ComfyUI socket message about a run the page
  * started (`execution_start`, `executing`, `progress`, `progress_state`,
- * `execution_success`, `execution_error`, `execution_interrupted`).
+ * `execution_success`, `execution_error`, `execution_interrupted`), or
+ * `run_failed` from Desktop itself, with `prompt_id` and `reason` in `data`.
+ * Desktop sends `run_failed` when it loses a run the page started: the ComfyUI
+ * closed or restarted, or no longer has the run after Desktop connects to it
+ * again. A run taken out of ComfyUI's queue while Desktop is connected gets
+ * none, so a page also looks for its run in the queue and the history.
+ * `run_failed` goes to every open app page, so a page acts only on a
+ * `prompt_id` it started. Desktop builds that predate it never send it.
+ * `reason` is one of these; read any other as `unknown`:
+ *
+ * - `comfyui_crashed`: the ComfyUI process ended with an error, and Desktop did
+ *   not stop it.
+ * - `comfyui_stopped`: the ComfyUI was stopped or restarted, by Desktop or by
+ *   itself, or it closed with no error.
+ * - `unknown`: Desktop cannot tell, as when the ComfyUI runs on without the run.
  */
 export interface ComfyDesktopLocalEvent {
   type: string
@@ -311,6 +325,28 @@ export interface ComfyDesktopLocalBuild {
     title?: string
   }
 }
+/** Facts about this computer, for a page to use before a run. */
+export interface ComfyDesktopMachine {
+  /** The operating system: `win32` (Windows), `darwin` (macOS) or `linux`. */
+  platform: 'win32' | 'darwin' | 'linux'
+  /**
+   * The memory of one graphics card in gigabytes, rounded to a whole number:
+   * the card with the most memory, among the cards of the vendor Desktop
+   * detects (NVIDIA, else AMD, else Intel) when it detects one. A build can use
+   * another card. It is what the system reports, which can be more or less
+   * than the card has. `0` is less than half a gigabyte. Absent when Desktop
+   * cannot read it, as on Apple silicon Macs, where the GPU shares the memory
+   * of the computer, and on Windows when the number is 4095 MB, which larger
+   * cards report too. Absent with `noGpu`.
+   */
+  gpuMemoryGb?: number
+  /**
+   * True when Desktop read the display adapters and each one is a virtual
+   * machine's, so there is no GPU. Absent otherwise, also when Desktop cannot
+   * tell, and always on macOS.
+   */
+  noGpu?: true
+}
 /**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
  * Desktop's Apps view. Desktop exposes it to that page as
@@ -343,6 +379,15 @@ export interface ComfyDesktopHostedLocalBridge {
    * that predate it.
    */
   onLocalBuildsChanged?(callback: (builds: ComfyDesktopLocalBuild[]) => void): () => void
+  /**
+   * Facts about this computer. Desktop reads the GPU once per session and
+   * waits at most 5 seconds for the asynchronous part of that read; after that
+   * the answer has the platform alone. A driver tool that the read waits for
+   * synchronously, such as `nvidia-smi`, can make the answer later. Rejects
+   * when the page is not in the Apps view. Absent on Desktop builds that
+   * predate it.
+   */
+  machine?(): Promise<ComfyDesktopMachine>
 }
 /** Whether a Comfy page hosted in Desktop's Apps view has a run going. */
 export interface ComfyDesktopRunState {
@@ -618,6 +663,12 @@ export interface ComfyDesktop2Bridge {
   pauseDownload?: (url: string) => Promise<boolean>
   resumeDownload?: (url: string) => Promise<boolean>
   cancelDownload?: (url: string) => Promise<boolean>
+  /** Live model jobs (pending, downloading or paused) for the caller's installation,
+   *  in the `onDownloadProgress` shape; the caller then receives later events for
+   *  those jobs, not for jobs started afterwards by Desktop or another view.
+   *  Register `onDownloadProgress` first: earlier events are not replayed.
+   *  Absent on Desktop builds predating it. */
+  listModelDownloads?: () => Promise<ComfyDownloadProgress[]>
   onDownloadProgress?: (callback: (data: ComfyDownloadProgress) => void) => () => void
   reportTheme?: (bg: string, text: string) => void
   /** Tells Desktop whether the hosted frontend is waiting on the user, such as an agent

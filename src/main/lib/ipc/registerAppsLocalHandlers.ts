@@ -3,15 +3,16 @@ import type { IpcMainInvokeEvent } from 'electron'
 
 import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
-import { areAppsEnabled } from '../../apps/appsConfig'
 import { appsPageAdmits, isAppsPageSender, liveAppsPages } from '../../apps/appsPages'
 import { onRunsChanged } from '../../apps/localAppEvents'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
+import { machine } from '../../apps/machine'
 import { localBuilds, localBuildsForEach, openInComfy } from '../../apps/openInComfy'
 import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopLocalComfy,
   ComfyDesktopLocalDownload,
+  ComfyDesktopMachine,
   ComfyDesktopOpenInComfy
 } from '../../../types/comfyDesktopBridge'
 import * as i18n from '../i18n'
@@ -23,14 +24,15 @@ export const APPS_LOCAL_CHANNELS = {
   download: 'apps-local:download',
   openInComfy: 'apps-local:open-in-comfy',
   builds: 'apps-local:builds',
-  buildsChanged: 'apps-local:builds-changed'
+  buildsChanged: 'apps-local:builds-changed',
+  machine: 'apps-local:machine'
 } as const
 
 let latestAnnouncement = 0
 
 async function announceBuilds(): Promise<void> {
   const announcement = ++latestAnnouncement
-  if (liveAppsPages().length === 0 || !(await areAppsEnabled())) return
+  if (liveAppsPages().length === 0) return
   const pages = liveAppsPages()
   const asked = pages.map((page) => loadedAppPage(page))
   const lists = await localBuildsForEach(asked.map((loaded) => loaded?.appId ?? null)).catch(
@@ -48,11 +50,7 @@ async function announceBuilds(): Promise<void> {
 }
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
-  return (
-    isAppsPageSender(event.sender, event.senderFrame) &&
-    (await areAppsEnabled()) &&
-    (await appsPageAdmits(event.sender))
-  )
+  return isAppsPageSender(event.sender, event.senderFrame) && (await appsPageAdmits(event.sender))
 }
 
 interface Caller {
@@ -111,6 +109,11 @@ export function registerAppsLocalHandlers(): void {
   ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> => {
     const caller = await callerUnchanged(event)
     return caller ? localBuilds(caller.appId) : []
+  })
+
+  ipcMain.handle(APPS_LOCAL_CHANNELS.machine, async (event): Promise<ComfyDesktopMachine> => {
+    if (!(await isFromAppsPage(event))) throw new Error('This page cannot ask about this computer.')
+    return machine()
   })
 
   onRunsChanged(() => void announceBuilds())

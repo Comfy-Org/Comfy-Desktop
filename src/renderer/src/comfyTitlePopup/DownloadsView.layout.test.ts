@@ -51,7 +51,7 @@ afterEach(() => {
   while (hosts.length) hosts.pop()?.remove()
 })
 
-async function mountPopup() {
+async function mountPopup(shown: PopupDownloadsState = state) {
   Object.defineProperty(window, '__comfyTitlePopup', {
     configurable: true,
     value: {
@@ -66,7 +66,7 @@ async function mountPopup() {
   host.style.cssText = 'width: 405px; height: 396px'
   document.body.append(host)
   hosts.push(host)
-  const wrapper = mount(DownloadsView, { props: { state }, attachTo: host })
+  const wrapper = mount(DownloadsView, { props: { state: shown }, attachTo: host })
   mounted.push(wrapper)
   await flushPromises()
   await parkPointerOutsidePopup()
@@ -186,6 +186,34 @@ describe('Downloads popup layout', () => {
     expect(rect(name).right).toBeLessThanOrEqual(rect(reveal).left)
     expect(rect(row.element).height).toBe(rowHeight)
     expect(rect(name).left).toBe(nameLeft)
+  })
+
+  it('fits percent, speed and time left of a large parallel download beside Pause, uncut', async () => {
+    const wrapper = await mountPopup({
+      active: [
+        {
+          id: 'big',
+          url: 'https://example.com/big',
+          filename: 'wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors',
+          directory: 'models/diffusion_models',
+          progress: 0.62,
+          receivedBytes: 3_201_000_000,
+          totalBytes: 5_164_000_000,
+          speedBytesPerSec: 33_554_432,
+          etaSeconds: 25,
+          status: 'downloading',
+          createdAt: 4
+        }
+      ],
+      recent: []
+    })
+    const row = wrapper.get('.is-active')
+    const line = row.get('.downloads-item-sub').element as HTMLElement
+    const pause = row.get('.downloads-item-action').element
+
+    expect(line.textContent).toBe('62% · 32.0 MB/s · Less than a minute left')
+    expect(line.scrollWidth).toBeLessThanOrEqual(line.clientWidth)
+    expect(rect(line).right).toBeLessThanOrEqual(rect(pause).left)
   })
 
   it('puts the remove glyph 18px from the card edge', async () => {

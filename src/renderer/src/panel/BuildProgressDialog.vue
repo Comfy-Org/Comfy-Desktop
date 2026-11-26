@@ -15,6 +15,7 @@ import { useTerminalScroll } from '../composables/useTerminalScroll'
 import { progressStatusText, progressStepName } from '../lib/progressStatusLabel'
 import { useProgressStore } from '../stores/progressStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { MODAL_TITLE_CLASS } from '../lib/modalTitle'
 
 type StepState = 'done' | 'active' | 'failed' | 'pending'
 
@@ -183,7 +184,7 @@ async function cancel(): Promise<void> {
         <div class="flex min-h-0 flex-col overflow-y-auto p-5" data-testid="build-progress-body">
           <div class="flex gap-10">
             <div class="flex min-w-0 flex-1 flex-col">
-              <h2 class="m-0 text-lg/[22px] font-semibold text-foreground">
+              <h2 class="m-0 text-foreground" :class="MODAL_TITLE_CLASS">
                 {{ title }}
               </h2>
               <ol

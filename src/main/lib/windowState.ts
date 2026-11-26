@@ -28,22 +28,27 @@ function getWindowStateCache(): Record<string, WindowBounds> {
   return windowStateCache!
 }
 
-export async function flushWindowState(): Promise<void> {
+export function flushWindowStateSync(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
   if (!windowStateCache) return
   try {
     const p = windowStatePath()
-    await fs.promises.mkdir(path.dirname(p), { recursive: true })
-    await fs.promises.writeFile(p, JSON.stringify(windowStateCache, null, 2))
+    fs.mkdirSync(path.dirname(p), { recursive: true })
+    fs.writeFileSync(p, JSON.stringify(windowStateCache, null, 2))
   } catch {}
 }
 
 export function saveWindowBounds(installationId: string, window: BrowserWindow): void {
+  if (window.isFullScreen()) return
   const state = getWindowStateCache()
   const maximized = window.isMaximized()
   const bounds = maximized ? window.getNormalBounds() : window.getBounds()
   state[installationId] = { ...bounds, maximized }
   if (flushTimer) clearTimeout(flushTimer)
-  flushTimer = setTimeout(flushWindowState, 500)
+  flushTimer = setTimeout(flushWindowStateSync, 500)
 }
 
 export function getSavedBounds(installationId: string): WindowBounds | undefined {
