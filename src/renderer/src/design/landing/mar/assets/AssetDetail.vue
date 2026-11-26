@@ -2,7 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
 import {
   AppWindow,
-  Box,
   Check,
   ChevronDown,
   ChevronRight,
@@ -628,7 +627,6 @@ onBeforeUnmount(() => {
                 <CompareSplit v-if="comparing && asset.before && !clip" :before="asset.before" />
                 <ModelStage v-else-if="asset.type === '3d' && !pic" />
                 <AssetCover v-else :name="asset.name" :type="asset.type" />
-                <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
               </div>
               <button
                 v-if="shortcutShown"
@@ -1352,20 +1350,6 @@ onBeforeUnmount(() => {
 .mad-time {
   flex: none;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.mad-play {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.55);
-  color: #fff;
-  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn {
