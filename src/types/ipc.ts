@@ -462,6 +462,7 @@ export interface ComfyArgDef {
   choices?: string[]
   exclusiveGroup?: string
   category: string
+  hidden?: boolean
 }
 
 export interface DetailField {
