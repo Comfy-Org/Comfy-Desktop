@@ -173,7 +173,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'openAnswer', show: () => when.openAnswer.value },
   { id: 'appRunsOn', show: () => when.appRunsOn.value }
 ]
-const smartV15 = (): boolean => createLook.id === 'V15' && composerSearch.id === 'smart'
+const smartLook = (): boolean =>
+  createLook.id === 'V16' || (createLook.id === 'V15' && composerSearch.id === 'smart')
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'firstRun', show: () => when.firstRun.value },
   { id: 'exampleLook', show: () => when.exampleLook.value },
@@ -198,11 +199,11 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'recentsCover', show: () => when.recentsCover.value },
   { id: 'homeTour', show: () => when.homeTour.value },
   { id: 'createLook', show: () => when.createLook.value },
-  { id: 'createInput', show: () => when.createLook.value && !smartV15() },
+  { id: 'createInput', show: () => when.createLook.value && !smartLook() },
   { id: 'composerSearch', show: () => when.createLook.value && createLook.id === 'V15' },
   {
     id: 'agentOpens',
-    show: () => when.createLook.value && (createInput.id === 'agent' || smartV15())
+    show: () => when.createLook.value && (createInput.id === 'agent' || smartLook())
   },
   { id: 'composerPos', show: () => when.createLook.value && createLook.id === 'V07' },
   { id: 'comfyLook', show: () => when.graph.value },
