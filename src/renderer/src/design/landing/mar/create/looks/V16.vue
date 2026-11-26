@@ -280,7 +280,7 @@ onBeforeUnmount(() => {
       transparent 1.4px
     )
     0 0 / 24px 24px;
-  mask-image: radial-gradient(ellipse 50% 46% at 50% 42%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 48% 46% at 50% 42%, #000 0%, transparent 100%);
 }
 :root .proto-ui.proto-ui.proto-ui .v16-canvas.is-preview {
   mask-image: none;
