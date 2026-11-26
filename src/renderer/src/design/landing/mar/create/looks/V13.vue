@@ -77,17 +77,21 @@ const items = computed<Item[]>(() => {
       `${NODE_TYPES[k].title} ${NODE_TYPES[k].description}`.toLowerCase().includes(q.value)
     )
     return [
-      BLANK,
-      ...unique(found).map(tpl),
-      ...workflows.value.filter((w) => w.name.toLowerCase().includes(q.value)).map(wf),
-      ...kinds.map((node): Item => ({ id: `n:${node}`, type: 'node', node }))
-    ].slice(0, SLOTS)
+      ...[
+        ...unique(found).map(tpl),
+        ...workflows.value.filter((w) => w.name.toLowerCase().includes(q.value)).map(wf),
+        ...kinds.map((node): Item => ({ id: `n:${node}`, type: 'node', node }))
+      ].slice(0, SLOTS - 1),
+      BLANK
+    ]
   }
-  if (shelf.value === YOURS) return [BLANK, ...workflows.value.map(wf)].slice(0, SLOTS)
+  if (shelf.value === YOURS) return [...workflows.value.map(wf).slice(0, SLOTS - 1), BLANK]
   return [
-    BLANK,
-    ...unique((SHELVES.find((s) => s.id === shelf.value) ?? SHELVES[0]!).starters()).map(tpl)
-  ].slice(0, SLOTS)
+    ...unique((SHELVES.find((s) => s.id === shelf.value) ?? SHELVES[0]!).starters())
+      .map(tpl)
+      .slice(0, SLOTS - 1),
+    BLANK
+  ]
 })
 const slots = computed(() =>
   Array.from({ length: SLOTS }, (_, i) => ({ key: items.value[i]?.id ?? `empty-${i}`, i }))
@@ -329,7 +333,7 @@ useEscapeCloses(() => composer.value?.field)
   min-height: 24px;
   align-items: center;
   gap: 16px;
-  margin-top: 30px;
+  margin-top: 72px;
   transition: opacity 260ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .v13-tab {
