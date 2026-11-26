@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  Ellipsis,
   File,
   FolderSearch,
   Images,
@@ -20,14 +21,18 @@ import Button from '@comfyorg/design-system/button/Button'
 import Tag from '@comfyorg/design-system/chip/Tag'
 import AudioPreview from '@comfyorg/design-system/media/AudioPreview'
 import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import InfoTooltip from '../components/InfoTooltip.vue'
 import OutputDetailThumb from './OutputDetailThumb.vue'
+import { useImageZoom } from './useImageZoom'
 import { formatBytes } from '../lib/downloadFormatters'
 import { revealInFolderKey } from '../composables/usePlatform'
-import type { MenuItem } from '@comfyorg/design-system/lib/menu/types'
+import type { MenuItem as MenuEntry } from '@comfyorg/design-system/lib/menu/types'
 import type { AssetKind } from '../types/ipc'
+import type { ContextMenuItem } from '../types/context-menu'
 
 const ModelViewer = defineAsyncComponent(() => import('./ModelViewer.vue'))
 
@@ -40,7 +45,11 @@ export interface OutputDetailItem {
   tags: string[]
   previewUrl: string | null
   thumbnailUrl: string | null
+  width?: number | null
+  height?: number | null
+  imported?: boolean
   savedIn?: string | null
+  savedBy?: string | null
   inCloud?: boolean
   workflow?: boolean
   workflowBuilds?: { id: string; name: string }[]
@@ -48,12 +57,14 @@ export interface OutputDetailItem {
   workflowBusy?: boolean
   workflowStatus?: string
   mainAction: 'download' | null
+  moreActions?: ContextMenuItem[]
   loadModel?: () => Promise<Uint8Array | null>
 }
 
 type Zoom = 'fit' | 0.5 | 1 | 2
 
 const ZOOM_STEPS: Zoom[] = ['fit', 0.5, 1, 2]
+const IMAGE_RADIUS_PX = 8
 
 const { items } = defineProps<{
   items: OutputDetailItem[]
@@ -67,6 +78,7 @@ const emit = defineEmits<{
   'show-in-folder': [index: number]
   'open-workflow': [index: number, build?: string]
   'view-in-assets': [index: number]
+  action: [index: number, action: string]
 }>()
 
 const { t, locale } = useI18n()
@@ -75,10 +87,11 @@ const preferredMotion = usePreferredReducedMotion()
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const panel = useTemplateRef<HTMLElement>('panel')
 const natural = ref<{ width: number; height: number } | null>(null)
-const zoom = ref<Zoom>('fit')
+const viewport = useTemplateRef<HTMLElement>('viewport')
 
 const item = computed(() => items[index.value] ?? items[0]!)
-const workflowChoices = computed<MenuItem[]>(() => {
+const moreActions = computed(() => item.value.moreActions ?? [])
+const workflowChoices = computed<MenuEntry[]>(() => {
   const builds = item.value.workflowBuilds ?? []
   if (builds.length < 2) return []
   return builds.map((build) => ({
@@ -111,44 +124,64 @@ const extension = computed(() => {
   const dot = item.value.name.lastIndexOf('.')
   return dot >= 0 ? item.value.name.slice(dot + 1).toUpperCase() : ''
 })
+const whenMade = computed(() => {
+  const { createdAt, imported } = item.value
+  if (!createdAt) return imported ? t('assets.detail.imported') : null
+  const date = new Date(createdAt).toLocaleString(locale.value)
+  return t(imported ? 'assets.detail.importedAt' : 'assets.detail.createdAt', { date })
+})
 const subtitle = computed(() =>
-  [
-    t(`assets.kindSingular.${item.value.kind ?? 'file'}`),
-    item.value.createdAt
-      ? t('assets.detail.createdAt', {
-          date: new Date(item.value.createdAt).toLocaleString(locale.value)
-        })
-      : null
-  ]
+  [t(`assets.kindSingular.${item.value.kind ?? 'file'}`), whenMade.value]
     .filter(Boolean)
     .join(' · ')
 )
+const dimensions = computed(() => {
+  if (item.value.kind !== 'image' && item.value.kind !== 'video') return null
+  if (natural.value) return natural.value
+  const { width, height } = item.value
+  return width && height ? { width, height } : null
+})
 const facts = computed(() =>
   [
     extension.value,
-    natural.value ? `${natural.value.width} × ${natural.value.height}` : null,
+    dimensions.value ? `${dimensions.value.width} × ${dimensions.value.height}` : null,
     item.value.sizeBytes === null ? null : formatBytes(item.value.sizeBytes)
   ].filter((fact): fact is string => !!fact)
 )
 const savedFolder = computed(() => {
   const folder = item.value.savedIn
   if (!folder) return null
-  const cut = Math.max(folder.lastIndexOf('/'), folder.lastIndexOf('\\'))
-  return { name: folder.slice(cut + 1) || folder, parent: cut > 0 ? folder.slice(0, cut) : '' }
+  const trimmed = folder.replace(/[\\/]+$/, '')
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return trimmed.slice(cut + 1) || trimmed
 })
+const zoomable = computed(() => item.value.kind === 'image' && !!item.value.previewUrl)
+const zoomer = useImageZoom(viewport, natural, zoomable)
 const percent = computed(() => new Intl.NumberFormat(locale.value, { style: 'percent' }))
 const zoomLabel = computed(() =>
-  zoom.value === 'fit' ? t('assets.detail.fit') : percent.value.format(zoom.value)
+  zoomer.scale.value === null ? t('assets.detail.fit') : percent.value.format(zoomer.scale.value)
 )
-const zoomedWidth = computed(() =>
-  zoom.value === 'fit' || !natural.value ? null : `${natural.value.width * zoom.value}px`
-)
+const imageStyle = computed(() => {
+  const view = zoomer.view.value
+  const size = natural.value
+  if (!view || !size) return undefined
+  return {
+    width: `${size.width}px`,
+    height: `${size.height}px`,
+    transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+    borderRadius: `${IMAGE_RADIUS_PX / view.scale}px`
+  }
+})
+const viewportCursor = computed(() => {
+  if (!zoomer.canPan.value) return undefined
+  return zoomer.dragging.value ? 'cursor-grabbing' : 'cursor-grab'
+})
 
 watch(
   () => item.value.key,
   async () => {
     natural.value = null
-    zoom.value = 'fit'
+    zoomer.reset()
     await nextTick()
     filmstrip.value
       ?.querySelector('[aria-current="true"]')
@@ -176,6 +209,19 @@ function zoomOptionLabel(option: Zoom): string {
   return option === 'fit' ? t('assets.detail.fit') : percent.value.format(option)
 }
 
+function isZoom(option: Zoom): boolean {
+  return option === 'fit' ? zoomer.fitted.value : zoomer.scale.value === option
+}
+
+function chooseZoom(option: Zoom): void {
+  if (option === 'fit') zoomer.fit(true)
+  else zoomer.zoomTo(option, undefined, true)
+}
+
+function hasModifier(event: KeyboardEvent): boolean {
+  return event.ctrlKey || event.metaKey || event.altKey
+}
+
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   const target = event.target
   if (event.defaultPrevented) return
@@ -186,6 +232,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     return
   if (event.key === 'ArrowLeft') step(-1)
   else if (event.key === 'ArrowRight') step(1)
+  else if (!hasModifier(event) && zoomer.onKey(event.key)) event.preventDefault()
 })
 </script>
 
@@ -198,19 +245,35 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     data-testid="output-detail"
     @close="emit('close')"
   >
-    <section class="flex min-w-0 flex-1 flex-col gap-3 p-3">
+    <section class="flex min-w-0 flex-1 flex-col gap-3 p-3" data-testid="output-detail-stage">
       <div
-        class="flex min-h-0 flex-1 overflow-auto"
-        :class="zoom === 'fit' && 'items-center justify-center'"
+        ref="viewport"
+        class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+        :class="[viewportCursor, zoomable && 'touch-none']"
+        data-testid="output-detail-viewport"
+        @wheel="zoomer.onWheel"
+        @pointerdown="zoomer.onPointerDown"
+        @pointermove="zoomer.onPointerMove"
+        @pointerup="zoomer.onPointerUp"
+        @pointercancel="zoomer.onPointerUp"
+        @dblclick="zoomer.onDoubleClick"
       >
         <img
           v-if="item.previewUrl && item.kind === 'image'"
           :key="item.key"
           :src="item.previewUrl"
           :alt="item.name"
-          class="m-auto rounded-lg"
-          :class="zoom === 'fit' ? 'max-h-full max-w-full object-contain' : 'shrink-0'"
-          :style="zoomedWidth ? { width: zoomedWidth, maxWidth: 'none' } : undefined"
+          draggable="false"
+          :class="
+            imageStyle
+              ? [
+                  'absolute top-0 left-0 max-w-none origin-top-left select-none',
+                  zoomer.animate.value &&
+                    'transition-transform duration-200 ease-out motion-reduce:transition-none'
+                ]
+              : 'm-auto max-h-full max-w-full rounded-lg object-contain'
+          "
+          :style="imageStyle"
           data-testid="output-detail-image"
           @load="onImageLoad"
         />
@@ -263,7 +326,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           </li>
         </ol>
         <Menu
-          v-if="item.kind === 'image'"
+          v-if="zoomable"
           :modal="false"
           align="end"
           class="z-70 min-w-[120px]"
@@ -282,7 +345,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               <ChevronDown :size="14" aria-hidden="true" />
             </Button>
           </template>
-          <DropdownMenuRadioGroup :model-value="String(zoom)">
+          <DropdownMenuRadioGroup
+            :model-value="zoomer.fitted.value ? 'fit' : String(zoomer.scale.value)"
+          >
             <MenuRadioItem
               v-for="option in ZOOM_STEPS"
               :key="option"
@@ -290,10 +355,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               type="button"
               :value="String(option)"
               class="w-full"
-              @select="zoom = option"
+              @select="chooseZoom(option)"
             >
               <span class="flex-1 text-left">{{ zoomOptionLabel(option) }}</span>
-              <Check v-if="zoom === option" :size="15" aria-hidden="true" />
+              <Check v-if="isZoom(option)" :size="15" aria-hidden="true" />
             </MenuRadioItem>
           </DropdownMenuRadioGroup>
         </Menu>
@@ -305,27 +370,74 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       class="flex w-[clamp(280px,30%,360px)] shrink-0 flex-col gap-6 overflow-y-auto rounded-xl bg-card p-5"
       data-testid="output-detail-panel"
     >
+      <div
+        class="-mx-5 -mt-5 flex shrink-0 items-center gap-1 border-b border-solid border-border py-3 pr-3 pl-5"
+        data-testid="output-detail-header"
+      >
+        <span class="min-w-0 flex-1 truncate text-ui font-semibold text-foreground">
+          {{ t('assets.detail.title') }}
+        </span>
+        <Menu
+          v-if="moreActions.length > 0"
+          :modal="false"
+          align="end"
+          class="z-70 min-w-44"
+          :aria-label="t('assets.moreActions')"
+        >
+          <template #trigger>
+            <Button
+              type="button"
+              variant="muted-textonly"
+              size="icon"
+              class="shrink-0 rounded-full"
+              :aria-label="t('assets.moreActions')"
+              :title="t('assets.moreActions')"
+              data-testid="output-detail-more"
+            >
+              <Ellipsis :size="16" aria-hidden="true" />
+            </Button>
+          </template>
+          <template v-for="action in moreActions" :key="action.id">
+            <MenuSeparator v-if="action.separator" />
+            <MenuItem
+              as="button"
+              type="button"
+              class="w-full gap-2.5"
+              :class="action.style === 'danger' && 'text-destructive'"
+              :data-testid="`output-detail-action-${action.id}`"
+              @select="emit('action', index, action.id)"
+            >
+              <component :is="action.icon" v-if="action.icon" :size="15" aria-hidden="true" />
+              <span class="flex-1 text-left">{{ action.label }}</span>
+            </MenuItem>
+          </template>
+        </Menu>
+        <button
+          type="button"
+          class="-ml-0.5 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-muted-foreground transition-colors hover:bg-foreground/12 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none"
+          :aria-label="t('common.close')"
+          :title="t('common.close')"
+          data-testid="output-detail-close"
+          @click="emit('close')"
+        >
+          <X :size="16" aria-hidden="true" />
+        </button>
+      </div>
+
       <div class="flex flex-col gap-3">
-        <div class="flex items-start gap-2">
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 class="m-0 line-clamp-2 text-heading font-semibold break-words text-foreground">
-              {{ item.name }}
-            </h2>
-            <p class="m-0 text-ui text-subtle-foreground">{{ subtitle }}</p>
-          </div>
-          <Button
-            type="button"
-            variant="muted-textonly"
-            size="icon"
-            class="-mt-1 -mr-1 shrink-0 rounded-full"
-            :aria-label="t('common.close')"
-            data-testid="output-detail-close"
-            @click="emit('close')"
-          >
-            <X :size="16" aria-hidden="true" />
-          </Button>
+        <div class="flex min-w-0 flex-col gap-1">
+          <h2 class="m-0 line-clamp-2 text-heading font-semibold break-words text-foreground">
+            {{ item.name }}
+          </h2>
+          <p class="m-0 text-ui text-subtle-foreground" data-testid="output-detail-subtitle">
+            {{ subtitle }}
+          </p>
         </div>
-        <div v-if="facts.length > 0" class="flex flex-wrap gap-1.5">
+        <div
+          v-if="facts.length > 0"
+          class="flex flex-wrap gap-1.5"
+          data-testid="output-detail-facts"
+        >
           <Tag v-for="fact in facts" :key="fact" :label="fact" />
         </div>
       </div>
@@ -353,14 +465,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <span v-if="item.inCloud" class="text-ui text-foreground">
           {{ t('assets.detail.cloudAssets') }}
         </span>
-        <div
-          v-if="savedFolder"
-          class="flex min-w-0 flex-col gap-0.5 text-ui"
-          :title="item.savedIn ?? undefined"
-        >
-          <span class="truncate text-foreground">{{ savedFolder.name }}</span>
-          <span v-if="savedFolder.parent" class="truncate text-subtle-foreground">{{
-            savedFolder.parent
+        <div v-if="savedFolder" class="flex min-w-0 flex-col gap-0.5 text-ui">
+          <span class="truncate text-foreground">{{ savedFolder }}</span>
+          <span v-if="item.savedBy" class="truncate text-subtle-foreground">{{
+            item.savedBy
           }}</span>
         </div>
       </div>

@@ -253,9 +253,12 @@
     },
     "inspect": "查看 {name}",
     "detail": {
+      "title": "详细信息",
       "tags": "标签",
       "tagsHint": "标签在 ComfyUI 中编辑。",
       "createdAt": "创建于 {date}",
+      "imported": "已导入",
+      "importedAt": "导入于 {date}",
       "fit": "适应",
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",

@@ -510,7 +510,7 @@ describe('AppPageHost outputs', () => {
     expect(outputDialog()).toBeNull()
   })
 
-  it('says where a result on this computer is saved, and sends Show in folder to the page', async () => {
+  it('names the folder of a result on this computer without its path, and sends Show in folder to the page', async () => {
     await mountHost()
     const [first, second] = TWO_CUTOUTS.items
     await showOutputs('remove-background', {
@@ -519,9 +519,7 @@ describe('AppPageHost outputs', () => {
     })
 
     expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain('apps')
-    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain(
-      '/Users/me/ComfyUI/output'
-    )
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).not.toContain('/Users/me')
     expect(inOutputDialog('output-detail-view-in-assets')).toBeNull()
 
     inOutputDialog('output-detail-show-in-folder')!.click()

@@ -843,7 +843,12 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
+    width: asset.width,
+    height: asset.height,
+    imported: isImported(asset),
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    savedBy: isLocal(asset) ? (selectedBuild.value?.build.name ?? null) : null,
+    moreActions: viewerMenuItemsFor(asset),
     mainAction: isLocal(asset) ? null : 'download',
     workflow: canOpenWorkflow(asset),
     workflowSlot: mayOpenWorkflow(asset),
@@ -861,6 +866,10 @@ watch(detailIndex, (index) => {
     lookedUpDetail.value = null
   } else if (index < visibleAssets.value.length) scrollToIndex(index)
 })
+
+function isImported(asset: GalleryAsset): boolean {
+  return asset.tags.includes('input') && !asset.tags.includes('output')
+}
 
 const WORKFLOW_KINDS: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
 
@@ -1079,7 +1088,18 @@ function cardTool(asset: GalleryAsset) {
 
 const assetMenuItems = computed<ContextMenuItem[]>(() => {
   const asset = assetMenu.value?.asset
-  if (!asset) return []
+  return asset ? menuItemsFor(asset) : []
+})
+
+const PANEL_BUTTON_ACTIONS = new Set(['download', 'reveal'])
+
+function viewerMenuItemsFor(asset: GalleryAsset): ContextMenuItem[] {
+  return menuItemsFor(asset)
+    .filter((item) => !PANEL_BUTTON_ACTIONS.has(item.id))
+    .map((item, at) => (at === 0 ? { ...item, separator: false } : item))
+}
+
+function menuItemsFor(asset: GalleryAsset): ContextMenuItem[] {
   const action = mainAction(asset)
   return [
     ...(action === 'open' ? [{ id: 'open', label: t('assets.open'), icon: ExternalLink }] : []),
@@ -1104,7 +1124,7 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
         ]
       : [])
   ]
-})
+}
 
 function openAssetMenu(asset: GalleryAsset, event: MouseEvent): void {
   assetMenu.value = { asset, x: event.clientX, y: event.clientY }
@@ -1144,7 +1164,10 @@ async function moveToTrash(asset: GalleryAsset): Promise<void> {
 async function runAssetAction(action: string): Promise<void> {
   const asset = assetMenu.value?.asset
   assetMenu.value = null
-  if (!asset) return
+  if (asset) await runActionOn(asset, action)
+}
+
+async function runActionOn(asset: GalleryAsset, action: string): Promise<void> {
   if (action === 'download') await download(asset)
   else if (action === 'open') await openLocally(asset)
   else if (action === 'reveal') await reveal(asset)
@@ -1712,6 +1735,7 @@ function extensionOf(name: string): string {
       @download="download(detailAssets[$event]!)"
       @show-in-folder="reveal(detailAssets[$event]!)"
       @open-workflow="(index, build) => openWorkflow(detailAssets[index]!, build)"
+      @action="(index, action) => runActionOn(detailAssets[index]!, action)"
     />
 
     <ContextMenu

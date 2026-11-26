@@ -1806,6 +1806,91 @@ describe('AssetsView', () => {
     expect(close.top).toBeGreaterThanOrEqual(box.top)
   })
 
+  it('puts the round close button in the Details header, just after More, and nowhere on the picture', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    const stage = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-stage"]')!
+    const header = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-header"]')!
+    const more = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-more"]')!
+    const button = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-close"]')!
+    expect(header.contains(button), 'the close button belongs to the Details header').toBe(true)
+    expect(stage.contains(button), 'the picture area has no close button').toBe(false)
+
+    const close = button.getBoundingClientRect()
+    const beside = more.getBoundingClientRect()
+    expect(close.width).toBe(28)
+    expect(close.height).toBe(28)
+    expect(getComputedStyle(button).borderRadius).not.toBe('0px')
+    expect(close.left - beside.right, 'close sits right after More').toBe(2)
+    expect(close.top + close.height / 2).toBeCloseTo(beside.top + beside.height / 2, 0)
+    expect(button.getAttribute('aria-label')).toBe('Close')
+
+    button.click()
+    await flushPromises()
+    expect(viewer()).toBeNull()
+  })
+
+  it('offers zoom for a picture only, not for a video, a sound, a 3D file or a file with no viewer', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', { previewUrl: 'comfy-output://forest' }),
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://surfer' }),
+      asset('/out/voice.wav', 'voice.wav', 'audio', { previewUrl: 'comfy-output://voice' }),
+      asset('/out/bust.glb', 'bust.glb', '3d'),
+      asset('/out/notes.txt', 'notes.txt', null),
+      asset('/out/broken.png', 'broken.png', 'image')
+    ])
+    const zoom = (): Element | null => viewer()!.querySelector('[data-testid="output-detail-zoom"]')
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    expect(zoom(), 'a picture has zoom').not.toBeNull()
+    expect(shownText(zoom())).toBe('Fit')
+
+    const shown: Record<string, boolean> = {}
+    for (const name of ['surfer.mp4', 'voice.wav', 'bust.glb', 'notes.txt', 'broken.png']) {
+      await press('ArrowRight')
+      expect(viewerTitle()).toBe(name)
+      shown[name] = zoom() !== null
+    }
+    expect(shown).toEqual({
+      'surfer.mp4': false,
+      'voice.wav': false,
+      'bust.glb': false,
+      'notes.txt': false,
+      'broken.png': false
+    })
+
+    await press('ArrowRight')
+    expect(viewerTitle()).toBe('forest.png')
+    expect(zoom(), 'zoom comes back with the picture').not.toBeNull()
+  })
+
+  it('hides every Details row a file has no value for and never shows its path on disk', async () => {
+    const file = '/Users/me/output/2026-11/bare.png'
+    const wrapper = await mountAssets([
+      asset(file, 'bare.png', 'image', { sizeBytes: 2048, width: null, height: null })
+    ])
+
+    await wrapper.get(`[data-testid="asset-open-${file}"]`).trigger('click')
+    await flushPromises()
+
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))).toBe(
+      'Image'
+    )
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe(
+      'PNG 2 KB'
+    )
+    expect(viewer()!.innerHTML).not.toContain('/Users/me')
+    const panel = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-panel"]')!
+    const emptyRows = [...panel.querySelectorAll<HTMLElement>('p, span, h2')].filter(
+      (row) => row.children.length === 0 && !row.classList.contains('sr-only') && !shownText(row)
+    )
+    expect(emptyRows, 'no row is left on screen without a value').toEqual([])
+  })
+
   it('steps through the files in page order with the arrow keys and the filmstrip', async () => {
     const wrapper = await mountAssets([
       asset('new', 'new.png', 'image', { createdAt: '2026-11-03T00:00:00Z' }),
@@ -1831,6 +1916,107 @@ describe('AssetsView', () => {
     expect(viewerTitle()).toBe('mid.png')
   })
 
+  it('heads the panel with the type, when the file was made, and its format, size and pixels', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', {
+        createdAt: '2026-11-03T08:00:00Z',
+        width: 960,
+        height: 645,
+        sizeBytes: 3 * 1024 * 1024
+      })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    const subtitle = shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))
+    expect(subtitle).toMatch(/^Image · Created /)
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe(
+      'PNG 960 × 645 3.0 MB'
+    )
+  })
+
+  it('says an uploaded input was imported rather than created', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await signInWith([
+      asset('c', 'reference.png', 'image', { tags: ['input'], createdAt: '2026-11-03T08:00:00Z' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-c"]').trigger('click')
+    await flushPromises()
+
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))).toMatch(
+      /^Image · Imported /
+    )
+  })
+
+  it('leaves out the facts an audio or 3D file does not have, without empty rows', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/voice.wav', 'voice.wav', 'audio', { width: 0, height: 0 }),
+      asset('/out/bust.glb', 'bust.glb', '3d', { sizeBytes: null })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-/out/voice.wav"]').trigger('click')
+    await flushPromises()
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-subtitle"]'))).toBe(
+      'Audio'
+    )
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe(
+      'WAV 1 KB'
+    )
+
+    await press('ArrowRight')
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-facts"]'))).toBe('GLB')
+  })
+
+  it('titles the panel Details, with More and Close at its top right', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+
+    const header = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-header"]')!
+    expect(shownText(header)).toBe('Details')
+    const buttons = [...header.querySelectorAll('button')].map((button) =>
+      button.getAttribute('aria-label')
+    )
+    expect(buttons).toEqual(['More actions', 'Close'])
+  })
+
+  it('offers the card actions the panel has no button for under More, and runs them on the shown file', async () => {
+    copyAsset.mockResolvedValue(true)
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', { previewUrl: 'comfy-output://forest' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    viewer()!
+      .querySelector<HTMLElement>('[data-testid="output-detail-more"]')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    const choices = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(choices.map((choice) => choice.textContent?.trim())).toEqual(['Open', 'Copy', 'Delete'])
+    choices[1]!.click()
+    await flushPromises()
+
+    expect(copyAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+  })
+
+  it('shows no More button for a Cloud file whose only action is the Download button', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await signInWith([asset('c', 'clip.mp4', 'video')])
+
+    await wrapper.get('[data-testid="asset-open-c"]').trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-more"]')).toBeNull()
+    expect(viewer()!.querySelector('[data-testid="output-detail-close"]')).not.toBeNull()
+  })
+
   it('plays a video in the viewer with its controls', async () => {
     const wrapper = await mountAssets([
       asset('clip', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://file/surfer' })
@@ -1844,16 +2030,19 @@ describe('AssetsView', () => {
     expect(video.controls).toBe(true)
   })
 
-  it('tells the real folder of a file on this computer in the viewer, and shows it in Finder', async () => {
+  it('names the folder and the build of a file on this computer, never its path, and shows it in Finder', async () => {
     const file = '/Users/me/output/2026-11/forest.png'
-    const wrapper = await mountAssets([asset(file, 'forest.png', 'image')])
+    const wrapper = await mountAssets([asset(file, 'forest.png', 'image')], {
+      builds: [localBuild('lab', 'Video Lab')]
+    })
 
     await wrapper.get(`[data-testid="asset-open-${file}"]`).trigger('click')
     await flushPromises()
 
     expect(shownText(viewer()!.querySelector('[data-testid="output-detail-saved-in"]'))).toBe(
-      'SAVED IN 2026-11 /Users/me/output'
+      'SAVED IN 2026-11 Video Lab'
     )
+    expect(viewer()!.innerHTML).not.toContain('/Users/me')
     const show = viewer()!.querySelector<HTMLElement>(
       '[data-testid="output-detail-show-in-folder"]'
     )!
@@ -1925,6 +2114,251 @@ describe('AssetsView', () => {
 
     expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
     expect(document.querySelector('[data-testid="output-detail-show-in-folder"]')).not.toBeNull()
+  })
+})
+
+describe('AssetsView image zoom', () => {
+  const BIG_WIDTH = 4000
+  const BIG_HEIGHT = 3000
+
+  function bigPicture(id: string): AssetSummary {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${BIG_WIDTH}" height="${BIG_HEIGHT}"><rect width="100%" height="100%" fill="teal"/></svg>`
+    return asset(id, `${id}.svg`, 'image', {
+      previewUrl: `data:image/svg+xml,${encodeURIComponent(svg)}`
+    })
+  }
+
+  function stage(): HTMLElement {
+    return viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-viewport"]')!
+  }
+
+  function image(): HTMLElement {
+    return viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-image"]')!
+  }
+
+  function zoomLabel(): string {
+    return shownText(viewer()!.querySelector('[data-testid="output-detail-zoom"]'))
+  }
+
+  function pictureBox(): { left: number; top: number; width: number; height: number } {
+    const shown = /translate\((-?[\d.e-]+)px, (-?[\d.e-]+)px\) scale\(([\d.e-]+)\)/.exec(
+      image().style.transform
+    )
+    expect(shown, 'the picture is placed by a transform').not.toBeNull()
+    const [, x, y, scale] = shown!.map(Number)
+    const box = stage().getBoundingClientRect()
+    return {
+      left: box.left + x!,
+      top: box.top + y!,
+      width: BIG_WIDTH * scale!,
+      height: BIG_HEIGHT * scale!
+    }
+  }
+
+  function shownScale(): number {
+    return pictureBox().width / BIG_WIDTH
+  }
+
+  function pictureSpot(x: number, y: number): { u: number; v: number } {
+    const box = pictureBox()
+    return { u: (x - box.left) / box.width, v: (y - box.top) / box.height }
+  }
+
+  function spotOnPicture(u: number, v: number): { x: number; y: number } {
+    const box = pictureBox()
+    return { x: Math.round(box.left + box.width * u), y: Math.round(box.top + box.height * v) }
+  }
+
+  function spotOnStage(u: number, v: number): { x: number; y: number } {
+    const box = stage().getBoundingClientRect()
+    return { x: box.left + box.width * u, y: box.top + box.height * v }
+  }
+
+  async function openBig(wrapper: Awaited<ReturnType<typeof mountAssets>>): Promise<void> {
+    await wrapper.get('[data-testid="asset-open-big"]').trigger('click')
+    await flushPromises()
+    await vi.waitFor(() => expect(image().style.transform).toContain('scale('))
+  }
+
+  async function wheel(x: number, y: number, deltaY: number, ctrlKey = false): Promise<void> {
+    stage().dispatchEvent(
+      new WheelEvent('wheel', {
+        clientX: x,
+        clientY: y,
+        deltaY,
+        ctrlKey,
+        bubbles: true,
+        cancelable: true
+      })
+    )
+    await flushPromises()
+  }
+
+  async function drag(from: { x: number; y: number }, by: { x: number; y: number }): Promise<void> {
+    const target = stage()
+    const pointer = { pointerId: 1, button: 0, bubbles: true, cancelable: true }
+    target.dispatchEvent(
+      new PointerEvent('pointerdown', { ...pointer, clientX: from.x, clientY: from.y })
+    )
+    target.dispatchEvent(
+      new PointerEvent('pointermove', {
+        ...pointer,
+        clientX: from.x + by.x / 2,
+        clientY: from.y + by.y / 2
+      })
+    )
+    target.dispatchEvent(
+      new PointerEvent('pointermove', {
+        ...pointer,
+        clientX: from.x + by.x,
+        clientY: from.y + by.y
+      })
+    )
+    target.dispatchEvent(
+      new PointerEvent('pointerup', { ...pointer, clientX: from.x + by.x, clientY: from.y + by.y })
+    )
+    await flushPromises()
+  }
+
+  async function doubleClick(x: number, y: number): Promise<void> {
+    stage().dispatchEvent(new MouseEvent('dblclick', { clientX: x, clientY: y, bubbles: true }))
+    await flushPromises()
+  }
+
+  it('zooms with the wheel and a pinch around the point under the cursor, and shows the live percentage', async () => {
+    const wrapper = await mountAssets([bigPicture('big')])
+    await openBig(wrapper)
+    expect(zoomLabel()).toBe('Fit')
+    const fitScale = shownScale()
+
+    const at = spotOnPicture(0.3, 0.4)
+    const before = pictureSpot(at.x, at.y)
+    await wheel(at.x, at.y, -200)
+
+    expect(shownScale()).toBeGreaterThan(fitScale)
+    expect(zoomLabel()).toBe(`${Math.round(shownScale() * 100)}%`)
+    expect(pictureBox().width, 'the picture now runs past the stage sideways').toBeGreaterThan(
+      stage().getBoundingClientRect().width
+    )
+    expect(pictureSpot(at.x, at.y).u, 'the same spot stays under the cursor').toBeCloseTo(
+      before.u,
+      2
+    )
+
+    const pinched = shownScale()
+    await wheel(at.x, at.y, -20, true)
+    expect(shownScale(), 'a pinch zooms in too').toBeGreaterThan(pinched)
+
+    await wheel(at.x, at.y, 5000)
+    expect(zoomLabel(), 'zooming out stops at Fit').toBe('Fit')
+    expect(shownScale()).toBeCloseTo(fitScale, 5)
+
+    for (let turn = 0; turn < 10; turn++) await wheel(at.x, at.y, -2000)
+    expect(zoomLabel(), 'zoom stops at 800%').toBe('800%')
+  })
+
+  it('pans a zoomed picture by dragging it, and does not move a fitted one', async () => {
+    const wrapper = await mountAssets([bigPicture('big')])
+    await openBig(wrapper)
+    const middle = spotOnStage(0.5, 0.5)
+
+    expect(stage().className).not.toContain('cursor-grab')
+    const fitted = pictureBox()
+    await drag(middle, { x: -120, y: -60 })
+    expect(pictureBox().left).toBe(fitted.left)
+    expect(pictureBox().top).toBe(fitted.top)
+
+    await doubleClick(middle.x, middle.y)
+    expect(zoomLabel()).toBe('100%')
+    expect(stage().className).toContain('cursor-grab')
+    const zoomed = pictureBox()
+    await drag(middle, { x: -120, y: -60 })
+    expect(pictureBox().left).toBeCloseTo(zoomed.left - 120, 0)
+    expect(pictureBox().top).toBeCloseTo(zoomed.top - 60, 0)
+    expect(stage().className, 'the hand opens again when the drag ends').not.toContain(
+      'cursor-grabbing'
+    )
+
+    await drag(middle, { x: 100_000, y: 100_000 })
+    expect(pictureBox().left, 'the picture is not dragged off the stage').toBeCloseTo(
+      stage().getBoundingClientRect().left,
+      0
+    )
+  })
+
+  it('toggles Fit and 100% around the clicked point with a double-click', async () => {
+    const wrapper = await mountAssets([bigPicture('big')])
+    await openBig(wrapper)
+
+    const at = spotOnPicture(0.35, 0.45)
+    const before = pictureSpot(at.x, at.y)
+    await doubleClick(at.x, at.y)
+    expect(zoomLabel()).toBe('100%')
+    expect(shownScale()).toBeCloseTo(1, 5)
+    const after = pictureSpot(at.x, at.y)
+    expect(after.u).toBeCloseTo(before.u, 2)
+    expect(after.v).toBeCloseTo(before.v, 2)
+
+    await doubleClick(at.x, at.y)
+    expect(zoomLabel()).toBe('Fit')
+  })
+
+  it('zooms in with plus or equals, out with minus, back to Fit with zero, and still steps with the arrows', async () => {
+    const wrapper = await mountAssets([bigPicture('big'), picture('next', 300)])
+    await openBig(wrapper)
+    const fitScale = shownScale()
+
+    await press('+')
+    const once = shownScale()
+    expect(once).toBeGreaterThan(fitScale)
+    await press('=')
+    expect(shownScale()).toBeGreaterThan(once)
+    await press('-')
+    expect(shownScale()).toBeCloseTo(once, 5)
+    expect(zoomLabel()).toMatch(/^\d+%$/)
+    await press('0')
+    expect(zoomLabel()).toBe('Fit')
+
+    await press('=')
+    await press('ArrowRight')
+    expect(viewerTitle()).toBe('next.svg')
+    await press('ArrowLeft')
+    expect(viewerTitle()).toBe('big.svg')
+    await vi.waitFor(() => expect(image().style.transform).toContain('scale('))
+    expect(zoomLabel(), 'another file opens fitted').toBe('Fit')
+
+    await press('Escape')
+    expect(viewer()).toBeNull()
+  })
+
+  it('leaves a video, a sound and a 3D file alone on wheel, drag, double-click and zoom keys', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://surfer' }),
+      asset('/out/voice.wav', 'voice.wav', 'audio', { previewUrl: 'comfy-output://voice' }),
+      asset('/out/bust.glb', 'bust.glb', '3d')
+    ])
+    await wrapper.get('[data-testid="asset-open-/out/surfer.mp4"]').trigger('click')
+    await flushPromises()
+
+    for (const name of ['surfer.mp4', 'voice.wav', 'bust.glb']) {
+      expect(viewerTitle()).toBe(name)
+      const middle = spotOnStage(0.5, 0.5)
+      const wheelEvent = new WheelEvent('wheel', {
+        clientX: middle.x,
+        clientY: middle.y,
+        deltaY: -400,
+        bubbles: true,
+        cancelable: true
+      })
+      stage().dispatchEvent(wheelEvent)
+      expect(wheelEvent.defaultPrevented, `${name} lets the wheel through`).toBe(false)
+      await doubleClick(middle.x, middle.y)
+      await press('=')
+      expect(stage().className).not.toContain('cursor-grab')
+      expect(viewer()!.querySelector('[data-testid="output-detail-zoom"]')).toBeNull()
+      expect(viewer()!.querySelector('[data-testid="output-detail-image"]')).toBeNull()
+      await press('ArrowRight')
+    }
   })
 })
 
