@@ -16,11 +16,13 @@ import {
   Folder,
   LayoutGrid,
   LayoutDashboard,
+  Minus,
   Music,
   RefreshCw,
   ScanSearch,
   Search,
   Play,
+  Plus,
   Trash2
 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -97,7 +99,7 @@ const SEARCH_DEBOUNCE_MS = 300
 const MAX_SEARCH_LENGTH = 200
 const PREFETCH_DEADLINE_MS = 1000
 const NAME_TOOLTIP_DELAY_MS = 600
-const MIN_CARD_WIDTH = 240
+const CARD_WIDTHS = [180, 240, 320] as const
 const CARD_GAP = 14
 const CARD_INSET = 4
 const CAPTION_PADDING = 18
@@ -141,6 +143,14 @@ const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
+const cardSize = useLocalStorage('comfy.desktop.assets.cardSize', 2)
+const cardWidth = computed(
+  () => CARD_WIDTHS[Math.min(CARD_WIDTHS.length, Math.max(1, cardSize.value)) - 1]!
+)
+
+function setCardSize(size: number): void {
+  cardSize.value = Math.min(CARD_WIDTHS.length, Math.max(1, size))
+}
 const searchOpen = ref(false)
 const placePickerOpen = ref(false)
 const toolbarRow = useTemplateRef<HTMLElement>('toolbarRow')
@@ -483,9 +493,15 @@ const masonry = useVirtualMasonry({
     const mediaWidth = columnWidth - 2 * CARD_INSET
     return 2 * CARD_INSET + (mediaWidth * shape.height) / shape.width + captionHeight.value
   },
-  minColumnWidth: MIN_CARD_WIDTH,
+  minColumnWidth: cardWidth,
   gap: CARD_GAP,
-  relayoutWhen: () => [visibleAssets.value, showSkeleton.value, layout.value, captionHeight.value]
+  relayoutWhen: () => [
+    visibleAssets.value,
+    showSkeleton.value,
+    layout.value,
+    captionHeight.value,
+    cardWidth.value
+  ]
 })
 const { cards, galleryStyle, cardStyle, measureCard, scrollToIndex, scrollToTop } = masonry
 
@@ -1451,6 +1467,47 @@ function extensionOf(name: string): string {
                 <Check v-if="layout === option.value" :size="15" aria-hidden="true" />
               </MenuRadioItem>
             </DropdownMenuRadioGroup>
+            <div
+              class="flex items-center gap-1.5 px-3 pt-2.5 pb-1.5"
+              data-testid="assets-card-size"
+            >
+              <span class="flex-1 text-ui text-subtle-foreground">{{ t('assets.cardSize') }}</span>
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="icon-sm"
+                :aria-label="t('assets.cardSmaller')"
+                :disabled="cardSize <= 1"
+                data-testid="assets-card-smaller"
+                @click="setCardSize(cardSize - 1)"
+              >
+                <Minus :size="13" aria-hidden="true" />
+              </Button>
+              <span class="flex gap-0.5">
+                <button
+                  v-for="step in CARD_WIDTHS.length"
+                  :key="step"
+                  type="button"
+                  class="h-1.5 w-5 cursor-pointer rounded-full border-0 p-0 transition-colors"
+                  :class="step <= cardSize ? 'bg-foreground' : 'bg-secondary'"
+                  :aria-label="t('assets.cardSizeStep', { step })"
+                  :aria-pressed="step === cardSize"
+                  :data-testid="`assets-card-size-${step}`"
+                  @click="setCardSize(step)"
+                />
+              </span>
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="icon-sm"
+                :aria-label="t('assets.cardBigger')"
+                :disabled="cardSize >= CARD_WIDTHS.length"
+                data-testid="assets-card-bigger"
+                @click="setCardSize(cardSize + 1)"
+              >
+                <Plus :size="13" aria-hidden="true" />
+              </Button>
+            </div>
             <MenuSeparator />
             <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
               {{ t('assets.sortLabel') }}

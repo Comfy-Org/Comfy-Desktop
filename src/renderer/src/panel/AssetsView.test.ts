@@ -481,6 +481,39 @@ describe('AssetsView', () => {
     expect(cardCount(), 'the cards scrolled past are gone').toBeLessThan(40)
   })
 
+  it('makes the cards bigger or smaller from Size in the view options, and keeps the size', async () => {
+    const wrapper = await mountAssets(
+      Array.from({ length: 8 }, (_, i) => picture(`card-${i}`, 200))
+    )
+    const columns = () =>
+      new Set(
+        wrapper
+          .findAll('[data-testid="assets-grid"] > li')
+          .map((card) => Math.round(card.element.getBoundingClientRect().left))
+      ).size
+    await vi.waitFor(() => expect(columns()).toBe(4))
+
+    await wrapper.get('[data-testid="assets-view-options"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const inMenu = (testId: string) =>
+      document.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)!
+
+    const sizeRow = inMenu('assets-card-size').getBoundingClientRect()
+    expect(
+      inMenu('assets-card-bigger').getBoundingClientRect().top,
+      'Size sits on one line'
+    ).toBeLessThan(sizeRow.top + sizeRow.height / 2)
+
+    inMenu('assets-card-bigger').click()
+    await vi.waitFor(() => expect(columns()).toBe(3))
+    expect(inMenu('assets-card-bigger').disabled, 'Size stops at its biggest step').toBe(true)
+
+    inMenu('assets-card-size-1').click()
+    await vi.waitFor(() => expect(columns()).toBe(5))
+    expect(inMenu('assets-card-smaller').disabled).toBe(true)
+    expect(window.localStorage.getItem('comfy.desktop.assets.cardSize')).toBe('1')
+  })
+
   it('opens with the view setup the user saved last time', async () => {
     window.localStorage.setItem('comfy.desktop.assets.layout', 'grid')
     window.localStorage.setItem('comfy.desktop.assets.showName', 'false')

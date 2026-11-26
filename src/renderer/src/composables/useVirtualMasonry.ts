@@ -16,7 +16,7 @@ export interface VirtualMasonryOptions {
   count: MaybeRefOrGetter<number>
   itemKey: (index: number) => string
   estimateHeight: (index: number, columnWidth: number) => number
-  minColumnWidth: number
+  minColumnWidth: MaybeRefOrGetter<number>
   gap: MaybeRefOrGetter<number>
   relayoutWhen: WatchSource
 }
@@ -41,7 +41,7 @@ export function useVirtualMasonry(options: VirtualMasonryOptions) {
 
   const lanes = computed(() => {
     const gap = toValue(options.gap)
-    return Math.max(1, Math.floor((galleryWidth.value + gap) / (minColumnWidth + gap)))
+    return Math.max(1, Math.floor((galleryWidth.value + gap) / (toValue(minColumnWidth) + gap)))
   })
 
   const virtualizer = useVirtualizer(
