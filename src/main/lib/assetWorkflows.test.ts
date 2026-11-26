@@ -73,10 +73,6 @@ function hasWorkflow(source: string, assetId: string): Promise<boolean> {
   ) as Promise<boolean>
 }
 
-function workflowSummary(source: string, assetId: string) {
-  return mocks.handlers.get(ASSET_WORKFLOW_CHANNELS.summary)!(EVENT, source, assetId)
-}
-
 function openWorkflow(source: string, assetId: string, name: string, build?: string) {
   return mocks.handlers.get(ASSET_WORKFLOW_CHANNELS.open)!(EVENT, source, assetId, name, build)
 }
@@ -101,36 +97,6 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.unstubAllGlobals()
   await rm(folder, { recursive: true, force: true })
-})
-
-describe('the summary of a saved workflow', () => {
-  it('lists the prompts and the models of the file it is asked about', async () => {
-    const graph = {
-      nodes: [
-        { id: 1, type: 'CheckpointLoaderSimple', widgets_values: ['base.safetensors'] },
-        { id: 2, type: 'CLIPTextEncode', widgets_values: ['a harbor at dusk'] }
-      ]
-    }
-    await savedFile('harbor.flac', `fLaC\u0000workflow=${JSON.stringify(graph)}\u0000`)
-
-    expect(await workflowSummary(LOCAL, 'harbor.flac')).toEqual({
-      models: ['base.safetensors'],
-      prompts: ['a harbor at dusk']
-    })
-  })
-
-  it('answers with nothing for a file that carries no workflow', async () => {
-    await savedFile('plain.flac', 'fLaC\u0000nothing here\u0000')
-
-    expect(await workflowSummary(LOCAL, 'plain.flac')).toBeNull()
-  })
-
-  it('answers with nothing when the asking window is not the panel', async () => {
-    mocks.fromPanel = false
-    await savedFile('harbor.flac', `fLaC\u0000${SAVED_WORKFLOW}\u0000`)
-
-    expect(await workflowSummary(LOCAL, 'harbor.flac')).toBeNull()
-  })
 })
 
 describe('a file on this computer', () => {

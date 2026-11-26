@@ -54,7 +54,6 @@ import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
 import type {
   AssetKind,
   AssetSummary,
-  AssetWorkflowSummary,
   CloudAssetLookup,
   CloudAssetPage,
   Installation,
@@ -162,7 +161,6 @@ const assetTotal = ref(0)
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 const workflowFound = ref(new Map<string, boolean>())
-const workflowSummaries = ref(new Map<string, AssetWorkflowSummary | null>())
 const workflowChecks = ref(0)
 interface OpeningWorkflow {
   token: number
@@ -842,6 +840,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     kind: asset.kind,
     sizeBytes: asset.sizeBytes,
     createdAt: asset.createdAt,
+    tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
@@ -849,8 +848,6 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     workflow: canOpenWorkflow(asset),
     workflowSlot: mayOpenWorkflow(asset),
     workflowBuilds: workflowBuildsOf(asset),
-    models: workflowSummaries.value.get(workflowKey(asset))?.models,
-    prompts: workflowSummaries.value.get(workflowKey(asset))?.prompts,
     workflowBusy: openingWorkflows.value.has(cardKey(asset)),
     workflowStatus: workflowStatusOf(asset),
     loadModel:
@@ -899,28 +896,6 @@ async function checkWorkflow(asset: GalleryAsset, checks: number): Promise<void>
   const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => null)
   if (found === null || checks !== workflowChecks.value) return
   workflowFound.value = new Map(workflowFound.value).set(workflowKey(asset), found)
-  if (found) void readWorkflowSummary(asset, checks)
-}
-
-async function readWorkflowSummary(asset: GalleryAsset, checks: number): Promise<void> {
-  const key = workflowKey(asset)
-  if (workflowSummaries.value.has(key)) return
-  const summary = await window.api
-    .readAssetWorkflowSummary(asset.source, asset.id)
-    .catch(() => undefined)
-  if (summary === undefined || checks !== workflowChecks.value) return
-  if (summary === null && workflowFound.value.get(key) === true) return
-  workflowSummaries.value = new Map(workflowSummaries.value).set(key, summary)
-}
-
-function needsWorkflowCheck(asset: GalleryAsset): boolean {
-  return mayOpenWorkflow(asset) && !workflowFound.value.has(workflowKey(asset))
-}
-
-function needsWorkflowSummary(asset: GalleryAsset): boolean {
-  const key = workflowKey(asset)
-  if (!WORKFLOW_KINDS.includes(asset.kind) || workflowSummaries.value.has(key)) return false
-  return mayOpenWorkflow(asset) ? workflowFound.value.get(key) === true : true
 }
 
 const WORKFLOW_CHECK_DELAY_MS = 150
@@ -930,7 +905,6 @@ watch(
   () => selectedBuild.value?.build.id,
   () => {
     workflowFound.value = new Map()
-    workflowSummaries.value = new Map()
     workflowChecks.value += 1
   }
 )
@@ -938,7 +912,8 @@ watch(
 watch(
   () => {
     const asset = shownDetail.value
-    if (!asset || (!needsWorkflowCheck(asset) && !needsWorkflowSummary(asset))) return null
+    if (!asset || !mayOpenWorkflow(asset) || workflowFound.value.has(workflowKey(asset)))
+      return null
     return `${workflowChecks.value}\n${workflowKey(asset)}`
   },
   (pending) => {
@@ -946,10 +921,10 @@ watch(
     const asset = shownDetail.value
     if (!pending || !asset) return
     const checks = workflowChecks.value
-    workflowCheckTimer = setTimeout(() => {
-      if (needsWorkflowCheck(asset)) void checkWorkflow(asset, checks)
-      else if (needsWorkflowSummary(asset)) void readWorkflowSummary(asset, checks)
-    }, WORKFLOW_CHECK_DELAY_MS)
+    workflowCheckTimer = setTimeout(
+      () => void checkWorkflow(asset, checks),
+      WORKFLOW_CHECK_DELAY_MS
+    )
   },
   { immediate: true }
 )

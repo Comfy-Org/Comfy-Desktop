@@ -253,8 +253,8 @@
     },
     "inspect": "Inspect {name}",
     "detail": {
-      "prompts": "Prompts",
-      "models": "Models",
+      "tags": "Tags",
+      "tagsHint": "Tags are edited in ComfyUI.",
       "createdAt": "Created {date}",
       "fit": "Fit",
       "zoom": "Zoom",
