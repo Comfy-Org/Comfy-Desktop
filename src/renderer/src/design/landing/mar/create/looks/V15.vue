@@ -561,7 +561,7 @@ useEscapeCloses(() => search.value?.field, endOnEscape)
   mask-image: radial-gradient(ellipse 48% 420px at 50% 200px, #000 0%, transparent 100%);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-canvas.is-preview {
-  mask-image: none;
+  mask-image: radial-gradient(ellipse 60% 58% at 50% 45%, #000 45%, transparent 100%);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-main {
   position: relative;
