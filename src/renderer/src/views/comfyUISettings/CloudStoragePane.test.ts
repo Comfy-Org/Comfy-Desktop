@@ -202,4 +202,24 @@ describe('CloudStoragePane', () => {
     expect(calls.openPath).toEqual([SHARED_OUTPUT])
     wrapper.unmount()
   })
+
+  it('shows the save error beside the browser cache select when an update fails', () => {
+    installApi()
+    const wrapper = mount(CloudStoragePane, {
+      props: {
+        snapshot: SNAPSHOT,
+        sections: cloudSections({ autoDownload: false }),
+        fieldErrorMessages: new Map([['browserPartition', 'Could not save']])
+      },
+      attachTo: document.body
+    })
+
+    const errors = wrapper.findAll('[data-testid="cloud-storage-field-error"]')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.text()).toBe('Could not save')
+    expect(
+      wrapper.get('[data-testid="cloud-storage-browser-cache"]').find('[role="alert"]').exists()
+    ).toBe(true)
+    wrapper.unmount()
+  })
 })

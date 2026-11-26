@@ -234,6 +234,12 @@ const showsUpdateNote = computed(
 
 const metaLine = computed(() => joinDistinctFacts([leadingFact.value, trailingFact.value]))
 
+const distinctTrailingFact = computed(() =>
+  joinDistinctFacts([leadingFact.value, trailingFact.value]) === leadingFact.value.trim()
+    ? ''
+    : trailingFact.value
+)
+
 const opensLogs = computed(
   () => isBusy.value || (!dangerTag.value && launchFailed(progressStore, inst.value.id))
 )
@@ -439,7 +445,7 @@ function openContextMenu(event: MouseEvent): void {
         v-if="metaLine || showsUpdateNote"
         class="chooser-tile-meta-line mt-0.5"
         :text="leadingFact"
-        :trailing="trailingFact"
+        :trailing="distinctTrailingFact"
         :build-name="inst.name"
         :show-update="showsUpdateNote"
         @open-update="openInstallManager(inst, { initialTab: 'update' })"

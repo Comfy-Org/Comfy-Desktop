@@ -12,9 +12,12 @@ import type { DetailField, DetailSection } from '../../types/ipc'
 interface Props {
   snapshot: StorageSnapshot
   sections: DetailSection[]
+  fieldErrorMessages?: Map<string, string>
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  fieldErrorMessages: () => new Map<string, string>()
+})
 
 const emit = defineEmits<{
   'update-field': [field: DetailField, value: unknown]
@@ -63,6 +66,13 @@ const outputPath = computed(() =>
   sharedOutputEnabled.value ? sharedOutputPath.value : asPath(outputDirField.value?.value)
 )
 
+function errorFor(field: DetailField | undefined): string {
+  return field ? (props.fieldErrorMessages.get(field.id) ?? '') : ''
+}
+
+const fieldErrorClass =
+  'cloud-storage-field-error max-w-60 flex-none truncate rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-danger'
+
 const headerToggleClass =
   'storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5'
 const cardClass = 'storage-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]'
@@ -103,6 +113,15 @@ function handleManageSharedDirs(): void {
             @update="(v) => updateField(useSharedOutputDirField, v)"
           />
         </label>
+        <span
+          v-if="errorFor(useSharedOutputDirField)"
+          :class="fieldErrorClass"
+          role="alert"
+          :title="errorFor(useSharedOutputDirField)"
+          data-testid="cloud-storage-field-error"
+        >
+          {{ errorFor(useSharedOutputDirField) }}
+        </span>
         <label :class="headerToggleClass" data-testid="cloud-storage-auto-download">
           <span>{{ t('common.autoDownloadOutputs') }}</span>
           <InfoTooltip :text="t('tooltips.autoDownloadOutputs')" />
@@ -111,6 +130,15 @@ function handleManageSharedDirs(): void {
             @update="(v) => updateField(autoDownloadField, v)"
           />
         </label>
+        <span
+          v-if="errorFor(autoDownloadField)"
+          :class="fieldErrorClass"
+          role="alert"
+          :title="errorFor(autoDownloadField)"
+          data-testid="cloud-storage-field-error"
+        >
+          {{ errorFor(autoDownloadField) }}
+        </span>
       </template>
       <div :class="cardClass">
         <StorageDirRow
@@ -150,6 +178,15 @@ function handleManageSharedDirs(): void {
           :aria-label="browserPartitionField.label"
           @update:model-value="(v: string) => updateField(browserPartitionField, v)"
         />
+        <span
+          v-if="errorFor(browserPartitionField)"
+          :class="fieldErrorClass"
+          role="alert"
+          :title="errorFor(browserPartitionField)"
+          data-testid="cloud-storage-field-error"
+        >
+          {{ errorFor(browserPartitionField) }}
+        </span>
       </template>
       <p class="m-0 text-[13px] leading-[1.45] text-text-muted">
         {{ t('comfyUISettings.browserCacheHint') }}

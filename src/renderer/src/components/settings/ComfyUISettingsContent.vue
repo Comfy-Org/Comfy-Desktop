@@ -1312,6 +1312,7 @@ defineExpose({
                         v-else-if="isCloudStorageTab"
                         :snapshot="globalSettingsSnapshot"
                         :sections="visibleSections"
+                        :field-error-messages="fieldErrorMessages"
                         @update-field="updateField"
                       />
                       <template v-else>
