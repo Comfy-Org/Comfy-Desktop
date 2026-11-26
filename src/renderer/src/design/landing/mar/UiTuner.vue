@@ -17,7 +17,7 @@ import { FOLDER_PICKERS, folderPicker } from './assets/folderPicker'
 import { RATING_STYLES, ratingStyle } from './assets/ratingStyle'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { assetFoldersShown } from './assets/assetFolderSwitch'
-import { viewerShortcut } from './assets/viewerShortcut'
+import { VIEWER_SHORTCUTS, viewerShortcut } from './assets/viewerShortcut'
 import { createLook } from './create/createLook'
 import { CREATE_LOOKS } from './create/looks'
 import { CREATE_INPUTS, createInput } from './create/createInput'
@@ -604,18 +604,15 @@ const linkSays = computed(() => {
           <Row :show="shows('folderDepth')" label="Folder depth">
             <Seg v-model="folderDepth.id" label="Folder depth" :options="FOLDER_DEPTHS" />
           </Row>
-          <Row :show="shows('viewerShortcut')">
-            <div class="flex items-center justify-between gap-3">
-              <span class="min-w-0 text-ui text-base-foreground">Viewer controls shortcut</span>
-              <Switch
-                :model-value="viewerShortcut.id === 'on'"
-                aria-label="Viewer controls shortcut"
-                @update:model-value="viewerShortcut.id = $event ? 'on' : 'off'"
-              />
-            </div>
+          <Row :show="shows('viewerShortcut')" label="Controls shortcut">
+            <Seg
+              v-model="viewerShortcut.id"
+              label="Controls shortcut"
+              :options="VIEWER_SHORTCUTS"
+            />
             <span class="text-ui text-subtle-foreground"
-              >EXR and 3D: a button on the picture and the V key switch to the Viewer tab and
-              back.</span
+              >EXR and 3D: a Controls button and the V key switch to the Viewer tab and back. On the
+              picture's corner, or in the bottom bar by the zoom.</span
             >
           </Row>
           <Row :show="shows('fullAssets')" label="Full Assets">

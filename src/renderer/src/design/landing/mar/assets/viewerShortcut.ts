@@ -1,15 +1,22 @@
 import { reactive, watch } from 'vue'
 
-export type ViewerShortcut = 'off' | 'on'
+export type ViewerShortcut = 'off' | 'stage' | 'bar'
+
+export const VIEWER_SHORTCUTS: { value: ViewerShortcut; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'stage', label: 'On picture' },
+  { value: 'bar', label: 'By zoom' }
+]
 
 const KEY = 'comfy.design.mar.viewerShortcut'
 
 export const viewerShortcut = reactive<{ id: ViewerShortcut }>({
   id: (() => {
     try {
-      return localStorage.getItem(KEY) === 'off' ? 'off' : 'on'
+      const saved = localStorage.getItem(KEY)
+      return saved === 'off' || saved === 'bar' ? saved : 'stage'
     } catch {
-      return 'on'
+      return 'stage'
     }
   })()
 })
