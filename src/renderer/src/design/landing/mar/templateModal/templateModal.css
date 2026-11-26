@@ -803,3 +803,93 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+
+.mar-tpl-gives {
+  gap: 6px;
+}
+.mar-tpl-gives-lead {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-tpl-gives .mad-tag {
+  gap: 5px;
+}
+.mar-tpl-gives .mad-tag > svg {
+  flex: none;
+  color: var(--color-muted-foreground);
+}
+
+.mar-tpl .mad-sec.mar-tpl-runs-top {
+  padding-bottom: 0;
+}
+.mar-tpl .mad-sec.mar-tpl-runs-bottom {
+  margin-top: -6px;
+  padding-top: 0;
+}
+.mar-tpl-runs-top .mad-pick {
+  border-radius: 10px 10px 0 0;
+  background: var(--mad-fill);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-runs-top .mar-tpl-on {
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+  background: transparent;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-runs-top .mar-tpl-on:not(:disabled):hover,
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-runs-top .mar-tpl-on[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+.mar-tpl-needs-box[data-tpl-joined] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.mar-tpl-needs-box[data-tpl-joined] > summary {
+  flex-wrap: wrap;
+  min-height: 34px;
+  row-gap: 2px;
+  padding: 4px 10px 8px 12px;
+  border-radius: 0 0 10px 10px;
+  font-size: 12px;
+}
+.mar-tpl-needs-box[data-tpl-joined][open] > summary {
+  border-radius: 0;
+}
+.mar-tpl-needs-box[data-tpl-joined] .mar-tpl-total {
+  max-width: 100%;
+}
+.mar-tpl-runs-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.mar-tpl-runs-eta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mar-tpl-meta {
+  gap: 0 6px;
+  margin-left: -9px;
+  clip-path: inset(0 0 0 9px);
+}
+.mar-tpl-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.mar-tpl-meta-item:first-child {
+  margin-left: 9px;
+}
+.mar-tpl-meta-item > i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}

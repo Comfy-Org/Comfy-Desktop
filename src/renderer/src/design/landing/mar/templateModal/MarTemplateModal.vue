@@ -87,6 +87,7 @@ import MarSeg from '../pages/MarSeg.vue'
 import TplDownloadActions from '../downloads/TplDownloadActions.vue'
 import { downloadFor, startDownload } from '../downloads/templateDownloads'
 import { START_COPY } from '../build/comfyStart'
+import { tplDetails } from './tplDetails'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
 // wears them, so the two read as one view. Imported for its styles.
 import '../assets/AssetDetail.vue'
@@ -227,6 +228,35 @@ const line = computed(() => {
   return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
 const exampleOn = computed(() => can.value.onboarding && !saved.value)
+const compact = computed(() => tplDetails.id === 'compact')
+const WARNING_NOTES: Target['state'][] = [
+  'blocked',
+  'platform',
+  'memory',
+  'disk',
+  'credits',
+  'plan',
+  'login',
+  'media',
+  'gated',
+  'offline'
+]
+const footLine = computed(() => {
+  const s = shown.value
+  if (!compact.value || !s) return line.value
+  if (s.state === 'download' && keptGb.value) return line.value
+  return WARNING_NOTES.includes(s.state) ? line.value : ''
+})
+const metaLine = computed(() =>
+  info.value
+    ? [info.value.useCase, info.value.model, `${info.value.uses} uses`, info.value.license].filter(
+        Boolean
+      )
+    : []
+)
+const lowerFirst = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1)
+const inputTag = (x: { label: string; optional?: boolean }): string =>
+  x.optional ? `${lowerFirst(x.label)}, optional` : lowerFirst(x.label)
 const primaryLabel = computed(() => {
   const s = shown.value
   if (!s) return 'Open'
@@ -568,6 +598,9 @@ const needsPill = computed(() => {
 const firstResult = computed(() =>
   template.value ? firstResultFor(template.value, shown.value, bgDownload.value) : undefined
 )
+const firstResultShort = computed(() =>
+  firstResult.value ? `First result ~${fmtDuration(firstResult.value.secs)}` : ''
+)
 const firstResultParts = computed(() =>
   (firstResult.value?.parts ?? []).map((p) => `${p.label} ${fmtDuration(p.secs)}`).join(' · ')
 )
@@ -711,6 +744,21 @@ const full = computed(() => can.value.onboarding)
                     savedIn?.name ?? (saved.source === 'cloud' ? 'Comfy Cloud' : 'This computer')
                   }}<i />Edited {{ saved.modified }}
                 </DialogDescription>
+                <DialogDescription v-else-if="compact" class="mar-tpl-by mar-tpl-meta">
+                  <span class="mar-tpl-meta-item"
+                    ><span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>ComfyUI</span
+                  >
+                  <span v-for="m in metaLine" :key="m" class="mar-tpl-meta-item"><i />{{ m }}</span>
+                  <span v-if="info.tutorial" class="mar-tpl-meta-item"
+                    ><i /><a
+                      class="mar-tpl-tutorial"
+                      :href="info.tutorial"
+                      target="_blank"
+                      rel="noreferrer"
+                      ><BookOpen :size="12" />Tutorial</a
+                    ></span
+                  >
+                </DialogDescription>
                 <DialogDescription v-else class="mar-tpl-by">
                   <span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>ComfyUI<i />{{
                     info.useCase
@@ -753,13 +801,20 @@ const full = computed(() => can.value.onboarding)
                   {{ aboutOpen ? 'Less' : 'More' }}
                 </button>
               </div>
+              <div v-if="compact && inputs.length" class="mad-tags mar-tpl-gives" data-tpl-inputs>
+                <span class="mar-tpl-gives-lead">Needs</span>
+                <span v-for="x in inputs" :key="x.label" class="mad-tag" :title="x.label">
+                  <component :is="INPUT_ICONS[x.kind]" :size="12" />
+                  <span class="mad-tag-t">{{ inputTag(x) }}</span>
+                </span>
+              </div>
             </section>
 
             <!-- Open in, with What it needs right under it (it follows the pick): the build it opens on, as one filled row that is
                  the picker (the other builds open under it), then why in
                  one line. What blocks it is one line and one action at the
                  bottom, in place of the primary. -->
-            <section v-if="inputs.length" class="mad-sec" data-tpl-inputs>
+            <section v-if="inputs.length && !compact" class="mad-sec" data-tpl-inputs>
               <h3 class="mad-label">What you give it</h3>
               <ul class="mar-tpl-inputs">
                 <li v-for="x in inputs" :key="x.label">
@@ -770,8 +825,8 @@ const full = computed(() => can.value.onboarding)
               </ul>
             </section>
 
-            <section class="mad-sec">
-              <h3 class="mad-label">Open in</h3>
+            <section class="mad-sec" :class="compact && 'mar-tpl-runs-top'">
+              <h3 class="mad-label">{{ compact ? 'Runs on' : 'Open in' }}</h3>
               <div v-if="shown" ref="buildBox" class="mad-pick">
                 <button
                   type="button"
@@ -820,21 +875,41 @@ const full = computed(() => can.value.onboarding)
                   </button>
                 </div>
               </div>
-              <p v-if="fit" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
+              <p v-if="fit && !compact" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
             </section>
 
             <!-- What it needs, on the build picked above: one box like Open
                  in's, its line folding the files open inside it. -->
-            <section class="mad-sec">
-              <h3 class="mad-label">What it needs</h3>
+            <section class="mad-sec" :class="compact && 'mar-tpl-runs-bottom'">
+              <h3 v-if="!compact" class="mad-label">What it needs</h3>
               <details
                 class="mar-tpl-needs-box"
+                :data-tpl-joined="compact || undefined"
                 @toggle="
                   ($event.target as HTMLDetailsElement).open &&
                   ($event.target as HTMLElement).scrollIntoView({ block: 'nearest' })
                 "
               >
-                <summary>
+                <summary v-if="compact">
+                  <span class="mar-tpl-total"
+                    >{{ needsLine
+                    }}<template v-if="needsPill.label">
+                      ·
+                      <span class="mar-tpl-state" :data-m="needsPill.tone">{{
+                        needsPill.label
+                      }}</span></template
+                    ></span
+                  >
+                  <span class="mar-tpl-runs-end">
+                    <Tooltip v-if="firstResult" :content="firstResultParts">
+                      <span class="mar-tpl-runs-eta" data-tpl-eta
+                        ><Timer :size="12" />{{ firstResultShort }}</span
+                      >
+                    </Tooltip>
+                    <ChevronDown :size="14" class="mar-tpl-fold" />
+                  </span>
+                </summary>
+                <summary v-else>
                   <span class="mar-tpl-total">{{ needsLine }}</span>
                   <span v-if="needsPill.label" class="mar-tpl-state" :data-m="needsPill.tone">{{
                     needsPill.label
@@ -936,11 +1011,12 @@ const full = computed(() => can.value.onboarding)
                   </li>
                 </ul>
               </details>
+              <p v-if="fit && compact" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
               <p v-if="missingCount" class="mar-tpl-fit" data-tpl-packs>
                 <Puzzle :size="13" />{{ missingPacks(missingCount) }} ·
                 {{ managerHint(missingCount) }}
               </p>
-              <div v-if="firstResult" class="mar-tpl-eta" data-tpl-eta>
+              <div v-if="firstResult && !compact" class="mar-tpl-eta" data-tpl-eta>
                 <Timer :size="14" class="mar-tpl-eta-icon" />
                 <span class="mar-tpl-eta-label">First result in</span>
                 <span class="mar-tpl-eta-time">{{ firstResult.label }}</span>
@@ -969,7 +1045,7 @@ const full = computed(() => can.value.onboarding)
                 </div>
               </dl>
             </section>
-            <section v-else class="mad-sec">
+            <section v-else-if="!compact" class="mad-sec">
               <h3 class="mad-label">Details</h3>
               <dl class="mad-rows">
                 <div>
@@ -1025,7 +1101,7 @@ const full = computed(() => can.value.onboarding)
             </button>
           </footer>
           <footer v-else class="mad-actions">
-            <p v-if="line" class="mar-tpl-note">{{ line }}</p>
+            <p v-if="footLine" class="mar-tpl-note">{{ footLine }}</p>
             <button
               v-if="cloudOffer"
               type="button"

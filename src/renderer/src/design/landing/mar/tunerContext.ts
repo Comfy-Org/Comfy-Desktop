@@ -59,6 +59,7 @@ import { dlFooter } from './downloads/dlFooter'
 import { homeLayout, homeVersion } from './home/homeLayout'
 import { homeIdea } from './home/homeIdeas'
 import { buildsAt } from './home/buildsAt'
+import { tplDetails } from './templateModal/tplDetails'
 import { exploreSwitch } from './home/exploreSwitch'
 
 /**
@@ -193,6 +194,9 @@ export const when = {
   // The template modal (templateModal/MarTemplateModal.vue), while it's open.
   wfCase: computed(() => proto.detail?.kind === 'template' && !can.value.onboarding),
   dlFooter: computed(() => can.value.onboarding && proto.detail?.kind === 'template'),
+  tplDetails: computed(
+    () => proto.detail?.kind === 'template' || proto.detail?.kind === 'workflow'
+  ),
   downloadScenario: computed(
     () =>
       can.value.onboarding &&
@@ -308,6 +312,7 @@ export const TWEAKS = {
   homeArcMix: one(homeArcMix, 'tabs'),
   homeLayout: one(homeLayout, 'recents'),
   buildsAt: one(buildsAt, 'bottom'),
+  tplDetails: one(tplDetails, 'current'),
   sidebarMotion: one(sidebarMotion, 'desktop'),
   exploreSwitch: one(exploreSwitch, 'seg'),
   homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
