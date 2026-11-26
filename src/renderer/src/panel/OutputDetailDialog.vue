@@ -216,20 +216,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     data-testid="output-detail"
     @close="emit('close')"
   >
-    <section
-      class="relative flex min-w-0 flex-1 flex-col gap-3 p-3"
-      data-testid="output-detail-stage"
-    >
-      <button
-        type="button"
-        class="absolute top-4 right-4 z-2 inline-flex size-9 cursor-pointer items-center justify-center rounded-full border-0 bg-foreground/10 p-0 text-foreground transition-colors hover:bg-foreground/18 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none"
-        :aria-label="t('common.close')"
-        :title="t('common.close')"
-        data-testid="output-detail-close"
-        @click="emit('close')"
-      >
-        <X :size="16" aria-hidden="true" />
-      </button>
+    <section class="flex min-w-0 flex-1 flex-col gap-3 p-3" data-testid="output-detail-stage">
       <div
         class="flex min-h-0 flex-1 overflow-auto"
         :class="zoom === 'fit' && 'items-center justify-center'"
@@ -378,6 +365,16 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             </MenuItem>
           </template>
         </Menu>
+        <button
+          type="button"
+          class="-ml-0.5 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-muted-foreground transition-colors hover:bg-foreground/12 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none"
+          :aria-label="t('common.close')"
+          :title="t('common.close')"
+          data-testid="output-detail-close"
+          @click="emit('close')"
+        >
+          <X :size="16" aria-hidden="true" />
+        </button>
       </div>
 
       <div class="flex flex-col gap-3">

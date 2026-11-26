@@ -1766,26 +1766,26 @@ describe('AssetsView', () => {
     expect(close.top).toBeGreaterThanOrEqual(box.top)
   })
 
-  it('puts the round close button on the top right corner of the picture area, left of the Details panel', async () => {
+  it('puts the round close button in the Details header, just after More, and nowhere on the picture', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 
     await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
     await flushPromises()
 
     const stage = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-stage"]')!
-    const panel = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-panel"]')!
+    const header = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-header"]')!
+    const more = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-more"]')!
     const button = viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-close"]')!
-    expect(stage.contains(button), 'the close button belongs to the picture area').toBe(true)
-    expect(panel.contains(button), 'the Details panel has no close button').toBe(false)
+    expect(header.contains(button), 'the close button belongs to the Details header').toBe(true)
+    expect(stage.contains(button), 'the picture area has no close button').toBe(false)
 
     const close = button.getBoundingClientRect()
-    const area = stage.getBoundingClientRect()
-    expect(close.width).toBe(36)
-    expect(close.height).toBe(36)
+    const beside = more.getBoundingClientRect()
+    expect(close.width).toBe(28)
+    expect(close.height).toBe(28)
     expect(getComputedStyle(button).borderRadius).not.toBe('0px')
-    expect(close.top - area.top).toBe(16)
-    expect(area.right - close.right).toBe(16)
-    expect(close.right).toBeLessThan(panel.getBoundingClientRect().left)
+    expect(close.left - beside.right, 'close sits right after More').toBe(2)
+    expect(close.top + close.height / 2).toBeCloseTo(beside.top + beside.height / 2, 0)
     expect(button.getAttribute('aria-label')).toBe('Close')
 
     button.click()
@@ -1934,7 +1934,7 @@ describe('AssetsView', () => {
     expect(viewer()!.querySelector('[data-testid="output-detail-models"]')).toBeNull()
   })
 
-  it('titles the panel Details, with More at its top right and no close button', async () => {
+  it('titles the panel Details, with More and Close at its top right', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 
     await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
@@ -1945,7 +1945,7 @@ describe('AssetsView', () => {
     const buttons = [...header.querySelectorAll('button')].map((button) =>
       button.getAttribute('aria-label')
     )
-    expect(buttons).toEqual(['More actions'])
+    expect(buttons).toEqual(['More actions', 'Close'])
   })
 
   it('offers the card actions the panel has no button for under More, and runs them on the shown file', async () => {
