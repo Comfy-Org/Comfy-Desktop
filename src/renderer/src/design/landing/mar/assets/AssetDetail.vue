@@ -16,6 +16,7 @@ import {
   Pause,
   Play,
   Plus,
+  SlidersHorizontal,
   Trash2,
   Volume2,
   VolumeX,
@@ -41,6 +42,7 @@ import { LABELS, labelColor, labelOf, setLabel } from './assetLabels'
 import { ratingOf, setRating } from './assetRating'
 import { ratingStyle } from './ratingStyle'
 import StarRating from './StarRating.vue'
+import { viewerOnScreen, viewerShortcut } from './viewerShortcut'
 
 /**
  * One asset, large (Better Asset Management PRD). One view for both
@@ -262,6 +264,22 @@ const sideTab = ref<DetailTab>('details')
 watch(viewer, (k) => (sideTab.value = k ? tabFor(k) : 'details'), { immediate: true })
 watch(sideTab, (t) => viewer.value && rememberTab(viewer.value, t))
 const showViewer = computed(() => Boolean(viewer.value) && sideTab.value === 'viewer')
+const shortcutShown = computed(
+  () => full.value && side.value && Boolean(viewer.value) && viewerShortcut.id === 'on'
+)
+function toggleViewer(): void {
+  sideTab.value = sideTab.value === 'viewer' ? 'details' : 'viewer'
+}
+let countedViewer = false
+watch(
+  viewer,
+  (k) => {
+    if (Boolean(k) === countedViewer) return
+    countedViewer = Boolean(k)
+    viewerOnScreen.count += countedViewer ? 1 : -1
+  },
+  { immediate: true }
+)
 const zoomable = computed(() => asset.type === 'image' || asset.type === 'video')
 const EXR_CHANNEL_FILTER: Record<string, string> = {
   rgb: '',
@@ -530,6 +548,10 @@ function key(e: KeyboardEvent): void {
     if (adding.value || menuOpen() || typing(e.target)) return
     if (e.target instanceof HTMLButtonElement) return
     toggle()
+  } else if (e.key.toLowerCase() === 'v' && shortcutShown.value) {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
+    if (adding.value || menuOpen() || typing(e.target)) return
+    toggleViewer()
   } else return
   e.preventDefault()
   e.stopImmediatePropagation()
@@ -541,6 +563,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', key, true)
+  if (countedViewer) viewerOnScreen.count -= 1
   clearTimeout(timer)
   clearTimeout(copiedTimer)
   cancelAnimationFrame(raf)
@@ -607,6 +630,18 @@ onBeforeUnmount(() => {
                 <AssetCover v-else :name="asset.name" :type="asset.type" />
                 <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
               </div>
+              <button
+                v-if="shortcutShown"
+                type="button"
+                class="mad-viewer-btn"
+                aria-label="Viewer controls"
+                title="Viewer controls (V)"
+                aria-keyshortcuts="V"
+                :aria-pressed="showViewer"
+                @click="toggleViewer"
+              >
+                <SlidersHorizontal :size="16" />
+              </button>
               <!-- The player: play, the time along a track (a sound's waveform),
                    and the sound. -->
               <div
@@ -1333,6 +1368,40 @@ onBeforeUnmount(() => {
   color: #fff;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn {
+  position: absolute;
+  z-index: 1;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn:hover {
+  background: rgb(0 0 0 / 0.72);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn[aria-pressed='true'] {
+  background: #fff;
+  color: #111;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-viewer-btn:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .mad-viewer-btn {
+    transition: none;
+  }
 }
 :root .proto-ui.proto-ui.proto-ui .mad-icon {
   display: inline-flex;
