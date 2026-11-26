@@ -1,15 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from 'vue'
-import {
-  Box,
-  ChevronRight,
-  Flame,
-  Image as ImageIcon,
-  ImageUpscale,
-  Plus,
-  Video,
-  WandSparkles
-} from 'lucide-vue-next'
+import MarSeg from '../../pages/MarSeg.vue'
+import { computed, ref, watch } from 'vue'
+import { ChevronRight, Plus } from 'lucide-vue-next'
 import WorkflowCover from '../../brand/WorkflowCover.vue'
 import { allWorkflows, type ProjectWorkflow } from '../../../gallery'
 import { activeInstance, go, proto } from '../../../useProto'
@@ -60,13 +52,13 @@ interface RecentRow {
   edited: string
 }
 
-const USE_CASES: { id: string; label: string; glyph: Component }[] = [
-  { id: 'popular', label: 'Popular', glyph: Flame },
-  { id: 'image', label: 'Image', glyph: ImageIcon },
-  { id: 'video', label: 'Video', glyph: Video },
-  { id: 'edit', label: 'Edit', glyph: WandSparkles },
-  { id: 'upscale', label: 'Upscale', glyph: ImageUpscale },
-  { id: '3d', label: '3D', glyph: Box }
+const USE_CASES: { id: string; label: string }[] = [
+  { id: 'popular', label: 'Popular' },
+  { id: 'image', label: 'Image' },
+  { id: 'video', label: 'Video' },
+  { id: 'edit', label: 'Edit' },
+  { id: 'upscale', label: 'Upscale' },
+  { id: '3d', label: '3D' }
 ]
 const BLANK = 'blank'
 const CARDS = 4
@@ -75,6 +67,7 @@ const LEAVE_MS = 220
 
 const query = ref('')
 const useCase = ref(USE_CASES[0]!.id)
+const USE_CASE_TABS = USE_CASES.map((u) => ({ value: u.id, label: u.label }))
 const composer = ref<InstanceType<typeof CreateComposer>>()
 const results = ref<InstanceType<typeof ResultsB>>()
 const navigated = ref(false)
@@ -359,21 +352,7 @@ useEscapeCloses(() => composer.value?.field)
           <section class="v15-section" aria-labelledby="v15-templates">
             <h2 id="v15-templates" class="sr-only">Templates</h2>
             <header class="v15-head">
-              <div class="v15-pills" role="tablist" aria-label="Use case">
-                <button
-                  v-for="u in USE_CASES"
-                  :key="u.id"
-                  type="button"
-                  role="tab"
-                  class="v15-pill"
-                  :class="useCase === u.id && 'is-on'"
-                  :aria-selected="useCase === u.id"
-                  @click="useCase = u.id"
-                >
-                  <component :is="u.glyph" :size="16" aria-hidden="true" />
-                  {{ u.label }}
-                </button>
-              </div>
+              <MarSeg v-model="useCase" :options="USE_CASE_TABS" label="Use case" />
               <button type="button" class="hsh-link" @click="seeAll">
                 See all<ChevronRight :size="13" aria-hidden="true" />
               </button>
@@ -619,43 +598,6 @@ useEscapeCloses(() => composer.value?.field)
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pills {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 8px;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--color-base-foreground) 3%, transparent);
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-  font-weight: 400;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pill:hover {
-  border-color: color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pill:focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 2px;
-}
-:root .proto-ui.proto-ui.proto-ui .v15-pill.is-on,
-:root .proto-ui.proto-ui.proto-ui .v15-pill.is-on:hover {
-  border-color: color-mix(in oklch, var(--color-base-foreground) 45%, transparent);
-  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
-  color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-row {
   display: grid;

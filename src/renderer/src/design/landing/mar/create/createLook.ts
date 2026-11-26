@@ -1,7 +1,8 @@
 import { reactive, watch } from 'vue'
+import { CREATE_LOOKS } from './looks'
 
 const KEY = 'comfy.design.mar.createLook'
-export const DEFAULT_CREATE_LOOK = 'V12'
+export const DEFAULT_CREATE_LOOK = 'V15'
 
 function storedLook(): string | null {
   try {
@@ -14,7 +15,7 @@ function storedLook(): string | null {
 export const createLook = reactive<{ id: string }>({
   id: (() => {
     const stored = storedLook()
-    return !stored || stored === 'current' ? DEFAULT_CREATE_LOOK : stored
+    return stored && CREATE_LOOKS.some((l) => l.value === stored) ? stored : DEFAULT_CREATE_LOOK
   })()
 })
 

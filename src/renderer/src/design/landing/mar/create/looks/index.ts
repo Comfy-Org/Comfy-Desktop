@@ -8,7 +8,6 @@ const ids = Object.keys(files)
   .sort()
 
 export const CREATE_LOOKS: { value: string; label: string }[] = [
-  { value: 'current', label: 'Current' },
   ...ids.map((id) => ({
     value: id,
     label: `${id.slice(1)} · ${metas[`./${id}.meta.ts`]?.label ?? id}`
