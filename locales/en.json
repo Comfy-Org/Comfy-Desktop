@@ -953,6 +953,7 @@
     "computingCommitsAhead": "Computing commits ahead…"
   },
   "buildOverview": {
+    "installing": "Installing…",
     "notChecked": "Not checked yet",
     "comfyui": "ComfyUI",
     "pytorch": "PyTorch",

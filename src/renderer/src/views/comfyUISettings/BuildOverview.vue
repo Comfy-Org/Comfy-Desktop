@@ -88,6 +88,7 @@ const switchHeadline = computed(() =>
   t('channelCards.switchTo', { channel: channel.value?.label ?? '' })
 )
 const statusHeadline = computed(() => {
+  if (installation.status === 'installing') return t('buildOverview.installing')
   if (channel.value?.updateAvailable) {
     return t('buildOverview.available', { version: channel.value.latestVersion ?? '' })
   }

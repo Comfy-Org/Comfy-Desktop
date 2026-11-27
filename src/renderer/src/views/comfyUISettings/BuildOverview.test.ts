@@ -126,6 +126,17 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(update).toContain('Checked 5m ago')
   })
 
+  it('says a build that is still installing is installing, not up to date or updatable', () => {
+    const w = mountOverview({
+      installation: { ...INSTALL, status: 'installing' },
+      model: model({ channels: [channel({ latestVersion: 'v0.46.3', updateAvailable: false })] })
+    })
+    const update = w.get('[data-testid="build-overview-update"]').text()
+    expect(update).toContain('Installing…')
+    expect(update).not.toContain('Up to date')
+    expect(update).not.toContain('v0.46.3 available')
+  })
+
   it('says a build checked moments ago was checked just now, in sentence case', () => {
     const w = mountOverview({
       model: model({ channels: [channel({ lastCheckedAt: Date.now() })] })

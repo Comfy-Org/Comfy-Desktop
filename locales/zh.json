@@ -953,6 +953,7 @@
     "computingCommitsAhead": "正在计算领先的提交…"
   },
   "buildOverview": {
+    "installing": "正在安装…",
     "notChecked": "尚未检查",
     "comfyui": "ComfyUI",
     "pytorch": "PyTorch",
