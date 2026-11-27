@@ -25,6 +25,16 @@ import type { InstallModelSearch } from './models'
 
 let tmp: string
 
+function denyReads(blocked: string): { mockRestore: () => void } {
+  const readFile = fs.promises.readFile.bind(fs.promises)
+  return vi
+    .spyOn(fs.promises, 'readFile')
+    .mockImplementation(((target: fs.PathLike, options: unknown) =>
+      path.resolve(String(target)) === path.resolve(blocked)
+        ? Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }))
+        : readFile(target, options as BufferEncoding)) as typeof fs.promises.readFile)
+}
+
 function writeFile(target: string, bytes = 1): void {
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, Buffer.alloc(bytes))
@@ -368,14 +378,10 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(root, 'loras', 'open.safetensors'))
     const locked = path.join(tmp, 'locked.yaml')
     const missing = path.join(tmp, 'missing.yaml')
+    const notAFile = path.join(tmp, 'folder.yaml')
     writeFile(locked)
-    const access = fs.promises.access.bind(fs.promises)
-    const denied = vi
-      .spyOn(fs.promises, 'access')
-      .mockImplementation(((target: fs.PathLike, mode?: number) =>
-        String(target) === locked
-          ? Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }))
-          : access(target, mode)) as typeof fs.promises.access)
+    fs.mkdirSync(notAFile)
+    const denied = denyReads(locked)
 
     try {
       const readable = await listModelsInSearch({
@@ -387,7 +393,13 @@ describe('listModelsInSearch', () => {
         configFiles: [locked]
       })
 
+      const folder = await listModelsInSearch({
+        ...search({ modelRoots: [root] }),
+        configFiles: [notAFile]
+      })
+
       expect(readable.truncated).toBe(false)
+      expect(folder.truncated).toBe(true)
       expect(unreadable).toEqual({
         models: [{ folder: 'loras', name: 'open.safetensors', size: 1 }],
         truncated: true
@@ -548,13 +560,7 @@ describe('listInstallModels', () => {
     writeFile(path.join(installPath, 'ComfyUI', 'models', 'vae', 'own.safetensors'))
     const missing = await listInstallModels(installRecord(installPath), [])
     writeFile(config)
-    const access = fs.promises.access.bind(fs.promises)
-    const denied = vi
-      .spyOn(fs.promises, 'access')
-      .mockImplementation(((target: fs.PathLike, mode?: number) =>
-        path.resolve(String(target)) === path.resolve(config)
-          ? Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }))
-          : access(target, mode)) as typeof fs.promises.access)
+    const denied = denyReads(config)
 
     try {
       const unreadable = await listInstallModels(installRecord(installPath), [])
@@ -584,8 +590,9 @@ describe('listInstallModels', () => {
     expect(models).toEqual([{ folder: 'vae', name: 'own.safetensors', size: 1 }])
   })
 
-  it('reads the model folders the install launch arguments name', async () => {
+  it('reads the models directory and paths configs the install launch arguments name', async () => {
     const installPath = path.join(tmp, 'install')
+    writeFile(path.join(installPath, 'ComfyUI', 'models', 'vae', 'builtin.safetensors'))
     const modelsDirectory = path.join(tmp, 'flag-models')
     const baseDirectory = path.join(tmp, 'flag-base')
     const external = path.join(tmp, 'flag-extra')
@@ -607,9 +614,75 @@ describe('listInstallModels', () => {
 
     expect(models).toEqual([
       { folder: 'checkpoints', name: 'from-extra-config.safetensors', size: 1 },
-      { folder: 'loras', name: 'from-models-directory.safetensors', size: 1 },
-      { folder: 'vae', name: 'from-base-directory.safetensors', size: 1 }
+      { folder: 'loras', name: 'from-models-directory.safetensors', size: 1 }
     ])
+  })
+
+  it('reads the models under the launch base directory instead of the install models', async () => {
+    const installPath = path.join(tmp, 'install')
+    const baseDirectory = path.join(tmp, 'flag-base')
+    writeFile(path.join(installPath, 'ComfyUI', 'models', 'vae', 'builtin.safetensors'))
+    writeFile(path.join(baseDirectory, 'models', 'vae', 'from-base-directory.safetensors'))
+
+    const { models } = await listInstallModels(
+      installRecord(installPath, {
+        launchArgs: `--base-directory ${JSON.stringify(baseDirectory)}`
+      }),
+      []
+    )
+
+    expect(models).toEqual([{ folder: 'vae', name: 'from-base-directory.safetensors', size: 1 }])
+  })
+
+  it('resolves relative launch folders against the launch working directory', async () => {
+    const installPath = path.join(tmp, 'install')
+    writeFile(path.join(installPath, 'weights', 'loras', 'beside-install.safetensors'))
+    writeFile(path.join(installPath, 'ComfyUI', 'weights', 'loras', 'inside-comfyui.safetensors'))
+    writeFile(path.join(installPath, 'extra', 'vae', 'from-config.safetensors'))
+    fs.writeFileSync(
+      path.join(installPath, 'paths.yaml'),
+      'other:\n  base_path: extra\n  vae: vae/\n'
+    )
+
+    const { models } = await listInstallModels(installRecord(installPath), [], () => ({
+      args: ['--models-directory', 'weights', '--extra-model-paths-config', 'paths.yaml'],
+      cwd: installPath
+    }))
+
+    expect(models).toEqual([
+      { folder: 'loras', name: 'beside-install.safetensors', size: 1 },
+      { folder: 'vae', name: 'from-config.safetensors', size: 1 }
+    ])
+  })
+
+  it('sends no models when a launch paths config never finishes reading', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const installPath = path.join(tmp, 'install')
+    const stalled = path.join(tmp, 'stalled.yaml')
+    writeFile(stalled)
+    const readFile = vi
+      .spyOn(fs.promises, 'readFile')
+      .mockImplementation((() => new Promise(() => {})) as typeof fs.promises.readFile)
+
+    try {
+      const listing = listInstallModels(
+        installRecord(installPath),
+        [],
+        () => ({ args: ['--extra-model-paths-config', stalled], cwd: installPath }),
+        0
+      )
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      await expect(listing).resolves.toEqual({ models: [], truncated: true })
+      expect(warn).toHaveBeenCalledWith(
+        '[dev-platform] Listing install models took too long; sending none.'
+      )
+    } finally {
+      readFile.mockRestore()
+      warn.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('reads the install extra_model_paths.yaml', async () => {

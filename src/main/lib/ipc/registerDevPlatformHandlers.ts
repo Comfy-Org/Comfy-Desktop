@@ -315,7 +315,11 @@ export function registerDevPlatformHandlers(): void {
 
         const sharedModelsDirs =
           (settings.get('modelsDirs') as string[] | undefined) ?? settings.defaults.modelsDirs
-        const modelList = await listInstallModels(inst, sharedModelsDirs)
+        const modelList = await listInstallModels(
+          inst,
+          sharedModelsDirs,
+          () => sourceMap[inst.sourceId]?.getLaunchCommand(inst) ?? null
+        )
 
         const current = await installations.get(installationId)
         if (

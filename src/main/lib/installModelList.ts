@@ -2,14 +2,15 @@ import fs from 'fs'
 import path from 'path'
 import {
   TEMP_DIR_NAME,
+  extraModelPathsFromContent,
+  installModelsDir,
   isNonModelFolder,
   modelFolderKind,
-  resolveExtraModelPaths,
-  resolveInstallModelSearchPaths
+  resolveInstallModelRoots
 } from './models'
 import { comfyStartDir, lastArgValue, resolveFolderArg } from './startupArgFolders'
 import { parseArgs } from './util'
-import type { InstallModelSearch } from './models'
+import type { InstallModelRoots, InstallModelSearch, ResolvedExtraPath } from './models'
 import type { InstallationRecord } from '../installations'
 
 export interface InstallModelEntry {
@@ -49,6 +50,11 @@ const MAX_FOLDER_LENGTH = 64
 
 export interface ModelListSearch extends InstallModelSearch {
   configFiles?: readonly string[]
+}
+
+export interface LaunchPaths {
+  args?: readonly string[]
+  cwd?: string
 }
 
 interface FolderSource {
@@ -132,11 +138,18 @@ async function realpathOrNull(target: string, state: ScanState): Promise<string 
   }
 }
 
-async function noteUnreadableConfig(config: string, state: ScanState): Promise<void> {
+async function readExtraModelPaths(config: string, state: ScanState): Promise<ResolvedExtraPath[]> {
+  const stats = await statOrNull(config, state)
+  if (!stats) return []
+  if (!stats.isFile()) {
+    state.unreadable = true
+    return []
+  }
   try {
-    await fs.promises.access(config, fs.constants.R_OK)
+    return extraModelPathsFromContent(config, await fs.promises.readFile(config, 'utf-8'))
   } catch (err) {
     noteFailure(state, err)
+    return []
   }
 }
 
@@ -149,8 +162,8 @@ async function readDirOrEmpty(dir: string, state: ScanState): Promise<fs.Dirent[
   }
 }
 
-function folderSourcesFromExtraPaths(search: InstallModelSearch): FolderSource[] {
-  return search.extraPaths
+function folderSourcesFromExtraPaths(extraPaths: ResolvedExtraPath[]): FolderSource[] {
+  return extraPaths
     .filter((extra) => !isNonModelFolder(extra.type))
     .map((extra) => ({ folder: modelFolderKind(extra.type), dir: extra.dir }))
 }
@@ -309,26 +322,37 @@ function allArgValues(args: readonly string[], flag: string): string[] {
   return values.filter(Boolean)
 }
 
-export function withLaunchArgPaths(
+function launchPathsOf(
   inst: InstallationRecord,
-  search: InstallModelSearch
+  launch: LaunchPaths | null
+): Required<LaunchPaths> {
+  return {
+    args: launch?.args ?? parseArgs(typeof inst.launchArgs === 'string' ? inst.launchArgs : ''),
+    cwd: launch?.cwd ?? comfyStartDir(inst)
+  }
+}
+
+export function installModelSearch(
+  inst: InstallationRecord,
+  sharedModelsDirs: string[],
+  launch: LaunchPaths | null
 ): ModelListSearch {
-  const args = parseArgs(typeof inst.launchArgs === 'string' ? inst.launchArgs : '')
-  const resolve = (value: string): string => resolveFolderArg(value, () => comfyStartDir(inst))
+  const { args, cwd } = launchPathsOf(inst, launch)
+  const resolve = (value: string): string => resolveFolderArg(value, () => cwd)
   const baseDirectory = lastArgValue(args, '--base-directory')
   const modelsDirectory = lastArgValue(args, '--models-directory')
-  const extraRoots = [
-    ...(baseDirectory ? [path.join(resolve(baseDirectory), 'models')] : []),
-    ...(modelsDirectory ? [resolve(modelsDirectory)] : [])
-  ]
-  const extraConfigs = allArgValues(args, '--extra-model-paths-config').map(resolve)
+  const modelsRoot = modelsDirectory
+    ? resolve(modelsDirectory)
+    : baseDirectory
+      ? path.join(resolve(baseDirectory), 'models')
+      : path.resolve(installModelsDir(inst.installPath))
+  const roots: InstallModelRoots = resolveInstallModelRoots(inst, sharedModelsDirs, modelsRoot)
   return {
-    ...search,
-    modelRoots: [...search.modelRoots, ...extraRoots],
-    configFiles: [path.join(comfyStartDir(inst), 'extra_model_paths.yaml'), ...extraConfigs],
-    extraPaths: [
-      ...search.extraPaths,
-      ...extraConfigs.flatMap((config) => resolveExtraModelPaths(config))
+    ...roots,
+    extraPaths: [],
+    configFiles: [
+      path.join(comfyStartDir(inst), 'extra_model_paths.yaml'),
+      ...allArgValues(args, '--extra-model-paths-config').map(resolve)
     ]
   }
 }
@@ -340,8 +364,9 @@ export async function listModelsInSearch(
   timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
 ): Promise<InstallModelList> {
   const state: ScanState = { unreadable: false }
+  const extraPaths = [...search.extraPaths]
   for (const config of search.configFiles ?? []) {
-    await noteUnreadableConfig(config, state)
+    extraPaths.push(...(await readExtraModelPaths(config, state)))
   }
   const collector = new ModelCollector(Date.now() + timeBudgetMs, state)
   for (const root of search.modelRoots) {
@@ -349,7 +374,7 @@ export async function listModelsInSearch(
       await collector.collect(source)
     }
   }
-  for (const source of folderSourcesFromExtraPaths(search)) {
+  for (const source of folderSourcesFromExtraPaths(extraPaths)) {
     await collector.collect(source)
   }
   if (state.unreadable) {
@@ -363,6 +388,7 @@ export async function listModelsInSearch(
 export async function listInstallModels(
   inst: InstallationRecord,
   sharedModelsDirs: string[],
+  launchCommand: () => LaunchPaths | null = () => null,
   timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
 ): Promise<InstallModelList> {
   let timer: NodeJS.Timeout | undefined
@@ -373,8 +399,10 @@ export async function listInstallModels(
     }, timeBudgetMs + MODEL_LIST_GRACE_MS)
   })
   try {
-    const search = withLaunchArgPaths(inst, resolveInstallModelSearchPaths(inst, sharedModelsDirs))
-    return await Promise.race([listModelsInSearch(search, timeBudgetMs), timedOut])
+    const listing = Promise.resolve().then(() =>
+      listModelsInSearch(installModelSearch(inst, sharedModelsDirs, launchCommand()), timeBudgetMs)
+    )
+    return await Promise.race([listing, timedOut])
   } catch (err) {
     console.warn('[dev-platform] Could not list install models; sending none:', err)
     return UNKNOWN_MODEL_LIST

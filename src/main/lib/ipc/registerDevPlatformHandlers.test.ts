@@ -1044,7 +1044,8 @@ describe('registerDevPlatformHandlers', () => {
     })
     expect(mocks.listInstallModels).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ id: 'local-1', installPath: '/installs/local-1' }),
-      ['/shared/models']
+      ['/shared/models'],
+      expect.any(Function)
     )
     expect(mocks.buildUploadEnvelope).toHaveBeenCalledWith(
       'Local One',
@@ -1074,7 +1075,11 @@ describe('registerDevPlatformHandlers', () => {
 
     await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 
-    expect(mocks.listInstallModels).toHaveBeenCalledWith(expect.anything(), ['/mnt/library/models'])
+    expect(mocks.listInstallModels).toHaveBeenCalledWith(
+      expect.anything(),
+      ['/mnt/library/models'],
+      expect.any(Function)
+    )
   })
 
   it('does not capture a build while another task is changing it', async () => {
