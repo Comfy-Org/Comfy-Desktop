@@ -17,7 +17,9 @@ export interface InstallModelEntry {
 
 export const MAX_INSTALL_MODELS = 2000
 export const MAX_INSTALL_MODELS_BYTES = 400_000
-export const MAX_SCANNED_MODEL_FILES = 50_000
+export const MAX_SCANNED_ENTRIES = 200_000
+export const MODEL_LIST_TIME_BUDGET_MS = 15_000
+const MODEL_LIST_GRACE_MS = 5_000
 export const MAX_MODEL_DIR_DEPTH = 8
 export const MAX_MODEL_NAME_LENGTH = 255
 
@@ -43,7 +45,11 @@ interface FolderSource {
 
 function isControlCharacter(character: string): boolean {
   const code = character.codePointAt(0) ?? 0
-  return code < 0x20 || code === 0x7f
+  return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029
+}
+
+function isNestedNonModelFolder(name: string): boolean {
+  return name !== 'models' && isNonModelFolder(name)
 }
 
 function isModelFile(name: string): boolean {
@@ -86,11 +92,13 @@ async function readDirOrEmpty(dir: string): Promise<fs.Dirent[]> {
 
 async function folderSourcesInRoot(root: string): Promise<FolderSource[]> {
   const sources: FolderSource[] = []
-  for (const entry of await readDirOrEmpty(root)) {
+  const entries = await readDirOrEmpty(root)
+  entries.sort((a, b) => compareText(a.name, b.name))
+  for (const entry of entries) {
     if (isSkippedEntry(entry.name) || isNonModelFolder(entry.name)) continue
     const dir = path.join(root, entry.name)
     const isDir =
-      entry.isDirectory() || (entry.isSymbolicLink() && (await statOrNull(dir))?.isDirectory())
+      entry.isDirectory() || (!entry.isFile() && (await statOrNull(dir))?.isDirectory() === true)
     if (!isDir) continue
     sources.push({ folder: modelFolderKind(entry.name), dir })
   }
@@ -105,11 +113,13 @@ function folderSourcesFromExtraPaths(search: InstallModelSearch): FolderSource[]
 
 class ModelCollector {
   private readonly byKey = new Map<string, InstallModelEntry>()
-  private readonly visitedDirs = new Set<string>()
+  private readonly visitedDepth = new Map<string, number>()
   private scanned = 0
 
+  constructor(private readonly deadline: number) {}
+
   get full(): boolean {
-    return this.scanned >= MAX_SCANNED_MODEL_FILES
+    return this.scanned >= MAX_SCANNED_ENTRIES || Date.now() >= this.deadline
   }
 
   async collect(source: FolderSource): Promise<void> {
@@ -118,12 +128,7 @@ class ModelCollector {
   }
 
   entries(): InstallModelEntry[] {
-    return [...this.byKey.values()]
-      .sort((a, b) =>
-        a.folder === b.folder ? compareText(a.name, b.name) : compareText(a.folder, b.folder)
-      )
-      .slice(0, MAX_INSTALL_MODELS)
-      .filter(withinByteBudget())
+    return takeAcrossFolders([...this.byKey.values()].sort(compareEntries)).sort(compareEntries)
   }
 
   private async walk(
@@ -140,26 +145,28 @@ class ModelCollector {
       return
     }
     const visitKey = `${folder}\u0000${real}`
-    if (this.visitedDirs.has(visitKey)) return
-    this.visitedDirs.add(visitKey)
+    const visitedAt = this.visitedDepth.get(visitKey)
+    if (visitedAt !== undefined && visitedAt <= depth) return
+    this.visitedDepth.set(visitKey, depth)
 
     const entries = await readDirOrEmpty(dir)
     entries.sort((a, b) => compareText(a.name, b.name))
     for (const entry of entries) {
       if (this.full) return
+      this.scanned += 1
       if (isSkippedEntry(entry.name)) continue
       const target = path.join(dir, entry.name)
       const childSegments = [...segments, entry.name]
       const stats = entry.isFile() || entry.isDirectory() ? null : await statOrNull(target)
       const isDir = entry.isDirectory() || stats?.isDirectory() === true
       if (isDir) {
+        if (isNestedNonModelFolder(entry.name)) continue
         await this.walk(folder, target, childSegments, depth + 1)
         continue
       }
       if (!isModelFile(entry.name)) continue
       const fileStats = stats ?? (await statOrNull(target))
       if (!fileStats?.isFile()) continue
-      this.scanned += 1
       this.add({ folder, name: childSegments.join('/'), size: fileStats.size })
     }
   }
@@ -172,20 +179,44 @@ class ModelCollector {
   }
 }
 
-function withinByteBudget(): (entry: InstallModelEntry) => boolean {
-  let used = 0
-  return (entry) => {
-    used += Buffer.byteLength(JSON.stringify(entry)) + 1
-    return used <= MAX_INSTALL_MODELS_BYTES
+function compareEntries(a: InstallModelEntry, b: InstallModelEntry): number {
+  return a.folder === b.folder ? compareText(a.name, b.name) : compareText(a.folder, b.folder)
+}
+
+function takeAcrossFolders(sorted: InstallModelEntry[]): InstallModelEntry[] {
+  const byFolder = new Map<string, InstallModelEntry[]>()
+  for (const entry of sorted) {
+    const list = byFolder.get(entry.folder)
+    if (list) list.push(entry)
+    else byFolder.set(entry.folder, [entry])
   }
+  const queues = [...byFolder.values()]
+  const taken: InstallModelEntry[] = []
+  let bytes = 0
+  for (let round = 0; queues.some((queue) => round < queue.length); round++) {
+    for (const queue of queues) {
+      const entry = queue[round]
+      if (!entry) continue
+      const size = Buffer.byteLength(JSON.stringify(entry)) + 1
+      if (taken.length >= MAX_INSTALL_MODELS || bytes + size > MAX_INSTALL_MODELS_BYTES) {
+        return taken
+      }
+      taken.push(entry)
+      bytes += size
+    }
+  }
+  return taken
 }
 
 function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
-export async function listModelsInSearch(search: InstallModelSearch): Promise<InstallModelEntry[]> {
-  const collector = new ModelCollector()
+export async function listModelsInSearch(
+  search: InstallModelSearch,
+  timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
+): Promise<InstallModelEntry[]> {
+  const collector = new ModelCollector(Date.now() + timeBudgetMs)
   for (const root of search.modelRoots) {
     for (const source of await folderSourcesInRoot(root)) {
       await collector.collect(source)
@@ -199,11 +230,23 @@ export async function listModelsInSearch(search: InstallModelSearch): Promise<In
 
 export async function listInstallModels(
   inst: InstallationRecord,
-  sharedModelsDirs: string[]
+  sharedModelsDirs: string[],
+  timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
 ): Promise<InstallModelEntry[]> {
+  let timer: NodeJS.Timeout | undefined
+  const timedOut = new Promise<InstallModelEntry[]>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn('[dev-platform] Listing install models took too long; sending none.')
+      resolve([])
+    }, timeBudgetMs + MODEL_LIST_GRACE_MS)
+  })
   try {
-    return await listModelsInSearch(resolveInstallModelSearchPaths(inst, sharedModelsDirs))
-  } catch {
+    const search = resolveInstallModelSearchPaths(inst, sharedModelsDirs)
+    return await Promise.race([listModelsInSearch(search, timeBudgetMs), timedOut])
+  } catch (err) {
+    console.warn('[dev-platform] Could not list install models; sending none:', err)
     return []
+  } finally {
+    clearTimeout(timer)
   }
 }

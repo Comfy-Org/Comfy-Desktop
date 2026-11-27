@@ -245,6 +245,62 @@ describe('listModelsInSearch', () => {
     expect(models.length).toBeLessThan(MAX_INSTALL_MODELS)
   })
 
+  it('keeps every folder kind when the cap cuts the list', async () => {
+    const root = path.join(tmp, 'models')
+    fs.mkdirSync(path.join(root, 'loras'), { recursive: true })
+    for (let i = 0; i < MAX_INSTALL_MODELS + 5; i++) {
+      fs.writeFileSync(path.join(root, 'loras', `m${String(i).padStart(5, '0')}.safetensors`), '')
+    }
+    writeFile(path.join(root, 'vae', 'ae.safetensors'))
+
+    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(models).toHaveLength(MAX_INSTALL_MODELS)
+    expect(models).toContainEqual({ folder: 'vae', name: 'ae.safetensors', size: 1 })
+  })
+
+  it('skips custom_nodes, output and cache folders nested inside a model folder', async () => {
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'loras', 'keep.safetensors'))
+    writeFile(path.join(root, 'loras', 'custom_nodes', 'pack', 'weights.bin'))
+    writeFile(path.join(root, 'loras', 'output', 'run.pt'))
+    writeFile(path.join(root, 'loras', '__pycache__', 'x.pkl'))
+    writeFile(path.join(root, 'loras', 'models', 'nested.safetensors'))
+
+    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(models).toEqual([
+      { folder: 'loras', name: 'keep.safetensors', size: 1 },
+      { folder: 'loras', name: 'models/nested.safetensors', size: 1 }
+    ])
+  })
+
+  it('finds a folder first reached too deep when a shorter route reaches it later', async () => {
+    const root = path.join(tmp, 'models')
+    const shared = path.join(tmp, 'library')
+    writeFile(path.join(shared, 'inner', 'found.safetensors'))
+    let deep = path.join(root, 'checkpoints', 'a')
+    for (let i = 0; i < 6; i++) deep = path.join(deep, 'a')
+    fs.mkdirSync(deep, { recursive: true })
+    fs.symlinkSync(shared, path.join(deep, 'link'), 'dir')
+    fs.symlinkSync(shared, path.join(root, 'checkpoints', 'z'), 'dir')
+
+    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(models).toContainEqual({
+      folder: 'checkpoints',
+      name: 'z/inner/found.safetensors',
+      size: 1
+    })
+  })
+
+  it('stops walking once the time budget is spent', async () => {
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'loras', 'late.safetensors'))
+
+    await expect(listModelsInSearch(search({ modelRoots: [root] }), 0)).resolves.toEqual([])
+  })
+
   it('returns nothing for a root that does not exist', async () => {
     await expect(
       listModelsInSearch(search({ modelRoots: [path.join(tmp, 'missing')] }))
@@ -253,6 +309,19 @@ describe('listModelsInSearch', () => {
 })
 
 describe('listInstallModels', () => {
+  it('logs and sends no models when the install record cannot be resolved', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const models = await listInstallModels(installRecord(undefined as unknown as string), [])
+
+    expect(models).toEqual([])
+    expect(warn).toHaveBeenCalledWith(
+      '[dev-platform] Could not list install models; sending none:',
+      expect.anything()
+    )
+    warn.mockRestore()
+  })
+
   it('walks the install models folder and the shared model folders', async () => {
     const installPath = path.join(tmp, 'install')
     const shared = path.join(tmp, 'shared-models')
