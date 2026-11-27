@@ -9,6 +9,7 @@ import vueParser from 'vue-eslint-parser'
 
 import noComments from './scripts/eslint/no-comments'
 import noNewVueStyleBlocks from './scripts/eslint/no-new-vue-style-blocks'
+import productLinkUtm from './scripts/eslint/product-link-utm'
 
 const extraFileExtensions = ['.vue']
 
@@ -18,7 +19,11 @@ const useOpenExternalHelper =
   'Use openExternalUrl or tryOpenExternalUrl from src/main/lib/openExternal.ts. They hand the OS only http, https and mailto links.'
 
 const desktop = {
-  rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
+  rules: {
+    'no-comments': noComments,
+    'no-new-vue-style-blocks': noNewVueStyleBlocks,
+    'product-link-utm': productLinkUtm
+  }
 }
 
 const commonParserOptions = {
@@ -99,6 +104,11 @@ export default defineConfig([
       'vue/no-use-v-else-with-v-for': 'error',
       'vue/one-component-per-file': 'error'
     }
+  },
+  {
+    files: ['./src/**/*.{ts,vue}'],
+    ignores: ['./src/**/*.test.ts', './src/**/tests/**', './src/renderer/src/preview/fixtures.ts'],
+    rules: { 'desktop/product-link-utm': 'error' }
   },
   {
     files: publishedApiSpecs,

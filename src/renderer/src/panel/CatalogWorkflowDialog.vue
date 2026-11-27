@@ -22,6 +22,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import type { LocalBuildVersions } from '../../../shared/catalogWorkflowCompatibility'
+import { productLink } from '../../../shared/productLink'
 import { useAuthStore } from '../stores/authStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type {
@@ -92,6 +93,11 @@ const fallbackMedia = computed(() =>
 )
 const tutorialHost = computed(() =>
   props.workflow.tutorialUrl ? new URL(props.workflow.tutorialUrl).hostname : ''
+)
+const tutorialLink = computed(() =>
+  props.workflow.tutorialUrl
+    ? productLink(props.workflow.tutorialUrl, 'workflow_dialog_tutorial')
+    : null
 )
 const about = computed(() => props.workflow.longDescription ?? props.workflow.description)
 const partnerOnly = computed(
@@ -306,7 +312,7 @@ async function cancelDownload(): Promise<void> {
 }
 
 function openTutorial(): void {
-  if (props.workflow.tutorialUrl) void window.api.openExternal(props.workflow.tutorialUrl)
+  if (tutorialLink.value) void window.api.openExternal(tutorialLink.value)
 }
 
 function logIn(): void {
@@ -749,11 +755,11 @@ onBeforeUnmount(() => {
                 <dt class="text-muted-foreground">{{ t('workflowLaunch.detail.comfyui') }}</dt>
                 <dd class="m-0 tabular-nums">{{ workflow.minComfyUIVersion }}+</dd>
               </div>
-              <div v-if="workflow.tutorialUrl" class="flex justify-between gap-4">
+              <div v-if="tutorialLink" class="flex justify-between gap-4">
                 <dt class="text-muted-foreground">{{ t('workflowLaunch.detail.tutorial') }}</dt>
                 <dd class="m-0">
                   <a
-                    :href="workflow.tutorialUrl"
+                    :href="tutorialLink"
                     class="inline-flex items-center gap-1 text-foreground no-underline hover:underline"
                     data-testid="workflow-tutorial"
                     @click.prevent="openTutorial"

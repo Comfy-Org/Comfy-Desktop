@@ -7,6 +7,7 @@ import {
   listCatalogWorkflows,
   listHomeWorkflows
 } from '../../catalog/workflows'
+import { productLink } from '../../../shared/productLink'
 import { getLocale } from '../i18n'
 import { tryOpenExternalUrl } from '../openExternal'
 
@@ -33,6 +34,6 @@ export function registerCatalogHandlers(): void {
 
   ipcMain.handle('catalog:open-workflow', (_event, id: unknown) => {
     const hubUrl = typeof id === 'string' ? hubUrlForListedWorkflow(id) : null
-    return hubUrl ? tryOpenExternalUrl(hubUrl) : false
+    return hubUrl ? tryOpenExternalUrl(productLink(hubUrl, 'workflow_dialog_hub')) : false
   })
 }

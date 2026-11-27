@@ -11,6 +11,7 @@ import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_SETTINGS_PATHS, PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
 import type { PlatformSettingsPage } from '../../devplatform/config'
+import { productLink } from '../../../shared/productLink'
 import {
   getBuilderClient,
   getCloudSession,
@@ -230,7 +231,7 @@ export function registerDevPlatformHandlers(): void {
       }
       const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
       url.searchParams.set('workspace', workspaceId)
-      await openExternalUrl(url.toString())
+      await openExternalUrl(productLink(url.toString(), 'install_wizard_builds'))
     }
   )
 
@@ -248,7 +249,7 @@ export function registerDevPlatformHandlers(): void {
         PLATFORM_WEB_BASE_URL
       )
       url.searchParams.set('workspace', workspaceId)
-      await openExternalUrl(url.toString())
+      await openExternalUrl(productLink(url.toString(), 'sidebar_workspace_settings'))
     }
   )
 
@@ -344,7 +345,7 @@ export function registerDevPlatformHandlers(): void {
           PLATFORM_WEB_BASE_URL
         )
         url.searchParams.set('workspace', workspaceId)
-        await openExternalUrl(url.toString())
+        await openExternalUrl(productLink(url.toString(), 'promote_to_workspace'))
         return { ok: true }
       } catch (err) {
         console.warn('[dev-platform] Failed to promote local instance:', err)

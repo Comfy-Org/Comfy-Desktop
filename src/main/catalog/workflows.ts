@@ -5,6 +5,7 @@ import { fetchJSON } from '../lib/fetch'
 import { isTrustedCloudUrl } from '../lib/trustedCloudUrl'
 import type { CatalogWorkflow, CatalogWorkflowLicense, CatalogWorkflowMedia } from '../../types/ipc'
 
+// eslint-disable-next-line desktop/product-link-utm
 export const HUB_ORIGIN = 'https://comfy.org'
 export const HOME_WORKFLOW_LIMIT = 12
 

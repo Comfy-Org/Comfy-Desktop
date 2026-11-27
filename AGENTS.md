@@ -10,3 +10,8 @@ This repository does not allow code comments.
 - Tool directives (`eslint-disable-next-line`, `@ts-expect-error`, `/// <reference>`, `@vitest-environment`, `prettier-ignore`) are allowed. Never append a prose reason to one.
 - Published API specs keep their JSDoc. Files other projects consume as a contract, listed in `publishedApiSpecs` in `eslint.config.ts` (today the bridge contract `src/types/comfyDesktopBridge.ts`), may have `/** */` doc comments. Line comments and plain block comments are still not allowed there.
 - `desktop/no-comments` in `pnpm run lint` enforces this. `pnpm run lint:fix` deletes offending comments. See `scripts/eslint/README.md`.
+
+## Links to comfy.org
+
+- Send every user-facing comfy.org link through `productLink(url, campaign)` from `src/shared/productLink.ts`. `desktop/product-link-utm` in `pnpm run lint` enforces this.
+- The UTM convention and campaign naming live in [docs/guidance/product-links.md](https://github.com/Comfy-Org/ComfyUI_frontend/blob/main/docs/guidance/product-links.md) in ComfyUI_frontend.

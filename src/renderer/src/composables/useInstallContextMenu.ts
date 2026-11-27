@@ -27,6 +27,7 @@ import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/p
 import { shareLatestSnapshot } from '../lib/snapshots'
 import { isBuildInstall } from '../devplatform/buildState'
 import type { ContextMenuItem } from '../types/context-menu'
+import { productLink } from '../../../shared/productLink'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 import { progressTitle } from '../lib/progressTitle'
 
@@ -223,7 +224,10 @@ export function useInstallContextMenu(
           ? t('devPlatform.workspace.promoting')
           : t('devPlatform.workspace.promoteToWorkspace'),
         hint: t('devPlatform.workspace.promoteToWorkspaceHint'),
-        hintUrl: 'https://platform.comfy.org/profile/deploy',
+        hintUrl: productLink(
+          'https://platform.comfy.org/profile/deploy',
+          'promote_to_workspace_hint'
+        ),
         hintLinkLabel: t('devPlatform.workspace.readMore'),
         disabled: promoting || taskRunning,
         title: taskRunning ? t('chooser.busyActionGatedReason') : undefined

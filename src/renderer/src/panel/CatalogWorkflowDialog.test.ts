@@ -538,7 +538,9 @@ describe('the workflow page', () => {
 
     expect(link.attributes('target')).toBeUndefined()
     expect(click.defaultPrevented).toBe(true)
-    expect(openExternal).toHaveBeenCalledExactlyOnceWith(tutorialUrl)
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith(
+      `${tutorialUrl}?utm_source=comfy_desktop&utm_medium=product&utm_campaign=workflow_dialog_tutorial`
+    )
   })
 
   it('copies the Comfy Hub link', async () => {
