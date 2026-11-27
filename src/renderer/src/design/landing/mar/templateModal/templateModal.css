@@ -1115,18 +1115,103 @@
     transition: none;
   }
 }
-.mar-tpl-space {
-  padding-top: 8px;
+.mar-tpl .mad-actions > .mar-tpl-disk {
+  order: -3;
 }
-.mar-tpl-space > li {
-  grid-template-columns: 14px minmax(0, 1fr) auto auto;
-  height: auto;
+.mar-tpl-disk {
+  --disk-tone: var(--tpl-warn);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--disk-tone) 10%, transparent);
+}
+.mar-tpl-disk[data-tone='ok'] {
+  --disk-tone: var(--tpl-ok);
+}
+.mar-tpl-disk-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 2px;
+}
+.mar-tpl-disk-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--disk-tone);
+}
+.mar-tpl-disk-title {
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.mar-tpl-disk-line {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-tpl-disk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 4px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  animation: mar-tpl-disk-open 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes mar-tpl-disk-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.mar-tpl-disk-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+}
+.mar-tpl-disk-list-head .mad-label {
+  margin: 0;
+}
+.mar-tpl-disk-togo {
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.mar-tpl-disk-list ul {
+  max-height: 160px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.mar-tpl-disk-list li {
+  display: grid;
   min-height: 40px;
+  grid-template-columns: minmax(0, 1fr) auto 64px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 0 10px;
 }
-.mar-tpl-space > li[data-removed] {
+.mar-tpl-disk-list li[data-removed] {
   opacity: 0.55;
 }
-.mar-tpl-space-meta {
+.mar-tpl-disk-name {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-disk-meta {
   overflow: hidden;
   color: var(--color-muted-foreground);
   font-size: 11px;
@@ -1134,14 +1219,46 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-space-remove {
+.mar-tpl-disk-size {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-tpl-disk-removed {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-disk-remove {
   height: 24px;
   padding: 0 8px;
   border-radius: 8px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   color: var(--color-base-foreground);
   font-size: 12px;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-space-remove:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-disk-remove:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+.mar-tpl-disk-acts {
+  display: flex;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mar-tpl-disk .mad-btn {
+  order: 0;
+  height: 32px;
+  flex: 1 1 auto;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mar-tpl-disk .mad-btn:not(.is-primary) {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mar-tpl-disk .mad-btn:not(.is-primary):hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-tpl-disk-list {
+    animation: none;
+  }
 }

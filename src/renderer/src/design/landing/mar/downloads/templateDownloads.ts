@@ -79,6 +79,8 @@ export const templateDownloads = reactive<{ list: TemplateDownload[] }>({ list: 
 
 export const diskRoom = reactive({ freedGb: 0, otherDrive: false, removed: [] as string[] })
 
+export const THIS_DRIVE = { name: 'Macintosh HD' }
+
 export const OTHER_DRIVE = {
   name: 'Studio SSD',
   path: '/Volumes/Studio SSD/ComfyUI/models',

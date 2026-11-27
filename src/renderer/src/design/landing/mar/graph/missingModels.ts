@@ -8,19 +8,18 @@ import { SAVED_MISSING_FROM, needsFor, tplById } from '../templateModal/template
 
 export const MISSING_MODELS_COPY = {
   title: 'This workflow is missing models',
-  description: "This workflow requires models you haven't downloaded yet.",
-  totalSize: 'Total download size:',
-  downloadAll: 'Download all',
-  gotIt: 'Open anyway',
-  notDownloadable: 'Not downloadable',
-  notDownloadableHint:
-    "Some models can't download on their own. Find them online, or import a file you already have.",
+  summary: (n: number): string =>
+    n === 1 ? "1 model isn't on this build yet." : `${n} models aren't on this build yet.`,
+  automatic: 'Downloads automatically',
+  needsYou: 'Needs you',
+  notOnKnownSite: 'Not on a known download site',
+  download: (size: string): string => `Download ${size}`,
+  openAnyway: 'Open anyway',
   findIt: 'Find it',
   haveIt: 'I have it',
   imported: 'Imported',
-  missingOnNode: (name: string): string => `Missing model: ${name}. Find it or import it to run.`,
-  footer:
-    'Download and place these models in the correct folder. Nodes with missing models are highlighted red on the canvas.'
+  canvasNote: 'Missing nodes show in red on the canvas.',
+  missingOnNode: (name: string): string => `Missing model: ${name}. Find it or import it to run.`
 }
 
 export interface MissingModels {

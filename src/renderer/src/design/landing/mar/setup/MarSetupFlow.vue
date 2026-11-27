@@ -19,7 +19,6 @@ import {
   RotateCcw,
   TriangleAlert,
   Users,
-  WifiOff,
   Zap
 } from 'lucide-vue-next'
 import {
@@ -38,6 +37,7 @@ import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import BuildProgress from './BuildProgress.vue'
 import SetupNodes from './SetupNodes.vue'
 import SetupSteps from './SetupSteps.vue'
+import OfflineRetry from './OfflineRetry.vue'
 import ComfyWordmark from '../../../../components/icons/ComfyWordmark.vue'
 import Button from '../../ui/Button.vue'
 import Checkbox from '../../ui/Checkbox.vue'
@@ -536,15 +536,6 @@ const installLog = computed(() => [
           />
           <div class="mss-col">
             <div class="mss-first-hero">
-              <p v-if="offline" class="mss-offline" role="status" data-edge-offline>
-                <WifiOff :size="15" class="shrink-0" />
-                <span class="grid">
-                  <span>{{ OFFLINE_SETUP.banner }}</span>
-                  <span v-if="offlineTried" class="mss-offline-meta">{{
-                    OFFLINE_SETUP.waiting
-                  }}</span>
-                </span>
-              </p>
               <h1 id="mss-first-title" class="mss-first-title">How do you want to run ComfyUI?</h1>
               <p class="mss-first-lead">
                 Choose the setup that fits how you work. You can switch later.
@@ -601,7 +592,7 @@ const installLog = computed(() => [
                 </label>
               </div>
             </div>
-            <div class="mss-first-bottom">
+            <div class="mss-first-bottom" :class="offline && 'is-offline'">
               <!-- Consent, one group at the foot of the screen: the terms
                  first, the one that gates, then usage data and beta, on by
                  default as today. -->
@@ -632,17 +623,15 @@ const installLog = computed(() => [
                   <span>Opt-in to beta features and help test what ships next</span>
                 </label>
               </div>
-              <Button
+              <OfflineRetry
                 v-if="offline"
-                variant="primary"
-                size="lg"
-                :disabled="checking"
-                data-edge-retry
-                @click="tryOnline('first')"
-                ><RotateCcw :size="14" />{{
-                  checking ? OFFLINE_SETUP.checking : OFFLINE_SETUP.retry
-                }}</Button
-              >
+                class="mss-first-offline"
+                :message="OFFLINE_SETUP.banner"
+                :waiting="offlineTried ? OFFLINE_SETUP.waiting : undefined"
+                :label="checking ? OFFLINE_SETUP.checking : OFFLINE_SETUP.retry"
+                :checking="checking"
+                @retry="tryOnline('first')"
+              />
               <Button v-else variant="primary" size="lg" @click="continueFirst">Continue</Button>
             </div>
           </div>
@@ -851,20 +840,14 @@ const installLog = computed(() => [
             <Button variant="primary" size="lg" @click="toTemplates">Continue Anyway</Button>
           </template>
           <template v-else>
-            <p
+            <OfflineRetry
               v-if="offline && !unsupported"
-              class="mss-offline is-foot"
-              role="status"
-              data-edge-offline
-            >
-              <WifiOff :size="15" class="shrink-0" />
-              <span class="grid">
-                <span>{{ OFFLINE_SETUP.banner }}</span>
-                <span v-if="offlineTried" class="mss-offline-meta">{{
-                  OFFLINE_SETUP.waiting
-                }}</span>
-              </span>
-            </p>
+              :message="OFFLINE_SETUP.banner"
+              :waiting="offlineTried ? OFFLINE_SETUP.waiting : undefined"
+              :label="checking ? OFFLINE_SETUP.checking : OFFLINE_SETUP.retry"
+              :checking="checking"
+              @retry="tryOnline('setup')"
+            />
             <span v-else class="flex-1"></span>
             <template v-if="unsupported">
               <Button size="lg" data-edge-anyway @click="continueSetup">{{
@@ -874,23 +857,14 @@ const installLog = computed(() => [
                 ><Cloud :size="14" />{{ UNSUPPORTED.cloud }}</Button
               >
             </template>
-            <Button
-              v-else-if="offline"
-              variant="primary"
-              size="lg"
-              :disabled="checking"
-              data-edge-retry
-              @click="tryOnline('setup')"
-              ><RotateCcw :size="14" />{{
-                checking ? OFFLINE_SETUP.checking : OFFLINE_SETUP.retry
-              }}</Button
-            >
-            <Button v-else-if="newBuild" variant="primary" size="lg" @click="createBuild(buildName)"
-              >Install</Button
-            >
-            <Button v-else variant="primary" size="lg" @click="continueSetup">{{
-              workflowStep || nodesStep ? 'Continue' : 'Install'
-            }}</Button>
+            <template v-else-if="!offline">
+              <Button v-if="newBuild" variant="primary" size="lg" @click="createBuild(buildName)"
+                >Install</Button
+              >
+              <Button v-else variant="primary" size="lg" @click="continueSetup">{{
+                workflowStep || nodesStep ? 'Continue' : 'Install'
+              }}</Button>
+            </template>
           </template>
         </footer>
       </template>

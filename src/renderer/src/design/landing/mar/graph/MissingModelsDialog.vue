@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Check, Download, FolderOpen, Search, X } from 'lucide-vue-next'
+import { Check, CircleAlert, Download, FolderOpen, Search, X } from 'lucide-vue-next'
 import type { MissingModels } from './missingModels'
 import { MISSING_MODELS_COPY as COPY, manualModels, modelFolder } from './missingModels'
 import { fmtGb } from '../templateModal/templateData'
@@ -10,6 +10,17 @@ const { missing } = defineProps<{ missing: MissingModels }>()
 const emit = defineEmits<{ close: []; download: [] }>()
 
 const total = computed(() => fmtGb(missing.models.reduce((n, m) => n + m.gb, 0)))
+const isImported = (name: string): boolean => manualModels.imported.has(name)
+const waiting = computed(() => missing.manual.filter((m) => !isImported(m.name)).length)
+const summary = computed(() => COPY.summary(missing.models.length + waiting.value))
+const needsYouLabel = computed(() =>
+  waiting.value ? `${COPY.needsYou} · ${waiting.value}` : COPY.needsYou
+)
+
+function splitName(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? { stem: name.slice(0, dot), ext: name.slice(dot) } : { stem: name, ext: '' }
+}
 
 const finding = ref('')
 const findOpen = computed({
@@ -48,63 +59,83 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
       class="rp-dialog mmd"
       role="dialog"
       aria-labelledby="global-missing-models-warning"
+      aria-describedby="global-missing-models-summary"
       data-missing-models
     >
       <button type="button" class="mmd-close" aria-label="Close" @click="emit('close')">
         <X :size="18" />
       </button>
       <header class="mmd-head">
-        <h2 id="global-missing-models-warning" class="mmd-title">{{ COPY.title }}</h2>
+        <div class="mmd-heading">
+          <h2 id="global-missing-models-warning" class="mmd-title">{{ COPY.title }}</h2>
+          <p id="global-missing-models-summary" class="mmd-summary">{{ summary }}</p>
+        </div>
       </header>
-      <p class="mmd-desc">{{ COPY.description }}</p>
-      <ul class="mmd-list">
-        <li v-for="m in missing.models" :key="m.name" class="mmd-row">
-          <span class="mmd-name" :title="m.name">{{ m.name }}</span>
-          <span class="mmd-badge">{{ modelFolder(m.name) }}</span>
-          <span class="mmd-size">{{ m.size }}</span>
-        </li>
-      </ul>
-      <template v-if="missing.manual.length">
-        <p class="mmd-desc">{{ COPY.notDownloadableHint }}</p>
-        <ul class="mmd-list" data-missing-manual>
-          <li v-for="m in missing.manual" :key="m.name" class="mmd-row">
-            <span class="mmd-name" :title="m.name">{{ m.name }}</span>
-            <span v-if="manualModels.imported.has(m.name)" class="mmd-ok"
-              ><Check :size="13" />{{ COPY.imported }}</span
-            >
-            <template v-else>
-              <span class="mmd-badge is-warn">{{ COPY.notDownloadable }}</span>
-              <button type="button" class="rp-btn mmd-small" @click="finding = m.name">
-                <Search :size="13" />{{ COPY.findIt }}
-              </button>
-              <button type="button" class="rp-btn mmd-small" @click="haveIt(m.name)">
-                <FolderOpen :size="13" />{{ COPY.haveIt }}
-              </button>
-            </template>
-          </li>
-        </ul>
-        <input
-          ref="filePick"
-          type="file"
-          accept=".safetensors,.ckpt,.pth,.pt,.gguf"
-          class="hidden"
-          @change="onFile"
-        />
-      </template>
-      <p class="mmd-total">
-        {{ COPY.totalSize }} <strong>{{ total }}</strong>
-      </p>
-      <p class="mmd-foot-note">{{ COPY.footer }}</p>
-      <footer class="mmd-actions">
-        <button type="button" class="rp-btn" @click="emit('close')">{{ COPY.gotIt }}</button>
-        <button
-          type="button"
-          class="rp-btn is-inverted"
-          data-missing-models-download
-          @click="emit('download')"
-        >
-          <Download :size="14" />{{ COPY.downloadAll }}
-        </button>
+      <div class="mmd-list">
+        <section v-if="missing.models.length" class="mmd-group" data-missing-auto>
+          <h3 class="rp-section mmd-label">{{ COPY.automatic }} · {{ total }}</h3>
+          <ul class="mmd-rows">
+            <li v-for="m in missing.models" :key="m.name" class="mmd-row">
+              <span class="mmd-name" :title="m.name"
+                ><span class="mmd-stem">{{ splitName(m.name).stem }}</span
+                ><span class="mmd-ext">{{ splitName(m.name).ext }}</span></span
+              >
+              <span class="mmd-badge">{{ modelFolder(m.name) }}</span>
+              <span class="mmd-size">{{ m.size }}</span>
+            </li>
+          </ul>
+        </section>
+        <section v-if="missing.manual.length" class="mmd-group" data-missing-manual>
+          <h3 class="rp-section mmd-label">{{ needsYouLabel }}</h3>
+          <ul class="mmd-rows">
+            <li v-for="m in missing.manual" :key="m.name" class="mmd-row is-manual">
+              <span class="mmd-what">
+                <span class="mmd-name" :title="m.name"
+                  ><span class="mmd-stem">{{ splitName(m.name).stem }}</span
+                  ><span class="mmd-ext">{{ splitName(m.name).ext }}</span></span
+                >
+                <span v-if="!isImported(m.name)" class="mmd-why"
+                  ><CircleAlert :size="12" class="mmd-why-icon" />{{ COPY.notOnKnownSite }}</span
+                >
+              </span>
+              <span v-if="isImported(m.name)" class="mmd-ok"
+                ><Check :size="14" />{{ COPY.imported }}</span
+              >
+              <span v-else class="mmd-tools">
+                <button type="button" class="rp-btn mmd-small" @click="finding = m.name">
+                  <Search :size="13" />{{ COPY.findIt }}
+                </button>
+                <button type="button" class="rp-btn mmd-small" @click="haveIt(m.name)">
+                  <FolderOpen :size="13" />{{ COPY.haveIt }}
+                </button>
+              </span>
+            </li>
+          </ul>
+          <input
+            ref="filePick"
+            type="file"
+            accept=".safetensors,.ckpt,.pth,.pt,.gguf"
+            class="hidden"
+            @change="onFile"
+          />
+        </section>
+      </div>
+      <footer class="mmd-foot">
+        <p v-if="waiting" class="mmd-note">{{ COPY.canvasNote }}</p>
+        <span class="mmd-actions">
+          <button type="button" class="rp-btn" @click="emit('close')">
+            {{ COPY.openAnyway }}
+          </button>
+          <button
+            v-if="missing.models.length"
+            type="button"
+            class="rp-btn is-inverted"
+            data-missing-models-download
+            @click="emit('download')"
+          >
+            <Download :size="14" />{{ COPY.download(total) }}
+          </button>
+        </span>
       </footer>
     </section>
     <ModelImportDialog
@@ -117,13 +148,162 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 
 <style>
 .rp-dialog.mmd {
-  width: min(520px, 100%);
+  width: min(580px, 100%);
   height: auto;
   flex-direction: column;
-  gap: 12px;
   position: relative;
   overflow: visible;
-  padding: 20px 24px 16px;
+}
+.mmd-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 14px 14px 24px;
+}
+.mmd-heading {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+}
+.mmd-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.mmd-summary {
+  margin: 0;
+  color: var(--rp-meta);
+  font-size: 13px;
+  line-height: 18px;
+}
+.mmd-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 24px 20px;
+  padding: 0 4px 4px;
+  border-radius: var(--radius-control);
+  background: var(--rp-chip);
+}
+:root .proto-ui.proto-ui.proto-ui .mmd-label {
+  padding: 12px 8px 4px;
+}
+.mmd-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mmd-row {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+}
+.mmd-row.is-manual {
+  min-height: 48px;
+}
+.mmd-what {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.mmd-name {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+}
+.mmd-what .mmd-name {
+  flex: none;
+}
+.mmd-stem {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mmd-ext {
+  flex: none;
+}
+.mmd-why {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--rp-meta);
+  font-size: 12px;
+  line-height: 16px;
+}
+.mmd-why-icon {
+  flex: none;
+  color: var(--color-status-warning, #f5b14c);
+}
+.mmd-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-control);
+  background: var(--rp-chip-on);
+  color: var(--rp-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.mmd-size {
+  flex: none;
+  min-width: 52px;
+  color: var(--rp-meta);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mmd-tools {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-btn.mmd-small {
+  height: 26px;
+  flex: none;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.mmd-ok {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--rp-meta);
+  font-size: 12px;
+}
+.mmd-ok svg {
+  color: var(--color-status-running);
+}
+.mmd-foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 24px 16px;
+  box-shadow: inset 0 1px 0 var(--rp-line);
+}
+.mmd-note {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  color: var(--rp-meta);
+  font-size: 12px;
+  line-height: 16px;
+}
+.mmd-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 8px;
+  margin-left: auto;
 }
 :root .proto-ui.proto-ui.proto-ui .mmd-close {
   position: absolute;
@@ -159,89 +339,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 .mmd-head {
   display: flex;
   align-items: center;
-}
-.mmd-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.mmd-desc,
-.mmd-total,
-.mmd-foot-note {
-  margin: 0;
-  color: var(--rp-meta);
-  font-size: 13px;
-  line-height: 18px;
-}
-.mmd-foot-note {
-  font-size: 12px;
-  white-space: pre-line;
-}
-.mmd-total strong {
-  color: var(--rp-text);
-  font-weight: 600;
-}
-.mmd-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 4px 0;
-  list-style: none;
-  border-radius: var(--radius-control);
-  background: var(--rp-chip);
-}
-.mmd-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-}
-.mmd-name {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mmd-badge {
-  flex: none;
-  padding: 1px 8px;
-  border-radius: var(--radius-control);
-  background: var(--rp-chip-on);
-  color: var(--rp-meta);
-  font-size: 10.5px;
-  font-weight: 600;
-}
-.mmd-size {
-  flex: none;
-  min-width: 56px;
-  color: var(--rp-meta);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.mmd-badge.is-warn {
-  background: color-mix(in oklch, var(--color-status-danger) 16%, transparent);
-  color: var(--color-status-danger);
-}
-.mmd-ok {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  color: var(--color-status-running);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .rp-btn.mmd-small {
-  height: 26px;
-  flex: none;
-  gap: 4px;
-  padding: 0 8px;
-  font-size: 12px;
-}
-.mmd-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 4px;
 }
 </style>
