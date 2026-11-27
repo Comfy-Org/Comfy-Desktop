@@ -25,6 +25,7 @@ import { can } from '../../milestones'
 import { search } from '../../mar/search/search'
 import { openPageMenu } from '../../mar/shell/pageMenu'
 import { RAIL_TOOLTIP_DELAY_MS, railTooltips } from '../../mar/shell/sidebarMotion'
+import { marNav, marPanelsOn } from '../../mar/shell/marShell'
 
 /**
  * Navigation for one lens. Create: make things. Build: ship them as an API.
@@ -146,6 +147,8 @@ const TOUR_ANCHORS: Partial<Record<Page, string>> = {
 const tourAnchor = (i: Item): string | undefined =>
   mode === 'create' && i.page ? TOUR_ANCHORS[i.page] : undefined
 
+const railOn = computed(() => marPanelsOn.value && marNav.collapsed)
+
 // In a workflow (Sidebar navigation) no launcher page is current.
 const active = (i: Item): boolean =>
   proto.activeTab === 'home' &&
@@ -191,7 +194,15 @@ function open(i: Item): void {
         v-if="i.section"
         class="mt-5.5 flex h-6.5 items-center px-3 text-ui font-medium tracking-wider text-subtle-foreground uppercase"
       >
-        <span>{{ i.section }}</span>
+        <Tooltip
+          v-if="i.section === 'Libraries'"
+          content="Everything that's yours"
+          side="right"
+          :disabled="railOn"
+        >
+          <span tabindex="0">{{ i.section }}</span>
+        </Tooltip>
+        <span v-else>{{ i.section }}</span>
       </div>
       <Tooltip
         :content="i.label"
