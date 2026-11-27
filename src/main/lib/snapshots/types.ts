@@ -48,6 +48,7 @@ export interface SnapshotExportEnvelope {
 export interface SnapshotUploadEnvelope extends Omit<SnapshotExportEnvelope, 'version'> {
   version: 3
   models: InstallModelEntry[]
+  modelsTruncated: boolean
 }
 
 export interface SnapshotDiff {

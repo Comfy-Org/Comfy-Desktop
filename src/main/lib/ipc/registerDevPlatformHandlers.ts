@@ -327,8 +327,8 @@ export function registerDevPlatformHandlers(): void {
 
         const sharedModelsDirs =
           (settings.get('modelsDirs') as string[] | undefined) ?? settings.defaults.modelsDirs
-        const models = await listInstallModels(inst, sharedModelsDirs)
-        const envelope = buildUploadEnvelope(inst.name, [{ filename, snapshot }], models)
+        const modelList = await listInstallModels(inst, sharedModelsDirs)
+        const envelope = buildUploadEnvelope(inst.name, [{ filename, snapshot }], modelList)
         const draft = await getBuilderClient().createBuildDraft(envelope)
         if (draft.workspaceId !== workspaceId) {
           throw new Error('Comfy Developer Platform created the draft in a different workspace.')

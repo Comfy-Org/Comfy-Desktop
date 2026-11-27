@@ -196,9 +196,10 @@ describe('registerDevPlatformHandlers', () => {
     mocks.saveSnapshot.mockResolvedValue('fresh.json')
     mocks.loadSnapshot.mockResolvedValue({ version: 2, createdAt: '2026-08-21T00:00:00.000Z' })
     mocks.getSnapshotCount.mockResolvedValue(3)
-    mocks.listInstallModels.mockResolvedValue([
-      { folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }
-    ])
+    mocks.listInstallModels.mockResolvedValue({
+      models: [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }],
+      truncated: false
+    })
     mocks.buildUploadEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
     mocks.listBuilds.mockResolvedValue([])
     mocks.listWorkspaces.mockResolvedValue([
@@ -1053,7 +1054,10 @@ describe('registerDevPlatformHandlers', () => {
           snapshot: { version: 2, createdAt: '2026-08-21T00:00:00.000Z' }
         }
       ],
-      [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }]
+      {
+        models: [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }],
+        truncated: false
+      }
     )
     expect(mocks.createBuildDraft).toHaveBeenCalledExactlyOnceWith({
       type: 'comfyui-desktop-2-snapshot'

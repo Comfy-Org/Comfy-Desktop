@@ -559,14 +559,15 @@ describe('buildUploadEnvelope', () => {
     const entry = makeEntry()
     const models = [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }]
 
-    const result = buildUploadEnvelope('My Install', [entry], models)
+    const result = buildUploadEnvelope('My Install', [entry], { models, truncated: true })
 
     expect(result).toMatchObject({
       type: 'comfyui-desktop-2-snapshot',
       version: 3,
       installationName: 'My Install',
       snapshots: [entry.snapshot],
-      models
+      models,
+      modelsTruncated: true
     })
   })
 

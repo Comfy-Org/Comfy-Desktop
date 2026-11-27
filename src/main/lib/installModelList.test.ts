@@ -7,8 +7,13 @@ vi.mock('./paths', () => ({
   dataDir: () => os.tmpdir()
 }))
 
-const { listInstallModels, listModelsInSearch, MAX_INSTALL_MODELS, MAX_INSTALL_MODELS_BYTES } =
-  await import('./installModelList')
+const {
+  listInstallModels,
+  listModelsInSearch,
+  MAX_INSTALL_MODELS,
+  MAX_INSTALL_MODELS_BYTES,
+  MAX_MODEL_NAME_LENGTH
+} = await import('./installModelList')
 
 import type { InstallationRecord } from '../installations'
 import type { InstallModelSearch } from './models'
@@ -52,7 +57,7 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(root, 'loras', 'sdxl', 'detail.safetensors'), 7)
     writeFile(path.join(root, 'loras', 'sdxl', 'deep', 'style.pt'), 3)
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([
       { folder: 'checkpoints', name: 'sdxl.safetensors', size: 12 },
@@ -65,7 +70,7 @@ describe('listModelsInSearch', () => {
     const root = path.join(tmp, 'private-user', 'models')
     writeFile(path.join(root, 'vae', 'ae.safetensors'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(JSON.stringify(models)).not.toContain(tmp)
     expect(JSON.stringify(models)).not.toContain('private-user')
@@ -83,7 +88,7 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(root, 'custom_nodes', 'pack', 'weights.pth'))
     writeFile(path.join(root, 'loose.safetensors'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([{ folder: 'loras', name: 'keep.safetensors', size: 1 }])
   })
@@ -104,7 +109,7 @@ describe('listModelsInSearch', () => {
     const root = path.join(tmp, 'models')
     writeFile(path.join(root, 'unet', `model${extension}`))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toHaveLength(1)
   })
@@ -115,7 +120,7 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(root, 'unet', 'flux.gguf'))
     writeFile(path.join(root, 't2i_adapter', 'sketch.pth'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([
       { folder: 'controlnet', name: 'sketch.pth', size: 1 },
@@ -128,7 +133,7 @@ describe('listModelsInSearch', () => {
     const root = path.join(tmp, 'models')
     writeFile(path.join(root, 'ultralytics', 'bbox', 'face.pt'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([{ folder: 'ultralytics', name: 'bbox/face.pt', size: 1 }])
   })
@@ -137,7 +142,7 @@ describe('listModelsInSearch', () => {
     const elsewhere = path.join(tmp, 'a1111', 'Lora')
     writeFile(path.join(elsewhere, 'old.safetensors'), 5)
 
-    const models = await listModelsInSearch(
+    const { models } = await listModelsInSearch(
       search({
         extraPaths: [
           {
@@ -170,7 +175,7 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(shared, 'loras', 'same.safetensors'), 9)
     writeFile(path.join(shared, 'loras', 'other.safetensors'), 4)
 
-    const models = await listModelsInSearch(search({ modelRoots: [own, shared] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [own, shared] }))
 
     expect(models).toEqual([
       { folder: 'loras', name: 'other.safetensors', size: 4 },
@@ -186,7 +191,7 @@ describe('listModelsInSearch', () => {
     fs.symlinkSync(library, path.join(root, 'checkpoints'), 'dir')
     fs.symlinkSync(library, path.join(library, 'loop'), 'dir')
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([{ folder: 'checkpoints', name: 'base.safetensors', size: 1 }])
   })
@@ -196,7 +201,7 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(root, 'loras', 'bad\nname.safetensors'))
     writeFile(path.join(root, 'loras', 'good.safetensors'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([{ folder: 'loras', name: 'good.safetensors', size: 1 }])
   })
@@ -207,7 +212,7 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(deep, `${'b'.repeat(60)}.safetensors`))
     writeFile(path.join(root, 'loras', 'short.safetensors'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([{ folder: 'loras', name: 'short.safetensors', size: 1 }])
   })
@@ -219,7 +224,7 @@ describe('listModelsInSearch', () => {
       fs.writeFileSync(path.join(root, `m${String(i).padStart(5, '0')}.safetensors`), '')
     }
 
-    const models = await listModelsInSearch(search({ modelRoots: [path.join(tmp, 'models')] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [path.join(tmp, 'models')] }))
 
     expect(models).toHaveLength(MAX_INSTALL_MODELS)
     expect(models[0]).toEqual({ folder: 'loras', name: 'm00000.safetensors', size: 0 })
@@ -238,7 +243,7 @@ describe('listModelsInSearch', () => {
       }
     }
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(Buffer.byteLength(JSON.stringify(models))).toBeLessThanOrEqual(MAX_INSTALL_MODELS_BYTES)
     expect(models.length).toBeGreaterThan(1000)
@@ -253,7 +258,7 @@ describe('listModelsInSearch', () => {
     }
     writeFile(path.join(root, 'vae', 'ae.safetensors'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toHaveLength(MAX_INSTALL_MODELS)
     expect(models).toContainEqual({ folder: 'vae', name: 'ae.safetensors', size: 1 })
@@ -267,7 +272,7 @@ describe('listModelsInSearch', () => {
     writeFile(path.join(root, 'loras', '__pycache__', 'x.pkl'))
     writeFile(path.join(root, 'loras', 'models', 'nested.safetensors'))
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([
       { folder: 'loras', name: 'keep.safetensors', size: 1 },
@@ -285,7 +290,7 @@ describe('listModelsInSearch', () => {
     fs.symlinkSync(shared, path.join(deep, 'link'), 'dir')
     fs.symlinkSync(shared, path.join(root, 'checkpoints', 'z'), 'dir')
 
-    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toContainEqual({
       folder: 'checkpoints',
@@ -298,13 +303,69 @@ describe('listModelsInSearch', () => {
     const root = path.join(tmp, 'models')
     writeFile(path.join(root, 'loras', 'late.safetensors'))
 
-    await expect(listModelsInSearch(search({ modelRoots: [root] }), 0)).resolves.toEqual([])
+    await expect(listModelsInSearch(search({ modelRoots: [root] }), 0)).resolves.toEqual({
+      models: [],
+      truncated: true
+    })
+  })
+
+  it('says the list is whole when nothing was cut', async () => {
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'loras', 'one.safetensors'))
+
+    const { truncated } = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(truncated).toBe(false)
+  })
+
+  it('says the list was cut when the entry cap drops models', async () => {
+    const root = path.join(tmp, 'models', 'loras')
+    fs.mkdirSync(root, { recursive: true })
+    for (let i = 0; i < MAX_INSTALL_MODELS + 1; i++) {
+      fs.writeFileSync(path.join(root, `m${String(i).padStart(5, '0')}.safetensors`), '')
+    }
+
+    const { truncated } = await listModelsInSearch(
+      search({ modelRoots: [path.join(tmp, 'models')] })
+    )
+
+    expect(truncated).toBe(true)
+  })
+
+  it('counts the name limit in characters, not bytes or UTF-16 units', async () => {
+    const root = path.join(tmp, 'models')
+    const nameOf = (character: string): string =>
+      [...Array(3).fill(character.repeat(60)), `${character.repeat(60)}.safetensors`].join('/')
+    const wide = nameOf('名')
+    const astral = nameOf('🎨')
+    writeFile(path.join(root, 'loras', ...wide.split('/')))
+    writeFile(path.join(root, 'loras', ...astral.split('/')))
+    writeFile(path.join(root, 'loras', ...`x${wide}`.split('/')))
+
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect([...wide]).toHaveLength(MAX_MODEL_NAME_LENGTH)
+    expect(models.map((model) => model.name).sort()).toEqual([wide, astral].sort())
+  })
+
+  it.each([
+    ['C1 control', '\u0085'],
+    ['line separator', '\u2028'],
+    ['right-to-left override', '\u202e'],
+    ['first strong isolate', '\u2068']
+  ])('leaves out a name with a %s', async (_label, character) => {
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'loras', `a${character}gnp.safetensors`))
+
+    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(models).toEqual([])
   })
 
   it('returns nothing for a root that does not exist', async () => {
     await expect(
       listModelsInSearch(search({ modelRoots: [path.join(tmp, 'missing')] }))
-    ).resolves.toEqual([])
+    ).resolves.toEqual({ models: [], truncated: false })
   })
 })
 
@@ -312,9 +373,9 @@ describe('listInstallModels', () => {
   it('logs and sends no models when the install record cannot be resolved', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const models = await listInstallModels(installRecord(undefined as unknown as string), [])
+    const result = await listInstallModels(installRecord(undefined as unknown as string), [])
 
-    expect(models).toEqual([])
+    expect(result).toEqual({ models: [], truncated: true })
     expect(warn).toHaveBeenCalledWith(
       '[dev-platform] Could not list install models; sending none:',
       expect.anything()
@@ -328,7 +389,7 @@ describe('listInstallModels', () => {
     writeFile(path.join(installPath, 'ComfyUI', 'models', 'vae', 'own.safetensors'))
     writeFile(path.join(shared, 'loras', 'shared.safetensors'))
 
-    const models = await listInstallModels(installRecord(installPath), [shared])
+    const { models } = await listInstallModels(installRecord(installPath), [shared])
 
     expect(models).toEqual([
       { folder: 'loras', name: 'shared.safetensors', size: 1 },
@@ -342,9 +403,10 @@ describe('listInstallModels', () => {
     writeFile(path.join(installPath, 'ComfyUI', 'models', 'vae', 'own.safetensors'))
     writeFile(path.join(shared, 'loras', 'shared.safetensors'))
 
-    const models = await listInstallModels(installRecord(installPath, { useSharedModels: false }), [
-      shared
-    ])
+    const { models } = await listInstallModels(
+      installRecord(installPath, { useSharedModels: false }),
+      [shared]
+    )
 
     expect(models).toEqual([{ folder: 'vae', name: 'own.safetensors', size: 1 }])
   })
@@ -359,7 +421,7 @@ describe('listInstallModels', () => {
       `other:\n  base_path: ${JSON.stringify(external)}\n  checkpoints: checkpoints/\n`
     )
 
-    const models = await listInstallModels(installRecord(installPath), [])
+    const { models } = await listInstallModels(installRecord(installPath), [])
 
     expect(models).toEqual([{ folder: 'checkpoints', name: 'far.safetensors', size: 1 }])
   })

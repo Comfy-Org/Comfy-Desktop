@@ -15,6 +15,11 @@ export interface InstallModelEntry {
   size: number
 }
 
+export interface InstallModelList {
+  models: InstallModelEntry[]
+  truncated: boolean
+}
+
 export const MAX_INSTALL_MODELS = 2000
 export const MAX_INSTALL_MODELS_BYTES = 400_000
 export const MAX_SCANNED_ENTRIES = 200_000
@@ -45,7 +50,14 @@ interface FolderSource {
 
 function isControlCharacter(character: string): boolean {
   const code = character.codePointAt(0) ?? 0
-  return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  )
 }
 
 function isNestedNonModelFolder(name: string): boolean {
@@ -61,10 +73,11 @@ function isSendableFolder(folder: string): boolean {
 }
 
 function isSendableName(name: string): boolean {
+  const characters = [...name]
   return (
-    name.length > 0 &&
-    name.length <= MAX_MODEL_NAME_LENGTH &&
-    ![...name].some(isControlCharacter) &&
+    characters.length > 0 &&
+    characters.length <= MAX_MODEL_NAME_LENGTH &&
+    !characters.some(isControlCharacter) &&
     !name.includes('\\') &&
     !name.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
   )
@@ -115,6 +128,7 @@ class ModelCollector {
   private readonly byKey = new Map<string, InstallModelEntry>()
   private readonly visitedDepth = new Map<string, number>()
   private scanned = 0
+  private stoppedEarly = false
 
   constructor(private readonly deadline: number) {}
 
@@ -127,8 +141,10 @@ class ModelCollector {
     await this.walk(source.folder, source.dir, [], 0)
   }
 
-  entries(): InstallModelEntry[] {
-    return takeAcrossFolders([...this.byKey.values()].sort(compareEntries)).sort(compareEntries)
+  result(): InstallModelList {
+    const all = [...this.byKey.values()].sort(compareEntries)
+    const models = takeAcrossFolders(all).sort(compareEntries)
+    return { models, truncated: this.stoppedEarly || models.length < all.length }
   }
 
   private async walk(
@@ -137,7 +153,11 @@ class ModelCollector {
     segments: string[],
     depth: number
   ): Promise<void> {
-    if (this.full || depth > MAX_MODEL_DIR_DEPTH) return
+    if (this.full) {
+      this.stoppedEarly = true
+      return
+    }
+    if (depth > MAX_MODEL_DIR_DEPTH) return
     let real: string
     try {
       real = await fs.promises.realpath(dir)
@@ -152,7 +172,10 @@ class ModelCollector {
     const entries = await readDirOrEmpty(dir)
     entries.sort((a, b) => compareText(a.name, b.name))
     for (const entry of entries) {
-      if (this.full) return
+      if (this.full) {
+        this.stoppedEarly = true
+        return
+      }
       this.scanned += 1
       if (isSkippedEntry(entry.name)) continue
       const target = path.join(dir, entry.name)
@@ -212,10 +235,12 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
+const UNKNOWN_MODEL_LIST: InstallModelList = { models: [], truncated: true }
+
 export async function listModelsInSearch(
   search: InstallModelSearch,
   timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
-): Promise<InstallModelEntry[]> {
+): Promise<InstallModelList> {
   const collector = new ModelCollector(Date.now() + timeBudgetMs)
   for (const root of search.modelRoots) {
     for (const source of await folderSourcesInRoot(root)) {
@@ -225,19 +250,19 @@ export async function listModelsInSearch(
   for (const source of folderSourcesFromExtraPaths(search)) {
     await collector.collect(source)
   }
-  return collector.entries()
+  return collector.result()
 }
 
 export async function listInstallModels(
   inst: InstallationRecord,
   sharedModelsDirs: string[],
   timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
-): Promise<InstallModelEntry[]> {
+): Promise<InstallModelList> {
   let timer: NodeJS.Timeout | undefined
-  const timedOut = new Promise<InstallModelEntry[]>((resolve) => {
+  const timedOut = new Promise<InstallModelList>((resolve) => {
     timer = setTimeout(() => {
       console.warn('[dev-platform] Listing install models took too long; sending none.')
-      resolve([])
+      resolve(UNKNOWN_MODEL_LIST)
     }, timeBudgetMs + MODEL_LIST_GRACE_MS)
   })
   try {
@@ -245,7 +270,7 @@ export async function listInstallModels(
     return await Promise.race([listModelsInSearch(search, timeBudgetMs), timedOut])
   } catch (err) {
     console.warn('[dev-platform] Could not list install models; sending none:', err)
-    return []
+    return UNKNOWN_MODEL_LIST
   } finally {
     clearTimeout(timer)
   }

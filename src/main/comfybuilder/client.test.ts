@@ -41,7 +41,8 @@ function snapshotExport(installationName = 'Local One'): SnapshotUploadEnvelope 
         pythonVersion: '3.13.1'
       }
     ],
-    models: [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }]
+    models: [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }],
+    modelsTruncated: false
   }
 }
 
