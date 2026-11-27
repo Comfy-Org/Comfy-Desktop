@@ -1395,6 +1395,13 @@
   flex-wrap: nowrap;
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
+.mss-col .mss-first-bottom.is-offline {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.mss-col .mss-first-bottom > .mss-first-offline {
+  flex: 1 1 100%;
+}
 /* Consent sits in the action bar, one compact group facing Continue. */
 .mss-col .mss-first-consent {
   gap: 8px;
@@ -2427,29 +2434,4 @@ body:has(.mss-first) [data-reka-popper-content-wrapper] {
 :root .proto-ui.proto-ui.proto-ui .mss-browse-outline {
   color: var(--color-base-foreground);
   box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.16);
-}
-.mss-offline {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 0 0 16px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  color: var(--color-base-foreground);
-  font-size: 13px;
-  line-height: 20px;
-  text-align: left;
-}
-.mss-offline > svg {
-  margin-top: 2px;
-  color: var(--color-muted-foreground);
-}
-.mss-offline-meta {
-  color: var(--color-muted-foreground);
-}
-.mss-offline.is-foot {
-  min-width: 0;
-  flex: 1;
-  margin: 0 8px 0 0;
 }
