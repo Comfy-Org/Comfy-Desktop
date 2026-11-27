@@ -141,12 +141,8 @@ import {
   type DraftLinkStartup
 } from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
-import { noteAutoStartReady, registerAutoStartNoticeHandlers } from './apps/autoStartNotice'
-import {
-  opensInDesktopWindow,
-  startWithDesktop,
-  stopBuildsRunningForAppsOnly
-} from './apps/localComfy'
+import { startWithDesktopAndOpen } from './apps/autoStartOpen'
+import { opensInDesktopWindow, stopBuildsRunningForAppsOnly } from './apps/localComfy'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -317,11 +313,7 @@ async function openStartupSurface(): Promise<void> {
 
   openOrFocusHomeHostWindow()
 
-  if (explicitInst) void announceWhenReady(explicitInst)
-}
-
-async function announceWhenReady(inst: InstallationRecord): Promise<void> {
-  if (await startWithDesktop(inst)) noteAutoStartReady(inst.id)
+  if (explicitInst) void startWithDesktopAndOpen(explicitInst, openWindowForAppsBuild)
 }
 
 function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
@@ -803,7 +795,19 @@ async function focusOpenComfyWindow(
   return !entry.window.isDestroyed()
 }
 
-async function openWindowForAppsBuild(installationId: string): Promise<boolean> {
+const appsBuildWindowOpens = new Map<string, Promise<boolean>>()
+
+function openWindowForAppsBuild(installationId: string): Promise<boolean> {
+  const pending = appsBuildWindowOpens.get(installationId)
+  if (pending) return pending
+  const opening = openAppsBuildWindow(installationId).finally(() =>
+    appsBuildWindowOpens.delete(installationId)
+  )
+  appsBuildWindowOpens.set(installationId, opening)
+  return opening
+}
+
+async function openAppsBuildWindow(installationId: string): Promise<boolean> {
   const installation = await getInstallation(installationId)
   if (await focusOpenComfyWindow(installationId)) return true
   const port = runningPortOf(installationId)
@@ -1628,7 +1632,6 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
     })
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
-    registerAutoStartNoticeHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     registerTemplateInputAssetHandlers({
       findInstallationIdForWindow,

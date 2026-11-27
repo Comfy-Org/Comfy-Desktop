@@ -361,9 +361,6 @@
   "home": {
     "title": "Welcome. Let's create!",
     "opensWhenReady": "Starting… opens when it's ready",
-    "comfyReady": "ComfyUI is ready",
-    "comfyReadyOpen": "Open",
-    "comfyReadyDismiss": "Dismiss",
     "chooseBuildToOpen": "Choose the build to open",
     "opensIn": "Opens in {name}",
     "allBuilds": "All builds",

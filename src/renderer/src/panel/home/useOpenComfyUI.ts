@@ -8,7 +8,6 @@ import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { isInstallationInWorkspace } from '../../../../shared/workspaces'
 import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './homeBuild'
-import { useAutoStartReadyNotice } from './useAutoStartReadyNotice'
 import { useOpenWhenReady } from './useOpenWhenReady'
 import type { Installation } from '../../types/ipc'
 
@@ -55,11 +54,9 @@ export function useOpenComfyUI(open: (build: Installation) => void) {
       ) ?? mostRecentBuild.value
   )
 
-  const readyNotice = useAutoStartReadyNotice()
   const opensWhenReady = useOpenWhenReady(open)
 
   function openBuild(build: Installation): void {
-    readyNotice.dismiss(build.id)
     if (opensWhenReady.openWhenReady(build)) return
     opensWhenReady.forget()
     open(build)
@@ -76,7 +73,6 @@ export function useOpenComfyUI(open: (build: Installation) => void) {
     openTarget,
     pickedBuildId,
     statusOf,
-    readyNotice,
     opensWhenReady,
     openBuild,
     pickAndOpen

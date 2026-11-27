@@ -9,7 +9,6 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import HomeReadyToast from './home/HomeReadyToast.vue'
 import { isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useOpenComfyUI } from './home/useOpenComfyUI'
@@ -57,7 +56,6 @@ void dashboardScope.initialize()
 const {
   workspaceBuilds,
   statusOf: buildStatus,
-  readyNotice,
   opensWhenReady
 } = useOpenComfyUI((build) => emit('pick', build))
 const isInstalling = useInstallingBuilds()
@@ -100,13 +98,7 @@ const narrowBuildIds = computed(() => {
     rest.find((build) => isInUse(build)) ?? rest.find((build) => isCloudBuild(build)) ?? rest[0]
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
-const readyBuild = computed(() => {
-  const id = readyNotice.buildId.value
-  if (id === null || !sessionStore.isRunning(id)) return null
-  return installationStore.installations.find((build) => build.id === id) ?? null
-})
 function openBuild(build: Installation): void {
-  readyNotice.dismiss(build.id)
   if (build.statusTag?.style !== 'danger' && opensWhenReady.openWhenReady(build)) return
   opensWhenReady.forget()
   if (build.statusTag?.style === 'danger') emit('open-build', build)
@@ -154,14 +146,6 @@ onMounted(() => {
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="home-view"
   >
-    <HomeReadyToast
-      v-if="readyBuild"
-      class="absolute top-4 right-4 z-10"
-      :data-build-id="readyBuild.id"
-      @open="openBuild(readyBuild)"
-      @dismiss="readyNotice.dismiss()"
-    />
-
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
       <h1
         class="m-0 pt-[152px] text-center text-display font-semibold tracking-[-0.055em] text-foreground"
