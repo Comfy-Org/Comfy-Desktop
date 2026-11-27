@@ -74,6 +74,7 @@ beforeEach(() => {
   getAuthStatus.mockResolvedValue({ signedIn: false })
   ;(window as unknown as { api: unknown }).api = {
     listApps,
+    listHomeWorkflows: vi.fn().mockResolvedValue([]),
     getInstallations,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),

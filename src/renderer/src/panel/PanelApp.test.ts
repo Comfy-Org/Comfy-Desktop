@@ -2521,8 +2521,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await wrapper.get('[data-testid="home-workflows-tab"]').trigger('click')
-    await flushPromises()
     await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
     expect(wrapper.get('[data-testid="workflow-dialog"]').text()).toBe(workflow.title)
     wrapper.findComponent({ name: 'CatalogWorkflowDialog' }).vm.$emit('close')

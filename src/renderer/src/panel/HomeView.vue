@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -10,7 +10,6 @@ import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import HomeReadyToast from './home/HomeReadyToast.vue'
 import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
@@ -36,7 +35,6 @@ import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 type WorkflowState = 'idle' | 'loading' | 'ready' | 'unavailable'
-type HomeTab = 'apps' | 'workflows'
 
 const HOME_BUILD_LIMIT = 3
 const BUILDS_TITLE_LINK_CLASS =
@@ -159,18 +157,10 @@ function buildStatus(build: Installation) {
 }
 
 const { state: appsState, apps, loadApps } = useHomeApps()
-const tab = ref<HomeTab>('apps')
-const tabs = computed(() => [
-  { value: 'apps' as const, label: t('sidebar.apps'), testId: 'home-apps-tab' },
-  { value: 'workflows' as const, label: t('sidebar.workflows'), testId: 'home-workflows-tab' }
-])
-const showWorkflows = computed(() => tab.value === 'workflows')
 const workflowState = ref<WorkflowState>('idle')
 const workflows = ref<CatalogWorkflow[]>([])
-const carouselIsLoading = computed(() =>
-  showWorkflows.value
-    ? workflowState.value === 'idle' || workflowState.value === 'loading'
-    : appsState.value === 'loading'
+const workflowsLoading = computed(
+  () => workflowState.value === 'idle' || workflowState.value === 'loading'
 )
 
 function coversOf(app: AppCard): readonly AppCover[] {
@@ -194,11 +184,8 @@ async function loadWorkflows(): Promise<void> {
   }
 }
 
-watch(showWorkflows, (show) => {
-  if (show && workflowState.value === 'idle') void loadWorkflows()
-})
-
 onMounted(() => {
+  void loadWorkflows()
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
 })
 </script>
@@ -234,44 +221,81 @@ onMounted(() => {
         {{ t('home.title') }}
       </h1>
 
-      <section
-        class="mt-[74px]"
-        :aria-label="showWorkflows ? t('home.exampleWorkflows') : t('sidebar.apps')"
-      >
-        <div class="mb-5 flex justify-center">
-          <SegmentedControl v-model="tab" :options="tabs" :label="t('home.carouselTabs')" />
+      <section class="mt-[74px]" aria-labelledby="home-workflows" data-testid="home-workflows">
+        <div class="mb-5 flex h-6 items-center justify-between">
+          <h2 id="home-workflows" class="m-0" :class="SECTION_TITLE_CLASS">
+            {{ t('sidebar.workflows') }}
+          </h2>
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="unset"
+            :class="[TEXT_LINK_CLASS, '-mr-3']"
+            data-testid="home-see-all-workflows"
+            @click="emit('show-workflows')"
+          >
+            {{ t('home.seeAllWorkflows') }}
+            <ArrowRight :size="14" aria-hidden="true" />
+          </Button>
         </div>
         <div
-          v-if="carouselIsLoading"
+          v-if="workflowsLoading"
           class="flex h-75 items-center justify-center gap-2.5"
           aria-busy="true"
-          data-testid="home-carousel-loading"
+          data-testid="home-workflows-loading"
         >
           <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
           <Skeleton class="h-75 w-64 rounded-[18px]" />
           <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
         </div>
-        <template v-else-if="showWorkflows">
-          <HomeCarousel
-            v-if="workflowState === 'ready'"
-            kind="workflows"
-            :cards="workflows"
-            :pictures-of="thumbnailOf"
-            @open="emit('open-workflow', $event)"
-          />
-          <div
-            v-else
-            class="flex h-75 flex-col items-center justify-center gap-3"
-            data-testid="home-workflows-unavailable"
+        <HomeCarousel
+          v-else-if="workflowState === 'ready'"
+          kind="workflows"
+          :cards="workflows"
+          :pictures-of="thumbnailOf"
+          @open="emit('open-workflow', $event)"
+        />
+        <div
+          v-else
+          class="flex h-75 flex-col items-center justify-center gap-3"
+          data-testid="home-workflows-unavailable"
+        >
+          <p class="m-0 text-[13px]/5 text-muted-foreground">
+            {{ t('home.workflowsUnavailable') }}
+          </p>
+          <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
+            {{ t('home.retry') }}
+          </Button>
+        </div>
+      </section>
+
+      <section class="mt-[50px]" aria-labelledby="home-apps" data-testid="home-apps">
+        <div class="mb-5 flex h-6 items-center justify-between">
+          <h2 id="home-apps" class="m-0" :class="SECTION_TITLE_CLASS">
+            {{ t('sidebar.apps') }}
+          </h2>
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="unset"
+            :class="[TEXT_LINK_CLASS, '-mr-3']"
+            data-testid="home-see-all-apps"
+            @click="emit('show-apps')"
           >
-            <p class="m-0 text-[13px]/5 text-muted-foreground">
-              {{ t('home.workflowsUnavailable') }}
-            </p>
-            <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
-              {{ t('home.retry') }}
-            </Button>
-          </div>
-        </template>
+            {{ t('home.seeAllApps') }}
+            <ArrowRight :size="14" aria-hidden="true" />
+          </Button>
+        </div>
+        <div
+          v-if="appsState === 'loading'"
+          class="flex h-75 items-center justify-center gap-2.5"
+          aria-busy="true"
+          data-testid="home-apps-loading"
+        >
+          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+          <Skeleton class="h-75 w-64 rounded-[18px]" />
+          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+        </div>
         <HomeCarousel
           v-else-if="appsState === 'ready'"
           kind="apps"
@@ -292,26 +316,13 @@ onMounted(() => {
           </Button>
         </div>
         <EmptyState
-          v-else-if="appsState === 'empty'"
+          v-else
           class="h-75 justify-center"
           data-testid="home-apps-empty"
           :icon="AppWindow"
           :title="t('apps.emptyTitle')"
           :text="t('apps.emptyBody')"
         />
-        <div class="mt-[30px] flex justify-center">
-          <Button
-            type="button"
-            variant="muted-textonly"
-            size="unset"
-            :class="TEXT_LINK_CLASS"
-            :data-testid="showWorkflows ? 'home-see-all-workflows' : 'home-see-all-apps'"
-            @click="showWorkflows ? emit('show-workflows') : emit('show-apps')"
-          >
-            {{ showWorkflows ? t('home.seeAllWorkflows') : t('home.seeAllApps') }}
-            <ArrowRight :size="14" aria-hidden="true" />
-          </Button>
-        </div>
       </section>
 
       <section
