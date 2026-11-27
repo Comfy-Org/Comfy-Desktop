@@ -77,11 +77,19 @@ async function waitForCard(): Promise<HTMLElement> {
   return tourCard()!
 }
 
-function mountTour() {
+function mountTour({ cardFails = false }: { cardFails?: boolean } = {}) {
   const host = document.createElement('div')
   document.body.append(host)
   anchors.push(host)
-  return mount(HomeTour, { attachTo: host, props: { active: true } })
+  return mount(HomeTour, {
+    attachTo: host,
+    props: { active: true },
+    global: cardFails ? { stubs: { PopoverContent: true } } : {}
+  })
+}
+
+function dim(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-testid="home-tour-dim"]')
 }
 
 async function tourStateLoaded(): Promise<void> {
@@ -187,6 +195,41 @@ describe('HomeTour', () => {
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => tourCard()).toBeNull()
     expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+  })
+
+  it('ends the tour with one skip when the user presses Escape', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => dim()).toBeNull()
+    expect(telemetry.filter((name) => name === 'comfy.desktop.home_tour.skipped')).toHaveLength(1)
+  })
+
+  it('lets Escape end the tour even when its card does not show, so Home is never stuck dimmed', async () => {
+    placeAnchors()
+    mountTour({ cardFails: true })
+    await expect.poll(() => dim()).not.toBeNull()
+    expect(button('next')).toBeNull()
+
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => dim()).toBeNull()
+    expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+  })
+
+  it('leaves Escape alone while the tour shows nothing because its parts left the page', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+
+    document.querySelectorAll('[data-home-tour]').forEach((el) => el.remove())
+    await expect.poll(() => dim()).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    await settle()
+
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.skipped')
   })
 
   it('saves the tour as done after Done on the last step, which names where to replay it', async () => {
