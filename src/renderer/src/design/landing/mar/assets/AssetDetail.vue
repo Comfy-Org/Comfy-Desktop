@@ -257,7 +257,7 @@ watch(
 const viewer = computed(() => viewerKind(asset))
 const SIDE_TABS: { value: DetailTab; label: string }[] = [
   { value: 'details', label: 'Details' },
-  { value: 'viewer', label: 'Viewer' }
+  { value: 'viewer', label: 'Controls' }
 ]
 const sideTab = ref<DetailTab>('details')
 watch(
