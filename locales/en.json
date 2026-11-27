@@ -13,6 +13,11 @@
       "title": "Back to Home?",
       "message": "This will stop the current ComfyUI.",
       "confirmLabel": "Back to Home"
+    },
+    "discardUnsaved": {
+      "title": "Discard unsaved changes?",
+      "message": "This workflow has changes that haven't been saved. They will be lost.",
+      "confirmLabel": "Discard changes"
     }
   },
   "sidebar": {

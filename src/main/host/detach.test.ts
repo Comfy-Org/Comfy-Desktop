@@ -609,6 +609,23 @@ describe('returning to the dashboard from a running ComfyUI', () => {
       mocks.pageVetoesLeaving = true
     })
 
+    it('asks in the app language', async () => {
+      mocks.locale = 'zh'
+      onTestFinished(() => {
+        mocks.locale = 'en'
+      })
+      const entry = openRunningComfy()
+
+      await returnToDashboard(entry.windowKey)
+
+      expect(mocks.asked[0]?.spec).toMatchObject({
+        title: zh.dashboard.discardUnsaved.title,
+        message: zh.dashboard.discardUnsaved.message,
+        confirmLabel: zh.dashboard.discardUnsaved.confirmLabel,
+        cancelLabel: zh.common.cancel
+      })
+    })
+
     it('asks before discarding them, and Discard changes returns to the dashboard', async () => {
       mocks.agrees = true
       const entry = openRunningComfy()

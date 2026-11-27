@@ -13,6 +13,11 @@
       "title": "返回主页？",
       "message": "这将停止当前的 ComfyUI。",
       "confirmLabel": "返回主页"
+    },
+    "discardUnsaved": {
+      "title": "放弃未保存的更改？",
+      "message": "此工作流有尚未保存的更改，这些更改将会丢失。",
+      "confirmLabel": "放弃更改"
     }
   },
   "sidebar": {

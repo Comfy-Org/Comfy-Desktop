@@ -162,10 +162,10 @@ async function askToLeave(entry: ComfyWindowEntry): Promise<boolean> {
   return openSystemModalAsync({
     parent: entry.window,
     spec: {
-      title: 'Discard unsaved changes?',
-      message: "This workflow has changes that haven't been saved. They will be lost.",
-      confirmLabel: 'Discard changes',
-      cancelLabel: 'Cancel',
+      title: i18n.t('dashboard.discardUnsaved.title'),
+      message: i18n.t('dashboard.discardUnsaved.message'),
+      confirmLabel: i18n.t('dashboard.discardUnsaved.confirmLabel'),
+      cancelLabel: i18n.t('common.cancel'),
       confirmStyle: 'danger',
       theme: entry.lastTheme
     }
