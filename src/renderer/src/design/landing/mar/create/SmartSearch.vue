@@ -202,12 +202,13 @@ defineExpose({ shown, field })
   display: grid;
   place-items: center;
   border: 1px dashed color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
-  background: transparent;
+  background: var(--color-secondary-background);
   box-shadow: none;
   transition:
     transform 260ms var(--ease-out-expo),
     box-shadow 200ms ease,
-    border-color 140ms ease;
+    border-color 140ms ease,
+    background-color 140ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .v15-plus {
   color: var(--color-muted-foreground);
@@ -215,6 +216,7 @@ defineExpose({ shown, field })
 }
 :root .proto-ui.proto-ui.proto-ui .v15-blank.is-at .v15-pic {
   border-color: color-mix(in oklch, var(--color-base-foreground) 50%, transparent);
+  background: var(--color-secondary-background-hover);
 }
 :root .proto-ui.proto-ui.proto-ui .v15-blank.is-at .v15-plus {
   color: var(--color-base-foreground);
