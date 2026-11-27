@@ -138,7 +138,7 @@ test('Auto start waits for onboarding to finish @macos @linux', async () => {
   await expect.poll(windowState).toEqual({ total: 1, visibleBuilds: 0, visibleDashboards: 1 })
 })
 
-test('Open ComfyUI pressed while Auto start is still starting the build opens its window once it is ready @macos @linux', async () => {
+test('Create pressed while Auto start is still starting the build opens its window once it is ready @macos @linux', async () => {
   await writeFile(path.join(build.installPath!, 'startup-delay-ms'), '6000')
   ctx = await launchApp(
     {
@@ -148,7 +148,7 @@ test('Open ComfyUI pressed while Auto start is still starting the build opens it
     { stayOnHome: true }
   )
   await expect.poll(() => ctx!.panel.textOf(CARD), { timeout: 30_000 }).toContain('Starting')
-  expect(await ctx.panel.click('[data-testid="home-open-comfyui"]')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="sidebar-create"]')).toBe(true)
 
   await expect
     .poll(windowState, { timeout: 60_000 })

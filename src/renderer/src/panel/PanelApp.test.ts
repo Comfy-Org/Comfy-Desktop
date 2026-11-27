@@ -1447,6 +1447,40 @@ describe('PanelApp', () => {
     await flushPromises()
   })
 
+  it('opens ComfyUI from Create in the sidebar from any page, once its build is ready', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const launching = { installationId: 'test-id', installationName: 'Test Install' }
+    api.onInstanceLaunching.mock.calls.forEach(([listener]) => listener(launching))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-description')).toBe(
+      "Starting… opens when it's ready"
+    )
+    expect(wrapper.get('[data-testid="sidebar-create"]').attributes('data-build-id')).toBe(
+      'test-id'
+    )
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="sidebar-create"]').trigger('click')
+    await flushPromises()
+    expect(api.focusComfyWindow).not.toHaveBeenCalled()
+    api.onInstanceStarted.mock.calls.forEach(([listener]) =>
+      listener({ ...launching, mode: 'console' })
+    )
+    await flushPromises()
+
+    expect(api.focusComfyWindow).toHaveBeenCalledTimes(1)
+    expect(api.focusComfyWindow).toHaveBeenCalledWith('test-id')
+    expect(wrapper.get('[data-testid="app-sidebar-assets"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-current')).toBeUndefined()
+  })
+
   it('opens a build pressed on Home while it starts once it is ready, after the person moved on to Apps and Assets', async () => {
     mockState.installations = [SAMPLE_INSTALL]
     const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
@@ -1457,7 +1491,7 @@ describe('PanelApp', () => {
     api.onInstanceLaunching.mock.calls.forEach(([listener]) => listener(launching))
     await flushPromises()
 
-    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
+    await wrapper.get('[data-testid="home-build"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
     await flushPromises()
@@ -1566,6 +1600,35 @@ describe('PanelApp', () => {
 
     expect(window.api.acceptDraftApp).toHaveBeenCalledExactlyOnceWith('question-1')
     mountedPanel.unmount()
+  })
+
+  it('opens Workflows and Apps from their own sidebar entries, marking the one shown', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    const current = () =>
+      wrapper
+        .findAll('[data-testid="app-sidebar"] nav [aria-current="page"]')
+        .map((row) => row.attributes('data-testid'))
+
+    await wrapper.get('[data-testid="app-sidebar-workflows"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="workflows-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('h1').text()).toBe('Workflows')
+    expect(current()).toEqual(['app-sidebar-workflows'])
+    expect(window.api.navigatePanel).toHaveBeenLastCalledWith('workflows')
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(current()).toEqual(['app-sidebar-apps'])
+    expect(window.api.navigatePanel).toHaveBeenLastCalledWith('apps')
   })
 
   it('opens Apps from See all apps on Home', async () => {
@@ -2465,7 +2528,7 @@ describe('PanelApp', () => {
     ).toEqual([])
   })
 
-  it('opens a catalog workflow from Home and from the dedicated Explore tab', async () => {
+  it('opens a catalog workflow from Home and from the Workflows page See all workflows lands on', async () => {
     const workflow: CatalogWorkflow = {
       id: 'upscale-detail',
       title: 'Upscale detail',
@@ -2492,8 +2555,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await wrapper.get('[data-testid="home-workflows-tab"]').trigger('click')
-    await flushPromises()
     await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
     expect(wrapper.get('[data-testid="workflow-dialog"]').text()).toBe(workflow.title)
     wrapper.findComponent({ name: 'CatalogWorkflowDialog' }).vm.$emit('close')
@@ -2501,9 +2562,13 @@ describe('PanelApp', () => {
 
     await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="explore-workflows-tab"]').attributes('aria-pressed')).toBe(
-      'true'
+    expect(wrapper.get('[data-testid="workflows-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar-workflows"]').attributes('aria-current')).toBe(
+      'page'
     )
+    expect(
+      wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')
+    ).toBeUndefined()
     expect(window.api.listCatalogWorkflows).toHaveBeenCalledOnce()
 
     await wrapper.get('[data-testid="workflow-card-upscale-detail"]').trigger('click')
@@ -4060,7 +4125,7 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
     const card = wrapper.get('[data-testid="home-build-installing"]')
     expect(card.attributes('data-build-id')).toBe('inst-new')
-    expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="sidebar-create"]').exists()).toBe(false)
 
     reportInstallProgress({
       installationId: 'inst-new',

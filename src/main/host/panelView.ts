@@ -25,6 +25,7 @@ import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 
 const DASHBOARD_PAGE_PANELS: ReadonlyMap<unknown, ComfyPanelKey> = new Map([
   ['home', 'comfy'],
+  ['workflows', 'comfy'],
   ['apps', 'comfy'],
   ['assets', 'comfy'],
   ['chooser', 'comfy'],

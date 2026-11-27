@@ -566,6 +566,10 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     expect(settings.getTrackedSettingsTelemetryProperties(['startPage'])).toEqual({
       setting_start_page: 'assets'
     })
+    settings.set('startPage', 'workflows')
+    expect(settings.getTrackedSettingsTelemetryProperties(['startPage'])).toEqual({
+      setting_start_page: 'workflows'
+    })
     fs.writeFileSync(settingsPath, JSON.stringify({ startPage: '/Users/me/secret' }), 'utf-8')
     expect(settings.getTrackedSettingsTelemetryProperties(['startPage'])).toEqual({
       setting_start_page: null

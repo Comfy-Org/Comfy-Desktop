@@ -214,6 +214,8 @@ describe('comfy-window:navigate-panel', () => {
   it.each([
     ['chooser', 'comfy', 'benchmarks'],
     ['assets', 'comfy', 'benchmarks'],
+    ['workflows', 'comfy', 'benchmarks'],
+    ['apps', 'comfy', 'benchmarks'],
     ['staff-apps', 'comfy', 'benchmarks'],
     ['benchmarks', 'benchmarks', 'comfy'],
     ['performance-test', 'performance-test', 'comfy']

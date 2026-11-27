@@ -108,12 +108,13 @@ function tooltipOf(
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Explore, Assets, then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Workflows, Apps, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Assets',
       'Builds',
       ''
@@ -126,12 +127,36 @@ describe('AppSidebar', () => {
   it('marks Apps as the current page and opens it from its row', async () => {
     const wrapper = await mountSidebar('apps')
 
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Explore'])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
 
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
     expect(wrapper.emitted('navigate')).toEqual([['apps']])
+  })
+
+  it('marks Workflows as the current page and opens it from its row', async () => {
+    const wrapper = await mountSidebar('workflows')
+
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Workflows'])
+    expect(wrapper.get('[data-testid="app-sidebar-workflows"]').attributes('aria-label')).toBe(
+      'Workflows'
+    )
+
+    await wrapper.get('[data-testid="app-sidebar-workflows"]').trigger('click')
+
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('workflows')
+    expect(wrapper.emitted('navigate')).toEqual([['workflows']])
+  })
+
+  it('keeps Apps marked while an app is open over Apps, not Workflows', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
   it('shows no Development row unless the staff list is shown', async () => {
@@ -147,7 +172,8 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Assets',
       'Development',
       'Builds',
@@ -171,7 +197,8 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Character Swap',
       'Assets',
       'Builds',
@@ -188,7 +215,7 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
   })
 
-  it('names an app left open from Development under Development, not Explore', async () => {
+  it('names an app left open from Development under Development, not Apps', async () => {
     const wrapper = mount(AppSidebar, {
       props: {
         activePage: 'home',
@@ -201,7 +228,8 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Assets',
       'Development',
       'Character Swap',
@@ -564,8 +592,10 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
-    const explore = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
-    expect(explore.top - home.bottom).toBe(4)
+    const workflows = wrapper
+      .get('[data-testid="app-sidebar-workflows"]')
+      .element.getBoundingClientRect()
+    expect(workflows.top - home.bottom).toBe(4)
     wrapper.unmount()
   })
 
@@ -621,7 +651,7 @@ describe('AppSidebar', () => {
 
     wrapper.get<HTMLElement>('[data-testid="app-sidebar-toggle"]').element.focus()
     const tooltipsOnTheWay: string[][] = []
-    for (const testId of ['app-sidebar-home', 'app-sidebar-apps']) {
+    for (const testId of ['app-sidebar-home', 'app-sidebar-workflows', 'app-sidebar-apps']) {
       await userEvent.keyboard('{Tab}')
       await vi.waitFor(() =>
         expect(document.activeElement).toBe(wrapper.get(`[data-testid="${testId}"]`).element)
@@ -629,7 +659,7 @@ describe('AppSidebar', () => {
       await vi.waitFor(() => expect(shownTooltips()).not.toHaveLength(0))
       tooltipsOnTheWay.push(shownTooltips())
     }
-    expect(tooltipsOnTheWay).toEqual([['Home'], ['Explore']])
+    expect(tooltipsOnTheWay).toEqual([['Home'], ['Workflows'], ['Apps']])
     wrapper.unmount()
   })
 
@@ -1106,6 +1136,401 @@ describe('AppSidebar', () => {
       const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
       expect(tooltipOf(wrapper, 'app-sidebar-chooser')).toBe('Builds')
       expect(builds.attributes('aria-current')).toBe('page')
+    })
+  })
+
+  describe('Create', () => {
+    function buildOptions(): HTMLElement[] {
+      return [...document.querySelectorAll<HTMLElement>('[data-testid="home-open-build-option"]')]
+    }
+
+    it('sits above the nav as a full-width Create button, outside the page list', async () => {
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+
+      const create = wrapper.get('[data-testid="sidebar-create"]')
+      expect(create.text()).toBe('Create')
+      expect(create.attributes('aria-label')).toBe('Create')
+      expect(create.attributes('aria-current')).toBeUndefined()
+      expect(create.element.closest('nav')).toBeNull()
+      expect(
+        create.element.compareDocumentPosition(wrapper.get('nav').element) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+      expect(create.find('svg').exists()).toBe(true)
+      expect(wrapper.get('nav button').attributes('data-testid')).toBe('app-sidebar-home')
+      expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Home'])
+    })
+
+    it('fills the width of the open sidebar in the inverted fill, rounded like a control', async () => {
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      useInstallationStore().installations = [NEW]
+      await flushPromises()
+
+      const create = wrapper.get('[data-testid="sidebar-create"]').element
+      const home = wrapper.get('[data-testid="app-sidebar-home"]').element
+      expect(create.getBoundingClientRect().width).toBe(home.getBoundingClientRect().width)
+      expect(create.getBoundingClientRect().height).toBe(32)
+      expect(create.classList).toContain('bg-foreground')
+      expect(create.classList).toContain('rounded-control')
+      wrapper.unmount()
+    })
+
+    it('puts Create on the left when the chevron sits beside it, and centres it alone', async () => {
+      const alone = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      useInstallationStore().installations = [NEW]
+      await flushPromises()
+      expect(
+        getComputedStyle(alone.get('[data-testid="sidebar-create"]').element).justifyContent
+      ).toBe('center')
+      alone.unmount()
+
+      const withMenu = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      useInstallationStore().installations = [OLD, NEW]
+      await flushPromises()
+      expect(withMenu.find('[data-testid="sidebar-create-menu"]').exists()).toBe(true)
+      expect(
+        getComputedStyle(withMenu.get('[data-testid="sidebar-create"]').element).justifyContent
+      ).toBe('flow-start')
+      withMenu.unmount()
+    })
+
+    it('opens the build Open ComfyUI opens: the most recently used one', async () => {
+      const wrapper = await mountSidebar('apps', [OLD, NEW])
+
+      expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-description')).toBe(
+        'Opens in Video Lab'
+      )
+      await wrapper.get('[data-testid="sidebar-create"]').trigger('click')
+
+      expect(wrapper.emitted('create')).toEqual([[NEW]])
+      expect(wrapper.emitted('navigate')).toBeUndefined()
+      expect(navigatePanel).not.toHaveBeenCalled()
+    })
+
+    it('leaves Create out while there is no build to open', async () => {
+      const wrapper = await mountSidebar('home', [])
+
+      expect(wrapper.find('[data-testid="sidebar-create"]').exists()).toBe(false)
+    })
+
+    it('opens the Open ComfyUI build menu from its chevron, opens the build picked, and keeps it for the next Create', async () => {
+      const wrapper = await mountSidebar('home', [OLD, NEW], null)
+      const chevron = wrapper.get('[data-testid="sidebar-create-menu"]')
+      expect(chevron.attributes('aria-haspopup')).toBe('menu')
+      expect(chevron.attributes('aria-expanded')).toBe('false')
+      expect(chevron.attributes('aria-label')).toBe('Choose the build to open')
+
+      await chevron.trigger('keydown', { key: 'ArrowDown' })
+      await flushPromises()
+
+      expect(chevron.attributes('aria-expanded')).toBe('true')
+      expect(buildOptions().map((option) => option.textContent?.trim())).toEqual([
+        'Video Lab',
+        'Flux Sandbox'
+      ])
+      buildOptions()[1]!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      )
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toEqual([[OLD]])
+      expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-description')).toBe(
+        'Opens in Flux Sandbox'
+      )
+      await wrapper.get('[data-testid="sidebar-create"]').trigger('click')
+      expect(wrapper.emitted('create')).toEqual([[OLD], [OLD]])
+    })
+
+    async function openCreateMenu(wrapper: Awaited<ReturnType<typeof mountSidebar>>) {
+      await wrapper
+        .get('[data-testid="sidebar-create-menu"]')
+        .trigger('keydown', { key: 'ArrowDown' })
+      await flushPromises()
+    }
+
+    function running(build: Installation): void {
+      useSessionStore().runningInstances.set(build.id, {
+        installationId: build.id,
+        installationName: build.name,
+        mode: 'window'
+      })
+    }
+
+    it('opens the latest build of the workspace picked in the sidebar', async () => {
+      const wrapper = await mountSidebar('home', [OLD, NEW, TEAM])
+
+      useDashboardScopeStore().selectedWorkspaceId = 'ws-team'
+      await flushPromises()
+      await wrapper.get('[data-testid="sidebar-create"]').trigger('click')
+
+      expect(wrapper.emitted('create')).toEqual([[TEAM]])
+    })
+
+    it('lists every build of the workspace in the menu, with a dot on each open build, Comfy Cloud too', async () => {
+      const wrapper = await mountSidebar('home', [OLD, CLOUD, NEW])
+      running(CLOUD)
+      running(OLD)
+      await openCreateMenu(wrapper)
+
+      expect(buildOptions().map((option) => option.textContent?.trim())).toEqual([
+        'Video Lab',
+        'Comfy Cloud',
+        'Flux Sandbox'
+      ])
+      expect(buildOptions().map((option) => option.getAttribute('aria-checked'))).toEqual([
+        'true',
+        'false',
+        'false'
+      ])
+      expect(
+        buildOptions().map(
+          (option) =>
+            option
+              .querySelector('[data-testid="home-open-build-status-dot"]')
+              ?.getAttribute('data-tone') ?? null
+        )
+      ).toEqual([null, 'live', 'live'])
+    })
+
+    it('marks a broken build red and keeps it from opening, with the reason on hover', async () => {
+      const broken = build({
+        id: 'broken',
+        name: 'Broken Build',
+        lastLaunchedAt: 50,
+        statusTag: { style: 'danger', label: 'Install failed' }
+      })
+      const wrapper = await mountSidebar('home', [NEW, broken])
+      await openCreateMenu(wrapper)
+
+      const option = buildOptions()[1]!
+      expect(
+        option
+          .querySelector('[data-testid="home-open-build-status-dot"]')
+          ?.getAttribute('data-tone')
+      ).toBe('danger')
+      expect(option.hasAttribute('data-disabled')).toBe(true)
+
+      option.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushPromises()
+      expect(wrapper.emitted('create')).toBeUndefined()
+
+      option
+        .closest('.tooltip-wrap')!
+        .dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+      await vi.waitFor(() =>
+        expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Install failed')
+      )
+    })
+
+    it('marks a build that did not start red, and still opens it when picked', async () => {
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+      useSessionStore().errorInstances.set(OLD.id, { installationName: OLD.name })
+      await openCreateMenu(wrapper)
+
+      const failed = buildOptions()[1]!
+      expect(
+        failed
+          .querySelector('[data-testid="home-open-build-status-dot"]')
+          ?.getAttribute('data-tone')
+      ).toBe('danger')
+      failed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toEqual([[OLD]])
+    })
+
+    it('fills the picked build in the menu, with no check mark', async () => {
+      const wrapper = await mountSidebar('home', [OLD, CLOUD, NEW])
+      await openCreateMenu(wrapper)
+      buildOptions()[2]!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      )
+      await flushPromises()
+
+      await openCreateMenu(wrapper)
+
+      expect(buildOptions().map((option) => option.getAttribute('aria-checked'))).toEqual([
+        'false',
+        'false',
+        'true'
+      ])
+      expect(buildOptions()[2]!.className).toContain('data-[state=checked]:bg-muted')
+      expect(document.querySelector('[data-testid="menu-radio-item-check"]')).toBeNull()
+    })
+
+    it('opens its build once it is ready when pressed while it starts, and only once', async () => {
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      const wrapper = await mountSidebar('home', [NEW])
+
+      await wrapper.get('[data-testid="sidebar-create"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('create')).toBeUndefined()
+
+      useSessionStore().launchingInstances.delete(NEW.id)
+      running(NEW)
+      await flushPromises()
+      expect(wrapper.emitted('create')).toEqual([[NEW]])
+
+      useSessionStore().runningInstances.delete(NEW.id)
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      await flushPromises()
+      useSessionStore().launchingInstances.delete(NEW.id)
+      running(NEW)
+      await flushPromises()
+      expect(wrapper.emitted('create')).toHaveLength(1)
+    })
+
+    it('opens nothing when the start fails after it was pressed', async () => {
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      const wrapper = await mountSidebar('home', [NEW])
+
+      await wrapper.get('[data-testid="sidebar-create"]').trigger('click')
+      await flushPromises()
+      useSessionStore().launchingInstances.delete(NEW.id)
+      await flushPromises()
+      running(NEW)
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toBeUndefined()
+    })
+
+    it.each([
+      ['stops', 'stop'],
+      ['updates', 'update']
+    ] as const)(
+      'leaves Create out while its only build %s, and brings it back after',
+      async (_, action) => {
+        const session = useSessionStore()
+        if (action === 'stop') {
+          running(NEW)
+          session.stoppingInstances.add(NEW.id)
+        } else {
+          session.operationInstances.set(NEW.id, { actionId: 'update-comfyui' })
+        }
+        const wrapper = await mountSidebar('home', [NEW])
+        expect(wrapper.find('[data-testid="sidebar-create"]').exists()).toBe(false)
+
+        session.runningInstances.delete(NEW.id)
+        session.stoppingInstances.delete(NEW.id)
+        session.operationInstances.delete(NEW.id)
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="sidebar-create"]').exists()).toBe(true)
+      }
+    )
+
+    it('offers no build menu with a single build', async () => {
+      const wrapper = await mountSidebar('home', [NEW])
+
+      expect(wrapper.find('[data-testid="sidebar-create"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="sidebar-create-menu"]').exists()).toBe(false)
+    })
+
+    it('on the folded rail, opens the build menu to the right from the square Plus button, and opens the build picked', async () => {
+      window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      useInstallationStore().installations = [OLD, NEW]
+      await flushPromises()
+      const create = wrapper.get('[data-testid="sidebar-create"]')
+
+      expect(create.text()).toBe('')
+      expect(create.classes()).toContain('size-8')
+      expect(wrapper.find('[data-testid="sidebar-create-menu"]').exists()).toBe(false)
+      expect(tooltipOf(wrapper, 'sidebar-create')).toBe('Create')
+      expect(create.attributes('aria-haspopup')).toBe('menu')
+      expect(create.attributes('aria-expanded')).toBe('false')
+
+      await userEvent.click(create.element)
+      await flushPromises()
+
+      expect(create.attributes('aria-expanded')).toBe('true')
+      expect(tooltipOf(wrapper, 'sidebar-create')).toBeUndefined()
+      expect(wrapper.emitted('create')).toBeUndefined()
+      const menu = document.querySelector<HTMLElement>('[role="menu"]')!
+      expect(menu.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+        create.element.getBoundingClientRect().right
+      )
+      expect(buildOptions().map((option) => option.textContent?.trim())).toEqual([
+        'Video Lab',
+        'Flux Sandbox'
+      ])
+
+      buildOptions()[1]!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      )
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toEqual([[OLD]])
+      expect(create.attributes('aria-description')).toBe('Opens in Flux Sandbox')
+      wrapper.unmount()
+    })
+
+    it('on the folded rail with one build, opens it straight from the square Plus button', async () => {
+      window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+      const wrapper = await mountSidebar('home', [NEW])
+      const create = wrapper.get('[data-testid="sidebar-create"]')
+      expect(create.attributes('aria-haspopup')).toBeUndefined()
+      expect(tooltipOf(wrapper, 'sidebar-create')).toBe('Create')
+
+      await create.trigger('click')
+
+      expect(wrapper.emitted('create')).toEqual([[NEW]])
+    })
+
+    it('shows no hover tooltip on the open button, keeping where it opens for screen readers', async () => {
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+
+      expect(tooltipOf(wrapper, 'sidebar-create')).toBeUndefined()
+      expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-description')).toBe(
+        'Opens in Video Lab'
+      )
+    })
+
+    it('opens a build picked while it starts once it is ready', async () => {
+      useSessionStore().launchingInstances.set(OLD.id, { installationName: OLD.name })
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+      await wrapper
+        .get('[data-testid="sidebar-create-menu"]')
+        .trigger('keydown', { key: 'ArrowDown' })
+      await flushPromises()
+
+      buildOptions()
+        .find((option) => option.textContent?.trim() === OLD.name)!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushPromises()
+      expect(wrapper.emitted('create')).toBeUndefined()
+
+      useSessionStore().launchingInstances.delete(OLD.id)
+      useSessionStore().runningInstances.set(OLD.id, {
+        installationId: OLD.id,
+        installationName: OLD.name,
+        mode: 'console'
+      })
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toEqual([[OLD]])
+    })
+
+    it('says it opens once ready, with a spinner, while its build starts', async () => {
+      useSessionStore().launchingInstances.set(NEW.id, { installationName: NEW.name })
+      const wrapper = await mountSidebar('home', [OLD, NEW])
+
+      expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-description')).toBe(
+        "Starting… opens when it's ready"
+      )
+      expect(wrapper.find('[data-testid="sidebar-create-spinner"]').exists()).toBe(true)
     })
   })
 

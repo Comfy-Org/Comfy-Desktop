@@ -383,8 +383,8 @@ test('installs on the Home build card, then starts it there and turns on Auto st
 
   await ctx.panel.waitForVisible('[data-testid="home-build-installing"]', { timeout: 15_000 })
   expect(
-    await ctx.panel.exists('[data-testid="home-open-comfyui"]'),
-    'Open ComfyUI stays hidden while the only local build installs'
+    await ctx.panel.exists('[data-testid="sidebar-create"]'),
+    'Create stays hidden while the only local build installs'
   ).toBe(false)
   await expect
     .poll(() => ctx.panel.exists('[data-testid="home-build-installing"]'), {

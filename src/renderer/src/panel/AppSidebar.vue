@@ -4,22 +4,24 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
   Cloud,
-  Compass,
   CornerDownRight,
   FlaskConical,
   House,
   Images,
   Laptop,
   LoaderCircle,
+  PanelsTopLeft,
   Plus,
   Server,
-  Settings
+  Settings,
+  Workflow
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildMenu from './home/BuildMenu.vue'
 import SidebarPageMenu from './SidebarPageMenu.vue'
+import SidebarCreateButton from './SidebarCreateButton.vue'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
@@ -62,6 +64,7 @@ const {
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
   'open-build': [installation: Installation]
+  create: [installation: Installation]
   'open-app': [app: AppCard]
   'new-build': []
 }>()
@@ -140,7 +143,8 @@ onBeforeUnmount(() => clearTimeout(unmountBuildRows))
 
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
-  { page: 'apps', label: t('sidebar.explore'), icon: Compass },
+  { page: 'workflows', label: t('sidebar.workflows'), icon: Workflow },
+  { page: 'apps', label: t('sidebar.apps'), icon: PanelsTopLeft },
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
   ...(showStaffApps
     ? [{ page: 'staff-apps' as const, label: t('sidebar.development'), icon: FlaskConical }]
@@ -365,6 +369,8 @@ function openSettings(): void {
       </Transition>
     </div>
 
+    <SidebarCreateButton :collapsed="collapsed" @open="emit('create', $event)" />
+
     <nav
       class="flex min-h-0 w-full flex-1 scrollbar-hide flex-col gap-1 overflow-x-hidden overflow-y-auto"
     >
@@ -394,7 +400,9 @@ function openSettings(): void {
               :aria-label="row.label"
               :data-testid="`app-sidebar-${row.page}`"
               :data-home-tour="
-                row.page === 'home' || row.page === 'staff-apps' ? undefined : row.page
+                row.page === 'home' || row.page === 'workflows' || row.page === 'staff-apps'
+                  ? undefined
+                  : row.page
               "
               @click="navigate(row.page)"
               @contextmenu.prevent="openRowMenu($event, row.page)"

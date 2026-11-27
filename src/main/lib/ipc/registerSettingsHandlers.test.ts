@@ -116,6 +116,7 @@ describe('buildSettingsSections', () => {
       options: [
         { value: 'home', label: 'Home' },
         { value: 'chooser', label: 'Builds' },
+        { value: 'workflows', label: 'Workflows' },
         { value: 'apps', label: 'Apps' },
         { value: 'assets', label: 'Assets' }
       ],
