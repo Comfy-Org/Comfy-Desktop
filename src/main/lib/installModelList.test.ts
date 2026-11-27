@@ -700,7 +700,7 @@ describe('listInstallModels', () => {
   })
 
   it('sends no models when a launch paths config never finishes reading', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const installPath = path.join(tmp, 'install')
     const stalled = path.join(tmp, 'stalled.yaml')
@@ -714,9 +714,10 @@ describe('listInstallModels', () => {
         installRecord(installPath),
         [],
         () => ({ args: ['--extra-model-paths-config', stalled], cwd: installPath }),
-        0
+        60_000
       )
-      await vi.advanceTimersByTimeAsync(5_000)
+      await vi.waitFor(() => expect(readFile).toHaveBeenCalledWith(stalled, 'utf-8'))
+      await vi.advanceTimersByTimeAsync(65_000)
 
       await expect(listing).resolves.toEqual({ models: [], truncated: true })
       expect(warn).toHaveBeenCalledWith(
