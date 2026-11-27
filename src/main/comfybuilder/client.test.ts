@@ -248,6 +248,7 @@ describe('ComfyBuilderClient', () => {
   it.each([
     { case: 'no build', body: {} },
     { case: 'a build without opaque IDs', body: { build: { id: '' }, report: {} } },
+    { case: 'a build without a workspace', body: { build: { id: 'b1' }, report: {} } },
     { case: 'a build that is not an object', body: { build: 'draft', report: {} } }
   ])('rejects a response with $case', async ({ body }) => {
     vi.stubGlobal('fetch', mockFetch(200, body))
