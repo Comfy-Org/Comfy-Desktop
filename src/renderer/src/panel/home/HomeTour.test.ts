@@ -78,24 +78,24 @@ async function waitForCard(): Promise<HTMLElement> {
   return tourCard()!
 }
 
-type BrokenCard = 'not_rendered' | 'off_screen' | 'hidden'
+type BrokenCard = 'not_rendered' | 'off_screen' | 'hidden' | 'covered'
 
-function brokenPopover(style: string) {
+function brokenPopover(style: string, { covered = false }: { covered?: boolean } = {}) {
   return defineComponent(
     (_, { slots }) =>
       () =>
-        h(
-          'div',
-          { style: `position: fixed; left: 300px; top: 100px; width: 320px; ${style}` },
-          slots['default']?.()
-        )
+        h('div', { style: `position: fixed; left: 300px; top: 100px; width: 320px; ${style}` }, [
+          slots['default']?.(),
+          covered ? h('div', { style: 'position: absolute; inset: 0; z-index: 1' }) : null
+        ])
   )
 }
 
 const BROKEN_POPOVERS: Record<BrokenCard, Component | true> = {
   not_rendered: true,
   off_screen: brokenPopover('transform: translate(0, -200%); top: 0'),
-  hidden: brokenPopover('opacity: 0')
+  hidden: brokenPopover('opacity: 0'),
+  covered: brokenPopover('', { covered: true })
 }
 
 function mountTour({ card }: { card?: BrokenCard } = {}) {
@@ -284,7 +284,7 @@ describe('HomeTour', () => {
     expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
   })
 
-  it.each<BrokenCard>(['not_rendered', 'off_screen', 'hidden'])(
+  it.each<BrokenCard>(['not_rendered', 'off_screen', 'hidden', 'covered'])(
     'ends the tour by itself when its card stays %s, so nobody is stuck behind the dim',
     async (problem) => {
       const events = recordTelemetryContexts()
@@ -305,10 +305,16 @@ describe('HomeTour', () => {
     }
   )
 
-  it('keeps the tour up when its card shows', async () => {
+  it('keeps the tour up when its card shows, and never counts the real card as covered', async () => {
     placeAnchors()
     mountTour()
     await waitForCard()
+    const center = tourCard()!.getBoundingClientRect()
+    expect(
+      tourCard()!.contains(
+        document.elementFromPoint(center.x + center.width / 2, center.y + center.height / 2)
+      )
+    ).toBe(true)
 
     await new Promise((resolve) => setTimeout(resolve, 2500))
     expect(dim()).not.toBeNull()
