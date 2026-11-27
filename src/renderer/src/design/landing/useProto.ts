@@ -250,7 +250,10 @@ export const activeInstance = computed(() => {
 })
 
 export function instanceById(id: string): ProtoInstance | undefined {
-  return [...INSTANCES, ...proto.liveInstances, ...proto.addedInstances].find((i) => i.id === id)
+  return (
+    instances.value.find((i) => i.id === id) ??
+    [...INSTANCES, ...proto.liveInstances, ...proto.addedInstances].find((i) => i.id === id)
+  )
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
