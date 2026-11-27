@@ -3,10 +3,11 @@ import { page, userEvent } from 'vitest/browser'
 import { config, mount } from '@vue/test-utils'
 import type { I18n } from 'vue-i18n'
 import zh from '@locales/zh.json'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick, ref, type Component, type Ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../../assets/main.css'
+import Menu from '@comfyorg/design-system/menu/Menu'
 import HomeTour from './HomeTour.vue'
 import { __resetHomeTourForTest, useHomeTour } from './useHomeTour'
 import type { HomeTourAnchor } from './homeTourSteps'
@@ -77,15 +78,80 @@ async function waitForCard(): Promise<HTMLElement> {
   return tourCard()!
 }
 
-function mountTour({ cardFails = false }: { cardFails?: boolean } = {}) {
+type BrokenCard = 'not_rendered' | 'off_screen' | 'hidden' | 'covered'
+
+function brokenPopover(style: string, { covered = false }: { covered?: boolean } = {}) {
+  return defineComponent(
+    (_, { slots }) =>
+      () =>
+        h('div', { style: `position: fixed; left: 300px; top: 100px; width: 320px; ${style}` }, [
+          slots['default']?.(),
+          covered ? h('div', { style: 'position: absolute; inset: 0; z-index: 1' }) : null
+        ])
+  )
+}
+
+const BROKEN_POPOVERS: Record<BrokenCard, Component | true> = {
+  not_rendered: true,
+  off_screen: brokenPopover('transform: translate(0, -200%); top: 0'),
+  hidden: brokenPopover('opacity: 0'),
+  covered: brokenPopover('', { covered: true })
+}
+
+function mountTour({ card }: { card?: BrokenCard } = {}) {
   const host = document.createElement('div')
   document.body.append(host)
   anchors.push(host)
   return mount(HomeTour, {
     attachTo: host,
     props: { active: true },
-    global: cardFails ? { stubs: { PopoverContent: true } } : {}
+    global: card ? { stubs: { PopoverContent: BROKEN_POPOVERS[card] } } : {}
   })
+}
+
+function recordTelemetryContexts(): Array<{
+  actionName: string
+  context?: Record<string, unknown>
+}> {
+  const events: Array<{ actionName: string; context?: Record<string, unknown> }> = []
+  const record = (event: Event): void => {
+    events.push(
+      (event as CustomEvent<{ actionName: string; context?: Record<string, unknown> }>).detail
+    )
+  }
+  window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, record)
+  onTestFinished(() => window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, record))
+  return events
+}
+
+function menuContent(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-testid="open-menu"]')
+}
+
+function mountMenu(): { open: Ref<boolean> } {
+  const open = ref(true)
+  const host = document.createElement('div')
+  document.body.append(host)
+  anchors.push(host)
+  const wrapper = mount(
+    defineComponent(
+      () => () =>
+        h(
+          Menu,
+          {
+            open: open.value,
+            'onUpdate:open': (value: boolean) => (open.value = value),
+            modal: false,
+            items: [{ label: 'Rename' }],
+            'data-testid': 'open-menu'
+          },
+          { trigger: () => h('button', 'More') }
+        )
+    ),
+    { attachTo: host }
+  )
+  onTestFinished(() => wrapper.unmount())
+  return { open }
 }
 
 function dim(): HTMLElement | null {
@@ -209,13 +275,51 @@ describe('HomeTour', () => {
 
   it('lets Escape end the tour even when its card does not show, so Home is never stuck dimmed', async () => {
     placeAnchors()
-    mountTour({ cardFails: true })
+    mountTour({ card: 'not_rendered' })
     await expect.poll(() => dim()).not.toBeNull()
     expect(button('next')).toBeNull()
 
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => dim()).toBeNull()
     expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+  })
+
+  it.each<BrokenCard>(['not_rendered', 'off_screen', 'hidden', 'covered'])(
+    'ends the tour by itself when its card stays %s, so nobody is stuck behind the dim',
+    async (problem) => {
+      const events = recordTelemetryContexts()
+      placeAnchors()
+      mountTour({ card: problem })
+      await expect.poll(() => dim()).not.toBeNull()
+
+      await expect.poll(() => dim(), { timeout: 5000 }).toBeNull()
+      expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+      expect(
+        events.filter((event) => event.actionName === 'comfy.desktop.home_tour.card_missing')
+      ).toEqual([
+        {
+          actionName: 'comfy.desktop.home_tour.card_missing',
+          context: { audience: 'new', step: 1, reason: problem }
+        }
+      ])
+    }
+  )
+
+  it('keeps the tour up when its card shows, and never counts the real card as covered', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+    const center = tourCard()!.getBoundingClientRect()
+    expect(
+      tourCard()!.contains(
+        document.elementFromPoint(center.x + center.width / 2, center.y + center.height / 2)
+      )
+    ).toBe(true)
+
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+    expect(dim()).not.toBeNull()
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.card_missing')
   })
 
   it('leaves Escape alone while the tour shows nothing because its parts left the page', async () => {
@@ -230,6 +334,34 @@ describe('HomeTour', () => {
 
     expect(setSetting).not.toHaveBeenCalled()
     expect(telemetry).not.toContain('comfy.desktop.home_tour.skipped')
+  })
+
+  it('lets a menu opened over the tour take Escape first, then ends the tour on the next Escape', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+    const menu = mountMenu()
+
+    await expect.poll(() => menuContent()).not.toBeNull()
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => menuContent()).toBeNull()
+    expect(menu.open.value).toBe(false)
+    expect(dim()).not.toBeNull()
+
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => dim()).toBeNull()
+  })
+
+  it('ends the tour on Escape when a menu was already open before the tour began', async () => {
+    placeAnchors()
+    mountMenu()
+    await expect.poll(() => menuContent()).not.toBeNull()
+    mountTour()
+    await waitForCard()
+
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => dim()).toBeNull()
+    expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
   })
 
   it('saves the tour as done after Done on the last step, which names where to replay it', async () => {

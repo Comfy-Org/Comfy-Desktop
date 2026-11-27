@@ -23,6 +23,10 @@ import { useHomeTour } from './useHomeTour'
 const { active, interrupted = false } = defineProps<{ active: boolean; interrupted?: boolean }>()
 
 const HOLE_PADDING = 4
+const CARD_GRACE_MS = 2000
+const LONGEST_COUNTED_FRAME_MS = 100
+
+type CardProblem = 'not_rendered' | 'off_screen' | 'hidden' | 'covered'
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
@@ -51,6 +55,7 @@ let paused: { steps: HomeTourStep[]; index: number } | null = null
 let focusBeforeTour: HTMLElement | null = null
 let restoreFocusOnClose = false
 let clickInProgress: { step: number } | null = null
+let cardCheck: { waited: number; last: number } | null = null
 
 function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {
   if (!a || !b) return a === b
@@ -68,7 +73,42 @@ function nearestPresentStep(from: number): number | null {
   return presentStep(from, 1) ?? presentStep(from, -1)
 }
 
-function trackAnchor(): void {
+function cardProblem(): CardProblem | null {
+  const el = card.value?.$el
+  if (!(el instanceof HTMLElement) || !el.isConnected) return 'not_rendered'
+  const box = el.getBoundingClientRect()
+  const left = Math.max(box.left, 0)
+  const right = Math.min(box.right, window.innerWidth)
+  const top = Math.max(box.top, 0)
+  const bottom = Math.min(box.bottom, window.innerHeight)
+  if (right - left < 1 || bottom - top < 1) return 'off_screen'
+  if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return 'hidden'
+  const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+  return hit && el.contains(hit) ? null : 'covered'
+}
+
+function endIfCardStaysMissing(now: number): boolean {
+  if (!cardCheck || !rect.value) return false
+  const problem = cardProblem()
+  if (problem === null) {
+    cardCheck = null
+    return false
+  }
+  cardCheck.waited += Math.min(Math.max(now - cardCheck.last, 0), LONGEST_COUNTED_FRAME_MS)
+  cardCheck.last = now
+  if (cardCheck.waited < CARD_GRACE_MS) return false
+  cardCheck = null
+  clearPendingOpen()
+  emitTelemetryAction('comfy.desktop.home_tour.card_missing', {
+    audience: audience.value,
+    step: position.value.current,
+    reason: problem
+  })
+  end({ returnFocus: true })
+  return true
+}
+
+function trackAnchor(now: number = performance.now()): void {
   const current = step.value
   const next = current
     ? (findHomeTourAnchor(current.anchor)?.getBoundingClientRect() ?? null)
@@ -78,6 +118,7 @@ function trackAnchor(): void {
     if (replacement !== null && replacement !== index.value) index.value = replacement
   }
   if (!sameRect(rect.value, next)) rect.value = next
+  if (endIfCardStaysMissing(now)) return
   frame = requestAnimationFrame(trackAnchor)
 }
 
@@ -163,6 +204,7 @@ watch(replays, () => {
   void start()
 })
 watch(step, (current) => {
+  cardCheck = current ? { waited: 0, last: performance.now() } : null
   if (current) findHomeTourAnchor(current.anchor)?.scrollIntoView({ block: 'nearest' })
 })
 watch(done, (isDone) => {
@@ -198,8 +240,14 @@ function skip(): void {
   end({ returnFocus: true })
 }
 
+function aLayerIsAboveTheTour(): boolean {
+  const top = [...document.querySelectorAll('[data-dismissable-layer]')].at(-1)
+  return top !== undefined && !top.contains(card.value?.$el ?? null)
+}
+
 function skipOnEscape(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+  if (aLayerIsAboveTheTour()) return
   event.preventDefault()
   event.stopPropagation()
   skip()
