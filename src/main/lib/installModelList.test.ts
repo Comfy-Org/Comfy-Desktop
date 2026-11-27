@@ -7,7 +7,7 @@ vi.mock('./paths', () => ({
   dataDir: () => os.tmpdir()
 }))
 
-const { listInstallModels, listModelsInSearch, MAX_INSTALL_MODELS } =
+const { listInstallModels, listModelsInSearch, MAX_INSTALL_MODELS, MAX_INSTALL_MODELS_BYTES } =
   await import('./installModelList')
 
 import type { InstallationRecord } from '../installations'
@@ -223,6 +223,26 @@ describe('listModelsInSearch', () => {
 
     expect(models).toHaveLength(MAX_INSTALL_MODELS)
     expect(models[0]).toEqual({ folder: 'loras', name: 'm00000.safetensors', size: 0 })
+  })
+
+  it('keeps the list small enough for the builder request limit when names are long', async () => {
+    const root = path.join(tmp, 'models')
+    for (let i = 0; i < 40; i++) {
+      const dir = path.join(root, 'loras', `${String(i).padStart(2, '0')}${'d'.repeat(180)}`)
+      fs.mkdirSync(dir, { recursive: true })
+      for (let j = 0; j < 50; j++) {
+        fs.writeFileSync(
+          path.join(dir, `${String(j).padStart(2, '0')}${'f'.repeat(50)}.safetensors`),
+          ''
+        )
+      }
+    }
+
+    const models = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(Buffer.byteLength(JSON.stringify(models))).toBeLessThanOrEqual(MAX_INSTALL_MODELS_BYTES)
+    expect(models.length).toBeGreaterThan(1000)
+    expect(models.length).toBeLessThan(MAX_INSTALL_MODELS)
   })
 
   it('returns nothing for a root that does not exist', async () => {

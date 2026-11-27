@@ -213,7 +213,7 @@ describe('ComfyBuilderClient', () => {
     expect(getAccessToken).toHaveBeenCalledTimes(6)
   })
 
-  it('creates the Build draft from the snapshot in one call, so the builder keeps its report', async () => {
+  it('creates the Build draft from the snapshot in one call, so the builder keeps its report and the desktop-snapshot origin', async () => {
     const f = mockFetch(200, snapshotBuild())
     vi.stubGlobal('fetch', f)
     const getAccessToken = vi.fn(async () => 'tok-123')
@@ -240,7 +240,8 @@ describe('ComfyBuilderClient', () => {
       },
       body: JSON.stringify({
         name: 'Local One',
-        snapshot: { ...snapshot, installationName: 'Local One' }
+        snapshot: { ...snapshot, installationName: 'Local One' },
+        uiOrigin: 'desktop-snapshot'
       })
     })
     expect(getAccessToken).toHaveBeenCalledOnce()

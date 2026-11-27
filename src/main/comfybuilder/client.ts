@@ -13,6 +13,8 @@ export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
+export const DESKTOP_SNAPSHOT_UI_ORIGIN = 'desktop-snapshot'
+
 export type ComfyBuilderErrorKind =
   'unauthorized' | 'forbidden' | 'not-found' | 'network' | 'server'
 
@@ -121,7 +123,8 @@ export class ComfyBuilderClient {
     const envelope = { ...snapshot, installationName: name }
     const body = await this.post<SnapshotBuildResponse>('/v1/builds/from-snapshot', {
       name,
-      snapshot: envelope
+      snapshot: envelope,
+      uiOrigin: DESKTOP_SNAPSHOT_UI_ORIGIN
     })
     const created: Record<string, unknown> = isRecord(body.build) ? body.build : {}
     if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {

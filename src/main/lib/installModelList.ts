@@ -16,6 +16,7 @@ export interface InstallModelEntry {
 }
 
 export const MAX_INSTALL_MODELS = 2000
+export const MAX_INSTALL_MODELS_BYTES = 400_000
 export const MAX_SCANNED_MODEL_FILES = 50_000
 export const MAX_MODEL_DIR_DEPTH = 8
 export const MAX_MODEL_NAME_LENGTH = 255
@@ -122,6 +123,7 @@ class ModelCollector {
         a.folder === b.folder ? compareText(a.name, b.name) : compareText(a.folder, b.folder)
       )
       .slice(0, MAX_INSTALL_MODELS)
+      .filter(withinByteBudget())
   }
 
   private async walk(
@@ -167,6 +169,14 @@ class ModelCollector {
     const key = `${entry.folder}\u0000${entry.name}`
     if (this.byKey.has(key)) return
     this.byKey.set(key, entry)
+  }
+}
+
+function withinByteBudget(): (entry: InstallModelEntry) => boolean {
+  let used = 0
+  return (entry) => {
+    used += Buffer.byteLength(JSON.stringify(entry)) + 1
+    return used <= MAX_INSTALL_MODELS_BYTES
   }
 }
 
