@@ -218,6 +218,20 @@ describe('HomeTour', () => {
     expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
   })
 
+  it('leaves Escape alone while the tour shows nothing because its parts left the page', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+
+    document.querySelectorAll('[data-home-tour]').forEach((el) => el.remove())
+    await expect.poll(() => dim()).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    await settle()
+
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.skipped')
+  })
+
   it('saves the tour as done after Done on the last step, which names where to replay it', async () => {
     saved.set('homeTourAudience', 'updated')
     placeAnchors()

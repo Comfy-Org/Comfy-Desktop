@@ -199,20 +199,11 @@ function skip(): void {
 }
 
 function skipOnEscape(event: KeyboardEvent): void {
-  if (event.key !== 'Escape') return
+  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
   event.preventDefault()
   event.stopPropagation()
   skip()
 }
-
-useEventListener(
-  () => (running.value && step.value ? window : undefined),
-  'keydown',
-  skipOnEscape,
-  {
-    capture: true
-  }
-)
 
 function elementUnderTarget(event: MouseEvent): Element | null {
   const target = event.currentTarget as HTMLElement
@@ -289,6 +280,13 @@ const reference = computed(() => {
   const r = rect.value
   return r ? { getBoundingClientRect: () => r } : undefined
 })
+
+useEventListener(
+  () => (running.value && step.value && hole.value ? window : undefined),
+  'keydown',
+  skipOnEscape,
+  { capture: true }
+)
 
 function focusNext(event: Event): void {
   event.preventDefault()
