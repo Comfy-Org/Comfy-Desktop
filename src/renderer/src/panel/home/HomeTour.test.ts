@@ -3,10 +3,11 @@ import { page, userEvent } from 'vitest/browser'
 import { config, mount } from '@vue/test-utils'
 import type { I18n } from 'vue-i18n'
 import zh from '@locales/zh.json'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../../assets/main.css'
+import Menu from '@comfyorg/design-system/menu/Menu'
 import HomeTour from './HomeTour.vue'
 import { __resetHomeTourForTest, useHomeTour } from './useHomeTour'
 import type { HomeTourAnchor } from './homeTourSteps'
@@ -86,6 +87,36 @@ function mountTour({ cardFails = false }: { cardFails?: boolean } = {}) {
     props: { active: true },
     global: cardFails ? { stubs: { PopoverContent: true } } : {}
   })
+}
+
+function menuContent(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-testid="open-menu"]')
+}
+
+function mountMenu(): { open: Ref<boolean> } {
+  const open = ref(true)
+  const host = document.createElement('div')
+  document.body.append(host)
+  anchors.push(host)
+  const wrapper = mount(
+    defineComponent(
+      () => () =>
+        h(
+          Menu,
+          {
+            open: open.value,
+            'onUpdate:open': (value: boolean) => (open.value = value),
+            modal: false,
+            items: [{ label: 'Rename' }],
+            'data-testid': 'open-menu'
+          },
+          { trigger: () => h('button', 'More') }
+        )
+    ),
+    { attachTo: host }
+  )
+  onTestFinished(() => wrapper.unmount())
+  return { open }
 }
 
 function dim(): HTMLElement | null {
@@ -232,25 +263,32 @@ describe('HomeTour', () => {
     expect(telemetry).not.toContain('comfy.desktop.home_tour.skipped')
   })
 
-  it('lets an open menu take Escape first, then ends the tour on the next Escape', async () => {
+  it('lets a menu opened over the tour take Escape first, then ends the tour on the next Escape', async () => {
     placeAnchors()
     mountTour()
     await waitForCard()
-    const menu = document.createElement('div')
-    menu.dataset['dismissableLayer'] = ''
-    document.body.append(menu)
-    anchors.push(menu)
-    const menuHeard: string[] = []
-    window.addEventListener('keydown', (event) => menuHeard.push(event.key), { once: true })
+    const menu = mountMenu()
 
+    await expect.poll(() => menuContent()).not.toBeNull()
     await userEvent.keyboard('{Escape}')
-    await settle()
-    expect(menuHeard).toEqual(['Escape'])
+    await expect.poll(() => menuContent()).toBeNull()
+    expect(menu.open.value).toBe(false)
     expect(dim()).not.toBeNull()
 
-    menu.remove()
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => dim()).toBeNull()
+  })
+
+  it('ends the tour on Escape when a menu was already open before the tour began', async () => {
+    placeAnchors()
+    mountMenu()
+    await expect.poll(() => menuContent()).not.toBeNull()
+    mountTour()
+    await waitForCard()
+
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => dim()).toBeNull()
+    expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
   })
 
   it('saves the tour as done after Done on the last step, which names where to replay it', async () => {
