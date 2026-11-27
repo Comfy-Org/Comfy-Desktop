@@ -49,14 +49,12 @@ function copyLink(): void {
         <button type="button" class="mar-undo-btn" @click="retrySignIn">
           {{ SIGN_IN_COPY.failed.retry }}
         </button>
-        <button type="button" class="mar-undo-btn" @click="withoutAccount">
-          {{ SIGN_IN_COPY.failed.local }}
-        </button>
         <button
           type="button"
           class="mar-undo-x"
-          :aria-label="SIGN_IN_COPY.banner.dismiss"
-          @click="dismissSignInBanner"
+          :aria-label="SIGN_IN_COPY.failed.local"
+          :title="SIGN_IN_COPY.failed.local"
+          @click="withoutAccount"
         >
           <X :size="13" />
         </button>
