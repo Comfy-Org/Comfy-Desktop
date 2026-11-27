@@ -12,8 +12,12 @@ import { claimsOf, FakeCloud, reply, type BearerClaims } from './support/fakeClo
 const SIDEBAR_APPS = '[data-testid="app-sidebar-apps"]'
 const SIDEBAR_HOME = '[data-testid="app-sidebar-home"]'
 const HOME_VIEW = '[data-testid="home-view"]'
-const HOME_CAROUSEL_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
-const HOME_APP_IN_FRONT = '[data-testid="home-carousel-card"][aria-current="true"]'
+const HOME_APPS = '[data-testid="home-apps"]'
+const HOME_WORKFLOWS = '[data-testid="home-workflows"]'
+const CAROUSEL_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
+const HOME_APP_TITLES = `${HOME_APPS} ${CAROUSEL_TITLES}`
+const HOME_WORKFLOW_TITLES = `${HOME_WORKFLOWS} ${CAROUSEL_TITLES}`
+const HOME_APP_IN_FRONT = `${HOME_APPS} [data-testid="home-carousel-card"][aria-current="true"]`
 const APPS_GRID = '[data-testid="apps-grid"]'
 const CUTOUT_CARD = '[data-testid="app-card-remove-background"]'
 const DOWN_CARD = '[data-testid="app-card-down-for-now"]'
@@ -411,8 +415,13 @@ test("Home shows the website's apps, and the one in front opens inside Desktop, 
   await ctx.panel.waitForVisible(SIDEBAR_HOME)
   expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
   await ctx.panel.waitForVisible(HOME_VIEW)
+  expect(
+    await ctx.panel.evaluate<string[]>(
+      `Array.from(document.querySelectorAll('${HOME_WORKFLOWS}, ${HOME_APPS}'), (section) => section.getAttribute('data-testid'))`
+    )
+  ).toEqual(['home-workflows', 'home-apps'])
   await expect
-    .poll(() => ctx.panel.allText(HOME_CAROUSEL_TITLES), LONG_WAIT)
+    .poll(() => ctx.panel.allText(HOME_APP_TITLES), LONG_WAIT)
     .toEqual(['Remove Background', 'Down For Now'])
   await expect.poll(sidebarIsOpenAndStill, LONG_WAIT).toBe(true)
   const openedInBrowserBefore = await getShellOpenExternalCalls(ctx.app)
@@ -457,10 +466,8 @@ test('Signed out, See all workflows on Home opens the full catalog, and a workfl
       LONG_WAIT
     )
     .toBe(false)
-  await ctx.panel.waitForVisible('[data-testid="home-workflows-tab"]')
-  expect(await ctx.panel.click('[data-testid="home-workflows-tab"]')).toBe(true)
   await expect
-    .poll(() => ctx.panel.allText(HOME_CAROUSEL_TITLES), LONG_WAIT)
+    .poll(() => ctx.panel.allText(HOME_WORKFLOW_TITLES), LONG_WAIT)
     .toEqual([FEATURED_WORKFLOW_TITLE])
 
   expect(await ctx.panel.click('[data-testid="home-see-all-workflows"]')).toBe(true)

@@ -1,4 +1,10 @@
-export const NEW_WINDOW_DASHBOARD_PAGES = ['home', 'apps', 'assets', 'chooser'] as const
+export const NEW_WINDOW_DASHBOARD_PAGES = [
+  'home',
+  'workflows',
+  'apps',
+  'assets',
+  'chooser'
+] as const
 
 export type NewWindowDashboardPage = (typeof NEW_WINDOW_DASHBOARD_PAGES)[number]
 

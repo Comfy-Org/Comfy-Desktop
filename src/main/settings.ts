@@ -112,6 +112,7 @@ type SettingSchemaEntry<K extends keyof KnownSettings> = {
 const START_PAGE_NAMES: Record<NewWindowDashboardPage, string> = {
   home: 'home',
   chooser: 'builds',
+  workflows: 'workflows',
   apps: 'apps',
   assets: 'assets'
 }

@@ -195,7 +195,7 @@ if (params.get('e2e') === '1') {
 
 type DashboardHomePage = Extract<
   DashboardPage,
-  'home' | 'apps' | 'chooser' | 'assets' | 'staff-apps'
+  'home' | 'workflows' | 'apps' | 'chooser' | 'assets' | 'staff-apps'
 >
 
 type AppHomePage = Extract<DashboardHomePage, 'apps' | 'staff-apps'>
@@ -310,7 +310,6 @@ const appsVisits = ref(0)
 const appIsOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
-const exploreTab = ref<'apps' | 'workflows'>('apps')
 const selectedWorkflow = ref<CatalogWorkflow | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
@@ -326,13 +325,7 @@ const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHo
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
-function showExplore(tab: 'apps' | 'workflows'): void {
-  exploreTab.value = tab
-  handleSidebarNavigate('apps')
-}
-
 function showApp(app: AppCard): void {
-  exploreTab.value = 'apps'
   stayOnAppsAfterClose = false
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
@@ -465,13 +458,14 @@ function viewInAssets(name: string): void {
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   assetsFocusName.value = null
-  if (page === 'apps') {
+  if (page === 'apps' || page === 'workflows') {
     stayOnAppsAfterClose = true
     appsVisits.value += 1
   }
   if (page === 'staff-apps' && !staffApps.shown.value) return
   if (
     page === 'home' ||
+    page === 'workflows' ||
     page === 'apps' ||
     page === 'chooser' ||
     page === 'assets' ||
@@ -760,6 +754,7 @@ onUnmounted(() => {
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
         @open-build="openBuildFromSidebar"
+        @create="handleChooserPick"
         @new-build="handleChooserShowNewInstall"
       />
       <main
@@ -788,15 +783,15 @@ onUnmounted(() => {
               @pick="handleChooserPick"
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
-              @show-apps="showExplore('apps')"
-              @show-workflows="showExplore('workflows')"
+              @show-apps="handleSidebarNavigate('apps')"
+              @show-workflows="handleSidebarNavigate('workflows')"
               @open-workflow="selectedWorkflow = $event"
               @new-build="handleChooserShowNewInstall"
             />
             <AppsView
-              v-else-if="dashboardHomePage === 'apps'"
+              v-else-if="dashboardHomePage === 'apps' || dashboardHomePage === 'workflows'"
               v-model:start-with="appPickedOnHome"
-              v-model:tab="exploreTab"
+              :tab="dashboardHomePage"
               :revisit="appsVisits"
               @app-open-change="noteAppOpen"
               @current-app="noteCurrentApp"

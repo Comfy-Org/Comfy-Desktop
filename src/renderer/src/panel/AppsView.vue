@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, PanelsTopLeft, Plus, Search, Workflow } from '@lucide/vue'
+import { AppWindow, Plus, Search } from '@lucide/vue'
 import { useEventListener, useLocalStorage } from '@vueuse/core'
 import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
@@ -10,7 +10,6 @@ import AppPageHost from './AppPageHost.vue'
 import AppCardTile from './AppCardTile.vue'
 import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
-import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import CatalogWorkflowsGallery from './CatalogWorkflowsGallery.vue'
 import ExploreLayoutOptions from './ExploreLayoutOptions.vue'
 import ExploreWorkflowFilters from './ExploreWorkflowFilters.vue'
@@ -36,10 +35,9 @@ type ExploreTab = 'apps' | 'workflows'
 
 const SKELETON_CARD_COUNT = 7
 
-const { revisit = 0 } = defineProps<{ revisit?: number }>()
+const { revisit = 0, tab = 'apps' } = defineProps<{ revisit?: number; tab?: ExploreTab }>()
 
 const startWith = defineModel<AppCard | null>('startWith', { default: null })
-const tab = defineModel<ExploreTab>('tab', { default: 'apps' })
 
 const emit = defineEmits<{
   'app-open-change': [open: boolean]
@@ -53,25 +51,11 @@ const { t } = useI18n()
 
 const state = ref<LoadState>('loading')
 const apps = ref<AppCard[]>([])
-const tabOptions = computed(() => [
-  {
-    value: 'apps' as const,
-    label: t('sidebar.apps'),
-    testId: 'explore-apps-tab',
-    icon: PanelsTopLeft
-  },
-  {
-    value: 'workflows' as const,
-    label: t('sidebar.workflows'),
-    testId: 'explore-workflows-tab',
-    icon: Workflow
-  }
-])
 const queries = reactive<Record<ExploreTab, string>>({ apps: '', workflows: '' })
 const query = computed({
-  get: () => queries[tab.value],
+  get: () => queries[tab],
   set: (value: string) => {
-    queries[tab.value] = value
+    queries[tab] = value
   }
 })
 const workflowsVisited = ref(false)
@@ -107,7 +91,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 })
 const showsSearch = computed(
   () =>
-    tab.value === 'workflows' ||
+    tab === 'workflows' ||
     state.value === 'loading' ||
     (state.value === 'ready' && apps.value.length > 0)
 )
@@ -317,7 +301,7 @@ watch(
 )
 
 watch(
-  tab,
+  () => tab,
   (section) => {
     if (section === 'workflows') workflowsVisited.value = true
   },
@@ -351,14 +335,13 @@ onBeforeUnmount(() => {
     >
       <header class="mx-auto w-full max-w-300 shrink-0 px-10 pt-9 pb-3">
         <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
-          {{ t('sidebar.explore') }}
+          {{ t(`sidebar.${tab}`) }}
         </h1>
       </header>
 
       <div
         class="mx-auto flex min-h-8 w-full max-w-300 shrink-0 flex-wrap items-center gap-2 px-10 py-3"
       >
-        <SegmentedControl v-model="tab" :options="tabOptions" :label="t('sidebar.explore')" />
         <div class="ml-auto flex min-w-0 items-center gap-2">
           <ExploreWorkflowFilters
             v-if="tab === 'workflows' && listedWorkflows.length > 0"

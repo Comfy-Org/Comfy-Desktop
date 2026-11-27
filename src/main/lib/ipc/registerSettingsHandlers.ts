@@ -52,6 +52,7 @@ export function buildSettingsSections(): SettingsSection[] {
           options: [
             { value: 'home', label: i18n.t('sidebar.home') },
             { value: 'chooser', label: i18n.t('sidebar.builds') },
+            { value: 'workflows', label: i18n.t('sidebar.workflows') },
             { value: 'apps', label: i18n.t('sidebar.apps') },
             { value: 'assets', label: i18n.t('sidebar.assets') }
           ],

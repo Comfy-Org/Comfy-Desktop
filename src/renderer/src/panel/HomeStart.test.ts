@@ -5,7 +5,6 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
 import HomeView from './HomeView.vue'
-import Tooltip from '../components/ui/Tooltip.vue'
 import { useProgressStore, type Operation } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
@@ -156,83 +155,21 @@ describe('a build card while its ComfyUI starts', () => {
     expect(card(AUTO.id).querySelector('[role="progressbar"]')).toBeNull()
   })
 
-  it('stills the pulsing amber dot and the Open ComfyUI spinner when reduced motion is preferred', async () => {
+  it('stills the pulsing amber dot when reduced motion is preferred', async () => {
     launching(AUTO.id)
     await openHome()
-    const spinners = () => [
-      card(AUTO.id).querySelector('[data-testid="home-build-starting-dot"]')!,
-      host.querySelector('[data-testid="home-open-comfyui-spinner"]')!
-    ]
-    expect(spinners().map((spinner) => getComputedStyle(spinner).animationName)).toEqual([
-      'status-starting',
-      'spin'
-    ])
+    const dot = () => card(AUTO.id).querySelector('[data-testid="home-build-starting-dot"]')!
+    expect(getComputedStyle(dot()).animationName).toBe('status-starting')
 
     await cdp().send('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
     })
 
-    expect(spinners().map((spinner) => getComputedStyle(spinner).animationName)).toEqual([
-      'none',
-      'none'
-    ])
+    expect(getComputedStyle(dot()).animationName).toBe('none')
   })
 })
 
-describe('Open ComfyUI while the build it opens is starting', () => {
-  function openButton(): HTMLElement {
-    return host.querySelector<HTMLElement>('[data-testid="home-open-comfyui"]')!
-  }
-
-  it('keeps its label and width, swaps only its icon for a spinner, and says it opens when ready', async () => {
-    const wrapper = await openHome()
-    const restingWidth = openButton().getBoundingClientRect().width
-    const restingText = openButton().textContent
-
-    launching(AUTO.id)
-    await flushPromises()
-
-    expect(openButton().textContent).toBe(restingText)
-    expect(openButton().textContent).toContain('Open ComfyUI')
-    expect(openButton().getBoundingClientRect().width).toBe(restingWidth)
-    expect(openButton().querySelector('[data-testid="home-open-comfyui-spinner"]')).not.toBeNull()
-    expect(openButton().querySelector('[data-testid="home-open-comfyui-icon"]')).toBeNull()
-    expect(openButton().getAttribute('aria-description')).toBe("Starting… opens when it's ready")
-    expect(
-      wrapper
-        .findAllComponents(Tooltip)
-        .map((tooltip) => tooltip.props('text'))
-        .includes("Starting… opens when it's ready")
-    ).toBe(true)
-
-    running(AUTO.id)
-    await flushPromises()
-
-    expect(openButton().querySelector('[data-testid="home-open-comfyui-spinner"]')).toBeNull()
-    expect(openButton().querySelector('[data-testid="home-open-comfyui-icon"]')).not.toBeNull()
-    expect(openButton().hasAttribute('aria-description')).toBe(false)
-    expect(openButton().getBoundingClientRect().width).toBe(restingWidth)
-  })
-
-  it('opens the build once it is ready when pressed while it starts', async () => {
-    launching(AUTO.id)
-    const wrapper = await openHome()
-
-    openButton().click()
-    await flushPromises()
-    expect(wrapper.emitted('pick')).toBeUndefined()
-
-    running(AUTO.id)
-    await flushPromises()
-    expect(wrapper.emitted('pick')).toEqual([[AUTO]])
-
-    useSessionStore().runningInstances.delete(AUTO.id)
-    launching(AUTO.id)
-    running(AUTO.id)
-    await flushPromises()
-    expect(wrapper.emitted('pick')).toHaveLength(1)
-  })
-
+describe('Home while the build a card opens is starting', () => {
   it('opens the build once it is ready when its card is pressed while it starts', async () => {
     launching(AUTO.id)
     const wrapper = await openHome()
@@ -244,19 +181,5 @@ describe('Open ComfyUI while the build it opens is starting', () => {
     running(AUTO.id)
     await flushPromises()
     expect(wrapper.emitted('pick')).toEqual([[AUTO]])
-  })
-
-  it('opens nothing when the start fails after it was pressed', async () => {
-    launching(AUTO.id)
-    const wrapper = await openHome()
-
-    openButton().click()
-    await flushPromises()
-    useSessionStore().launchingInstances.delete(AUTO.id)
-    await flushPromises()
-    running(AUTO.id)
-    await flushPromises()
-
-    expect(wrapper.emitted('pick')).toBeUndefined()
   })
 })

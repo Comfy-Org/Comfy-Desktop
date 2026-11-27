@@ -125,12 +125,16 @@ let appsListChanged: () => void = () => {}
 
 async function mountApps(
   apps: AppCard[] | Promise<AppCard[]> = [CUTOUT, HDR, GENJUTSU],
-  props: { startWith?: AppCard } = {}
+  props: { startWith?: AppCard; tab?: 'apps' | 'workflows' } = {}
 ) {
   listApps.mockReturnValue(Promise.resolve(apps))
   const wrapper = mount(AppsView, { attachTo: page, props })
   await flushPromises()
   return wrapper
+}
+
+async function mountWorkflows() {
+  return mountApps(undefined, { tab: 'workflows' })
 }
 
 function srcOf(card: { element: Element }, role: string): string | null {
@@ -279,7 +283,8 @@ describe('AppsView', () => {
   it('lists every app as a card with its picture, name and one line on what it does', async () => {
     const wrapper = await mountApps()
 
-    expect(wrapper.get('h1').text()).toBe('Explore')
+    expect(wrapper.get('h1').text()).toBe('Apps')
+    expect(wrapper.find('[data-testid="explore-workflows-tab"]').exists()).toBe(false)
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
     expect(card.text()).toContain('Remove Background')
     expect(card.text()).toContain('Cut the subject out of a picture or video.')
@@ -1006,9 +1011,7 @@ describe('Explore Workflows', () => {
   it('narrows the workflows by use case and where they run, and clears the filters again', async () => {
     window.localStorage.clear()
     listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
-    const wrapper = await mountApps()
-    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
-    await flushPromises()
+    const wrapper = await mountWorkflows()
     expect(cardIds(wrapper)).toEqual(['upscale-workflow', 'ltx-video'])
 
     await userEvent.click(wrapper.get('[data-testid="explore-filters"]').element)
@@ -1038,9 +1041,7 @@ describe('Explore Workflows', () => {
   it('leaves ⌘/ and ⌘⌫ to the workflow page while it is open, even from its menus', async () => {
     window.localStorage.clear()
     listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
-    const wrapper = await mountApps()
-    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
-    await flushPromises()
+    const wrapper = await mountWorkflows()
     await userEvent.click(wrapper.get('[data-testid="explore-filters"]').element)
     await userEvent.click(onMenu('explore-filter-useCase'))
     await userEvent.click(onMenu('explore-filter-useCase-generate-video'))
@@ -1099,9 +1100,7 @@ describe('Explore Workflows', () => {
         catalogWorkflow({ id: `workflow-${index}`, title: `Workflow ${index}` })
       )
     )
-    const wrapper = await mountApps()
-    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
-    await flushPromises()
+    const wrapper = await mountWorkflows()
 
     const toolbarBottom = wrapper
       .get('[data-testid="explore-filters"]')
@@ -1116,9 +1115,7 @@ describe('Explore Workflows', () => {
   it('sorts newest first and keeps the chosen card size for next time', async () => {
     window.localStorage.clear()
     listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
-    const wrapper = await mountApps()
-    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
-    await flushPromises()
+    const wrapper = await mountWorkflows()
     const columns = () =>
       getComputedStyle(
         wrapper.get('[data-testid="workflows-grid"]').element
@@ -1135,9 +1132,7 @@ describe('Explore Workflows', () => {
     expect(columns()).toBeLessThan(mediumColumns)
     wrapper.unmount()
 
-    const again = await mountApps()
-    await again.get('[data-testid="explore-workflows-tab"]').trigger('click')
-    await flushPromises()
+    const again = await mountWorkflows()
     expect(cardIds(again)).toEqual(['ltx-video', 'upscale-workflow'])
     again.unmount()
   })
@@ -1148,7 +1143,7 @@ describe('Explore Workflows', () => {
     await wrapper.get('input').setValue('hdr')
     expect(listCatalogWorkflows).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await wrapper.setProps({ tab: 'workflows' })
     await flushPromises()
 
     expect(listCatalogWorkflows).toHaveBeenCalledOnce()
@@ -1161,22 +1156,30 @@ describe('Explore Workflows', () => {
 
     await wrapper.get('input').setValue('video')
     expect(wrapper.get('[data-testid="workflows-no-matches"]').text()).toContain('video')
-    await wrapper.get('[data-testid="explore-apps-tab"]').trigger('click')
+    await wrapper.setProps({ tab: 'apps' })
     expect(wrapper.findAll(APP_CARDS)).toHaveLength(1)
     expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await wrapper.setProps({ tab: 'workflows' })
     await flushPromises()
     expect(listCatalogWorkflows).toHaveBeenCalledOnce()
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('video')
   })
 
+  it('heads the list Workflows and shows only workflows, with no switch to Apps', async () => {
+    const wrapper = await mountWorkflows()
+
+    expect(wrapper.get('h1').text()).toBe('Workflows')
+    expect(wrapper.find('[data-testid="workflows-view"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="workflow-card-upscale-workflow"]').isVisible()).toBe(true)
+    expect(wrapper.findAll(APP_CARDS).filter((card) => card.isVisible())).toEqual([])
+    expect(wrapper.find('[data-testid="explore-apps-tab"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="explore-workflows-tab"]').exists()).toBe(false)
+  })
+
   it('offers a retry on Workflows when the catalog fails', async () => {
     listCatalogWorkflows.mockRejectedValueOnce(new Error('offline'))
-    const wrapper = await mountApps()
-
-    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
-    await flushPromises()
+    const wrapper = await mountWorkflows()
     expect(wrapper.get('[data-testid="workflows-failed"]').isVisible()).toBe(true)
 
     await wrapper.get('[data-testid="workflows-retry"]').trigger('click')
