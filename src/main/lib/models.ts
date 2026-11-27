@@ -136,6 +136,17 @@ const SECONDARY_TYPE_DIRS: Readonly<Record<string, string[]>> = {
   controlnet: ['t2i_adapter']
 }
 
+export function modelFolderKind(dirName: string): string {
+  for (const [kind, dirs] of Object.entries(SECONDARY_TYPE_DIRS)) {
+    if (dirs.includes(dirName)) return kind
+  }
+  return mapLegacyFolderType(dirName)
+}
+
+export function isNonModelFolder(name: string): boolean {
+  return NON_MODEL_FOLDERS.has(name)
+}
+
 function samePath(a: string, b: string): boolean {
   return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }

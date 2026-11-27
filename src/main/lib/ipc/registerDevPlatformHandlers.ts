@@ -38,12 +38,14 @@ import {
   saveSnapshot,
   loadSnapshot,
   getSnapshotCount,
-  buildExportEnvelope,
+  buildUploadEnvelope,
   _broadcastToRenderer,
   _operationAborts,
   i18n
 } from './shared'
 import { allocateInstallIdentity } from './installIdentity'
+import * as settings from '../../settings'
+import { listInstallModels } from '../installModelList'
 import { COMFYBUILDER_INSTALL_DEFAULTS } from '../../sources/comfybuilder/constants'
 import type { InstallationRecord } from '../../installations'
 import type { InstallBuildRequest, InstallBuildResult } from '../../../types/ipc'
@@ -323,7 +325,10 @@ export function registerDevPlatformHandlers(): void {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
 
-        const envelope = buildExportEnvelope(inst.name, [{ filename, snapshot }])
+        const sharedModelsDirs =
+          (settings.get('modelsDirs') as string[] | undefined) ?? settings.defaults.modelsDirs
+        const models = await listInstallModels(inst, sharedModelsDirs)
+        const envelope = buildUploadEnvelope(inst.name, [{ filename, snapshot }], models)
         const draft = await getBuilderClient().createBuildDraft(envelope)
         if (draft.workspaceId !== workspaceId) {
           throw new Error('Comfy Developer Platform created the draft in a different workspace.')

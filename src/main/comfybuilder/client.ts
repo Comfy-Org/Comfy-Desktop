@@ -6,7 +6,7 @@ import type {
   ModelManifest,
   TokenProvider
 } from './types'
-import type { SnapshotExportEnvelope } from '../lib/snapshots/types'
+import type { SnapshotUploadEnvelope } from '../lib/snapshots/types'
 import { isSecureDownloadUrl, isValidSha256 } from './integrity'
 
 export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
@@ -113,7 +113,7 @@ export class ComfyBuilderClient {
     return builds
   }
 
-  async createBuildDraft(snapshot: SnapshotExportEnvelope): Promise<BuildDraft> {
+  async createBuildDraft(snapshot: SnapshotUploadEnvelope): Promise<BuildDraft> {
     const name = snapshot.installationName.trim()
     if (!name || name.length > 200 || snapshot.snapshots.length !== 1) {
       throw new ComfyBuilderApiError('server', 'Desktop snapshot cannot be promoted')

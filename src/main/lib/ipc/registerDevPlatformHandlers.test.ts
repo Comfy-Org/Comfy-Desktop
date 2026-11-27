@@ -42,7 +42,9 @@ const mocks = vi.hoisted(() => ({
   saveSnapshot: vi.fn(),
   loadSnapshot: vi.fn(),
   getSnapshotCount: vi.fn(),
-  buildExportEnvelope: vi.fn(),
+  buildUploadEnvelope: vi.fn(),
+  listInstallModels: vi.fn(),
+  settingsGet: vi.fn((_key: string): unknown => undefined),
   broadcastToRenderer: vi.fn(),
   operationAborts: new Map<string, AbortController>(),
   translate: vi.fn((key: string) => key),
@@ -134,10 +136,19 @@ vi.mock('./shared', () => ({
   saveSnapshot: mocks.saveSnapshot,
   loadSnapshot: mocks.loadSnapshot,
   getSnapshotCount: mocks.getSnapshotCount,
-  buildExportEnvelope: mocks.buildExportEnvelope,
+  buildUploadEnvelope: mocks.buildUploadEnvelope,
   _broadcastToRenderer: mocks.broadcastToRenderer,
   _operationAborts: mocks.operationAborts,
   i18n: { t: mocks.translate }
+}))
+
+vi.mock('../installModelList', () => ({
+  listInstallModels: mocks.listInstallModels
+}))
+
+vi.mock('../../settings', () => ({
+  get: mocks.settingsGet,
+  defaults: { modelsDirs: ['/shared/models'] }
 }))
 
 import type { WebContents } from 'electron'
@@ -185,7 +196,10 @@ describe('registerDevPlatformHandlers', () => {
     mocks.saveSnapshot.mockResolvedValue('fresh.json')
     mocks.loadSnapshot.mockResolvedValue({ version: 2, createdAt: '2026-08-21T00:00:00.000Z' })
     mocks.getSnapshotCount.mockResolvedValue(3)
-    mocks.buildExportEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
+    mocks.listInstallModels.mockResolvedValue([
+      { folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }
+    ])
+    mocks.buildUploadEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
     mocks.listBuilds.mockResolvedValue([])
     mocks.listWorkspaces.mockResolvedValue([
       { id: 'w1', name: 'Personal', type: 'personal', role: 'owner' }
@@ -1027,18 +1041,36 @@ describe('registerDevPlatformHandlers', () => {
       lastSnapshot: 'fresh.json',
       snapshotCount: 3
     })
-    expect(mocks.buildExportEnvelope).toHaveBeenCalledWith('Local One', [
-      {
-        filename: 'fresh.json',
-        snapshot: { version: 2, createdAt: '2026-08-21T00:00:00.000Z' }
-      }
-    ])
+    expect(mocks.listInstallModels).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: 'local-1', installPath: '/installs/local-1' }),
+      ['/shared/models']
+    )
+    expect(mocks.buildUploadEnvelope).toHaveBeenCalledWith(
+      'Local One',
+      [
+        {
+          filename: 'fresh.json',
+          snapshot: { version: 2, createdAt: '2026-08-21T00:00:00.000Z' }
+        }
+      ],
+      [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }]
+    )
     expect(mocks.createBuildDraft).toHaveBeenCalledExactlyOnceWith({
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
       'https://platform.comfy.org/profile/builds/build-1/draft?workspace=w1'
     )
+  })
+
+  it('lists models from the shared folders the user chose', async () => {
+    mocks.settingsGet.mockImplementation((key: string) =>
+      key === 'modelsDirs' ? ['/mnt/library/models'] : undefined
+    )
+
+    await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(mocks.listInstallModels).toHaveBeenCalledWith(expect.anything(), ['/mnt/library/models'])
   })
 
   it('does not capture a build while another task is changing it', async () => {

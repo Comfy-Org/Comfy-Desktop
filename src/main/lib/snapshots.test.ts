@@ -25,6 +25,7 @@ vi.mock('./telemetry', () => ({
 
 import {
   buildExportEnvelope,
+  buildUploadEnvelope,
   validateExportEnvelope,
   importSnapshots,
   stageSnapshotEnvelope,
@@ -550,6 +551,27 @@ describe('buildExportEnvelope', () => {
   it('produces a valid envelope (round-trip through validate)', () => {
     const result = buildExportEnvelope('Test', [makeEntry()])
     expect(() => validateExportEnvelope(result)).not.toThrow()
+  })
+})
+
+describe('buildUploadEnvelope', () => {
+  it('marks the envelope version 3 and carries the install models beside the snapshot', () => {
+    const entry = makeEntry()
+    const models = [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }]
+
+    const result = buildUploadEnvelope('My Install', [entry], models)
+
+    expect(result).toMatchObject({
+      type: 'comfyui-desktop-2-snapshot',
+      version: 3,
+      installationName: 'My Install',
+      snapshots: [entry.snapshot],
+      models
+    })
+  })
+
+  it('leaves the file export at version 2 so older Desktops can still import it', () => {
+    expect(buildExportEnvelope('My Install', [makeEntry()]).version).toBe(2)
   })
 })
 
