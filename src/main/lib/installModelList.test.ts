@@ -410,6 +410,24 @@ describe('listModelsInSearch', () => {
     }
   })
 
+  it('reads no paths config once the time budget is spent', async () => {
+    const config = path.join(tmp, 'paths.yaml')
+    writeFile(config)
+    const readFile = vi.spyOn(fs.promises, 'readFile')
+
+    try {
+      const { truncated } = await listModelsInSearch(
+        { ...search({ modelRoots: [] }), configFiles: [config] },
+        0
+      )
+
+      expect(truncated).toBe(true)
+      expect(readFile).not.toHaveBeenCalled()
+    } finally {
+      readFile.mockRestore()
+    }
+  })
+
   it('says the list is whole when nothing was cut', async () => {
     const root = path.join(tmp, 'models')
     writeFile(path.join(root, 'loras', 'one.safetensors'))

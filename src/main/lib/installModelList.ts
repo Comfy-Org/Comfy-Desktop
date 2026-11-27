@@ -185,11 +185,11 @@ class ModelCollector {
 
   async sourcesInRoot(root: string): Promise<FolderSource[]> {
     const sources: FolderSource[] = []
-    if (this.stopIfFull()) return sources
+    if (this.stopIfOutOfBudget()) return sources
     const entries = await readDirOrEmpty(root, this.state)
     entries.sort((a, b) => compareText(a.name, b.name))
     for (const entry of entries) {
-      if (this.stopIfFull()) return sources
+      if (this.stopIfOutOfBudget()) return sources
       this.scanned += 1
       if (isSkippedEntry(entry.name) || isNonModelFolder(entry.name)) continue
       const dir = path.join(root, entry.name)
@@ -216,7 +216,7 @@ class ModelCollector {
     }
   }
 
-  private stopIfFull(): boolean {
+  stopIfOutOfBudget(): boolean {
     if (!this.full) return false
     this.stoppedEarly = true
     return true
@@ -364,11 +364,12 @@ export async function listModelsInSearch(
   timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
 ): Promise<InstallModelList> {
   const state: ScanState = { unreadable: false }
+  const collector = new ModelCollector(Date.now() + timeBudgetMs, state)
   const extraPaths = [...search.extraPaths]
   for (const config of search.configFiles ?? []) {
+    if (collector.stopIfOutOfBudget()) break
     extraPaths.push(...(await readExtraModelPaths(config, state)))
   }
-  const collector = new ModelCollector(Date.now() + timeBudgetMs, state)
   for (const root of search.modelRoots) {
     for (const source of await collector.sourcesInRoot(root)) {
       await collector.collect(source)
