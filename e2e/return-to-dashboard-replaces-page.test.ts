@@ -158,6 +158,31 @@ test('cancelling the unsaved-changes prompt keeps the page @linux', async () => 
   expect(await pageUrl(), 'the page was replaced although the person cancelled').toBe(remoteUrl)
 })
 
+function returnFromBuildPanel(): Promise<boolean> {
+  return ctx.app.evaluate(async ({ BrowserWindow, WebContentsView }, wcId) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      const views = win.contentView.children.filter(
+        (child): child is InstanceType<typeof WebContentsView> => child instanceof WebContentsView
+      )
+      if (!views.some((view) => view.webContents.id === wcId)) continue
+      const panel = views.find((view) => view.webContents.getURL().includes('panel.html'))
+      if (!panel) throw new Error('the build window has no panel')
+      return (await panel.webContents.executeJavaScript(
+        'window.api.returnToDashboard()'
+      )) as boolean
+    }
+    throw new Error('no window shows the page')
+  }, pageId)
+}
+
+test("the panel's Back to Home asks too, and Cancel keeps the page @linux", async () => {
+  const returning = returnFromBuildPanel()
+  await answerDiscardPrompt('cancel')
+
+  expect(await returning, 'the panel was told the window returned').toBe(false)
+  expect(await pageUrl(), 'the page was replaced although the person cancelled').toBe(remoteUrl)
+})
+
 test('return to dashboard replaces a page that asks to stay once the person discards @linux', async () => {
   const vetoesBefore = await unloadVetoes()
   const returning = returnFirstInstallHostToDashboard(ctx.app)
@@ -172,4 +197,16 @@ test('return to dashboard replaces a page that asks to stay once the person disc
     (await unloadVetoes()) - vetoesBefore,
     'the page should veto both the attempt that asked and the unload Desktop then overrode'
   ).toBe(2)
+})
+
+test('a page with nothing unsaved returns to the dashboard without asking @linux', async () => {
+  await clickInstallTile(ctx.panel, REMOTE_NAME)
+  pageId = await waitForWebContents(ctx.app, remoteUrl, 30_000)
+
+  expect(await returnFirstInstallHostToDashboard(ctx.app)).not.toBeNull()
+
+  await expect
+    .poll(pageUrl, { message: 'the page stayed loaded after return to dashboard' })
+    .toBe('about:blank')
+  expect(await lastAskedModal(), 'Desktop asked about a page with nothing unsaved').toBeNull()
 })
