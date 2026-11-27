@@ -63,6 +63,7 @@ import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
 import { TPL_DETAILS, tplDetails } from './templateModal/tplDetails'
+import { TPL_FEEDS, tplFeed } from './templateModal/tplFeed'
 import { BLANK_STARTS, blankStart } from './graph/blankStart'
 import { SIDEBAR_MOTIONS, sidebarMotion } from './shell/sidebarMotion'
 import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
@@ -197,6 +198,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'editorEntry', show: () => when.editorEntry.value },
   { id: 'templates', show: () => when.templates.value },
   { id: 'tplDetails', show: () => when.tplDetails.value },
+  { id: 'tplFeed', show: () => when.tplFeed.value },
   { id: 'buildCard', show: () => when.buildCard.value },
   { id: 'buildPage', show: () => when.buildPage.value },
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
@@ -528,6 +530,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('tplDetails')" label="Template details">
             <Seg v-model="tplDetails.id" label="Template details" :options="TPL_DETAILS" />
+          </Row>
+          <Row :show="shows('tplFeed')" label="Template feed">
+            <Seg v-model="tplFeed.id" label="Template feed" :options="TPL_FEEDS" />
           </Row>
           <Row :show="shows('buildCard')" label="Builds view">
             <Seg v-model="buildCard.id" label="Builds view" :options="BUILD_CARDS" />

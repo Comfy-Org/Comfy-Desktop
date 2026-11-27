@@ -18,6 +18,7 @@ import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { HOME_LAYOUTS, homeLayout } from './home/homeLayout'
 import { BUILDS_AT, buildsAt } from './home/buildsAt'
 import { TPL_DETAILS, tplDetails } from './templateModal/tplDetails'
+import { TPL_FEEDS, tplFeed } from './templateModal/tplFeed'
 import { BLANK_STARTS, blankStart } from './graph/blankStart'
 import { SIDEBAR_MOTIONS, sidebarMotion } from './shell/sidebarMotion'
 import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
@@ -169,6 +170,7 @@ const PARTS: Part[] = [
   one('homeLayout', homeLayout, 'recents', HOME_LAYOUTS),
   one('buildsAt', buildsAt, 'bottom', BUILDS_AT),
   one('tplDetails', tplDetails, 'current', TPL_DETAILS),
+  one('tplFeed', tplFeed, 'off', TPL_FEEDS),
   one('blankStart', blankStart, 'empty', BLANK_STARTS),
   one('sidebarMotion', sidebarMotion, 'desktop', SIDEBAR_MOTIONS),
   one('exploreSwitch', exploreSwitch, 'seg', EXPLORE_SWITCHES),

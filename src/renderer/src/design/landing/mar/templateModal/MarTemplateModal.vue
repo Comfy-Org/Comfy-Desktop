@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   Coins,
+  Copy,
   Cpu,
   CreditCard,
   Film,
@@ -88,6 +89,17 @@ import TplDownloadActions from '../downloads/TplDownloadActions.vue'
 import { downloadFor, startDownload } from '../downloads/templateDownloads'
 import { START_COPY } from '../build/comfyStart'
 import { tplDetails } from './tplDetails'
+import { tplFeed } from './tplFeed'
+import {
+  FEED_SORTS,
+  feedFor,
+  fmtAgo,
+  initialOf,
+  sortFeed,
+  type FeedItem,
+  type FeedSort
+} from './tplFeedData'
+import Avatar from '../../ui/Avatar.vue'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
 // wears them, so the two read as one view. Imported for its styles.
 import '../assets/AssetDetail.vue'
@@ -151,6 +163,52 @@ function pickExample(i: number): void {
   if (i === exampleAt.value) return
   exampleAt.value = i
   zoom.value = 100
+}
+const feedItems = computed(() =>
+  tplFeed.id === 'feed' && template.value && !saved.value ? feedFor(template.value) : []
+)
+const hasFeed = computed(() => feedItems.value.length > 0)
+const feedSort = ref<FeedSort>('recent')
+const feedSorted = computed(() => sortFeed(feedItems.value, feedSort.value))
+const feedPick = ref<FeedItem>()
+const feedEl = ref<HTMLElement>()
+const heroPic = computed(() => feedPick.value?.pic ?? media.value?.hero ?? '')
+const heroClip = computed(() => feedPick.value?.clip)
+const feedCopied = ref(false)
+const feedReused = computed(() =>
+  feedPick.value ? `Reused ${feedPick.value.reused.toLocaleString('en-US')} times` : ''
+)
+function pickFeed(x: FeedItem): void {
+  feedPick.value = feedPick.value?.id === x.id ? undefined : x
+  feedCopied.value = false
+  ratio.value = 16 / 9
+  natural.value = 0
+  feedEl.value?.scrollTo({
+    top: 0,
+    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+  })
+}
+function clearFeedPick(): void {
+  feedPick.value = undefined
+  ratio.value = 16 / 9
+  natural.value = 0
+}
+function copyFeedPrompt(text: string): void {
+  void navigator.clipboard?.writeText(text).catch(() => {})
+  feedCopied.value = true
+}
+function playTile(e: MouseEvent, on: boolean): void {
+  const v = (e.currentTarget as HTMLElement).querySelector('video')
+  if (!v) return
+  if (on && !matchMedia('(prefers-reduced-motion: reduce)').matches) void v.play().catch(() => {})
+  else {
+    v.pause()
+    v.currentTime = 0
+  }
+}
+const FEED_INPUT_ICONS: Record<'video' | 'audio', typeof Coins> = {
+  video: Film,
+  audio: AudioLines
 }
 function measureClip(e: Event): void {
   const v = e.target as HTMLVideoElement
@@ -319,6 +377,8 @@ watch(
     )?.inst.id
     view.value = 'result'
     exampleAt.value = 0
+    feedPick.value = undefined
+    feedSort.value = 'recent'
     buildMenu.value = false
     ratio.value = 16 / 9
     stop()
@@ -653,12 +713,14 @@ const full = computed(() => can.value.onboarding)
         <section class="mad-stage" @pointerdown.self="open = false">
           <header class="mad-bar">
             <MarSeg v-model="view" :options="VIEWS" label="Preview" class="mar-tpl-views" />
-            <span v-if="view === 'result' && example?.madeWith" class="mar-tpl-made-with"
+            <span
+              v-if="view === 'result' && !hasFeed && example?.madeWith"
+              class="mar-tpl-made-with"
               >Made with {{ example.madeWith }}</span
             >
           </header>
           <div
-            v-if="view === 'result'"
+            v-if="view === 'result' && !hasFeed"
             class="mad-view"
             :class="examples.length > 0 && 'has-strip'"
           >
@@ -695,13 +757,98 @@ const full = computed(() => can.value.onboarding)
               </div>
             </div>
           </div>
+          <div v-else-if="view === 'result'" ref="feedEl" class="mar-tpl-feed" data-tpl-feed>
+            <div class="mar-tpl-feed-hero">
+              <div class="mad-fit" :class="natural > 0 && 'is-natural'" :style="fitStyle">
+                <div class="mad-media">
+                  <video
+                    v-if="heroClip"
+                    :key="heroClip"
+                    :src="heroClip"
+                    :poster="heroPic"
+                    autoplay
+                    muted
+                    loop
+                    playsinline
+                    @loadedmetadata="measureClip"
+                  />
+                  <img
+                    v-else
+                    :key="heroPic"
+                    :src="heroPic"
+                    alt=""
+                    draggable="false"
+                    @load="measure"
+                  />
+                  <template v-if="media.quadrants && !feedPick">
+                    <span
+                      v-for="(q, i) in media.quadrants"
+                      :key="q"
+                      class="mar-tpl-quad"
+                      :data-q="i"
+                      >{{ q }}</span
+                    >
+                  </template>
+                  <span v-if="feedPick" class="mar-tpl-feed-by"
+                    ><Avatar size="xs" class="mar-tpl-feed-avatar">{{
+                      initialOf(feedPick.creator)
+                    }}</Avatar
+                    >@{{ feedPick.creator.handle }}</span
+                  >
+                </div>
+              </div>
+            </div>
+            <section class="mar-tpl-feed-sec" aria-label="Made with this workflow">
+              <header class="mar-tpl-feed-head">
+                <h3 class="mad-label">Made with this workflow · {{ feedItems.length }} results</h3>
+                <MarSeg v-model="feedSort" :options="FEED_SORTS" label="Sort by" tone="text" />
+              </header>
+              <div class="mar-tpl-feed-grid">
+                <button
+                  v-for="x in feedSorted"
+                  :key="x.id"
+                  type="button"
+                  class="mar-tpl-feed-tile"
+                  :aria-current="feedPick?.id === x.id"
+                  :aria-label="`${x.prompt}, by @${x.creator.handle}`"
+                  data-tpl-feed-item
+                  @click="pickFeed(x)"
+                  @mouseenter="playTile($event, true)"
+                  @mouseleave="playTile($event, false)"
+                >
+                  <img :src="x.pic" alt="" loading="lazy" draggable="false" />
+                  <video
+                    v-if="x.clip"
+                    :src="x.clip"
+                    muted
+                    loop
+                    playsinline
+                    preload="none"
+                    class="mar-tpl-feed-video"
+                  />
+                  <span v-if="x.clip" class="mar-tpl-feed-kind" aria-label="Video"
+                    ><Film :size="12" />0:05</span
+                  >
+                  <span class="mar-tpl-feed-text">
+                    <span class="mar-tpl-feed-who"
+                      ><Avatar size="sm" class="mar-tpl-feed-avatar">{{
+                        initialOf(x.creator)
+                      }}</Avatar
+                      ><span class="mar-tpl-feed-name">{{ x.creator.name }}</span></span
+                    >
+                    <span class="mar-tpl-feed-prompt">{{ x.prompt }}</span>
+                  </span>
+                </button>
+              </div>
+            </section>
+          </div>
           <!-- The graph takes the picture's place, fitted to the same area. -->
           <div v-else-if="graph" class="mar-tpl-gview">
             <TplGraph v-model:zoom="zoom" v-model:fit="graphFit" :spec="graph" :pad="GRAPH_PAD" />
           </div>
           <!-- Zoom, where the asset view keeps it, bottom right, for the
                picture and the graph alike. -->
-          <footer class="mad-foot">
+          <footer v-if="!hasFeed || view !== 'result'" class="mad-foot">
             <nav
               v-if="view === 'result' && examples.length"
               class="mad-strip mar-tpl-examples"
@@ -783,6 +930,56 @@ const full = computed(() => can.value.onboarding)
                 ><X :size="16"
               /></DialogClose>
             </header>
+
+            <section v-if="feedPick" class="mad-sec" data-tpl-feed-pick>
+              <div class="mar-tpl-feed-pick-head">
+                <h3 class="mad-label">Made with this workflow</h3>
+                <Tooltip content="Back to the template preview">
+                  <button
+                    type="button"
+                    class="mad-icon mar-tpl-feed-clear"
+                    aria-label="Back to the template preview"
+                    @click="clearFeedPick"
+                  >
+                    <X :size="14" />
+                  </button>
+                </Tooltip>
+              </div>
+              <p class="mar-tpl-by mar-tpl-feed-credit">
+                <Avatar size="sm">{{ initialOf(feedPick.creator) }}</Avatar><span
+                  class="mar-tpl-feed-credit-name"
+                  >by @{{ feedPick.creator.handle }}</span
+                ><i />{{ fmtAgo(feedPick.minutesAgo) }}<i />{{ feedReused }}
+              </p>
+              <div class="mad-prompt">
+                <p>{{ feedPick.prompt }}</p>
+                <button
+                  type="button"
+                  class="mad-prompt-copy"
+                  :aria-label="feedCopied ? 'Copied' : 'Copy prompt'"
+                  :title="feedCopied ? 'Copied' : 'Copy prompt'"
+                  @click="copyFeedPrompt(feedPick.prompt)"
+                >
+                  <Check v-if="feedCopied" :size="13" /><Copy v-else :size="13" />
+                </button>
+              </div>
+              <div v-if="feedPick.inputs.length" class="mad-tags" data-tpl-feed-inputs>
+                <span
+                  v-for="x in feedPick.inputs"
+                  :key="x.label"
+                  class="mad-tag mar-tpl-feed-input"
+                  :title="x.label"
+                >
+                  <img v-if="x.pic" :src="x.pic" alt="" draggable="false" />
+                  <component
+                    :is="FEED_INPUT_ICONS[x.kind === 'video' ? 'video' : 'audio']"
+                    v-else
+                    :size="12"
+                  />
+                  <span class="mad-tag-t">{{ x.label }}</span>
+                </span>
+              </div>
+            </section>
 
             <!-- What it does, short: the first paragraph. -->
             <section v-if="!saved" class="mad-sec">

@@ -893,3 +893,225 @@
   background: currentColor;
   opacity: 0.6;
 }
+
+.mar-tpl-feed {
+  position: absolute;
+  inset: 56px 0 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 32px 32px;
+  scrollbar-width: thin;
+  mask-image: linear-gradient(to bottom, transparent, #000 12px);
+}
+.mar-tpl-feed-hero {
+  display: flex;
+  height: max(280px, calc(100% - 104px));
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+.mar-tpl-feed-by {
+  position: absolute;
+  z-index: 2;
+  bottom: 8px;
+  left: 8px;
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px 0 4px;
+  border-radius: 999px;
+  background: rgb(14 14 16 / 0.28);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  pointer-events: none;
+}
+.mar-tpl-feed-sec {
+  padding-top: 26px;
+}
+.mar-tpl-feed-head {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mar-tpl-feed-head .mad-label {
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-feed-head .mar-pseg-btn {
+  height: 24px;
+  font-size: 12px;
+}
+.mar-tpl-feed-grid {
+  columns: 3 150px;
+  column-gap: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-feed-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 10px;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 10px;
+  background: var(--color-secondary-background);
+  break-inside: avoid;
+  cursor: pointer;
+  transition: box-shadow 0.12s ease;
+}
+.mar-tpl-feed-tile img {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 60px;
+  transition: scale 500ms cubic-bezier(0.19, 1, 0.22, 1);
+  user-select: none;
+}
+.mar-tpl-feed-tile:hover img {
+  scale: 1.03;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-feed-tile[aria-current='true'] {
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-base-foreground);
+}
+.mar-tpl-feed-tile:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.mar-tpl-feed-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+.mar-tpl-feed-tile:hover .mar-tpl-feed-video {
+  opacity: 1;
+}
+.mar-tpl-feed-kind {
+  position: absolute;
+  z-index: 1;
+  bottom: 8px;
+  left: 8px;
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  border-radius: 999px;
+  background: rgb(14 14 16 / 0.28);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 200ms ease;
+}
+.mar-tpl-feed-tile:is(:hover, :focus-visible) .mar-tpl-feed-kind {
+  opacity: 0;
+}
+.mar-tpl-feed-text {
+  position: absolute;
+  z-index: 1;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 40px 10px 10px;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.4) 55%, transparent);
+  color: #fff;
+  text-align: left;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.mar-tpl-feed-tile:is(:hover, :focus-visible) .mar-tpl-feed-text {
+  opacity: 1;
+}
+.mar-tpl-feed-who {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.mar-tpl-feed-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-feed-prompt {
+  display: block;
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.72);
+  font-size: 11.5px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-feed-avatar {
+  background: rgb(255 255 255 / 0.2);
+  box-shadow: none;
+  color: #fff;
+}
+.mar-tpl-feed-pick-head {
+  display: flex;
+  height: 20px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-feed-clear {
+  width: 26px;
+  height: 26px;
+  margin-right: -6px;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-feed-clear:hover {
+  color: var(--color-base-foreground);
+}
+.mar-tpl-feed-credit {
+  margin-top: 0;
+}
+.mar-tpl-feed-credit-name {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.mar-tpl-feed-input {
+  gap: 6px;
+  padding-left: 4px;
+}
+.mar-tpl-feed-input:not(:has(img)) {
+  padding-left: 8px;
+}
+.mar-tpl-feed-input img {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 999px;
+  object-fit: cover;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-tpl-feed-tile img,
+  .mar-tpl-feed-text,
+  .mar-tpl-feed-kind,
+  .mar-tpl-feed-video {
+    transition: none;
+  }
+}

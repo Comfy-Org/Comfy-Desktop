@@ -60,6 +60,7 @@ import { homeLayout, homeVersion } from './home/homeLayout'
 import { homeIdea } from './home/homeIdeas'
 import { buildsAt } from './home/buildsAt'
 import { tplDetails } from './templateModal/tplDetails'
+import { tplFeed } from './templateModal/tplFeed'
 import { exploreSwitch } from './home/exploreSwitch'
 
 /**
@@ -197,6 +198,7 @@ export const when = {
   tplDetails: computed(
     () => proto.detail?.kind === 'template' || proto.detail?.kind === 'workflow'
   ),
+  tplFeed: computed(() => proto.detail?.kind === 'template'),
   downloadScenario: computed(
     () =>
       can.value.onboarding &&
@@ -313,6 +315,7 @@ export const TWEAKS = {
   homeLayout: one(homeLayout, 'recents'),
   buildsAt: one(buildsAt, 'bottom'),
   tplDetails: one(tplDetails, 'current'),
+  tplFeed: one(tplFeed, 'off'),
   sidebarMotion: one(sidebarMotion, 'desktop'),
   exploreSwitch: one(exploreSwitch, 'seg'),
   homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
