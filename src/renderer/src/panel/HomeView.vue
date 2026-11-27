@@ -8,7 +8,6 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
-import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
 import HomeReadyToast from './home/HomeReadyToast.vue'
 import { isCloudBuild } from './home/homeBuild'
@@ -57,13 +56,9 @@ const authStore = useAuthStore()
 void dashboardScope.initialize()
 const {
   workspaceBuilds,
-  openableBuilds,
-  openTarget,
-  pickedBuildId,
   statusOf: buildStatus,
   readyNotice,
-  opensWhenReady,
-  openBuild: pickBuild
+  opensWhenReady
 } = useOpenComfyUI((build) => emit('pick', build))
 const isInstalling = useInstallingBuilds()
 const progressStore = useProgressStore()
@@ -159,19 +154,9 @@ onMounted(() => {
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="home-view"
   >
-    <HomeOpenBuildButton
-      v-if="openTarget"
-      class="absolute top-4 right-4 z-10"
-      :builds="openableBuilds"
-      :target="openTarget"
-      :status-of="buildStatus"
-      @open="pickBuild"
-      @pick="pickedBuildId = $event.id"
-    />
-
     <HomeReadyToast
       v-if="readyBuild"
-      class="absolute top-14 right-4 z-10"
+      class="absolute top-4 right-4 z-10"
       :data-build-id="readyBuild.id"
       @open="openBuild(readyBuild)"
       @dismiss="readyNotice.dismiss()"

@@ -1447,7 +1447,7 @@ describe('PanelApp', () => {
     await flushPromises()
   })
 
-  it('opens ComfyUI from Create in the sidebar the way Open ComfyUI does, from any page', async () => {
+  it('opens ComfyUI from Create in the sidebar from any page, once its build is ready', async () => {
     mockState.installations = [SAMPLE_INSTALL]
     const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
@@ -1457,7 +1457,7 @@ describe('PanelApp', () => {
     api.onInstanceLaunching.mock.calls.forEach(([listener]) => listener(launching))
     await flushPromises()
     expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-description')).toBe(
-      wrapper.get('[data-testid="home-open-comfyui"]').attributes('aria-description')
+      "Starting… opens when it's ready"
     )
     expect(wrapper.get('[data-testid="sidebar-create"]').attributes('data-build-id')).toBe(
       'test-id'
@@ -1491,7 +1491,7 @@ describe('PanelApp', () => {
     api.onInstanceLaunching.mock.calls.forEach(([listener]) => listener(launching))
     await flushPromises()
 
-    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
+    await wrapper.get('[data-testid="home-build"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
     await flushPromises()
@@ -4125,7 +4125,7 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
     const card = wrapper.get('[data-testid="home-build-installing"]')
     expect(card.attributes('data-build-id')).toBe('inst-new')
-    expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="sidebar-create"]').exists()).toBe(false)
 
     reportInstallProgress({
       installationId: 'inst-new',

@@ -360,13 +360,11 @@
   },
   "home": {
     "title": "Welcome. Let's create!",
-    "openComfyUI": "Open ComfyUI",
     "opensWhenReady": "Starting… opens when it's ready",
     "comfyReady": "ComfyUI is ready",
     "comfyReadyOpen": "Open",
     "comfyReadyDismiss": "Dismiss",
     "chooseBuildToOpen": "Choose the build to open",
-    "openComfyUIIn": "Open ComfyUI in {name}",
     "opensIn": "Opens in {name}",
     "allBuilds": "All builds",
     "newBuildDetail": "Run ComfyUI on this computer",

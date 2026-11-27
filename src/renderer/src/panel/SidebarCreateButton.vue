@@ -12,13 +12,15 @@ import type { Installation } from '../types/ipc'
 
 const { collapsed } = defineProps<{ collapsed: boolean }>()
 
+const RAIL_BUTTON_CLASS = 'size-8 rounded-control p-0 data-[state=open]:bg-foreground/80'
+
 const emit = defineEmits<{
   open: [build: Installation]
 }>()
 
 const { t } = useI18n()
 
-const { openableBuilds, openTarget, pickedBuildId, statusOf, openBuild } = useOpenComfyUI((build) =>
+const { openableBuilds, openTarget, statusOf, openBuild, pickAndOpen } = useOpenComfyUI((build) =>
   emit('open', build)
 )
 
@@ -49,15 +51,47 @@ onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
   <template v-if="openTarget">
     <Tooltip
       v-if="collapsed"
-      :text="t('sidebar.create')"
+      :text="menuOpen ? undefined : t('sidebar.create')"
       side="right"
       class="mb-3 ml-1 shrink-0 self-start"
     >
+      <Menu
+        v-if="offersBuildMenu"
+        v-model:open="menuOpen"
+        :modal="false"
+        align="start"
+        side="right"
+        :side-offset="8"
+        class="z-[9999] min-w-48 max-w-80"
+        :aria-label="t('home.chooseBuildToOpen')"
+      >
+        <template #trigger>
+          <Button
+            type="button"
+            variant="inverted"
+            size="unset"
+            :class="RAIL_BUTTON_CLASS"
+            :aria-label="t('sidebar.create')"
+            :aria-description="description"
+            data-testid="sidebar-create"
+            :data-build-id="openTarget.id"
+          >
+            <Plus :size="16" aria-hidden="true" />
+          </Button>
+        </template>
+        <OpenBuildMenuItems
+          :builds="openableBuilds"
+          :target="openTarget"
+          :status-of="statusOf"
+          @pick="pickAndOpen"
+        />
+      </Menu>
       <Button
+        v-else
         type="button"
         variant="inverted"
         size="unset"
-        class="size-8 rounded-control p-0"
+        :class="RAIL_BUTTON_CLASS"
         :aria-label="t('sidebar.create')"
         :aria-description="description"
         data-testid="sidebar-create"
@@ -72,7 +106,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
       class="mb-3 flex w-full shrink-0 rounded-control"
       data-testid="sidebar-create-group"
     >
-      <Tooltip :text="menuOpen ? undefined : description" side="right" class="min-w-0 flex-1">
+      <div class="flex min-w-0 flex-1">
         <Button
           type="button"
           variant="inverted"
@@ -95,7 +129,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
           <Plus v-else :size="14" class="shrink-0" aria-hidden="true" />
           <span>{{ t('sidebar.create') }}</span>
         </Button>
-      </Tooltip>
+      </div>
       <Menu
         v-if="offersBuildMenu"
         v-model:open="menuOpen"
@@ -122,7 +156,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
           :builds="openableBuilds"
           :target="openTarget"
           :status-of="statusOf"
-          @pick="pickedBuildId = $event.id"
+          @pick="pickAndOpen"
         />
       </Menu>
     </ButtonGroup>

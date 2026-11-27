@@ -65,6 +65,11 @@ export function useOpenComfyUI(open: (build: Installation) => void) {
     open(build)
   }
 
+  function pickAndOpen(build: Installation): void {
+    pickedBuildId.value = build.id
+    openBuild(build)
+  }
+
   return {
     workspaceBuilds,
     openableBuilds,
@@ -73,6 +78,7 @@ export function useOpenComfyUI(open: (build: Installation) => void) {
     statusOf,
     readyNotice,
     opensWhenReady,
-    openBuild
+    openBuild,
+    pickAndOpen
   }
 }
