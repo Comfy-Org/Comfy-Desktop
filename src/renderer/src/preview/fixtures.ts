@@ -5,6 +5,7 @@ import type {
   HiddenAppCard,
   AssetSummary,
   CatalogWorkflow,
+  RecentWorkflow,
   ConfirmDef,
   DetailField,
   DetailSection,
@@ -460,6 +461,44 @@ export const HOME_WORKFLOWS: CatalogWorkflow[] = [
     models: ['LTX-2.3']
   })
 ]
+
+const MINUTE_MS = 60_000
+
+function savedWorkflow(
+  title: string,
+  installationId: string,
+  buildName: string,
+  minutesAgo: number,
+  folder = ''
+): RecentWorkflow {
+  const path = `${folder}${title}.json`
+  return {
+    id: `${installationId}:${path}`,
+    title,
+    path,
+    installationId,
+    buildName,
+    where: installationId === 'inst-comfy-cloud' ? 'cloud' : 'local',
+    modifiedAt: Date.now() - minutesAgo * MINUTE_MS,
+    workspaceId: 'personal',
+    account: 'preview'
+  }
+}
+
+export function homeRecentWorkflows(): RecentWorkflow[] {
+  return [
+    savedWorkflow('Portrait relight', 'inst-comfyui', 'ComfyUI', 12),
+    savedWorkflow('Wan 2.2 loop', 'inst-video-experiments', 'Video experiments', 95, 'video/'),
+    savedWorkflow('Upscale for print', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 26),
+    savedWorkflow('Product on marble', 'inst-comfyui', 'ComfyUI', 60 * 24 * 3),
+    savedWorkflow('Storyboard frames', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 24 * 6),
+    savedWorkflow('Logo to 3D', 'inst-comfyui', 'ComfyUI', 60 * 24 * 8),
+    savedWorkflow('Sketch to render', 'inst-video-experiments', 'Video experiments', 60 * 24 * 9),
+    savedWorkflow('Old photo restore', 'inst-comfy-cloud', 'Comfy Cloud', 60 * 24 * 12),
+    savedWorkflow('Character turnaround', 'inst-comfyui', 'ComfyUI', 60 * 24 * 15),
+    savedWorkflow('Lip sync test', 'inst-video-experiments', 'Video experiments', 60 * 24 * 20)
+  ]
+}
 
 export function localAssets(): AssetSummary[] {
   return ['harbor-at-dusk.png', 'paper-crane.png', 'studio-portrait.png'].map((name, index) => ({

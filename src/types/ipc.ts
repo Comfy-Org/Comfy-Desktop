@@ -284,6 +284,23 @@ export interface CatalogWorkflow {
   tutorialUrl: string | null
 }
 
+export interface RecentWorkflow {
+  id: string
+  title: string
+  path: string
+  installationId: string
+  buildName: string
+  where: 'local' | 'cloud'
+  modifiedAt: number
+  workspaceId: string
+  account: string
+}
+
+export type RecentWorkflowOpen = Pick<
+  RecentWorkflow,
+  'installationId' | 'path' | 'workspaceId' | 'account'
+>
+
 export interface CatalogWorkflowModel {
   filename: string
   directory: string
@@ -1395,6 +1412,8 @@ export interface ElectronApi {
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   listCatalogWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  listRecentWorkflows(buildIds: string[], workspaceId: string): Promise<RecentWorkflow[]>
+  openRecentWorkflow(workflow: RecentWorkflowOpen): Promise<ComfyDesktopOpenInComfy>
   catalogLocalBuildVersions(): Promise<Record<string, string | null>>
   catalogWorkflowNeeds(id: string): Promise<CatalogWorkflowNeeds | null>
   launchCatalogWorkflow(

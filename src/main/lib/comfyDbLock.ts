@@ -29,6 +29,13 @@ function argValue(args: readonly string[], flag: string): string | null {
   return null
 }
 
+export function launchUserDirectory(cwd: string, args: readonly string[]): string | null {
+  const userDirectory = argValue(args, '--user-directory')
+  if (userDirectory) return path.resolve(cwd, userDirectory)
+  const baseDirectory = argValue(args, '--base-directory')
+  return baseDirectory ? path.resolve(cwd, baseDirectory, 'user') : null
+}
+
 export function databaseCandidates(cwd: string, args: readonly string[]): string[] {
   const url = argValue(args, '--database-url')
   if (url) {
@@ -39,11 +46,7 @@ export function databaseCandidates(cwd: string, args: readonly string[]): string
   const sIdx = args.indexOf('-s')
   const mainPy = sIdx >= 0 ? args[sIdx + 1] : undefined
   const comfyDir = mainPy ? path.dirname(path.resolve(cwd, mainPy)) : null
-  const userDir =
-    argValue(args, '--user-directory') ??
-    (argValue(args, '--base-directory')
-      ? path.join(argValue(args, '--base-directory')!, 'user')
-      : comfyDir && path.join(comfyDir, 'user'))
+  const userDir = launchUserDirectory(cwd, args) ?? (comfyDir && path.join(comfyDir, 'user'))
   const out = [userDir && path.join(path.resolve(cwd, userDir), 'comfyui.db')]
   if (comfyDir) out.push(path.join(comfyDir, 'user', 'comfyui.db'))
   return [...new Set(out.filter((p): p is string => !!p))]

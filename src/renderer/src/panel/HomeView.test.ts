@@ -4,15 +4,20 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
+import { HOME_BUILD_TONES } from './home/homeBuild'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useAuthStore } from '../stores/authStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, Installation } from '../types/ipc'
+import type { AppCard, Installation, RecentWorkflow, RecentWorkflowOpen } from '../types/ipc'
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
 const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
+const listRecentWorkflows =
+  vi.fn<(buildIds: string[], workspaceId: string) => Promise<RecentWorkflow[]>>()
+const openRecentWorkflow =
+  vi.fn<(workflow: RecentWorkflowOpen) => Promise<{ opened: boolean; error?: string }>>()
 
 function app(id: string, title: string): AppCard {
   return { id, title, description: '', covers: [] }
@@ -72,8 +77,12 @@ beforeEach(() => {
   listApps.mockResolvedValue([])
   getInstallations.mockResolvedValue([])
   getAuthStatus.mockResolvedValue({ signedIn: false })
+  listRecentWorkflows.mockResolvedValue([])
+  openRecentWorkflow.mockResolvedValue({ opened: true })
   ;(window as unknown as { api: unknown }).api = {
     listApps,
+    listRecentWorkflows,
+    openRecentWorkflow,
     getInstallations,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
@@ -1179,5 +1188,159 @@ describe('Home build auto start', () => {
     expect(statusOf(wrapper, OLDEST.id)).not.toContain('Auto start')
     expect(startingWithDesktop(wrapper)).toEqual([])
     expect(setSetting).not.toHaveBeenCalledWith('autoLaunchOnStartup', expect.anything())
+  })
+})
+
+function recent(over: Partial<RecentWorkflow> & { title: string }): RecentWorkflow {
+  return {
+    id: `${over.installationId ?? 'newest'}:${over.title}.json`,
+    path: `${over.title}.json`,
+    installationId: 'newest',
+    buildName: 'My Local 1',
+    where: 'local',
+    modifiedAt: NOW - 2 * HOUR_MS,
+    workspaceId: 'personal',
+    account: 'account-a',
+    ...over
+  }
+}
+
+function recentTitles(wrapper: VueWrapper): string[] {
+  return wrapper.findAll('[data-testid="home-recent-workflow-title"]').map((title) => title.text())
+}
+
+describe('Home recent workflows', () => {
+  it('shows the saved workflows of the builds in this workspace, with build and age', async () => {
+    getInstallations.mockResolvedValue([NEWEST, CLOUD])
+    listRecentWorkflows.mockResolvedValue([
+      recent({ title: 'Wan loop', modifiedAt: NOW - 5 * MINUTE_MS }),
+      recent({
+        title: 'Upscale',
+        installationId: 'cloud',
+        buildName: 'Comfy Cloud',
+        where: 'cloud'
+      }),
+      recent({ title: 'Elsewhere', installationId: 'uninstalled' })
+    ])
+
+    const wrapper = await openHome()
+
+    expect(recentTitles(wrapper)).toEqual(['Wan loop', 'Upscale'])
+    expect(listRecentWorkflows).toHaveBeenLastCalledWith(
+      expect.arrayContaining(['newest', 'cloud']),
+      'personal'
+    )
+    const first = wrapper.get('[data-testid="home-recent-workflow"]')
+    expect(first.text()).toContain('My Local 1')
+    expect(first.text()).toContain('5m ago')
+  })
+
+  it('keeps up to ten workflows in one scrolling row', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    listRecentWorkflows.mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) =>
+        recent({ title: `Flow ${index}`, modifiedAt: NOW - index * MINUTE_MS })
+      )
+    )
+
+    const wrapper = await openHome()
+
+    expect(recentTitles(wrapper)).toEqual(Array.from({ length: 10 }, (_, index) => `Flow ${index}`))
+    expect(wrapper.get('[data-testid="home-recent-workflows-row"]').classes()).toContain(
+      'overflow-x-auto'
+    )
+  })
+
+  it('hides the section when there are no saved workflows', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+
+    const wrapper = await openHome()
+
+    expect(wrapper.find('[data-testid="home-recent-workflows"]').exists()).toBe(false)
+  })
+
+  it('opens a saved workflow in its own build', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    listRecentWorkflows.mockResolvedValue([
+      recent({ title: 'Wan loop', path: 'video/Wan loop.json' })
+    ])
+
+    const wrapper = await openHome()
+    await wrapper.get('[data-testid="home-recent-workflow"]').trigger('click')
+    await flushPromises()
+
+    expect(openRecentWorkflow).toHaveBeenCalledExactlyOnceWith({
+      installationId: 'newest',
+      path: 'video/Wan loop.json',
+      workspaceId: 'personal',
+      account: 'account-a'
+    })
+  })
+
+  it('drops the listed workflows when Home moves to another workspace, and lists that one', async () => {
+    getInstallations.mockResolvedValue([NEWEST, CLOUD])
+    listRecentWorkflows.mockResolvedValue([recent({ title: 'Personal portrait' })])
+    const wrapper = await openHome()
+    expect(recentTitles(wrapper)).toEqual(['Personal portrait'])
+
+    let answerTeam: (rows: RecentWorkflow[]) => void = () => {}
+    listRecentWorkflows.mockImplementation(() => new Promise((resolve) => (answerTeam = resolve)))
+    useDashboardScopeStore().selectedWorkspaceId = 'team-a'
+    await flushPromises()
+
+    expect(recentTitles(wrapper)).toEqual([])
+    expect(listRecentWorkflows).toHaveBeenLastCalledWith(['cloud'], 'team-a')
+
+    answerTeam([
+      recent({ title: 'Late personal row', installationId: 'cloud', workspaceId: 'personal' }),
+      recent({ title: 'Team upscale', installationId: 'cloud', workspaceId: 'team-a' })
+    ])
+    await flushPromises()
+
+    expect(recentTitles(wrapper)).toEqual(['Team upscale'])
+  })
+
+  it('drops the listed workflows when the signed-in account changes', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    listRecentWorkflows.mockResolvedValue([recent({ title: 'Wan loop' })])
+    const wrapper = await openHome()
+    expect(recentTitles(wrapper)).toEqual(['Wan loop'])
+    const calls = listRecentWorkflows.mock.calls.length
+
+    listRecentWorkflows.mockReturnValue(new Promise(() => {}))
+    useAuthStore().status = { signedIn: true, email: 'someone@example.com' }
+    await flushPromises()
+
+    expect(recentTitles(wrapper)).toEqual([])
+    expect(listRecentWorkflows.mock.calls.length).toBeGreaterThan(calls)
+  })
+
+  it('paints no build tone on a workflow card, local or Cloud, leaving the icon as the cue', async () => {
+    getInstallations.mockResolvedValue([NEWEST, CLOUD])
+    listRecentWorkflows.mockResolvedValue([
+      recent({ title: 'Wan loop' }),
+      recent({
+        title: 'Upscale',
+        installationId: 'cloud',
+        buildName: 'Comfy Cloud',
+        where: 'cloud'
+      })
+    ])
+
+    const wrapper = await openHome()
+    const [local, cloud] = wrapper.findAll('[data-testid="home-recent-workflow"]')
+
+    expect(local!.find('.lucide-laptop').exists()).toBe(true)
+    expect(cloud!.find('.lucide-cloud').exists()).toBe(true)
+    const toneColors = Object.values(HOME_BUILD_TONES).map(({ tint }) => tint.split(' ').join(', '))
+    for (const card of [local!, cloud!]) {
+      const painted = [card.element, ...card.element.querySelectorAll('*')].map((element) => {
+        const style = getComputedStyle(element)
+        return `${style.backgroundColor} ${style.backgroundImage}`
+      })
+      for (const tone of toneColors) {
+        expect(painted.filter((paint) => paint.includes(tone))).toEqual([])
+      }
+    }
   })
 })

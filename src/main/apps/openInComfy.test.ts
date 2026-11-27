@@ -76,10 +76,15 @@ import {
   openCatalogInComfy,
   openEmbeddedWorkflow,
   openInComfy,
+  openSavedWorkflow,
   WINDOW_TIMEOUT_MS
 } from './openInComfy'
 import { _resetForTest as forgetRuns, finishRun, runAccepted } from './localAppEvents'
-import { COMFY_STATE_SCRIPT, MARK_PAGE_STALE_SCRIPT } from './openRequest'
+import {
+  COMFY_STATE_SCRIPT,
+  MARK_PAGE_STALE_SCRIPT,
+  openPersistedWorkflowScript
+} from './openRequest'
 import type { ComfyPageState } from './openRequest'
 
 const PAGE = {} as WebContents
@@ -753,6 +758,67 @@ describe('who owns a Comfy Cloud window while a catalog graph waits to load', ()
     expect(await first).toEqual({ opened: false, error: 'workflowLaunch.openFailed' })
     expect(await second).toEqual({ opened: true })
     expect(entry.loadedGraphs()).toHaveLength(1)
+  })
+})
+
+describe('reopening a workflow saved in a build', () => {
+  const scope = { workspaceId: 'team-a', minComfyUIVersion: null, isCurrent: () => true }
+
+  it('asks the editor to open the stored file by its path, under no new name', async () => {
+    const build = { ...LAB, workspaceId: 'team-a' }
+    mocks.builds = [build]
+    mocks.records = [build]
+    runLocal(build.id, 8191, 'window')
+    const lab = windowFor(build.id, 'http://127.0.0.1:8191/')
+
+    expect(
+      await openSavedWorkflow({ where: 'local', build: build.id }, 'portrait.json', scope)
+    ).toEqual({ opened: true })
+
+    expect(lab.scripts).toContain(openPersistedWorkflowScript('portrait.json'))
+    expect(lab.scripts.join('\n')).not.toContain('(2)')
+    expect(lab.loadedGraphs()).toEqual([])
+  })
+
+  it('refuses a local build that belongs to another workspace', async () => {
+    runLocal(LAB.id, 8191, 'window')
+    const lab = windowFor(LAB.id, 'http://127.0.0.1:8191/')
+
+    expect(await openSavedWorkflow({ where: 'local', build: LAB.id }, 'a.json', scope)).toEqual({
+      opened: false,
+      error: 'apps.local.openUnknownBuild'
+    })
+    expect(lab.scripts).toEqual([])
+  })
+
+  it('moves the Cloud window to the listed workspace before the editor opens the file', async () => {
+    const entry = new FakeWindow(CLOUD_URL)
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(true)
+
+    expect(await openSavedWorkflow({ where: 'cloud' }, 'upscale.json', scope)).toEqual({
+      opened: true
+    })
+    expect(mocks.syncCloudWindowWorkspace).toHaveBeenCalledWith(entry, {
+      pickerWorkspaceId: 'team-a'
+    })
+    expect(entry.scripts).toContain(openPersistedWorkflowScript('upscale.json'))
+  })
+
+  it('opens nothing in a Cloud window that could not be moved to the listed workspace', async () => {
+    const entry = new FakeWindow(CLOUD_URL)
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(false)
+
+    expect(await openSavedWorkflow({ where: 'cloud' }, 'upscale.json', scope)).toEqual({
+      opened: false,
+      error: 'workflowLaunch.openFailed'
+    })
+    expect(entry.scripts).not.toContain(openPersistedWorkflowScript('upscale.json'))
   })
 })
 

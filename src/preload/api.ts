@@ -130,6 +130,10 @@ export function buildElectronApi(): ElectronApi {
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     listCatalogWorkflows: () => ipcRenderer.invoke('catalog:list-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
+    listRecentWorkflows: (buildIds, workspaceId) =>
+      ipcRenderer.invoke('workflows:list-recent', buildIds, workspaceId),
+    openRecentWorkflow: ({ installationId, path, workspaceId, account }) =>
+      ipcRenderer.invoke('workflows:open-recent', { installationId, path, workspaceId, account }),
     catalogLocalBuildVersions: () => ipcRenderer.invoke('catalog:local-build-versions'),
     catalogWorkflowNeeds: (id) => ipcRenderer.invoke('catalog:workflow-needs', id),
     launchCatalogWorkflow: (id, target, workspaceId, options) =>

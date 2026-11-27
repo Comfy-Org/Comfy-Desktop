@@ -10,6 +10,7 @@ import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
+import HomeRecentWorkflows from './home/HomeRecentWorkflows.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import HomeReadyToast from './home/HomeReadyToast.vue'
 import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
@@ -70,6 +71,7 @@ const workspaceBuilds = computed(() =>
     isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
   )
 )
+const workspaceBuildIds = computed(() => new Set(workspaceBuilds.value.map((build) => build.id)))
 const isInstalling = useInstallingBuilds()
 const progressStore = useProgressStore()
 const viewBuildLogs = useViewBuildLogs()
@@ -388,6 +390,11 @@ onMounted(() => {
           </li>
         </ul>
       </section>
+
+      <HomeRecentWorkflows
+        :build-ids="workspaceBuildIds"
+        :workspace-id="dashboardScope.selectedWorkspaceId"
+      />
     </div>
   </div>
 </template>

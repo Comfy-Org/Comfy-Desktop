@@ -10,6 +10,7 @@ import {
   isComfyPage,
   MARK_PAGE_STALE_SCRIPT,
   openGraphScript,
+  openPersistedWorkflowScript,
   openWorkflowScript,
   readOpenRequest,
   workflowName,
@@ -411,5 +412,112 @@ describe('the script that loads a saved graph into the ComfyUI page', () => {
     const context = page({ graph: {}, canvas: {}, loadApiJson: () => undefined })
 
     expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(false)
+  })
+})
+
+describe('the script that opens a saved workflow from the editor’s own workflow list', () => {
+  const state = { nodes: [], links: [] }
+
+  function savedWorkflow(path: string) {
+    const workflow = {
+      path,
+      isLoaded: false,
+      activeState: null as unknown,
+      initialState: null as unknown,
+      load: vi.fn(async () => {
+        workflow.isLoaded = true
+        workflow.initialState = state
+      })
+    }
+    return workflow
+  }
+
+  function editor(workflows: Record<string, unknown>) {
+    const calls: unknown[][] = []
+    const store = {
+      activeWorkflow: null as { path: string } | null,
+      getWorkflowByPath: (path: string) => workflows[path] ?? null,
+      syncWorkflows: vi.fn(async () => {})
+    }
+    const context = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      loadGraphData: (...args: unknown[]) => {
+        calls.push(args)
+      },
+      extensionManager: { workflow: store }
+    })
+    return { calls, store, context }
+  }
+
+  it('loads the stored workflow itself, so Save updates that file instead of asking for a new name', async () => {
+    const portrait = savedWorkflow('workflows/portrait.json')
+    const { calls, context } = editor({ 'workflows/portrait.json': portrait })
+
+    expect(await runInNewContext(openPersistedWorkflowScript('portrait.json'), context)).toBe(true)
+
+    expect(portrait.load).toHaveBeenCalledOnce()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.slice(0, 3)).toEqual([state, true, true])
+    expect(calls[0]![3]).toBe(portrait)
+  })
+
+  it('refreshes the editor’s workflow list when the file was saved after the page loaded', async () => {
+    const workflows: Record<string, unknown> = {}
+    const { calls, store, context } = editor(workflows)
+    store.syncWorkflows.mockImplementation(async () => {
+      workflows['workflows/video/new.json'] = savedWorkflow('workflows/video/new.json')
+    })
+
+    expect(await runInNewContext(openPersistedWorkflowScript('video/new.json'), context)).toBe(true)
+    expect(store.syncWorkflows).toHaveBeenCalledOnce()
+    expect(calls).toHaveLength(1)
+  })
+
+  it('only brings forward a workflow that is already the open tab', async () => {
+    const portrait = savedWorkflow('workflows/portrait.json')
+    const { calls, store, context } = editor({ 'workflows/portrait.json': portrait })
+    store.activeWorkflow = { path: 'workflows/portrait.json' }
+
+    expect(await runInNewContext(openPersistedWorkflowScript('portrait.json'), context)).toBe(true)
+    expect(calls).toEqual([])
+  })
+
+  it('says it did not open a file the editor does not know, or an editor with no workflow list', async () => {
+    const { calls, context } = editor({})
+    const older = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      loadGraphData: vi.fn()
+    })
+
+    expect(await runInNewContext(openPersistedWorkflowScript('gone.json'), context)).toBe(false)
+    expect(await runInNewContext(openPersistedWorkflowScript('gone.json'), older)).toBe(false)
+    expect(calls).toEqual([])
+  })
+
+  it('hands the saved path to the editor as data, never as code', async () => {
+    const tricky = `a"),globalThis.hacked=1,("b.json`
+    const looked: string[] = []
+    const context = page({
+      graph: {},
+      canvas: {},
+      loadApiJson: () => undefined,
+      loadGraphData: () => undefined,
+      extensionManager: {
+        workflow: {
+          getWorkflowByPath: (path: string) => {
+            looked.push(path)
+            return null
+          }
+        }
+      }
+    })
+
+    expect(await runInNewContext(openPersistedWorkflowScript(tricky), context)).toBe(false)
+    expect(looked[0]).toBe(`workflows/${tricky}`)
+    expect(context['hacked']).toBeUndefined()
   })
 })

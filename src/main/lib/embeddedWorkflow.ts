@@ -28,10 +28,13 @@ function isGraphNode(value: unknown): boolean {
   return isRecord(value) && typeof value['type'] === 'string' && value['id'] !== undefined
 }
 
-export function isGraphWorkflow(value: unknown): value is Record<string, unknown> {
+function hasGraphNodes(
+  value: unknown,
+  { allowEmpty }: { allowEmpty: boolean }
+): value is Record<string, unknown> {
   if (!isRecord(value)) return false
   const nodes = value['nodes']
-  if (!Array.isArray(nodes) || nodes.length === 0) return false
+  if (!Array.isArray(nodes) || (nodes.length === 0 && !allowEmpty)) return false
   if (nodes.length > MAX_GRAPH_NODES) {
     console.warn(
       `Skipped a saved workflow with ${nodes.length} nodes; the limit is ${MAX_GRAPH_NODES}.`
@@ -39,6 +42,14 @@ export function isGraphWorkflow(value: unknown): value is Record<string, unknown
     return false
   }
   return nodes.every(isGraphNode)
+}
+
+export function isGraphWorkflow(value: unknown): value is Record<string, unknown> {
+  return hasGraphNodes(value, { allowEmpty: false })
+}
+
+export function isSavedGraphWorkflow(value: unknown): value is Record<string, unknown> {
+  return hasGraphNodes(value, { allowEmpty: true })
 }
 
 const NON_FINITE_TOKENS = ['-Infinity', 'Infinity', 'NaN']

@@ -2,7 +2,7 @@
 import { deflateSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
 
-import { isGraphWorkflow, readEmbeddedWorkflow } from './embeddedWorkflow'
+import { isGraphWorkflow, isSavedGraphWorkflow, readEmbeddedWorkflow } from './embeddedWorkflow'
 
 const GRAPH = {
   last_node_id: 2,
@@ -76,6 +76,14 @@ describe('a ComfyUI graph workflow', () => {
     expect(isGraphWorkflow({ nodes: [{ id: 1 }] })).toBe(false)
     expect(isGraphWorkflow(PROMPT)).toBe(false)
     expect(isGraphWorkflow(null)).toBe(false)
+  })
+
+  it('may be saved blank or with only groups, which a saved file still opens as', () => {
+    expect(isSavedGraphWorkflow({ nodes: [], links: [], groups: [{ title: 'Inputs' }] })).toBe(true)
+    expect(isSavedGraphWorkflow(GRAPH)).toBe(true)
+    expect(isSavedGraphWorkflow({ nodes: [{ id: 1 }] })).toBe(false)
+    expect(isSavedGraphWorkflow({ groups: [] })).toBe(false)
+    expect(isSavedGraphWorkflow(PROMPT)).toBe(false)
   })
 })
 
