@@ -1,10 +1,11 @@
 import { reactive } from 'vue'
 
-export type BuildStartScenario = 'starts' | 'fails' | 'crashes'
+export type BuildStartScenario = 'starts' | 'fails' | 'failsTwice' | 'crashes'
 
 export const BUILD_STARTS: { value: BuildStartScenario; label: string }[] = [
   { value: 'starts', label: 'Starts' },
   { value: 'fails', label: "Doesn't start" },
+  { value: 'failsTwice', label: 'Restart fails too' },
   { value: 'crashes', label: 'Exits while starting' }
 ]
 
@@ -42,14 +43,27 @@ export interface StartFailure {
   kind: 'didnt-start' | 'crashed' | 'cannot-connect'
   title: string
   message: string
+  attempt?: number
 }
+
+export const REPAIR_COPY = {
+  againTitle: 'ComfyUI still could not start',
+  againMessage:
+    'Restarting did not help. Repairing reinstalls the Python environment of this build and keeps your models, workflows and outputs.',
+  repair: 'Repair build',
+  repairing: (name: string): string => `Repairing ${name}`,
+  repairSteps: 'Reinstalling Python packages…',
+  copyReport: 'Copy error report',
+  reportCopied: 'Error report copied',
+  terminal: 'Open Terminal'
+} as const
 
 export const startFailures = reactive(new Map<string, StartFailure>())
 
 export const START_FAIL_AT = 64
 
 export function failureFor(scenario: BuildStartScenario): StartFailure | undefined {
-  if (scenario === 'fails')
+  if (scenario === 'fails' || scenario === 'failsTwice')
     return {
       kind: 'didnt-start',
       title: START_COPY.failedTitle,

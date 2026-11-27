@@ -1,13 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ArrowLeft, Loader2, RefreshCcw, TriangleAlert } from 'lucide-vue-next'
+import {
+  ArrowLeft,
+  Copy,
+  Loader2,
+  RefreshCcw,
+  SquareTerminal,
+  TriangleAlert,
+  Wrench
+} from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import type { ProtoInstance } from '../../mock'
+import { toast } from '../../useProto'
 import { OFFLINE_COPY } from '../offline/connection'
-import { activityAt, START_COPY, startFailures } from './comfyStart'
+import { activityAt, REPAIR_COPY, START_COPY, startFailures } from './comfyStart'
+import { openBuild } from './buildTab'
 import {
   cancelStart,
   leaveFailedStart,
+  repairBuild,
+  repairs,
   restartAfterFailure,
   runs,
   START_LOG,
@@ -18,6 +30,13 @@ const { inst } = defineProps<{ inst: ProtoInstance }>()
 
 const run = computed(() => runs.get(inst.id))
 const failure = computed(() => startFailures.get(inst.id))
+const again = computed(() => (failure.value?.attempt ?? 1) >= 2)
+const repairing = computed(() => repairs.get(inst.id))
+function copyReport(): void {
+  const text = [failure.value?.title, failure.value?.message, logLines.value].join('\n\n')
+  void navigator.clipboard?.writeText(text).catch(() => {})
+  toast(REPAIR_COPY.reportCopied)
+}
 const buildLine = computed(() =>
   [inst.name, inst.version && inst.version !== 'unknown' ? inst.version : '']
     .filter(Boolean)
@@ -58,10 +77,38 @@ const logLines = computed(() =>
   <div
     class="flex min-h-0 flex-1 items-center justify-center p-6 text-base-foreground"
     data-starting-tab
-    :data-state="failure ? 'failed' : 'starting'"
+    :data-state="repairing !== undefined ? 'repairing' : failure ? 'failed' : 'starting'"
   >
     <div
-      v-if="failure"
+      v-if="repairing !== undefined"
+      class="flex w-full max-w-[480px] min-w-0 flex-col items-center px-8 py-7 text-center"
+      data-state="repairing"
+    >
+      <span
+        class="inline-flex size-14 items-center justify-center rounded-full bg-secondary-background text-base-foreground"
+      >
+        <Wrench :size="24" />
+      </span>
+      <h2 class="m-0 mt-3 text-[18px] font-semibold">{{ REPAIR_COPY.repairing(inst.name) }}</h2>
+      <p class="m-0 mt-1 text-[13px] text-muted-foreground">{{ buildLine }}</p>
+      <div
+        class="mt-5 h-1 w-64 overflow-hidden rounded-full bg-secondary-background-hover"
+        role="progressbar"
+        :aria-valuenow="repairing"
+        :aria-label="REPAIR_COPY.repairing(inst.name)"
+      >
+        <span
+          class="block h-full origin-left rounded-full bg-base-foreground"
+          :style="{ transform: `scaleX(${repairing / 100})` }"
+        />
+      </div>
+      <p class="m-0 mt-3 text-[13px] text-base-foreground tabular-nums" aria-live="polite">
+        {{ REPAIR_COPY.repairSteps }} {{ repairing }}%
+      </p>
+    </div>
+
+    <div
+      v-else-if="failure"
       class="flex w-full max-w-[520px] flex-col items-center gap-3 text-center"
       role="alert"
       :aria-label="failure.title"
@@ -71,14 +118,38 @@ const logLines = computed(() =>
       >
         <TriangleAlert :size="26" />
       </span>
-      <h2 class="m-0 text-[18px] font-semibold">{{ failure.title }}</h2>
-      <p class="m-0 text-[13px] leading-5 text-muted-foreground">{{ failure.message }}</p>
+      <h2 class="m-0 text-[18px] font-semibold">
+        {{ again ? REPAIR_COPY.againTitle : failure.title }}
+      </h2>
+      <p class="m-0 text-[13px] leading-5 text-muted-foreground">
+        {{ again ? REPAIR_COPY.againMessage : failure.message }}
+      </p>
       <pre
         v-if="logLines"
         class="m-0 mt-1 max-h-36 w-full overflow-auto rounded-control bg-secondary-background p-3 text-left font-mono text-[11px] leading-[1.5] whitespace-pre-wrap text-muted-foreground"
-        >{{ logLines }}</pre
-      >
-      <div class="mt-2 flex items-center gap-2">
+        >{{ logLines }}</pre>
+      <div v-if="again" class="mt-2 flex flex-col items-center gap-2" data-start-again>
+        <div class="flex items-center gap-2">
+          <Button variant="secondary" size="md" @click="restartAfterFailure(inst)">
+            <RefreshCcw :size="14" />{{ START_COPY.restart }}
+          </Button>
+          <Button variant="primary" size="md" @click="repairBuild(inst)">
+            <Wrench :size="14" />{{ REPAIR_COPY.repair }}
+          </Button>
+        </div>
+        <div class="flex items-center gap-1">
+          <Button variant="ghost" size="md" @click="copyReport">
+            <Copy :size="14" />{{ REPAIR_COPY.copyReport }}
+          </Button>
+          <Button variant="ghost" size="md" @click="openBuild(inst.id, 'terminal')">
+            <SquareTerminal :size="14" />{{ REPAIR_COPY.terminal }}
+          </Button>
+          <Button variant="ghost" size="md" @click="leaveFailedStart(inst)">
+            <ArrowLeft :size="14" />{{ START_COPY.backToHome }}
+          </Button>
+        </div>
+      </div>
+      <div v-else class="mt-2 flex items-center gap-2">
         <Button variant="ghost" size="md" @click="leaveFailedStart(inst)">
           <ArrowLeft :size="14" />{{ START_COPY.backToHome }}
         </Button>

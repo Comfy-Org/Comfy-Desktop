@@ -11,7 +11,7 @@ import { onCloud } from '../mar/shell/surface'
 import PreparingTab from '../mar/templateOpen/PreparingTab.vue'
 import { prepOfTab } from '../mar/templateOpen/prepTabs'
 import StartingTab from '../mar/build/StartingTab.vue'
-import { runs } from '../mar/build/homeRun'
+import { repairs, runs } from '../mar/build/homeRun'
 import { START_COPY, startFailures } from '../mar/build/comfyStart'
 
 /**
@@ -29,7 +29,9 @@ const starting = computed(
   () =>
     !!inst.value &&
     !real.value &&
-    (runs.get(inst.value.id)?.kind === 'start' || startFailures.has(inst.value.id))
+    (runs.get(inst.value.id)?.kind === 'start' ||
+      startFailures.has(inst.value.id) ||
+      repairs.has(inst.value.id))
 )
 </script>
 

@@ -16,8 +16,10 @@ import {
   Package,
   SlidersHorizontal,
   Tag,
+  RotateCcw,
   TriangleAlert,
   Users,
+  WifiOff,
   Zap
 } from 'lucide-vue-next'
 import {
@@ -54,6 +56,7 @@ import {
   DETECTED,
   STARTERS,
   backFromError,
+  cancelInstall,
   canvas,
   chooseCloud,
   chooseLocal,
@@ -86,6 +89,8 @@ import {
   ONBOARDINGS
 } from './setupFlow'
 import SetupLaptop from './SetupLaptop.vue'
+import { connection, offline } from '../offline/connection'
+import { edgeCase, SIMULATED_RECONNECT_MS } from '../edge/edgeStore'
 import './setup.css'
 
 /**
@@ -121,6 +126,55 @@ const usage = ref(true)
 const beta = ref(true)
 // Continue is always on: without the terms it points at them instead.
 const termsAsk = ref(false)
+const OFFLINE_SETUP = {
+  banner: "You're offline. Installing needs a connection.",
+  waiting: 'Still offline. It tries again on its own once you are back online.',
+  retry: 'Try again',
+  checking: 'Checking…'
+} as const
+const offlineTried = ref(false)
+const checking = ref(false)
+let checkTimer: ReturnType<typeof setTimeout> | undefined
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+const retryOn = ref<'first' | 'setup'>('setup')
+function tryOnline(on: 'first' | 'setup'): void {
+  if (on === 'setup' && homeOneClick.value && flow.takeover && !terms.value) {
+    termsAsk.value = true
+    return
+  }
+  if (on === 'first' && !terms.value) {
+    termsAsk.value = true
+    return
+  }
+  retryOn.value = on
+  checking.value = true
+  clearTimeout(checkTimer)
+  checkTimer = setTimeout(() => {
+    checking.value = false
+    offlineTried.value = true
+    if (edgeCase.id === 'e1' && !reconnectTimer)
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = undefined
+        connection.id = 'online'
+      }, SIMULATED_RECONNECT_MS)
+  }, 1200)
+}
+watch(offline, (now) => {
+  if (now) return
+  clearTimeout(checkTimer)
+  clearTimeout(reconnectTimer)
+  reconnectTimer = undefined
+  checking.value = false
+  const tried = offlineTried.value
+  offlineTried.value = false
+  if (!tried || !flow.open) return
+  if (retryOn.value === 'first' && flow.step === 'first') continueFirst()
+  else if (retryOn.value === 'setup' && flow.step === 'setup') continueSetup()
+})
+onBeforeUnmount(() => {
+  clearTimeout(checkTimer)
+  clearTimeout(reconnectTimer)
+})
 function continueFirst(): void {
   if (!terms.value) termsAsk.value = true
   // Home first: Run on is the only step, and Local lands on the Home with
@@ -370,6 +424,29 @@ onMounted(() => {
 onBeforeUnmount(() => clearInterval(pitchTimer))
 
 const failed = computed(() => flow.step === 'error')
+const INSTALL_FAILED = {
+  title: "ComfyUI didn't install",
+  reason:
+    'The connection dropped while it was downloading Python packages, so the install stopped. Nothing else on this computer changed.',
+  retry: 'Try again',
+  cloud: 'Use Cloud instead'
+} as const
+function useCloudInstead(): void {
+  const first = flow.takeover
+  cancelInstall()
+  if (first && homeFirst.value) landHomeCloud()
+  else chooseCloud()
+}
+const UNSUPPORTED = {
+  title: "This Mac can't run models locally",
+  body: 'ComfyUI runs models on Apple Silicon (M1 or newer). This Mac has an Intel processor, so a local build would be very slow or fail. Comfy Cloud runs every model on fast GPUs.',
+  cloud: 'Use Comfy Cloud',
+  anyway: 'Install anyway'
+} as const
+function cloudFromSetup(): void {
+  if (flow.takeover && homeFirst.value) landHomeCloud()
+  else chooseCloud()
+}
 
 // Like today's stepper: no overall percent, since the whole install can't be
 // timed. Only the download knows its size, so only it gets a detail line.
@@ -459,6 +536,15 @@ const installLog = computed(() => [
           />
           <div class="mss-col">
             <div class="mss-first-hero">
+              <p v-if="offline" class="mss-offline" role="status" data-edge-offline>
+                <WifiOff :size="15" class="shrink-0" />
+                <span class="grid">
+                  <span>{{ OFFLINE_SETUP.banner }}</span>
+                  <span v-if="offlineTried" class="mss-offline-meta">{{
+                    OFFLINE_SETUP.waiting
+                  }}</span>
+                </span>
+              </p>
               <h1 id="mss-first-title" class="mss-first-title">How do you want to run ComfyUI?</h1>
               <p class="mss-first-lead">
                 Choose the setup that fits how you work. You can switch later.
@@ -546,7 +632,18 @@ const installLog = computed(() => [
                   <span>Opt-in to beta features and help test what ships next</span>
                 </label>
               </div>
-              <Button variant="primary" size="lg" @click="continueFirst">Continue</Button>
+              <Button
+                v-if="offline"
+                variant="primary"
+                size="lg"
+                :disabled="checking"
+                data-edge-retry
+                @click="tryOnline('first')"
+                ><RotateCcw :size="14" />{{
+                  checking ? OFFLINE_SETUP.checking : OFFLINE_SETUP.retry
+                }}</Button
+              >
+              <Button v-else variant="primary" size="lg" @click="continueFirst">Continue</Button>
             </div>
           </div>
         </div>
@@ -689,49 +786,48 @@ const installLog = computed(() => [
                 </dd>
               </div>
             </dl>
-            <!-- One-click install: this is the first screen, so the consent
-                 sits here, under the list, the terms gating Install. -->
-            <div v-if="homeOneClick && flow.takeover" class="mss-first-consent mss-setup-consent">
-              <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
-                <Checkbox v-model="terms" />
-                <span
-                  >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
-                  <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.<span
-                    v-if="termsAsk && !terms"
-                    class="mss-terms-ask"
-                    role="alert"
-                    >Agree to install.</span
-                  ></span
-                >
-              </label>
-              <label class="mss-check">
-                <Checkbox v-model="usage" />
-                <span
-                  >Help improve ComfyUI by sharing anonymous usage data.
-                  <a href="#" class="mss-link" @click.prevent>Learn more</a></span
-                >
-              </label>
-              <label class="mss-check">
-                <Checkbox v-model="beta" :disabled="!usage" />
-                <span>Opt-in to beta features and help test what ships next</span>
-              </label>
-            </div>
           </template>
 
           <!-- Intel Mac: today's Unsupported Hardware alert. A local install
                can't be picked; Cloud is on the first screen, Remote Connection
                under Change. -->
           <template v-else>
-            <DialogTitle as="h3" class="text-title font-semibold">Unsupported Hardware</DialogTitle>
-            <DialogDescription
-              >ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not
-              supported.</DialogDescription
-            >
+            <DialogTitle as="h3" class="text-title font-semibold">{{
+              UNSUPPORTED.title
+            }}</DialogTitle>
+            <DialogDescription>{{ UNSUPPORTED.body }}</DialogDescription>
             <div class="mss-machine is-bad">
               <SetupLaptop bad />
               <span class="mss-machine-title">Intel processor</span>
             </div>
           </template>
+          <!-- One-click install: this is the first screen, so the consent
+                 sits here, under the list, the terms gating Install. -->
+          <div v-if="homeOneClick && flow.takeover" class="mss-first-consent mss-setup-consent">
+            <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
+              <Checkbox v-model="terms" />
+              <span
+                >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
+                <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.<span
+                  v-if="termsAsk && !terms"
+                  class="mss-terms-ask"
+                  role="alert"
+                  >Agree to install.</span
+                ></span
+              >
+            </label>
+            <label class="mss-check">
+              <Checkbox v-model="usage" />
+              <span
+                >Help improve ComfyUI by sharing anonymous usage data.
+                <a href="#" class="mss-link" @click.prevent>Learn more</a></span
+              >
+            </label>
+            <label class="mss-check">
+              <Checkbox v-model="beta" :disabled="!usage" />
+              <span>Opt-in to beta features and help test what ships next</span>
+            </label>
+          </div>
         </div>
         <footer class="mar-wizard-foot mss-foot">
           <Button
@@ -755,8 +851,40 @@ const installLog = computed(() => [
             <Button variant="primary" size="lg" @click="toTemplates">Continue Anyway</Button>
           </template>
           <template v-else>
-            <span class="flex-1"></span>
-            <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
+            <p
+              v-if="offline && !unsupported"
+              class="mss-offline is-foot"
+              role="status"
+              data-edge-offline
+            >
+              <WifiOff :size="15" class="shrink-0" />
+              <span class="grid">
+                <span>{{ OFFLINE_SETUP.banner }}</span>
+                <span v-if="offlineTried" class="mss-offline-meta">{{
+                  OFFLINE_SETUP.waiting
+                }}</span>
+              </span>
+            </p>
+            <span v-else class="flex-1"></span>
+            <template v-if="unsupported">
+              <Button size="lg" data-edge-anyway @click="continueSetup">{{
+                UNSUPPORTED.anyway
+              }}</Button>
+              <Button variant="primary" size="lg" data-edge-cloud @click="cloudFromSetup"
+                ><Cloud :size="14" />{{ UNSUPPORTED.cloud }}</Button
+              >
+            </template>
+            <Button
+              v-else-if="offline"
+              variant="primary"
+              size="lg"
+              :disabled="checking"
+              data-edge-retry
+              @click="tryOnline('setup')"
+              ><RotateCcw :size="14" />{{
+                checking ? OFFLINE_SETUP.checking : OFFLINE_SETUP.retry
+              }}</Button
+            >
             <Button v-else-if="newBuild" variant="primary" size="lg" @click="createBuild(buildName)"
               >Install</Button
             >
@@ -1061,8 +1189,11 @@ const installLog = computed(() => [
       <template v-else>
         <div :key="failed ? 'error' : 'installing'" class="mar-wizard-body mss-body mss-body-inst">
           <DialogTitle as="h3" class="text-title font-semibold">{{
-            failed ? 'Operation failed' : 'Installing ComfyUI'
+            failed ? INSTALL_FAILED.title : 'Installing ComfyUI'
           }}</DialogTitle>
+          <DialogDescription v-if="failed" data-edge-reason>{{
+            INSTALL_FAILED.reason
+          }}</DialogDescription>
           <!-- The steps on the left, one showcase clip on the right, the
                log under both across the window (BuildProgress.vue). -->
           <BuildProgress
@@ -1079,7 +1210,12 @@ const installLog = computed(() => [
             <Button variant="ghost" size="lg" class="mr-auto" @click="backFromError"
               ><ArrowLeft :size="14" />Back</Button
             >
-            <Button variant="primary" size="lg" @click="retryInstall">Reboot</Button>
+            <Button size="lg" data-edge-cloud @click="useCloudInstead"
+              ><Cloud :size="14" />{{ INSTALL_FAILED.cloud }}</Button
+            >
+            <Button variant="primary" size="lg" @click="retryInstall"
+              ><RotateCcw :size="14" />{{ INSTALL_FAILED.retry }}</Button
+            >
           </template>
           <!-- The window over the Home (View logs) pitches nothing: Cloud is a
                build on the Home behind it. The full-window install keeps it. -->

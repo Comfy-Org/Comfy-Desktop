@@ -20,7 +20,7 @@ import {
 } from './templateDownloads'
 import { dlFooter } from './dlFooter'
 
-const props = defineProps<{ download: TemplateDownload }>()
+const props = defineProps<{ download: TemplateDownload; stuck?: boolean; resolved?: string }>()
 
 const live = computed(
   () => props.download.status === 'downloading' || props.download.status === 'paused'
@@ -82,10 +82,13 @@ const detail = computed(() => {
   return detailLine(d)
 })
 const note = computed(() =>
-  props.download.status === 'failed' || props.download.status === 'cancelled'
-    ? statusLine(props.download)
-    : ''
+  props.resolved && props.download.status === 'failed'
+    ? props.resolved
+    : props.download.status === 'failed' || props.download.status === 'cancelled'
+      ? statusLine(props.download)
+      : ''
 )
+const noteBad = computed(() => props.download.status === 'failed' && !props.resolved)
 const ICON =
   'mad-btn mar-dl-icon inline-flex size-9 shrink-0 items-center justify-center text-muted-foreground hover:text-base-foreground'
 </script>
@@ -102,9 +105,13 @@ const ICON =
     <p
       v-if="note"
       class="mar-tpl-note m-0 flex items-center gap-1.5"
-      :class="download.status === 'failed' && 'text-status-danger'"
+      :class="noteBad && 'text-status-danger'"
     >
-      <CircleAlert v-if="download.status === 'failed'" :size="13" class="shrink-0" />{{ note }}
+      <CircleAlert v-if="noteBad" :size="13" class="shrink-0" /><CircleCheck
+        v-else-if="resolved"
+        :size="13"
+        class="shrink-0 text-status-running"
+      />{{ note }}
     </p>
     <div class="flex items-center gap-2">
       <div
@@ -119,7 +126,8 @@ const ICON =
       <button
         v-else-if="primary"
         type="button"
-        class="mad-btn is-primary mar-tpl-go mar-dl-fill"
+        class="mad-btn mar-tpl-go mar-dl-fill"
+        :class="!stuck && 'is-primary'"
         data-tpl-primary
         :data-download-action="download.status"
         :style="{ '--p': download.status === 'paused' ? progressOf(download) : 0 }"

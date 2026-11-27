@@ -119,10 +119,17 @@ export function startBuild(i: ProtoInstance): void {
 const START_TICK_MS = 80
 const CONNECT_TIMEOUT_MS = 15000
 
+export const startAttempts = reactive(new Map<string, number>())
+export const repairs = reactive(new Map<string, number>())
+const repaired = reactive(new Set<string>())
+
 function failStart(i: ProtoInstance, failure: NonNullable<ReturnType<typeof failureFor>>): void {
   clearInterval(timers.get(i.id))
   runs.delete(i.id)
-  startFailures.set(i.id, failure)
+  const first = buildStart.id === 'failsTwice' ? 1 : 0
+  const attempt = (startAttempts.get(i.id) ?? first) + 1
+  startAttempts.set(i.id, attempt)
+  startFailures.set(i.id, { ...failure, attempt })
   if (failure.kind !== 'cannot-connect') BUILD_ERRORS[i.id] = failure.message
   if (logs.id === i.id) logs.id = ''
 }
@@ -157,7 +164,7 @@ export function beginStart(i: ProtoInstance): void {
     return
   }
   if (nowOf(i) === 'running') return
-  const failure = failureFor(buildStart.id)
+  const failure = repaired.has(i.id) ? undefined : failureFor(buildStart.id)
   runs.set(i.id, { kind: 'start', percent: 0, startedAt: Date.now() })
   clearInterval(timers.get(i.id))
   timers.set(
@@ -180,6 +187,37 @@ export function restartAfterFailure(i: ProtoInstance): void {
   startFailures.delete(i.id)
   clearError(i.id)
   beginStart(i)
+}
+
+const REPAIR_TICK_MS = 60
+
+export function repairBuild(i: ProtoInstance): void {
+  startFailures.delete(i.id)
+  clearError(i.id)
+  repairs.set(i.id, 0)
+  clearInterval(timers.get(i.id))
+  timers.set(
+    i.id,
+    setInterval(() => {
+      const at = Math.min(100, (repairs.get(i.id) ?? 0) + 1)
+      repairs.set(i.id, at)
+      if (at < 100) return
+      clearInterval(timers.get(i.id))
+      repairs.delete(i.id)
+      repaired.add(i.id)
+      startAttempts.delete(i.id)
+      beginStart(i)
+    }, REPAIR_TICK_MS)
+  )
+}
+
+export function forgetStartFailures(): void {
+  for (const id of [...startFailures.keys()]) clearError(id)
+  startFailures.clear()
+  startAttempts.clear()
+  repaired.clear()
+  for (const id of [...repairs.keys()]) clearInterval(timers.get(id))
+  repairs.clear()
 }
 
 export function leaveFailedStart(i: ProtoInstance): void {

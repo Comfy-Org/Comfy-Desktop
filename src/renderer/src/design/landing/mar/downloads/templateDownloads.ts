@@ -30,6 +30,7 @@ export interface TemplateDownload {
   status: DownloadStatus
   mbps: number
   error?: string
+  disk?: boolean
   failedOnce: boolean
   diskCleared: boolean
   stalledAt?: number
@@ -70,11 +71,25 @@ const NOMINAL_MBPS: Record<DownloadScenario, number> = {
 const FAIL_AT = 0.6
 const STALL_MS = 5000
 const OFFLINE_FAIL_MS = 900
-const DISK_FREE_GB = 2.1
+export const DISK_FREE_GB = 2.1
 const DISK_RESERVE_GB = (512 * 1024 * 1024) / 1e9
 const TICK_MS = 200
 
 export const templateDownloads = reactive<{ list: TemplateDownload[] }>({ list: [] })
+
+export const diskRoom = reactive({ freedGb: 0, otherDrive: false, removed: [] as string[] })
+
+export const OTHER_DRIVE = {
+  name: 'Studio SSD',
+  path: '/Volumes/Studio SSD/ComfyUI/models',
+  freeGb: 1600
+}
+
+export function diskNeedGb(d: TemplateDownload): number {
+  if (diskRoom.otherDrive) return 0
+  const needed = d.totalGb - d.doneGb + DISK_RESERVE_GB
+  return Math.max(0, needed - DISK_FREE_GB - diskRoom.freedGb)
+}
 
 export function downloadFor(templateId: string): TemplateDownload | undefined {
   return templateDownloads.list.find((d) => d.id === templateId)
@@ -303,9 +318,19 @@ function fail(d: TemplateDownload, error?: string): void {
 
 function diskShortfall(d: TemplateDownload): string | undefined {
   if (downloadScenario.id !== 'disk' || d.diskCleared) return undefined
-  const needed = d.totalGb - d.doneGb + DISK_RESERVE_GB
-  if (needed <= DISK_FREE_GB) return undefined
-  return `Free up ${(Math.ceil((needed - DISK_FREE_GB) * 10) / 10).toFixed(1)} GB of space, then try again`
+  const short = diskNeedGb(d)
+  if (short <= 0) return undefined
+  return `Free up ${(Math.ceil(short * 10) / 10).toFixed(1)} GB of space, then try again`
+}
+
+export const diskFull = (d: TemplateDownload): boolean =>
+  d.status === 'failed' && Boolean(d.disk) && downloadScenario.id === 'disk'
+
+export function failNow(id: string): void {
+  const d = downloadFor(id)
+  if (!d || d.status !== 'downloading') return
+  d.doneGb = d.totalGb * FAIL_AT
+  fail(d)
 }
 
 function finish(d: TemplateDownload): void {
@@ -322,6 +347,7 @@ function run(d: TemplateDownload): void {
   d.status = 'downloading'
   d.mbps = 0
   const shortfall = diskShortfall(d)
+  d.disk = Boolean(shortfall)
   if (shortfall) {
     fail(d, shortfall)
     return
@@ -370,7 +396,7 @@ export function resume(id: string): void {
 export function retry(id: string): void {
   const d = downloadFor(id)
   if (!d) return
-  if (d.error) d.diskCleared = true
+  if (d.error && !d.disk) d.diskCleared = true
   if (d.status === 'cancelled') d.doneGb = 0
   resume(id)
 }

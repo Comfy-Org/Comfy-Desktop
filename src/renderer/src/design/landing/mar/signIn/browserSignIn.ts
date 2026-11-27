@@ -14,8 +14,16 @@ export const SIGN_IN_COPY = {
     copied: 'Copied',
     openAgain: 'Open again',
     dismiss: 'Dismiss'
+  },
+  failed: {
+    cancelled: 'Login was cancelled in the browser.',
+    rejected: "Login didn't go through. Comfy couldn't confirm the account.",
+    retry: 'Try again',
+    local: 'Continue without an account'
   }
 } as const
+
+export type SignInFailure = '' | 'cancelled' | 'rejected'
 
 export const FAKE_LOGIN_URL = 'https://cloud.comfy.org/cloud/login?desktop_login_code=PROTO-7Q4K'
 export const FAKE_CALLBACK_URL = 'http://127.0.0.1:61876/callback'
@@ -74,7 +82,8 @@ export const browserSignIn = reactive({
   banner: false,
   browser: false,
   step: 'consent' as BrowserStep,
-  added: 0
+  added: 0,
+  failed: '' as SignInFailure
 })
 
 export const newAccount = reactive({ made: false, paid: false })
@@ -84,6 +93,7 @@ let opening: ReturnType<typeof setTimeout> | undefined
 
 export function fakeBrowserSignIn(finish: Finish): void {
   waiting.push(finish)
+  browserSignIn.failed = ''
   if (!browserSignIn.pending) browserSignIn.added = 0
   browserSignIn.pending = true
   browserSignIn.banner = true
@@ -105,13 +115,37 @@ export function continueInBrowser(workspaceId: WorkspaceId): void {
 }
 
 export function cancelInBrowser(): void {
+  failSignIn('cancelled')
+}
+
+export function failSignIn(why: Exclude<SignInFailure, ''>): void {
   clearTimeout(opening)
   browserSignIn.browser = false
+  browserSignIn.pending = false
   browserSignIn.banner = true
+  browserSignIn.failed = why
+}
+
+export function retrySignIn(): void {
+  browserSignIn.failed = ''
+  browserSignIn.pending = true
+  browserSignIn.banner = true
+  clearTimeout(opening)
+  opening = setTimeout(openBrowserAgain, BROWSER_OPENS_AFTER_MS)
+}
+
+export function signInWithoutAccount(): void {
+  clearTimeout(opening)
+  waiting.splice(0)
+  browserSignIn.failed = ''
+  browserSignIn.pending = false
+  browserSignIn.banner = false
+  browserSignIn.browser = false
 }
 
 export function dismissSignInBanner(): void {
   browserSignIn.banner = false
+  browserSignIn.failed = ''
 }
 
 export function startBrowserSteps(newUser: boolean): void {

@@ -11,7 +11,14 @@ export const MISSING_MODELS_COPY = {
   description: "This workflow requires models you haven't downloaded yet.",
   totalSize: 'Total download size:',
   downloadAll: 'Download all',
-  gotIt: 'Ok, got it',
+  gotIt: 'Open anyway',
+  notDownloadable: 'Not downloadable',
+  notDownloadableHint:
+    "Some models can't download on their own. Find them online, or import a file you already have.",
+  findIt: 'Find it',
+  haveIt: 'I have it',
+  imported: 'Imported',
+  missingOnNode: (name: string): string => `Missing model: ${name}. Find it or import it to run.`,
   footer:
     'Download and place these models in the correct folder. Nodes with missing models are highlighted red on the canvas.'
 }
@@ -19,7 +26,20 @@ export const MISSING_MODELS_COPY = {
 export interface MissingModels {
   template: Template
   models: ModelReq[]
+  manual: ModelReq[]
 }
+
+export const manualModels = reactive({ on: false, imported: new Set<string>() })
+
+const MANUAL: Record<string, ModelReq[]> = {
+  'krea-street': [{ name: 'street_grain_lora_v2.safetensors', size: '228 MB', gb: 0.22 }]
+}
+
+export const manualFor = (workflow: string): ModelReq[] =>
+  manualModels.on ? (MANUAL[workflow] ?? []) : []
+
+export const unresolvedManual = (workflow: string): ModelReq[] =>
+  manualFor(workflow).filter((m) => !manualModels.imported.has(m.name))
 
 const seen = reactive(new Set<string>())
 
@@ -36,7 +56,7 @@ export function missingModelsOn(
   if (instanceById(instId)?.kind !== 'local' || isDownloaded(template.id, instId)) return undefined
   const live = downloadFor(template.id)
   if (live && live.status !== 'cancelled') return undefined
-  return { template, models: needsFor(template) }
+  return { template, models: needsFor(template), manual: manualFor(workflow) }
 }
 
 export function closeMissingModels(tabId: string, workflow: string): void {

@@ -52,6 +52,8 @@ import { DOWNLOAD_SCENARIOS, downloadScenario } from './downloads/templateDownlo
 import { DL_FOOTERS, dlFooter } from './downloads/dlFooter'
 import { CONNECTIONS, connection } from './offline/connection'
 import { BUILD_STARTS, buildStart } from './build/comfyStart'
+import { EDGE_CASES, edgeCase } from './edge/edgeStore'
+import { showEdge } from './edge/showEdge'
 import { markRunning } from './build/homeRun'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { LOOKS, marLook } from './looks/looks'
@@ -205,6 +207,7 @@ const PARTS: Part[] = [
   one('dlFooter', dlFooter, 'button', DL_FOOTERS),
   one('net', connection, 'online', CONNECTIONS),
   one('start', buildStart, 'starts', BUILD_STARTS),
+  one('edge', edgeCase, 'off', EDGE_CASES),
   // After Graph look: Production sets it to Current.
   one('comfyui', comfyLook, 'proposal', COMFY_LOOKS),
   one('look', marLook, 'current', LOOKS),
@@ -308,8 +311,9 @@ export function shareUrl(): string {
   q.set('share', '')
   q.set('m', String(proto.milestone))
   q.set('theme', look.theme)
-  q.set('view', viewCode())
-  const step = onboardingStep()
+  const edge = edgeCase.id !== 'off'
+  if (!edge) q.set('view', viewCode())
+  const step = edge ? '' : onboardingStep()
   if (step) q.set('step', step)
   for (const p of PARTS) if (!isDefault(p)) q.set(p.key, p.get())
   // `share=` reads better bare.
@@ -350,6 +354,13 @@ async function openShared(): Promise<void> {
     if (v !== null && (p.ok.length === 0 || p.ok.includes(v))) p.set(v)
   }
   await nextTick()
+  if (edgeCase.id !== 'off') {
+    await showEdge(edgeCase.id)
+    const keepEdge = new URLSearchParams()
+    q.forEach((v, k) => (!OWN.has(k) || k === 'theme') && keepEdge.set(k, v))
+    history.replaceState(null, '', `${location.pathname}?${keepEdge}`)
+    return
+  }
   const app = q.get('app')
   const page = q.get('page')
   // An app opens on its own, as the person who sent it saw it.

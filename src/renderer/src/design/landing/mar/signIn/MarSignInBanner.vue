@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Check, Copy, ExternalLink, X } from 'lucide-vue-next'
+import { Check, CircleAlert, Copy, ExternalLink, RotateCcw, X } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import { PORTAL_TO } from '../../ui/portal'
 import {
@@ -8,11 +8,19 @@ import {
   dismissSignInBanner,
   FAKE_LOGIN_URL,
   openBrowserAgain,
-  SIGN_IN_COPY
+  retrySignIn,
+  SIGN_IN_COPY,
+  signInWithoutAccount
 } from './browserSignIn'
+import { hostActions, instances } from '../../useProto'
 import { signInCornerShown } from './signInCorner'
 import { building } from '../../appFlow'
 import { marSidebarClosed } from '../shell/marShell'
+
+function withoutAccount(): void {
+  signInWithoutAccount()
+  if (!instances.value.some((i) => i.kind === 'local')) hostActions.newInstance()
+}
 
 const copied = ref(false)
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
@@ -31,19 +39,31 @@ function copyLink(): void {
       v-if="
         browserSignIn.banner &&
         !browserSignIn.browser &&
-        (!signInCornerShown || building || marSidebarClosed)
+        (browserSignIn.failed || !signInCornerShown || building || marSidebarClosed)
       "
       class="proto-ui mar-signin-banner"
       role="status"
       data-testid="signin-banner"
       @pointerdown.stop
     >
-      <span class="mar-signin-banner-msg">{{ SIGN_IN_COPY.banner.message }}</span>
-      <Button variant="primary" size="md" @click="copyLink">
+      <template v-if="browserSignIn.failed">
+        <CircleAlert :size="16" class="shrink-0 text-status-danger" />
+        <span class="mar-signin-banner-msg" data-testid="signin-failed">{{
+          SIGN_IN_COPY.failed[browserSignIn.failed]
+        }}</span>
+        <Button variant="primary" size="md" @click="retrySignIn">
+          <RotateCcw :size="14" />{{ SIGN_IN_COPY.failed.retry }}
+        </Button>
+        <Button variant="subtle" size="md" @click="withoutAccount">
+          {{ SIGN_IN_COPY.failed.local }}
+        </Button>
+      </template>
+      <span v-else class="mar-signin-banner-msg">{{ SIGN_IN_COPY.banner.message }}</span>
+      <Button v-if="!browserSignIn.failed" variant="primary" size="md" @click="copyLink">
         <Check v-if="copied" :size="14" /><Copy v-else :size="14" />
         {{ copied ? SIGN_IN_COPY.banner.copied : SIGN_IN_COPY.banner.copy }}
       </Button>
-      <Button variant="subtle" size="md" @click="openBrowserAgain">
+      <Button v-if="!browserSignIn.failed" variant="subtle" size="md" @click="openBrowserAgain">
         <ExternalLink :size="14" />{{ SIGN_IN_COPY.banner.openAgain }}
       </Button>
       <Button

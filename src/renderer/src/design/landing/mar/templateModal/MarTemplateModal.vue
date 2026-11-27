@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onClickOutside, useElementSize } from '@vueuse/core'
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
   AudioLines,
   BadgeCheck,
   BookOpen,
@@ -11,6 +12,7 @@ import {
   Coins,
   Copy,
   Cpu,
+  ChartPie,
   CreditCard,
   Film,
   HardDrive,
@@ -86,7 +88,18 @@ import Tooltip from '../../ui/Tooltip.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import TplDownloadActions from '../downloads/TplDownloadActions.vue'
-import { downloadFor, startDownload } from '../downloads/templateDownloads'
+import {
+  OTHER_DRIVE,
+  cancel as cancelDownload,
+  diskFull,
+  diskNeedGb,
+  diskRoom,
+  downloadFor,
+  startDownload
+} from '../downloads/templateDownloads'
+import { creditsState } from '../credits'
+import { modelsState } from '../build/models'
+import { tplPick } from './tplPick'
 import { START_COPY } from '../build/comfyStart'
 import { tplDetails } from './tplDetails'
 import { tplFeed } from './tplFeed'
@@ -338,6 +351,8 @@ const buildBox = ref<HTMLElement>()
 onClickOutside(buildBox, () => (buildMenu.value = false))
 function pickBuild(x: Target): void {
   if (x.disabled) return
+  if (bgDownload.value?.status === 'failed' && x.inst.id !== selectedId.value)
+    cancelDownload(bgDownload.value.id)
   selectedId.value = x.inst.id
   buildMenu.value = false
 }
@@ -369,7 +384,10 @@ watch(
     const t = template.value
     const kase =
       t && !saved.value ? targets.value.find((x) => x.inst.id === caseBuild(t)) : undefined
+    const pinned = targets.value.find((x) => x.inst.id === tplPick.build && !x.disabled)
+    tplPick.build = ''
     selectedId.value = (
+      pinned ??
       kase ??
       home ??
       best.value ??
@@ -450,6 +468,12 @@ const busyLabel = computed(() => {
 
 const creditsSheet = ref(false)
 const afterCredits = ref<'confirm' | 'cloud'>('confirm')
+const creditsAdded = ref(false)
+function getCredits(then: 'confirm' | 'cloud'): void {
+  if (!runBlock.value) creditsState.id = 'out'
+  afterCredits.value = then
+  creditsSheet.value = true
+}
 function confirm(): void {
   const s = selected.value
   const t = template.value
@@ -468,10 +492,17 @@ function confirm(): void {
     creditsSheet.value = true
     return
   }
-  if (s.state === 'credits' || s.state === 'plan') {
-    toast(
-      s.state === 'credits' ? 'Add credits opens in your browser' : 'Plans open in your browser'
-    )
+  if (s.state === 'credits' && !creditsAdded.value) {
+    getCredits('confirm')
+    return
+  }
+  if (s.state === 'credits') {
+    if (exampleOn.value) openWithExample(t, s.inst)
+    else hostActions.launch(s.inst, t.title)
+    return
+  }
+  if (s.state === 'plan') {
+    toast('Plans open in your browser')
     return
   }
   if (s.state === 'download' && s.inst.kind === 'local' && !saved.value) {
@@ -513,21 +544,83 @@ function tryCloud(): void {
     hostActions.signIn(tryCloud)
     return
   }
-  if (c.state === 'credits' || c.state === 'plan') {
-    toast(
-      c.state === 'credits' ? 'Add credits opens in your browser' : 'Plans open in your browser'
-    )
+  if (c.state === 'plan') {
+    toast('Plans open in your browser')
     return
   }
-  if (runBlock.value) {
-    afterCredits.value = 'cloud'
-    creditsSheet.value = true
+  if (runBlock.value || (c.state === 'credits' && !creditsAdded.value)) {
+    getCredits('cloud')
     return
   }
   stop()
   openWithExample(t, c.inst)
 }
+const failedDownload = computed(() => bgDownload.value?.status === 'failed')
+const diskStuck = computed(() => Boolean(bgDownload.value && diskFull(bgDownload.value)))
+const diskShort = computed(() => (bgDownload.value ? diskNeedGb(bgDownload.value) : 0))
+const diskResolved = computed(() => {
+  if (!diskStuck.value || diskShort.value > 0) return ''
+  return diskRoom.otherDrive
+    ? `Downloads to ${OTHER_DRIVE.name} now, ${(OTHER_DRIVE.freeGb / 1000).toFixed(1)} TB free.`
+    : `${fmtGb(diskRoom.freedGb)} freed. There's room now.`
+})
+const spaceOpen = ref(false)
+const spaceSec = ref<HTMLElement>()
+watch(spaceOpen, (on) => {
+  if (on)
+    void nextTick(() => spaceSec.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+})
+const spaceRows = computed(() => {
+  const build = selected.value?.inst.id ?? ''
+  return modelsState.models
+    .filter((m) => (m.installed || diskRoom.removed.includes(m.id)) && !m.usedBy.includes(build))
+    .sort(
+      (a, b) => Number(b.usedBy.length === 0) - Number(a.usedBy.length === 0) || b.sizeGb - a.sizeGb
+    )
+    .slice(0, 4)
+})
+const usedByLine = (ids: string[]): string =>
+  ids.length
+    ? `Only in ${ids.map((id) => instanceById(id)?.name ?? id).join(', ')}`
+    : 'Not used by any workflow'
+function removeModel(id: string): void {
+  const m = modelsState.models.find((x) => x.id === id)
+  if (!m || !m.installed) return
+  m.installed = false
+  diskRoom.removed.push(m.id)
+  diskRoom.freedGb += m.sizeGb
+}
+function chooseDrive(): void {
+  diskRoom.otherDrive = true
+  spaceOpen.value = false
+}
+type Fallback = 'login' | 'credits' | 'pick' | 'cloud'
+const fallback = computed<Fallback | undefined>(() => {
+  if (!exampleOn.value || !failedDownload.value || diskStuck.value) return undefined
+  const c = cloudTarget.value
+  if (!c || c.disabled || c.state === 'blocked' || c.state === 'plan')
+    return targets.value.filter((x) => !x.disabled).length > 1 ? 'pick' : undefined
+  if (c.state === 'login') return 'login'
+  if (c.state === 'credits' || runBlock.value) return 'credits'
+  return 'cloud'
+})
+const FALLBACK_LABEL: Record<Fallback, string> = {
+  login: 'Log in to run on Cloud',
+  credits: 'Get credits',
+  pick: 'Pick another build',
+  cloud: 'Try it now on Cloud'
+}
+function runFallback(): void {
+  const f = fallback.value
+  if (f === 'pick') {
+    buildMenu.value = true
+    void nextTick(() => buildBox.value?.scrollIntoView({ block: 'nearest' }))
+  } else if (f === 'login') hostActions.signIn(tryCloud)
+  else if (f === 'credits') getCredits('cloud')
+  else tryCloud()
+}
 function creditsResolved(): void {
+  creditsAdded.value = true
   if (afterCredits.value === 'cloud') tryCloud()
   else confirm()
 }
@@ -1032,7 +1125,9 @@ const full = computed(() => can.value.onboarding)
                   :aria-label="`Open in ${shown.inst.name}. Change build`"
                   aria-haspopup="menu"
                   :aria-expanded="buildMenu"
-                  :disabled="phase === 'busy' || downloadBusy || targets.length < 2"
+                  :disabled="
+                    phase === 'busy' || (downloadBusy && !failedDownload) || targets.length < 2
+                  "
                   @click="buildMenu = !buildMenu"
                 >
                   <span class="mar-tpl-glyph">
@@ -1221,6 +1316,36 @@ const full = computed(() => can.value.onboarding)
               </div>
             </section>
 
+            <section
+              v-if="diskStuck && spaceOpen"
+              ref="spaceSec"
+              class="mad-sec"
+              data-edge-space-list
+            >
+              <h3 class="mad-label">What's using space</h3>
+              <div class="mar-tpl-needs-box">
+                <ul class="mar-tpl-needs mar-tpl-space">
+                  <li v-for="m in spaceRows" :key="m.id" :data-removed="!m.installed || undefined">
+                    <ComfyModel :size="14" />
+                    <span class="grid min-w-0">
+                      <span class="mar-tpl-file" :title="m.file">{{ m.name }}</span>
+                      <span class="mar-tpl-space-meta">{{ usedByLine(m.usedBy) }}</span>
+                    </span>
+                    <span class="mar-tpl-size">{{ fmtGb(m.sizeGb) }}</span>
+                    <button
+                      v-if="m.installed"
+                      type="button"
+                      class="mar-tpl-space-remove"
+                      @click="removeModel(m.id)"
+                    >
+                      Remove
+                    </button>
+                    <span v-else class="mar-tpl-space-meta">Removed</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
             <section v-if="saved" class="mad-sec">
               <h3 class="mad-label">Details</h3>
               <dl class="mad-rows">
@@ -1280,9 +1405,53 @@ const full = computed(() => can.value.onboarding)
 
           <!-- At the bottom: what happens, then the one action. -->
           <footer v-if="bgDownload" class="mad-actions">
-            <TplDownloadActions :download="bgDownload" />
+            <TplDownloadActions
+              :download="bgDownload"
+              :stuck="diskStuck && !diskResolved"
+              :resolved="diskResolved"
+            />
+            <template v-if="diskStuck">
+              <button
+                type="button"
+                class="mad-btn"
+                data-edge-drive
+                :aria-pressed="diskRoom.otherDrive"
+                @click="chooseDrive"
+              >
+                <HardDrive :size="15" />
+                <span>Choose another drive</span>
+              </button>
+              <button
+                type="button"
+                class="mad-btn"
+                data-edge-space
+                :aria-expanded="spaceOpen"
+                @click="spaceOpen = !spaceOpen"
+              >
+                <ChartPie :size="15" />
+                <span>See what's using space</span>
+              </button>
+            </template>
             <button
-              v-if="cloudOffer && bgDownload.status !== 'done'"
+              v-else-if="fallback"
+              type="button"
+              class="mad-btn"
+              data-tpl-cloud
+              :data-fallback="fallback"
+              :disabled="browserSignIn.pending"
+              @click="runFallback"
+            >
+              <ArrowLeftRight v-if="fallback === 'pick'" :size="15" />
+              <Coins v-else-if="fallback === 'credits'" :size="15" />
+              <LocationIcon v-else kind="cloud" :size="15" />
+              <span>{{
+                browserSignIn.pending && fallback === 'login'
+                  ? SIGN_IN_COPY.waiting
+                  : FALLBACK_LABEL[fallback]
+              }}</span>
+            </button>
+            <button
+              v-else-if="cloudOffer && bgDownload.status !== 'done'"
               type="button"
               class="mad-btn"
               data-tpl-cloud

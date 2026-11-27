@@ -70,7 +70,13 @@ import WorkflowsPanel from './panels/WorkflowsPanel.vue'
 import ShortcutsPanel from './panels/ShortcutsPanel.vue'
 import TemplatesDialog from './panels/TemplatesDialog.vue'
 import MissingModelsDialog from './MissingModelsDialog.vue'
-import { closeMissingModels, downloadMissingModels, missingModelsOn } from './missingModels'
+import {
+  MISSING_MODELS_COPY,
+  closeMissingModels,
+  downloadMissingModels,
+  missingModelsOn,
+  unresolvedManual
+} from './missingModels'
 import SettingsDialog from './panels/SettingsDialog.vue'
 import NodeSearch from './NodeSearch.vue'
 import ScratchSearch from './ScratchSearch.vue'
@@ -1046,12 +1052,22 @@ const missingModels = computed(() => {
   const tab = graphTab.value
   return tab ? missingModelsOn(tab.id, shownWorkflow.value, tab.instanceId) : undefined
 })
+function markMissingNodes(): void {
+  const left = unresolvedManual(shownWorkflow.value)
+  if (!left.length) return
+  const node = sNodes.find((n) => n.kind.startsWith('generate')) ?? sNodes[0]
+  if (!node) return
+  node.state = 'error'
+  node.error = MISSING_MODELS_COPY.missingOnNode(left.map((m) => m.name).join(', '))
+}
 function closeMissing(): void {
+  markMissingNodes()
   if (graphTab.value) closeMissingModels(graphTab.value.id, shownWorkflow.value)
 }
 function downloadMissing(): void {
   const tab = graphTab.value
   const m = missingModels.value
+  markMissingNodes()
   if (tab && m) downloadMissingModels(tab.id, shownWorkflow.value, tab.instanceId, m.template)
 }
 startFromScratch()

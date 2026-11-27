@@ -517,7 +517,7 @@ export function targetFor(
         state: 'credits',
         status: 'Out of credits · 0 left',
         cost: `${c} credits`,
-        action: 'Add credits',
+        action: 'Get credits',
         note: 'Add credits to your account to run it. Then it opens on Comfy Cloud.'
       }
     if (kase === 'plan' && !inst.deployment)
@@ -785,15 +785,7 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
 }
 
 export type NeedKind =
-  | 'disk'
-  | 'gpu'
-  | 'licence'
-  | 'input'
-  | 'account'
-  | 'credits'
-  | 'plan'
-  | 'repair'
-  | 'network'
+  'disk' | 'gpu' | 'licence' | 'input' | 'account' | 'credits' | 'plan' | 'repair' | 'network'
 
 export interface CaseNeed {
   kind: NeedKind

@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { ArrowRight, Cloud, Laptop } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { ArrowRight, Cloud, Laptop, RotateCcw, WifiOff } from 'lucide-vue-next'
 import { hostActions, proto } from '../useProto'
 import { INSTANCES } from '../mock'
 import { onCloud } from './shell/surface'
+import { offline } from './offline/connection'
+
+const checking = ref(false)
+function retry(): void {
+  checking.value = true
+  setTimeout(() => (checking.value = false), 1200)
+}
 
 /**
  * First run · where Comfy runs: Comfy Cloud (recommended, ready now) or
@@ -12,12 +20,16 @@ import { onCloud } from './shell/surface'
  * Desktop (the app is already here) it sets up ComfyUI on this computer.
  */
 function openCloud(): void {
+  if (offline.value) return retry()
   if (proto.signedIn) hostActions.launch(INSTANCES[0]!)
   else hostActions.signIn()
 }
 </script>
 
 <template>
+  <p v-if="offline" class="mar-where-offline" role="status" data-edge-offline>
+    <WifiOff :size="15" class="shrink-0" />You're offline. Installing needs a connection.
+  </p>
   <div class="mar-where">
     <button type="button" class="mar-where-card mar-row-card is-cloud" @click="openCloud">
       <span class="mar-where-icon mar-row-icon"><Cloud :size="18" /></span>
@@ -30,11 +42,18 @@ function openCloud(): void {
           >Ready in seconds. Fast GPUs, every model.</span
         >
       </span>
-      <span class="mar-where-cta is-primary">
+      <span v-if="offline" class="mar-where-cta is-primary">
+        <RotateCcw :size="14" />{{ checking ? 'Checking…' : 'Try again' }}
+      </span>
+      <span v-else class="mar-where-cta is-primary">
         {{ proto.signedIn ? 'Open' : 'Sign in' }}<ArrowRight :size="14" />
       </span>
     </button>
-    <button type="button" class="mar-where-card mar-row-card" @click="hostActions.newInstance()">
+    <button
+      type="button"
+      class="mar-where-card mar-row-card"
+      @click="offline ? retry() : hostActions.newInstance()"
+    >
       <span class="mar-where-icon mar-row-icon"><Laptop :size="18" /></span>
       <span class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
         <span class="text-ui font-medium text-base-foreground">This computer</span>
@@ -52,6 +71,17 @@ function openCloud(): void {
 </template>
 
 <style scoped>
+.mar-where-offline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+}
 .mar-where {
   display: grid;
   width: 100%;

@@ -1,17 +1,40 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
-import { Download, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Check, Download, FolderOpen, Search, X } from 'lucide-vue-next'
 import type { MissingModels } from './missingModels'
-import { MISSING_MODELS_COPY as COPY, modelFolder } from './missingModels'
+import { MISSING_MODELS_COPY as COPY, manualModels, modelFolder } from './missingModels'
 import { fmtGb } from '../templateModal/templateData'
+import ModelImportDialog from '../build/ModelImportDialog.vue'
 
 const { missing } = defineProps<{ missing: MissingModels }>()
 const emit = defineEmits<{ close: []; download: [] }>()
 
 const total = computed(() => fmtGb(missing.models.reduce((n, m) => n + m.gb, 0)))
 
+const finding = ref('')
+const findOpen = computed({
+  get: () => Boolean(finding.value),
+  set: (v: boolean) => {
+    if (!v) finding.value = ''
+  }
+})
+const filePick = ref<HTMLInputElement>()
+const picking = ref('')
+function haveIt(name: string): void {
+  picking.value = name
+  filePick.value?.click()
+}
+function imported(name: string): void {
+  if (name) manualModels.imported.add(name)
+}
+function onFile(): void {
+  imported(picking.value)
+  picking.value = ''
+  if (filePick.value) filePick.value.value = ''
+}
+
 function onKey(e: KeyboardEvent): void {
-  if (e.key !== 'Escape') return
+  if (e.key !== 'Escape' || finding.value) return
   e.stopPropagation()
   emit('close')
 }
@@ -41,6 +64,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
           <span class="mmd-size">{{ m.size }}</span>
         </li>
       </ul>
+      <template v-if="missing.manual.length">
+        <p class="mmd-desc">{{ COPY.notDownloadableHint }}</p>
+        <ul class="mmd-list" data-missing-manual>
+          <li v-for="m in missing.manual" :key="m.name" class="mmd-row">
+            <span class="mmd-name" :title="m.name">{{ m.name }}</span>
+            <span v-if="manualModels.imported.has(m.name)" class="mmd-ok"
+              ><Check :size="13" />{{ COPY.imported }}</span
+            >
+            <template v-else>
+              <span class="mmd-badge is-warn">{{ COPY.notDownloadable }}</span>
+              <button type="button" class="rp-btn mmd-small" @click="finding = m.name">
+                <Search :size="13" />{{ COPY.findIt }}
+              </button>
+              <button type="button" class="rp-btn mmd-small" @click="haveIt(m.name)">
+                <FolderOpen :size="13" />{{ COPY.haveIt }}
+              </button>
+            </template>
+          </li>
+        </ul>
+        <input
+          ref="filePick"
+          type="file"
+          accept=".safetensors,.ckpt,.pth,.pt,.gguf"
+          class="hidden"
+          @change="onFile"
+        />
+      </template>
       <p class="mmd-total">
         {{ COPY.totalSize }} <strong>{{ total }}</strong>
       </p>
@@ -57,6 +107,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
         </button>
       </footer>
     </section>
+    <ModelImportDialog
+      v-model="findOpen"
+      :search="finding"
+      @added="(imported(finding), (finding = ''))"
+    />
   </div>
 </template>
 
@@ -163,6 +218,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   color: var(--rp-meta);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+.mmd-badge.is-warn {
+  background: color-mix(in oklch, var(--color-status-danger) 16%, transparent);
+  color: var(--color-status-danger);
+}
+.mmd-ok {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-status-running);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-btn.mmd-small {
+  height: 26px;
+  flex: none;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 .mmd-actions {
   display: flex;

@@ -55,6 +55,7 @@ import { blankStart } from './graph/blankStart'
 import { downloadScenario, templateDownloads } from './downloads/templateDownloads'
 import { connection } from './offline/connection'
 import { buildStart } from './build/comfyStart'
+import { edgeCase } from './edge/edgeStore'
 import { dlFooter } from './downloads/dlFooter'
 import { homeLayout, homeVersion } from './home/homeLayout'
 import { homeIdea } from './home/homeIdeas'
@@ -208,6 +209,7 @@ export const when = {
   ),
   connection: computed(() => inShell.value || proto.tabs.length > 0),
   buildStart: computed(() => inShell.value || proto.tabs.length > 0),
+  edgeCase: computed(() => can.value.design),
   tplCases: computed(
     () =>
       can.value.onboarding &&
@@ -354,6 +356,7 @@ export const TWEAKS = {
   dlFooter: one(dlFooter, 'button'),
   connection: one(connection, 'online'),
   buildStart: one(buildStart, 'starts'),
+  edgeCase: one(edgeCase, 'off'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
   deployState: {
     isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),

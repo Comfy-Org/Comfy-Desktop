@@ -39,6 +39,8 @@ import { DOWNLOAD_SCENARIOS, downloadScenario } from './downloads/templateDownlo
 import { DL_FOOTERS, dlFooter } from './downloads/dlFooter'
 import { CONNECTIONS, connection } from './offline/connection'
 import { BUILD_STARTS, buildStart } from './build/comfyStart'
+import { EDGE_CASES, edgeCase, type EdgeCase } from './edge/edgeStore'
+import { showEdge } from './edge/showEdge'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
@@ -118,6 +120,8 @@ const startAt = computed({
   set: (v: 'onboarding' | 'home') =>
     v === 'onboarding' ? showScreen((setupScreen.value = 'first')) : showHome()
 })
+const EDGE_OPTIONS = EDGE_CASES.map((c) => ({ value: c.value, label: c.label }))
+const edgeWhere = computed(() => EDGE_CASES.find((c) => c.value === edgeCase.id)?.where ?? '')
 const DEPLOY_STATES = SCENARIOS.map((s) => ({ value: s.id, label: s.label }))
 const deployState = computed({
   get: () => dep.scenario,
@@ -168,6 +172,7 @@ const GLOBAL: TweakId[] = ['brandMotif', 'sidebarMotion']
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
   // First run lives on Home.
+  { id: 'edgeCase', show: () => when.edgeCase.value },
   { id: 'user', show: () => can.value.home },
   { id: 'appsStage', show: () => when.appsStage.value },
   { id: 'account', show: () => true },
@@ -402,6 +407,16 @@ const linkSays = computed(() => {
              only where it applies. -->
         <section aria-label="States" class="flex flex-col">
           <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
+          <Row :show="shows('edgeCase')" label="Edge case" stack>
+            <Select
+              :model-value="edgeCase.id"
+              :options="EDGE_OPTIONS"
+              class="w-full"
+              data-testid="edge-case"
+              @update:model-value="(v) => v && showEdge(v as EdgeCase)"
+            />
+            <p v-if="edgeWhere" class="text-ui text-subtle-foreground">{{ edgeWhere }}</p>
+          </Row>
           <!-- The Deploy as API modal's states, first while it's open. -->
           <Row :show="shows('wfCase')" label="Workflow case">
             <Select v-model="tplCase.id" :options="WF_CASES" class="w-full" />
