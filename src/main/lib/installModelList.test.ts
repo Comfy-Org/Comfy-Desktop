@@ -716,8 +716,14 @@ describe('listInstallModels', () => {
         () => ({ args: ['--extra-model-paths-config', stalled], cwd: installPath }),
         60_000
       )
+      let settled = false
+      void listing.then(() => {
+        settled = true
+      })
       await vi.waitFor(() => expect(readFile).toHaveBeenCalledWith(stalled, 'utf-8'))
-      await vi.advanceTimersByTimeAsync(65_000)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(5_000)
 
       await expect(listing).resolves.toEqual({ models: [], truncated: true })
       expect(warn).toHaveBeenCalledWith(
