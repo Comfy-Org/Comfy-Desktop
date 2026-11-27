@@ -69,12 +69,8 @@ interface ReleaseDetailResponse {
 interface SignedDownloadResponse {
   downloadUrl?: string
 }
-interface SnapshotResolutionResponse {
-  definition?: unknown
-}
-interface CreatedBuildResponse {
-  id?: unknown
-  workspaceId?: unknown
+interface SnapshotBuildResponse {
+  build?: unknown
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -123,21 +119,11 @@ export class ComfyBuilderClient {
       throw new ComfyBuilderApiError('server', 'Desktop snapshot cannot be promoted')
     }
     const envelope = { ...snapshot, installationName: name }
-    const token = await this.accessToken()
-    const resolvedBody = await this.post<SnapshotResolutionResponse>(
-      '/v1/snapshots/resolve',
-      { snapshot: envelope },
-      token
-    )
-    if (!isRecord(resolvedBody.definition)) {
-      throw new ComfyBuilderApiError('server', 'Builder returned an invalid snapshot resolution')
-    }
-
-    const created = await this.post<CreatedBuildResponse>(
-      '/v1/builds',
-      { name, definition: { ...resolvedBody.definition, uiOrigin: 'desktop-snapshot' } },
-      token
-    )
+    const body = await this.post<SnapshotBuildResponse>('/v1/builds/from-snapshot', {
+      name,
+      snapshot: envelope
+    })
+    const created: Record<string, unknown> = isRecord(body.build) ? body.build : {}
     if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {
       throw new ComfyBuilderApiError('server', 'Builder returned an invalid draft Build')
     }
