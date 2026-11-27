@@ -7,6 +7,11 @@ vi.mock('./paths', () => ({
   dataDir: () => os.tmpdir()
 }))
 
+vi.mock('../settings', () => ({
+  get: () => undefined,
+  defaults: {}
+}))
+
 const {
   listInstallModels,
   listModelsInSearch,
@@ -166,6 +171,36 @@ describe('listModelsInSearch', () => {
     )
 
     expect(models).toEqual([{ folder: 'loras', name: 'old.safetensors', size: 5 }])
+  })
+
+  it('keeps an extra_model_paths.yaml kind with a slash, such as LLM/checkpoints', async () => {
+    const dir = path.join(tmp, 'llm')
+    writeFile(path.join(dir, 'chatglm3.safetensors'))
+
+    const { models } = await listModelsInSearch(
+      search({
+        extraPaths: [
+          {
+            section: 'llm',
+            basePath: null,
+            type: 'LLM/checkpoints',
+            rawType: 'LLM/checkpoints',
+            dir,
+            isDefault: false
+          },
+          {
+            section: 'llm',
+            basePath: null,
+            type: 'LLM/../x',
+            rawType: 'LLM/../x',
+            dir,
+            isDefault: false
+          }
+        ]
+      })
+    )
+
+    expect(models).toEqual([{ folder: 'LLM/checkpoints', name: 'chatglm3.safetensors', size: 1 }])
   })
 
   it('lists a file once when two roots hold the same folder and name, keeping the first root', async () => {
@@ -467,6 +502,34 @@ describe('listInstallModels', () => {
     )
 
     expect(models).toEqual([{ folder: 'vae', name: 'own.safetensors', size: 1 }])
+  })
+
+  it('reads the model folders the install launch arguments name', async () => {
+    const installPath = path.join(tmp, 'install')
+    const modelsDirectory = path.join(tmp, 'flag-models')
+    const baseDirectory = path.join(tmp, 'flag-base')
+    const external = path.join(tmp, 'flag-extra')
+    writeFile(path.join(modelsDirectory, 'loras', 'from-models-directory.safetensors'))
+    writeFile(path.join(baseDirectory, 'models', 'vae', 'from-base-directory.safetensors'))
+    writeFile(path.join(external, 'checkpoints', 'from-extra-config.safetensors'))
+    const yamlPath = path.join(tmp, 'extra.yaml')
+    fs.writeFileSync(
+      yamlPath,
+      `other:\n  base_path: ${JSON.stringify(external)}\n  checkpoints: checkpoints/\n`
+    )
+
+    const { models } = await listInstallModels(
+      installRecord(installPath, {
+        launchArgs: `--models-directory ${JSON.stringify(modelsDirectory)} --base-directory=${JSON.stringify(baseDirectory)} --extra-model-paths-config ${JSON.stringify(yamlPath)}`
+      }),
+      []
+    )
+
+    expect(models).toEqual([
+      { folder: 'checkpoints', name: 'from-extra-config.safetensors', size: 1 },
+      { folder: 'loras', name: 'from-models-directory.safetensors', size: 1 },
+      { folder: 'vae', name: 'from-base-directory.safetensors', size: 1 }
+    ])
   })
 
   it('reads the install extra_model_paths.yaml', async () => {

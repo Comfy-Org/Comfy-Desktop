@@ -4,8 +4,11 @@ import {
   TEMP_DIR_NAME,
   isNonModelFolder,
   modelFolderKind,
+  resolveExtraModelPaths,
   resolveInstallModelSearchPaths
 } from './models'
+import { comfyStartDir, lastArgValue, resolveFolderArg } from './startupArgFolders'
+import { parseArgs } from './util'
 import type { InstallModelSearch } from './models'
 import type { InstallationRecord } from '../installations'
 
@@ -41,7 +44,8 @@ export const MODEL_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
   '.onnx'
 ])
 
-const FOLDER_KIND = /^[A-Za-z0-9_.-]{1,64}$/
+const FOLDER_SEGMENT = /^[A-Za-z0-9_.-]+$/
+const MAX_FOLDER_LENGTH = 64
 
 interface FolderSource {
   folder: string
@@ -69,7 +73,13 @@ function isModelFile(name: string): boolean {
 }
 
 function isSendableFolder(folder: string): boolean {
-  return FOLDER_KIND.test(folder) && folder !== '.' && folder !== '..'
+  return (
+    folder.length > 0 &&
+    folder.length <= MAX_FOLDER_LENGTH &&
+    folder
+      .split('/')
+      .every((segment) => FOLDER_SEGMENT.test(segment) && segment !== '.' && segment !== '..')
+  )
 }
 
 function isSendableName(name: string): boolean {
@@ -266,6 +276,41 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
+function allArgValues(args: readonly string[], flag: string): string[] {
+  const values: string[] = []
+  for (const [i, arg] of args.entries()) {
+    if (arg === flag) {
+      for (let j = i + 1; j < args.length && !args[j]!.startsWith('--'); j++) values.push(args[j]!)
+    } else if (arg.startsWith(`${flag}=`)) {
+      values.push(arg.slice(flag.length + 1))
+    }
+  }
+  return values.filter(Boolean)
+}
+
+export function withLaunchArgPaths(
+  inst: InstallationRecord,
+  search: InstallModelSearch
+): InstallModelSearch {
+  const args = parseArgs(typeof inst.launchArgs === 'string' ? inst.launchArgs : '')
+  const resolve = (value: string): string => resolveFolderArg(value, () => comfyStartDir(inst))
+  const baseDirectory = lastArgValue(args, '--base-directory')
+  const modelsDirectory = lastArgValue(args, '--models-directory')
+  const extraRoots = [
+    ...(baseDirectory ? [path.join(resolve(baseDirectory), 'models')] : []),
+    ...(modelsDirectory ? [resolve(modelsDirectory)] : [])
+  ]
+  const extraConfigs = allArgValues(args, '--extra-model-paths-config').map(resolve)
+  return {
+    ...search,
+    modelRoots: [...search.modelRoots, ...extraRoots],
+    extraPaths: [
+      ...search.extraPaths,
+      ...extraConfigs.flatMap((config) => resolveExtraModelPaths(config))
+    ]
+  }
+}
+
 const UNKNOWN_MODEL_LIST: InstallModelList = { models: [], truncated: true }
 
 export async function listModelsInSearch(
@@ -303,7 +348,7 @@ export async function listInstallModels(
     }, timeBudgetMs + MODEL_LIST_GRACE_MS)
   })
   try {
-    const search = resolveInstallModelSearchPaths(inst, sharedModelsDirs)
+    const search = withLaunchArgPaths(inst, resolveInstallModelSearchPaths(inst, sharedModelsDirs))
     return await Promise.race([listModelsInSearch(search, timeBudgetMs), timedOut])
   } catch (err) {
     console.warn('[dev-platform] Could not list install models; sending none:', err)
