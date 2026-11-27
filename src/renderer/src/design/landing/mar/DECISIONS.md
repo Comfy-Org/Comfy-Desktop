@@ -136,8 +136,8 @@ internal `m=8.5`. "Tweak" means it is in the UI Playground to compare.
 
 - **Default layout:** "Recents first", with the smart search under the title, then Recently used, then Explore. The Home banner is hidden.
 - **Explore strip:** Explore uses main's card interaction: the arrow in the corner, and the title and subtitle on hover.
-  - The header reads "EXPLORE ›" and opens Explore › Apps.
-  - Apps | Workflows is a subtle switch. Its style is a tweak; the segmented control is the default.
+  - The header reads "EXPLORE ›" and opens Explore on the tab that is showing.
+  - Workflows | Apps is a subtle switch, with Workflows first and picked by default. Its style is a tweak; the segmented control is the default.
   - Headers have no background; the text and arrow carry the highlight.
 - **Sliders:** no fade at the sides, and they cut where the other sliders cut. Rounded cards keep their corners. Arrows follow one rule everywhere.
 - **Recently used** shows the generic workflow thumbnail, plus a small local or Cloud icon before the build name.

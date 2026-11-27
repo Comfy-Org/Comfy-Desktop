@@ -78,8 +78,8 @@ export const FEED_TABS = (): { value: FeedTab; label: string }[] =>
   (
     [
       { value: 'new', label: "What's new", on: true },
-      { value: 'apps', label: 'Apps', on: true },
       { value: 'workflows', label: 'Workflows', on: can.value.explore },
+      { value: 'apps', label: 'Apps', on: true },
       { value: 'learn', label: 'Learn', on: can.value.learn }
     ] as const
   )

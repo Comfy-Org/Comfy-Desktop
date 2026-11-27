@@ -24,10 +24,10 @@ const { full = false } = defineProps<{ full?: boolean }>()
  */
 const FEATURED = 12
 
-const kind = ref<'apps' | 'templates'>('apps')
+const kind = ref<'apps' | 'templates'>('templates')
 const KINDS: { value: 'apps' | 'templates'; label: string }[] = [
-  { value: 'apps', label: 'Apps' },
-  { value: 'templates', label: 'Workflows' }
+  { value: 'templates', label: 'Workflows' },
+  { value: 'apps', label: 'Apps' }
 ]
 
 type Topic = 'all' | ArcItem['topic']
