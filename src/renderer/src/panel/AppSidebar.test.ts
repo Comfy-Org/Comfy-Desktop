@@ -1178,6 +1178,31 @@ describe('AppSidebar', () => {
       wrapper.unmount()
     })
 
+    it('puts Create on the left when the chevron sits beside it, and centres it alone', async () => {
+      const alone = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      useInstallationStore().installations = [NEW]
+      await flushPromises()
+      expect(
+        getComputedStyle(alone.get('[data-testid="sidebar-create"]').element).justifyContent
+      ).toBe('center')
+      alone.unmount()
+
+      const withMenu = mount(AppSidebar, {
+        props: { activePage: 'home', activeBuildId: null },
+        attachTo: document.body
+      })
+      useInstallationStore().installations = [OLD, NEW]
+      await flushPromises()
+      expect(withMenu.find('[data-testid="sidebar-create-menu"]').exists()).toBe(true)
+      expect(
+        getComputedStyle(withMenu.get('[data-testid="sidebar-create"]').element).justifyContent
+      ).toBe('flow-start')
+      withMenu.unmount()
+    })
+
     it('opens the build Open ComfyUI opens: the most recently used one', async () => {
       const wrapper = await mountSidebar('apps', [OLD, NEW])
 
