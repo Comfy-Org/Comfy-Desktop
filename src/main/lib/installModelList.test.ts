@@ -636,6 +636,32 @@ describe('listInstallModels', () => {
     ])
   })
 
+  it('ignores a launch folder flag with no value, as launch drops it', async () => {
+    const installPath = path.join(tmp, 'install')
+    const modelsDirectory = path.join(tmp, 'flag-models')
+    writeFile(path.join(installPath, 'ComfyUI', 'models', 'vae', 'builtin.safetensors'))
+    writeFile(path.join(modelsDirectory, 'loras', 'earlier-flag.safetensors'))
+
+    const valueless = await listInstallModels(
+      installRecord(installPath, { launchArgs: '--models-directory --cpu --base-directory=' }),
+      []
+    )
+    const laterValueless = await listInstallModels(
+      installRecord(installPath, {
+        launchArgs: `--models-directory ${JSON.stringify(modelsDirectory)} --models-directory --cpu`
+      }),
+      []
+    )
+
+    expect(valueless).toEqual({
+      models: [{ folder: 'vae', name: 'builtin.safetensors', size: 1 }],
+      truncated: false
+    })
+    expect(laterValueless.models).toEqual([
+      { folder: 'loras', name: 'earlier-flag.safetensors', size: 1 }
+    ])
+  })
+
   it('reads the models under the launch base directory instead of the install models', async () => {
     const installPath = path.join(tmp, 'install')
     const baseDirectory = path.join(tmp, 'flag-base')

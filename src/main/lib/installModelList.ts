@@ -8,7 +8,7 @@ import {
   modelFolderKind,
   resolveInstallModelRoots
 } from './models'
-import { comfyStartDir, lastArgValue, resolveFolderArg } from './startupArgFolders'
+import { comfyStartDir, resolveFolderArg } from './startupArgFolders'
 import { parseArgs } from './util'
 import type { InstallModelRoots, InstallModelSearch, ResolvedExtraPath } from './models'
 import type { InstallationRecord } from '../installations'
@@ -310,6 +310,18 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
+function lastValuedArg(args: readonly string[], flag: string): string | null {
+  let value: string | null = null
+  for (const [i, arg] of args.entries()) {
+    const next = args[i + 1]
+    if (arg === flag && next !== undefined && !next.startsWith('--')) value = next
+    else if (arg.startsWith(`${flag}=`) && arg.length > flag.length + 1) {
+      value = arg.slice(flag.length + 1)
+    }
+  }
+  return value
+}
+
 function allArgValues(args: readonly string[], flag: string): string[] {
   const values: string[] = []
   for (const [i, arg] of args.entries()) {
@@ -339,8 +351,8 @@ export function installModelSearch(
 ): ModelListSearch {
   const { args, cwd } = launchPathsOf(inst, launch)
   const resolve = (value: string): string => resolveFolderArg(value, () => cwd)
-  const baseDirectory = lastArgValue(args, '--base-directory')
-  const modelsDirectory = lastArgValue(args, '--models-directory')
+  const baseDirectory = lastValuedArg(args, '--base-directory')
+  const modelsDirectory = lastValuedArg(args, '--models-directory')
   const modelsRoot = modelsDirectory
     ? resolve(modelsDirectory)
     : baseDirectory
