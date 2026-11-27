@@ -4,16 +4,17 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
   Cloud,
-  Compass,
   CornerDownRight,
   FlaskConical,
   House,
   Images,
   Laptop,
   LoaderCircle,
+  PanelsTopLeft,
   Plus,
   Server,
-  Settings
+  Settings,
+  Workflow
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -140,7 +141,8 @@ onBeforeUnmount(() => clearTimeout(unmountBuildRows))
 
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
-  { page: 'apps', label: t('sidebar.explore'), icon: Compass },
+  { page: 'workflows', label: t('sidebar.workflows'), icon: Workflow },
+  { page: 'apps', label: t('sidebar.apps'), icon: PanelsTopLeft },
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
   ...(showStaffApps
     ? [{ page: 'staff-apps' as const, label: t('sidebar.development'), icon: FlaskConical }]
@@ -394,7 +396,9 @@ function openSettings(): void {
               :aria-label="row.label"
               :data-testid="`app-sidebar-${row.page}`"
               :data-home-tour="
-                row.page === 'home' || row.page === 'staff-apps' ? undefined : row.page
+                row.page === 'home' || row.page === 'workflows' || row.page === 'staff-apps'
+                  ? undefined
+                  : row.page
               "
               @click="navigate(row.page)"
               @contextmenu.prevent="openRowMenu($event, row.page)"

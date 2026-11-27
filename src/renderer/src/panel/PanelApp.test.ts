@@ -1568,6 +1568,35 @@ describe('PanelApp', () => {
     mountedPanel.unmount()
   })
 
+  it('opens Workflows and Apps from their own sidebar entries, marking the one shown', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    const current = () =>
+      wrapper
+        .findAll('[data-testid="app-sidebar"] nav [aria-current="page"]')
+        .map((row) => row.attributes('data-testid'))
+
+    await wrapper.get('[data-testid="app-sidebar-workflows"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="workflows-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('h1').text()).toBe('Workflows')
+    expect(current()).toEqual(['app-sidebar-workflows'])
+    expect(window.api.navigatePanel).toHaveBeenLastCalledWith('workflows')
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(current()).toEqual(['app-sidebar-apps'])
+    expect(window.api.navigatePanel).toHaveBeenLastCalledWith('apps')
+  })
+
   it('opens Apps from See all apps on Home', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
@@ -2465,7 +2494,7 @@ describe('PanelApp', () => {
     ).toEqual([])
   })
 
-  it('opens a catalog workflow from Home and from the dedicated Explore tab', async () => {
+  it('opens a catalog workflow from Home and from the Workflows page See all workflows lands on', async () => {
     const workflow: CatalogWorkflow = {
       id: 'upscale-detail',
       title: 'Upscale detail',
@@ -2501,9 +2530,13 @@ describe('PanelApp', () => {
 
     await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="explore-workflows-tab"]').attributes('aria-pressed')).toBe(
-      'true'
+    expect(wrapper.get('[data-testid="workflows-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar-workflows"]').attributes('aria-current')).toBe(
+      'page'
     )
+    expect(
+      wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')
+    ).toBeUndefined()
     expect(window.api.listCatalogWorkflows).toHaveBeenCalledOnce()
 
     await wrapper.get('[data-testid="workflow-card-upscale-detail"]').trigger('click')

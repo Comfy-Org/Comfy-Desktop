@@ -198,8 +198,7 @@ function downloadThatKeepsRunning(bridge: FakeBridge): ElectronApi['launchCatalo
 
 async function openExploreWorkflows({ bridge, click, see }: PreviewStage): Promise<void> {
   launchLikeDesktop(bridge)
-  await click('[data-testid="app-sidebar-apps"]')
-  await click('[data-testid="explore-workflows-tab"]')
+  await click('[data-testid="app-sidebar-workflows"]')
   await see('[data-testid="workflows-grid"]')
 }
 
@@ -331,14 +330,14 @@ export const SCENARIOS: PreviewScenario[] = [
   },
   {
     id: 'explore-workflows',
-    title: 'Explore: Workflows',
+    title: 'Workflows',
     ready: '[data-testid="workflows-grid"]',
     seed: exploreSeed,
     arrange: openExploreWorkflows
   },
   {
     id: 'explore-workflow-filters',
-    title: 'Explore: Workflows, filters open',
+    title: 'Workflows, filters open',
     ready: '[data-testid="explore-filter-useCase"]',
     seed: exploreSeed,
     arrange: async (stage) => {

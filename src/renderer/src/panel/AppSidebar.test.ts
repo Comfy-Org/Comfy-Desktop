@@ -108,12 +108,13 @@ function tooltipOf(
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Explore, Assets, then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Workflows, Apps, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Assets',
       'Builds',
       ''
@@ -126,12 +127,36 @@ describe('AppSidebar', () => {
   it('marks Apps as the current page and opens it from its row', async () => {
     const wrapper = await mountSidebar('apps')
 
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Explore'])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
 
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
     expect(wrapper.emitted('navigate')).toEqual([['apps']])
+  })
+
+  it('marks Workflows as the current page and opens it from its row', async () => {
+    const wrapper = await mountSidebar('workflows')
+
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Workflows'])
+    expect(wrapper.get('[data-testid="app-sidebar-workflows"]').attributes('aria-label')).toBe(
+      'Workflows'
+    )
+
+    await wrapper.get('[data-testid="app-sidebar-workflows"]').trigger('click')
+
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('workflows')
+    expect(wrapper.emitted('navigate')).toEqual([['workflows']])
+  })
+
+  it('keeps Apps marked while an app is open over Apps, not Workflows', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
   it('shows no Development row unless the staff list is shown', async () => {
@@ -147,7 +172,8 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Assets',
       'Development',
       'Builds',
@@ -171,7 +197,8 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Character Swap',
       'Assets',
       'Builds',
@@ -188,7 +215,7 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
   })
 
-  it('names an app left open from Development under Development, not Explore', async () => {
+  it('names an app left open from Development under Development, not Apps', async () => {
     const wrapper = mount(AppSidebar, {
       props: {
         activePage: 'home',
@@ -201,7 +228,8 @@ describe('AppSidebar', () => {
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Explore',
+      'Workflows',
+      'Apps',
       'Assets',
       'Development',
       'Character Swap',
@@ -564,8 +592,10 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
-    const explore = wrapper.get('[data-testid="app-sidebar-apps"]').element.getBoundingClientRect()
-    expect(explore.top - home.bottom).toBe(4)
+    const workflows = wrapper
+      .get('[data-testid="app-sidebar-workflows"]')
+      .element.getBoundingClientRect()
+    expect(workflows.top - home.bottom).toBe(4)
     wrapper.unmount()
   })
 
@@ -621,7 +651,7 @@ describe('AppSidebar', () => {
 
     wrapper.get<HTMLElement>('[data-testid="app-sidebar-toggle"]').element.focus()
     const tooltipsOnTheWay: string[][] = []
-    for (const testId of ['app-sidebar-home', 'app-sidebar-apps']) {
+    for (const testId of ['app-sidebar-home', 'app-sidebar-workflows', 'app-sidebar-apps']) {
       await userEvent.keyboard('{Tab}')
       await vi.waitFor(() =>
         expect(document.activeElement).toBe(wrapper.get(`[data-testid="${testId}"]`).element)
@@ -629,7 +659,7 @@ describe('AppSidebar', () => {
       await vi.waitFor(() => expect(shownTooltips()).not.toHaveLength(0))
       tooltipsOnTheWay.push(shownTooltips())
     }
-    expect(tooltipsOnTheWay).toEqual([['Home'], ['Explore']])
+    expect(tooltipsOnTheWay).toEqual([['Home'], ['Workflows'], ['Apps']])
     wrapper.unmount()
   })
 
