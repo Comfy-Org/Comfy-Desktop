@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ComfyBuilderApiError, ComfyBuilderClient } from './client'
 import type { TokenProvider } from './types'
-import type { SnapshotExportEnvelope } from '../lib/snapshots/types'
+import type { SnapshotUploadEnvelope } from '../lib/snapshots/types'
 
 const auth = (token: string | null, onUnauthorized = vi.fn()): TokenProvider => ({
   getAccessToken: async () => token,
@@ -18,10 +18,10 @@ function mockFetch(status: number, body: unknown): typeof fetch {
   ) as unknown as typeof fetch
 }
 
-function snapshotExport(installationName = 'Local One'): SnapshotExportEnvelope {
+function snapshotExport(installationName = 'Local One'): SnapshotUploadEnvelope {
   return {
     type: 'comfyui-desktop-2-snapshot',
-    version: 2,
+    version: 3,
     exportedAt: '2026-08-21T00:00:00.000Z',
     installationName,
     snapshots: [
@@ -40,7 +40,9 @@ function snapshotExport(installationName = 'Local One'): SnapshotExportEnvelope 
         pipPackages: {},
         pythonVersion: '3.13.1'
       }
-    ]
+    ],
+    models: [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }],
+    modelsTruncated: false
   }
 }
 
@@ -212,7 +214,7 @@ describe('ComfyBuilderClient', () => {
     expect(getAccessToken).toHaveBeenCalledTimes(6)
   })
 
-  it('creates the Build draft from the snapshot in one call, so the builder keeps its report', async () => {
+  it('creates the Build draft from the snapshot in one call, so the builder keeps its report and the desktop-snapshot origin', async () => {
     const f = mockFetch(200, snapshotBuild())
     vi.stubGlobal('fetch', f)
     const getAccessToken = vi.fn(async () => 'tok-123')
@@ -239,7 +241,8 @@ describe('ComfyBuilderClient', () => {
       },
       body: JSON.stringify({
         name: 'Local One',
-        snapshot: { ...snapshot, installationName: 'Local One' }
+        snapshot: { ...snapshot, installationName: 'Local One' },
+        uiOrigin: 'desktop-snapshot'
       })
     })
     expect(getAccessToken).toHaveBeenCalledOnce()

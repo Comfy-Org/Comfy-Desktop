@@ -3,6 +3,7 @@ export type {
   Snapshot,
   SnapshotEntry,
   SnapshotExportEnvelope,
+  SnapshotUploadEnvelope,
   SnapshotDiff,
   SnapshotDiffSummary,
   SnapshotSummary,
@@ -35,6 +36,7 @@ export {
 
 export {
   buildExportEnvelope,
+  buildUploadEnvelope,
   validateExportEnvelope,
   importSnapshots,
   stageSnapshotEnvelope,

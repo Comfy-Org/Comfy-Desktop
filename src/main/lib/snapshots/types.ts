@@ -1,4 +1,5 @@
 import type { ScannedNode } from '../nodes'
+import type { InstallModelEntry } from '../installModelList'
 import type { SnapshotTorchStack } from '../../sources/standalone/torchStackTypes'
 
 export type {
@@ -42,6 +43,12 @@ export interface SnapshotExportEnvelope {
   exportedAt: string
   installationName: string
   snapshots: Snapshot[]
+}
+
+export interface SnapshotUploadEnvelope extends Omit<SnapshotExportEnvelope, 'version'> {
+  version: 3
+  models: InstallModelEntry[]
+  modelsTruncated: boolean
 }
 
 export interface SnapshotDiff {

@@ -8,7 +8,13 @@ import type { TorchStackPackages } from '../../sources/standalone/torchStackType
 import { snapshotsDir, formatTimestamp } from './store'
 import * as telemetry from '../telemetry'
 import { VALID_PIP_NAME } from '../pip'
-import type { Snapshot, SnapshotEntry, SnapshotExportEnvelope } from './types'
+import type { InstallModelList } from '../installModelList'
+import type {
+  Snapshot,
+  SnapshotEntry,
+  SnapshotExportEnvelope,
+  SnapshotUploadEnvelope
+} from './types'
 
 export function buildExportEnvelope(
   installationName: string,
@@ -20,6 +26,19 @@ export function buildExportEnvelope(
     exportedAt: new Date().toISOString(),
     installationName,
     snapshots: entries.map((e) => e.snapshot)
+  }
+}
+
+export function buildUploadEnvelope(
+  installationName: string,
+  entries: SnapshotEntry[],
+  modelList: InstallModelList
+): SnapshotUploadEnvelope {
+  return {
+    ...buildExportEnvelope(installationName, entries),
+    version: 3,
+    models: modelList.models,
+    modelsTruncated: modelList.truncated
   }
 }
 
