@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { X } from 'lucide-vue-next'
+import { Info, X } from 'lucide-vue-next'
 import { can } from '../../milestones'
 import { instanceById, proto } from '../../useProto'
 import { hideNudge, mcp } from './mcpSetup'
 import './mcp.css'
+import '../pages/MarUndoToast.vue'
 
 /**
  * The card in the bottom right corner of a local build's canvas, from
@@ -30,16 +31,27 @@ function connect(): void {
 </script>
 
 <template>
-  <Transition name="mcp-nudge">
-    <div v-if="shown && inst" class="mcp-nudge" role="status">
-      <span class="mcp-nudge-text">
-        <span class="mcp-nudge-title">Run this build from your AI agent</span>
-        <span class="mcp-nudge-lead">Connect Claude Code, Cursor or any MCP agent.</span>
-      </span>
-      <button type="button" class="mcp-nudge-go" @click="connect">Connect</button>
-      <button type="button" class="mcp-nudge-x" aria-label="Dismiss" @click="hideNudge(inst.id)">
-        <X :size="15" />
-      </button>
+  <Transition name="mar-undo">
+    <div v-if="shown && inst" class="proto-ui mcp-nudge-host">
+      <div class="mar-undo is-info" role="status" data-testid="mcp-nudge">
+        <Info :size="16" class="mar-undo-icon" />
+        <span class="mar-undo-text">Run this build from your AI agent</span>
+        <button type="button" class="mar-undo-btn" @click="connect">Connect</button>
+        <button
+          type="button"
+          class="mar-undo-x"
+          aria-label="Dismiss"
+          @click="hideNudge(inst.id)"
+        >
+          <X :size="13" />
+        </button>
+      </div>
     </div>
   </Transition>
 </template>
+
+<style>
+:root .proto-ui.proto-ui.proto-ui .mcp-nudge-host .mar-undo {
+  top: 116px;
+}
+</style>

@@ -111,3 +111,99 @@ until they merge.
 Pending, not in main (open drafts, not in the prototype): #2181 build picker, #2210 page titles at display size, #2213 live logs window, #2214 sidebar fold (already matched), #2215 Open and Export snapshot on the build page, #2216 update progress on the build, #2217 Folders tab top-down, and the downloads popup proposal.
 
 The prototype has no blue: Run and Resume are white, value fills and status chips grey (see UI-RULES › Buttons and actions).
+
+## Week of 2026-11-24: onboarding, Create, Home and edge cases
+
+Mar's decisions from 2026-11-23 to 2026-11-27. Where two contradict, the
+later one stands and the earlier one is left out. Milestone 13 is the
+internal `m=8.5`. "Tweak" means it is in the UI Playground to compare.
+
+### How we work
+
+- **New ideas go in as tweaks**, never over what is there. Don't move or restyle controls nobody asked to change.
+- **Reuse before inventing:** the prototype's design system first, then Desktop's main and prod, then shadcn. No new primitives.
+- **Follow prod when unsure:** where the prototype added behaviour prod doesn't have, it goes, unless it clearly helps.
+- **Figma and FigJam are in English.** The FigJam flows show the happy path only, the edge cases sit apart, and each edge case shows one solution: the best one.
+- **PRs to Desktop are small** and only use what the backend already has. A visual PR needs before/after screenshots. Vinh (vqt123) reviews.
+
+### Milestones
+
+- **Milestone 7 is Recents & Assets.** Learn moves to milestone 8.
+- **Milestone 13** is the onboarding milestone. It has no Search in the sidebar; ⌘K still opens search.
+- **Explore** has two tabs only: Apps and Workflows.
+
+### Home (milestone 13)
+
+- **Default layout:** "Recents first", with the smart search under the title, then Recently used, then Explore. The Home banner is hidden.
+- **Explore strip:** Explore uses main's card interaction: the arrow in the corner, and the title and subtitle on hover.
+  - The header reads "EXPLORE ›" and opens Explore › Apps.
+  - Apps | Workflows is a subtle switch. Its style is a tweak; the segmented control is the default.
+  - Headers have no background; the text and arrow carry the highlight.
+- **Sliders:** no fade at the sides, and they cut where the other sliders cut. Rounded cards keep their corners. Arrows follow one rule everywhere.
+- **Recently used** shows the generic workflow thumbnail, plus a small local or Cloud icon before the build name.
+  - Section titles are uppercase.
+  - A recent opens straight into its ComfyUI tab, with no modal.
+- **Workflow covers:** default to the canvas cover in milestone 13.
+- **Spacing:** the blocks breathe (14px above the search, 24px below). Templates start 32px below the search.
+- **Removed ideas:** the discarded Home ideas are gone. Only compact Recents and the small greeting stay as tweaks.
+
+### Search, Create and the blank canvas
+
+- **One smart search:** the same component on Home and in Create.
+  - It describes or searches ("Describe what you want to make, or search templates and apps").
+  - It has a faint border and no shadow.
+  - It is not focused on open.
+- **Agent:** sending to the agent opens its panel at full height on the right. The canvas, toolbars and Run move left, and nothing is covered.
+- **No-match results:** Ask the agent is a polished row under the results. "Also try" follows.
+- **Create's default is V15** ("Canvas start"). V16 stays as an option: smart search, a centred title, no tabs, and a template band.
+  - Create has no × of its own; it closes from its tab. Esc still closes it.
+  - The dot grid fades out at the edges, sides included, and also while a graph preview shows.
+  - Exiting a graph preview is easy: a pill with Open and ✕.
+- **Template cards:** picking a template, from a tile, a search result or the best match, opens the template modal. Graph on hover is a tweak, off by default.
+- **Blank canvas:**
+  - The card is a dashed outline with a soft fill, a step lighter on hover.
+  - It opens an empty canvas.
+  - The node and template search panel ("Search nodes and templates") is a tweak.
+
+### Template modal
+
+- **Readiness lives in the modal,** never on thumbnails or cards: "Ready", "Needs X GB", "Runs on Cloud".
+- **Missing models are shown before opening.** The button says "Download and open", or "Open" when nothing is missing.
+  - Recents, Open workflow and dropped files open directly. If something is missing there, ComfyUI's missing-models dialog appears, as in prod.
+- **Templates never run by themselves.** ComfyUI opens with the template loaded, Run is highlighted once, and "Press Run…" shows. The first-result card is gone, as in prod.
+- **No ratings or stars on workflows.**
+- **Under exploration as tweaks:**
+  - Template details: Current (default), Compact, and the Split / Checklist / Tabs proposals.
+  - Template feed: Off (default), Feed, and Strip.
+- **Can't-run cases:** the Playground has a "Can't-run case" select. Picking a case turns the edge case off.
+
+### Edge cases (Playground › Edge case, share key `edge`)
+
+Each problem is stated once, with one way out.
+
+- **E1 · Offline at first launch:** the offline note sits in a tray that slides out from behind Try again, and the install retries on its own once back online.
+- **E2 · Download fails:** Try again. The Cloud button says what happens next: Log in to run on Cloud, Get credits, or Pick another build.
+- **E3 · Disk full:** one warning card, "Not enough space · Needs N GB more".
+  - Choose another drive is the primary; Free up space opens the list of models to remove inside the card.
+  - Once there's room, the card turns green and Try again comes back.
+- **E5 · Start fails twice:** Repair build (primary), Restart, Copy error report, Open Terminal, Back to Home.
+- **E6 · Models that can't download:** the missing-models dialog has two groups, "Downloads automatically · N GB" and "Needs you".
+  - Each model in "Needs you" has Find it (Civitai, Hugging Face) and I have it.
+  - The dialog closes with Open anyway or Download N GB, and the missing node shows in red on the canvas.
+- **E9 · Install fails:** a plain reason, Try again, and Use Cloud instead.
+- **E10 · This computer can't run models locally:** setup says so before installing. Use Comfy Cloud is the primary, Install anyway the secondary.
+- **E11 · No Cloud credits:** Get credits opens the credits sheet.
+- **E12 · Login fails:** an error toast, "Couldn't log in", with Try again. Closing it continues without an account.
+- **Credits:** buying credits is only shown to a new user with no subscription: account, permissions, then credits, all in the browser. Returning users never see a top-up.
+
+### Feedback, dialogs and type
+
+- **One toast:** Mar's toast, top right under the title bar.
+  - It comes in tones: red when something failed, orange to take care, green when it went well, neutral otherwise.
+  - It has at most one action, and the × closes it.
+  - The AI agent nudge and the login failure use it too. The nudge sits below the canvas's Run toolbar. Whether every toast should drop below it on a canvas is still open.
+- **Modals:** the round × sits outside the card. A modal footer keeps its line.
+- **Asset details:** the × stays beside More, as it was.
+- **Modal titles** are 18px semibold (`text-subtitle`, a new step in the type scale: 13 · 16 · 18 · 22 · 34). shadcn is the reference for components, but type sizes always come from our scale.
+- **Sidebar motion** follows Desktop's main; Snap is a tweak.
+- **Version shown:** the starting screen shows the ComfyUI version setup installed (v0.42.4).
