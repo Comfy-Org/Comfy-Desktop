@@ -227,6 +227,30 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(w.emitted('action')).toEqual([[switchChannel]])
   })
 
+  it('keeps saying Installing… when another channel is picked during an install, with its switch still there', async () => {
+    const w = mountOverview({
+      installation: { ...INSTALL, status: 'installing' },
+      model: model({
+        channels: [
+          channel({}),
+          channel({
+            value: 'latest',
+            label: 'Latest',
+            description: 'Every commit',
+            actions: [switchChannel]
+          })
+        ]
+      })
+    })
+    await openMenu(w, 'build-overview-channel')
+    await select('build-overview-channel-latest')
+
+    const update = w.get('[data-testid="build-overview-update"]').text()
+    expect(update).toContain('Installing…')
+    expect(update).not.toContain('Switch to Latest')
+    expect(w.find('[data-testid="update-action-switch-channel"]').exists()).toBe(true)
+  })
+
   it('says a picked channel has no version info yet when it has nothing to run', async () => {
     const w = mountOverview()
     await openMenu(w, 'build-overview-channel')
