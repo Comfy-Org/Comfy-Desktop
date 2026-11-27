@@ -84,7 +84,7 @@ import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
 import { HOME_TOUR_MODES, homeTour, replayHomeTour } from './homeTour/homeTour'
 import { replayOnboarding } from './setup/replayOnboarding'
-import TplCasesNote from './templateModal/TplCasesNote.vue'
+import TplCasePick from './templateModal/TplCasePick.vue'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
 import GroupHead from './tuner/TunerGroupHead.vue'
@@ -449,8 +449,8 @@ const linkSays = computed(() => {
           <Row :show="shows('openAnswer')" label="Open in ComfyUI answers">
             <Select v-model="openAnswer.id" :options="OPEN_ANSWERS" class="w-full" />
           </Row>
-          <Row :show="when.tplCases.value" label="Can't-run cases" stack>
-            <TplCasesNote />
+          <Row :show="when.tplCases.value" label="Can't-run case">
+            <TplCasePick />
           </Row>
           <Row :show="shows('deployState')" label="Deploy state">
             <Select v-model="deployState" :options="DEPLOY_STATES" class="w-full" />

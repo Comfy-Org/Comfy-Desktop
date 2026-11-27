@@ -476,6 +476,16 @@ export function targetFor(
   const gb = totalGb(t)
   const kase = caseFor(t)?.id
   if (inst.kind === 'cloud') {
+    if (isOffline(t))
+      return {
+        ...base,
+        state: 'offline',
+        status: "You're offline",
+        cost: '',
+        action: 'Run on Comfy Cloud',
+        note: 'Comfy Cloud needs a connection.',
+        disabled: true
+      }
     if (!signedIn || kase === 'signIn')
       return {
         ...base,
@@ -581,6 +591,16 @@ export function targetFor(
       cost: has ? 'May fail' : fmtGb(gb),
       action: 'Start anyway',
       note: `It may run out of memory. Smaller sizes help, or run it on Cloud.`
+    }
+  if (!has && isOffline(t))
+    return {
+      ...base,
+      state: 'offline',
+      status: `Offline · can’t download ${fmtGb(gb)}`,
+      cost: fmtGb(gb),
+      action: 'Download and start',
+      note: 'Its models download from the internet. Connect, then try again.',
+      disabled: true
     }
   if (kase === 'repair' && inst.id === caseFor(t)?.build)
     return {

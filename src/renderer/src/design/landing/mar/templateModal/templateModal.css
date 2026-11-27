@@ -906,8 +906,8 @@
 }
 .mar-tpl-feed-hero {
   display: flex;
-  height: max(280px, calc(100% - 104px));
-  align-items: center;
+  height: clamp(240px, calc(100% - 520px), 480px);
+  align-items: flex-start;
   justify-content: center;
   container-type: size;
 }

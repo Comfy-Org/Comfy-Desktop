@@ -27,7 +27,7 @@ const OUT_OF_CREDITS = 'api_seedance2_5_i2v_1080p'
 const BUILD = 'local-1'
 const MISSING_WORKFLOW = 'krea-street'
 
-function clearAll(): void {
+function clearState(): void {
   connection.id = 'online'
   downloadScenario.id = 'normal'
   buildStart.id = 'starts'
@@ -44,6 +44,11 @@ function clearAll(): void {
   signInWithoutAccount()
   forgetStartFailures()
   for (const d of [...templateDownloads.list]) remove(d.id)
+  tplPick.build = ''
+}
+
+function clearAll(): void {
+  clearState()
   proto.detail = null
   proto.tabs.splice(0)
   showHome()
@@ -114,6 +119,17 @@ const SHOW: Record<Exclude<EdgeCase, 'off'>, () => void | Promise<void>> = {
 }
 
 const FIRST_TIME: EdgeCase[] = ['e1', 'e9', 'e10']
+
+export function leaveEdge(): void {
+  const was = edgeCase.id
+  edgeCase.id = 'off'
+  clearState()
+  if (was === 'off') return
+  proto.detail = null
+  proto.tabs.splice(0)
+  showHome()
+  go('explore')
+}
 
 export async function showEdge(id: EdgeCase): Promise<void> {
   edgeCase.id = id
