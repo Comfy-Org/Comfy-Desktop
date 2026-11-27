@@ -10,7 +10,7 @@ import {
   watch
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { until } from '@vueuse/core'
+import { until, useEventListener } from '@vueuse/core'
 import { PopoverRoot } from 'reka-ui'
 import Button from '@comfyorg/design-system/button/Button'
 import CoachmarkCard from '@comfyorg/design-system/card/CoachmarkCard'
@@ -198,6 +198,22 @@ function skip(): void {
   end({ returnFocus: true })
 }
 
+function skipOnEscape(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  event.preventDefault()
+  event.stopPropagation()
+  skip()
+}
+
+useEventListener(
+  () => (running.value && step.value ? window : undefined),
+  'keydown',
+  skipOnEscape,
+  {
+    capture: true
+  }
+)
+
 function elementUnderTarget(event: MouseEvent): Element | null {
   const target = event.currentTarget as HTMLElement
   const body = document.body.style
@@ -325,7 +341,6 @@ function focusNext(event: Event): void {
         @open-auto-focus="focusNext"
         @close-auto-focus="restoreFocus"
         @interact-outside.prevent
-        @escape-key-down="skip"
       >
         <CoachmarkCard
           ref="card"
