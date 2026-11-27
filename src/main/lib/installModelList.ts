@@ -47,6 +47,10 @@ export const MODEL_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
 const FOLDER_SEGMENT = /^[A-Za-z0-9_.-]+$/
 const MAX_FOLDER_LENGTH = 64
 
+export interface ModelListSearch extends InstallModelSearch {
+  configFiles?: readonly string[]
+}
+
 interface FolderSource {
   folder: string
   dir: string
@@ -125,6 +129,14 @@ async function realpathOrNull(target: string, state: ScanState): Promise<string 
   } catch (err) {
     noteFailure(state, err)
     return null
+  }
+}
+
+async function noteUnreadableConfig(config: string, state: ScanState): Promise<void> {
+  try {
+    await fs.promises.access(config, fs.constants.R_OK)
+  } catch (err) {
+    noteFailure(state, err)
   }
 }
 
@@ -300,7 +312,7 @@ function allArgValues(args: readonly string[], flag: string): string[] {
 export function withLaunchArgPaths(
   inst: InstallationRecord,
   search: InstallModelSearch
-): InstallModelSearch {
+): ModelListSearch {
   const args = parseArgs(typeof inst.launchArgs === 'string' ? inst.launchArgs : '')
   const resolve = (value: string): string => resolveFolderArg(value, () => comfyStartDir(inst))
   const baseDirectory = lastArgValue(args, '--base-directory')
@@ -313,6 +325,7 @@ export function withLaunchArgPaths(
   return {
     ...search,
     modelRoots: [...search.modelRoots, ...extraRoots],
+    configFiles: extraConfigs,
     extraPaths: [
       ...search.extraPaths,
       ...extraConfigs.flatMap((config) => resolveExtraModelPaths(config))
@@ -323,10 +336,13 @@ export function withLaunchArgPaths(
 const UNKNOWN_MODEL_LIST: InstallModelList = { models: [], truncated: true }
 
 export async function listModelsInSearch(
-  search: InstallModelSearch,
+  search: ModelListSearch,
   timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
 ): Promise<InstallModelList> {
   const state: ScanState = { unreadable: false }
+  for (const config of search.configFiles ?? []) {
+    await noteUnreadableConfig(config, state)
+  }
   const collector = new ModelCollector(Date.now() + timeBudgetMs, state)
   for (const root of search.modelRoots) {
     for (const source of await collector.sourcesInRoot(root)) {

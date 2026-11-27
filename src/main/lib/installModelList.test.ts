@@ -362,6 +362,42 @@ describe('listModelsInSearch', () => {
     }
   })
 
+  it('says the list was cut when a launch-arg model paths config cannot be read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'loras', 'open.safetensors'))
+    const locked = path.join(tmp, 'locked.yaml')
+    const missing = path.join(tmp, 'missing.yaml')
+    writeFile(locked)
+    const access = fs.promises.access.bind(fs.promises)
+    const denied = vi
+      .spyOn(fs.promises, 'access')
+      .mockImplementation(((target: fs.PathLike, mode?: number) =>
+        String(target) === locked
+          ? Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }))
+          : access(target, mode)) as typeof fs.promises.access)
+
+    try {
+      const readable = await listModelsInSearch({
+        ...search({ modelRoots: [root] }),
+        configFiles: [missing]
+      })
+      const unreadable = await listModelsInSearch({
+        ...search({ modelRoots: [root] }),
+        configFiles: [locked]
+      })
+
+      expect(readable.truncated).toBe(false)
+      expect(unreadable).toEqual({
+        models: [{ folder: 'loras', name: 'open.safetensors', size: 1 }],
+        truncated: true
+      })
+    } finally {
+      denied.mockRestore()
+      vi.mocked(console.warn).mockRestore()
+    }
+  })
+
   it('says the list is whole when nothing was cut', async () => {
     const root = path.join(tmp, 'models')
     writeFile(path.join(root, 'loras', 'one.safetensors'))
