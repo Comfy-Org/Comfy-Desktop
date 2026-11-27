@@ -13,7 +13,6 @@ import MarSeg from '../pages/MarSeg.vue'
 import { ARC_TEMPLATES, arcApps, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
-import { exploreSwitch } from '../home/exploreSwitch'
 
 const { full = false } = defineProps<{ full?: boolean }>()
 
@@ -209,10 +208,6 @@ function scrollRow(by: number): void {
           :leaving="leaving"
           :heading="exploreTabs ? 'Explore' : ''"
           :corner="exploreTabs"
-          :switch-tone="
-            exploreSwitch.id === 'seg' ? 'default' : exploreSwitch.id === 'ghost' ? 'ghost' : 'text'
-          "
-          :switch-beside="exploreSwitch.id === 'beside'"
           @all="seeAll(shown.on)"
           @heading="openExplore()"
         />

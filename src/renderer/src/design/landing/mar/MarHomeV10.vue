@@ -80,8 +80,7 @@ import HomeBento from './home/HomeBento.vue'
 import HomeMasonry from './home/HomeMasonry.vue'
 import HomeRecents from './home/HomeRecents.vue'
 import { buildsAt } from './home/buildsAt'
-import { homeIdeaOn } from './home/homeIdeas'
-import RecentList, { type RecentListRow } from './RecentList.vue'
+import type { RecentListRow } from './RecentList.vue'
 import { edited, lastOutput } from './create/smartSearch'
 
 /**
@@ -234,15 +233,10 @@ const homeStyle = computed(() =>
 const RECENT_COLUMNS = 5
 const COMPACT_RECENTS = 5
 const buildsTop = computed(() => recentsFirst.value && buildsAt.id === 'top')
-const ideaCompactRecents = computed(() => recentsFirst.value && homeIdeaOn('compactRecents'))
 const version = computed(() => (can.value.exploreApps ? homeVersion(homeLayout.id) : null))
 const VERSION_RECENTS = 4
-const ideaSmallGreeting = computed(
-  () => !!version.value || (recentsFirst.value && homeIdeaOn('smallGreeting'))
-)
-const recentHasRoom = computed(
-  () => !ideaCompactRecents.value && recent.value.length < RECENT_COLUMNS
-)
+const ideaSmallGreeting = computed(() => !!version.value)
+const recentHasRoom = computed(() => recent.value.length < RECENT_COLUMNS)
 const compactRows = computed<RecentListRow[]>(() =>
   recent.value.slice(0, COMPACT_RECENTS).map((r) => ({
     id: r.id,
@@ -431,13 +425,6 @@ function openRecent(id: string): void {
         />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
         <TableRow v-else-if="p20.recent === 'table'" />
-        <RecentList
-          v-else-if="ideaCompactRecents"
-          :rows="compactRows"
-          :active="compactActive"
-          @hover="(id) => (compactActive = id)"
-          @open="(row) => openRecent(row.id)"
-        />
         <ScrollRow v-else :columns="RECENT_COLUMNS" class="mar-recent-row">
           <WorkflowCard
             v-for="r in recent"

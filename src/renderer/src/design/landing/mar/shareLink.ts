@@ -21,8 +21,6 @@ import { TPL_DETAILS, tplDetails } from './templateModal/tplDetails'
 import { TPL_FEEDS, tplFeed } from './templateModal/tplFeed'
 import { BLANK_STARTS, blankStart } from './graph/blankStart'
 import { SIDEBAR_MOTIONS, sidebarMotion } from './shell/sidebarMotion'
-import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
-import { HOME_IDEAS, HOME_IDEA_SWITCHES } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { COVERS, RECENTS_COVERS, cover, defaultCover, recentsCover } from './cover'
@@ -175,8 +173,6 @@ const PARTS: Part[] = [
   one('tplFeed', tplFeed, 'off', TPL_FEEDS),
   one('blankStart', blankStart, 'empty', BLANK_STARTS),
   one('sidebarMotion', sidebarMotion, 'desktop', SIDEBAR_MOTIONS),
-  one('exploreSwitch', exploreSwitch, 'seg', EXPLORE_SWITCHES),
-  ...HOME_IDEAS.map((x) => one(x.key, x.store, x.def, HOME_IDEA_SWITCHES)),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),
   // The cover's default follows the milestone (cover.ts).

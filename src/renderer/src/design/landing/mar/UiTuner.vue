@@ -68,8 +68,6 @@ import { TPL_DETAILS, tplDetails } from './templateModal/tplDetails'
 import { TPL_FEEDS, tplFeed } from './templateModal/tplFeed'
 import { BLANK_STARTS, blankStart } from './graph/blankStart'
 import { SIDEBAR_MOTIONS, sidebarMotion } from './shell/sidebarMotion'
-import { EXPLORE_SWITCHES, exploreSwitch } from './home/exploreSwitch'
-import { HOME_IDEAS, type HomeIdeaId } from './home/homeIdeas'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
@@ -196,7 +194,6 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeLayout', show: () => when.homeLayout.value },
   { id: 'buildsAt', show: () => when.buildsAt.value },
   { id: 'blankStart', show: () => when.blankStart.value },
-  { id: 'exploreSwitch', show: () => when.exploreSwitch.value },
   { id: 'appPage', show: () => when.appPage.value },
   { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
   { id: 'appToComfy', show: () => when.appToComfy.value },
@@ -231,11 +228,6 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
 const MORE: TweakId[] = ['screen', 'look', 'knobs']
-const HOME_IDEA_TWEAKS: Record<HomeIdeaId, TweakId> = {
-  compactRecents: 'homeIdeaCompactRecents',
-  smallGreeting: 'homeIdeaSmallGreeting'
-}
-const homeIdeaIds = Object.values(HOME_IDEA_TWEAKS)
 const pageIds = computed(() => PAGE.filter((p) => p.show()).map((p) => p.id))
 const stateIds = computed(() => STATES.filter((p) => p.show()).map((p) => p.id))
 const shows = (id: TweakId): boolean => pageIds.value.includes(id) || stateIds.value.includes(id)
@@ -515,9 +507,6 @@ const linkSays = computed(() => {
           <Row :show="shows('homeLayout')" label="Home layout">
             <Select v-model="homeLayout.id" :options="HOME_LAYOUTS" class="w-full" />
           </Row>
-          <Row :show="shows('exploreSwitch')" label="Explore switch">
-            <Select v-model="exploreSwitch.id" :options="EXPLORE_SWITCHES" class="w-full" />
-          </Row>
           <Row :show="shows('blankStart')" label="Blank canvas opens">
             <Select v-model="blankStart.id" :options="BLANK_STARTS" class="w-full" />
           </Row>
@@ -696,25 +685,6 @@ const linkSays = computed(() => {
             }}</span>
           </Row>
           <Row :show="shows('ports')"><NavOptionsTuner /></Row>
-        </section>
-
-        <section v-if="when.homeIdeas.value" aria-label="Home ideas" class="mt-6 flex flex-col">
-          <GroupHead
-            title="Home ideas"
-            :changed="dirty(homeIdeaIds)"
-            @reset="resetGroup(homeIdeaIds)"
-          />
-          <Row v-for="x in HOME_IDEAS" :key="x.id">
-            <div class="flex items-center justify-between gap-3">
-              <span class="min-w-0 text-ui text-base-foreground">{{ x.label }}</span>
-              <Switch
-                :model-value="x.store.id === 'on'"
-                :aria-label="x.label"
-                @update:model-value="x.store.id = $event ? 'on' : 'off'"
-              />
-            </div>
-            <span class="text-ui text-subtle-foreground">{{ x.note }}</span>
-          </Row>
         </section>
 
         <!-- More: the screen simulator, the token knobs and the Figma
