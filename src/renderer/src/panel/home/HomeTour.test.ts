@@ -232,6 +232,27 @@ describe('HomeTour', () => {
     expect(telemetry).not.toContain('comfy.desktop.home_tour.skipped')
   })
 
+  it('lets an open menu take Escape first, then ends the tour on the next Escape', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+    const menu = document.createElement('div')
+    menu.dataset['dismissableLayer'] = ''
+    document.body.append(menu)
+    anchors.push(menu)
+    const menuHeard: string[] = []
+    window.addEventListener('keydown', (event) => menuHeard.push(event.key), { once: true })
+
+    await userEvent.keyboard('{Escape}')
+    await settle()
+    expect(menuHeard).toEqual(['Escape'])
+    expect(dim()).not.toBeNull()
+
+    menu.remove()
+    await userEvent.keyboard('{Escape}')
+    await expect.poll(() => dim()).toBeNull()
+  })
+
   it('saves the tour as done after Done on the last step, which names where to replay it', async () => {
     saved.set('homeTourAudience', 'updated')
     placeAnchors()

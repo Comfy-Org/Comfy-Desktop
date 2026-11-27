@@ -198,8 +198,15 @@ function skip(): void {
   end({ returnFocus: true })
 }
 
+function anotherLayerIsOpen(): boolean {
+  return [...document.querySelectorAll('[data-dismissable-layer]')].some(
+    (layer) => !card.value?.$el.contains(layer) && !layer.contains(card.value?.$el ?? null)
+  )
+}
+
 function skipOnEscape(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+  if (anotherLayerIsOpen()) return
   event.preventDefault()
   event.stopPropagation()
   skip()
