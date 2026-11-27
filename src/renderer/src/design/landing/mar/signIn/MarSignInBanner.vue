@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Check, CircleAlert, Copy, ExternalLink, RotateCcw, X } from 'lucide-vue-next'
+import { Check, CircleX, Copy, ExternalLink, X } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import { PORTAL_TO } from '../../ui/portal'
 import {
@@ -16,6 +16,7 @@ import { hostActions, instances } from '../../useProto'
 import { signInCornerShown } from './signInCorner'
 import { building } from '../../appFlow'
 import { marSidebarClosed } from '../shell/marShell'
+import '../pages/MarUndoToast.vue'
 
 function withoutAccount(): void {
   signInWithoutAccount()
@@ -36,34 +37,48 @@ function copyLink(): void {
 <template>
   <Teleport :to="PORTAL_TO">
     <div
-      v-if="
+      v-if="browserSignIn.banner && !browserSignIn.browser && browserSignIn.failed"
+      class="proto-ui"
+      @pointerdown.stop
+    >
+      <div class="mar-undo is-error mar-signin-toast" role="alert" data-testid="signin-banner">
+        <CircleX :size="16" class="mar-undo-icon" />
+        <span class="mar-undo-text mar-signin-toast-text" data-testid="signin-failed">{{
+          SIGN_IN_COPY.failed[browserSignIn.failed]
+        }}</span>
+        <button type="button" class="mar-undo-btn" @click="retrySignIn">
+          {{ SIGN_IN_COPY.failed.retry }}
+        </button>
+        <button type="button" class="mar-undo-btn" @click="withoutAccount">
+          {{ SIGN_IN_COPY.failed.local }}
+        </button>
+        <button
+          type="button"
+          class="mar-undo-x"
+          :aria-label="SIGN_IN_COPY.banner.dismiss"
+          @click="dismissSignInBanner"
+        >
+          <X :size="13" />
+        </button>
+      </div>
+    </div>
+    <div
+      v-else-if="
         browserSignIn.banner &&
         !browserSignIn.browser &&
-        (browserSignIn.failed || !signInCornerShown || building || marSidebarClosed)
+        (!signInCornerShown || building || marSidebarClosed)
       "
       class="proto-ui mar-signin-banner"
       role="status"
       data-testid="signin-banner"
       @pointerdown.stop
     >
-      <template v-if="browserSignIn.failed">
-        <CircleAlert :size="16" class="shrink-0 text-status-danger" />
-        <span class="mar-signin-banner-msg" data-testid="signin-failed">{{
-          SIGN_IN_COPY.failed[browserSignIn.failed]
-        }}</span>
-        <Button variant="primary" size="md" @click="retrySignIn">
-          <RotateCcw :size="14" />{{ SIGN_IN_COPY.failed.retry }}
-        </Button>
-        <Button variant="subtle" size="md" @click="withoutAccount">
-          {{ SIGN_IN_COPY.failed.local }}
-        </Button>
-      </template>
-      <span v-else class="mar-signin-banner-msg">{{ SIGN_IN_COPY.banner.message }}</span>
-      <Button v-if="!browserSignIn.failed" variant="primary" size="md" @click="copyLink">
+      <span class="mar-signin-banner-msg">{{ SIGN_IN_COPY.banner.message }}</span>
+      <Button variant="primary" size="md" @click="copyLink">
         <Check v-if="copied" :size="14" /><Copy v-else :size="14" />
         {{ copied ? SIGN_IN_COPY.banner.copied : SIGN_IN_COPY.banner.copy }}
       </Button>
-      <Button v-if="!browserSignIn.failed" variant="subtle" size="md" @click="openBrowserAgain">
+      <Button variant="subtle" size="md" @click="openBrowserAgain">
         <ExternalLink :size="14" />{{ SIGN_IN_COPY.banner.openAgain }}
       </Button>
       <Button
@@ -79,6 +94,12 @@ function copyLink(): void {
 </template>
 
 <style scoped>
+:root .proto-ui.proto-ui.proto-ui .mar-signin-toast {
+  max-width: min(560px, calc(100vw - 40px));
+}
+.mar-signin-toast-text {
+  white-space: nowrap;
+}
 .mar-signin-banner {
   position: fixed;
   bottom: 16px;

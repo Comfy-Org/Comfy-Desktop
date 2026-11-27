@@ -16,10 +16,10 @@ export const SIGN_IN_COPY = {
     dismiss: 'Dismiss'
   },
   failed: {
-    cancelled: 'Login was cancelled in the browser.',
-    rejected: "Login didn't go through. Comfy couldn't confirm the account.",
+    cancelled: 'Login was cancelled',
+    rejected: "Couldn't log in",
     retry: 'Try again',
-    local: 'Continue without an account'
+    local: 'Continue without account'
   }
 } as const
 
