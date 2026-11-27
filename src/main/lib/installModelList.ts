@@ -325,7 +325,7 @@ export function withLaunchArgPaths(
   return {
     ...search,
     modelRoots: [...search.modelRoots, ...extraRoots],
-    configFiles: extraConfigs,
+    configFiles: [path.join(comfyStartDir(inst), 'extra_model_paths.yaml'), ...extraConfigs],
     extraPaths: [
       ...search.extraPaths,
       ...extraConfigs.flatMap((config) => resolveExtraModelPaths(config))

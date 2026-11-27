@@ -541,6 +541,35 @@ describe('listInstallModels', () => {
     ])
   })
 
+  it('says the list was cut when the install extra_model_paths.yaml cannot be read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const installPath = path.join(tmp, 'install')
+    const config = path.join(installPath, 'ComfyUI', 'extra_model_paths.yaml')
+    writeFile(path.join(installPath, 'ComfyUI', 'models', 'vae', 'own.safetensors'))
+    const missing = await listInstallModels(installRecord(installPath), [])
+    writeFile(config)
+    const access = fs.promises.access.bind(fs.promises)
+    const denied = vi
+      .spyOn(fs.promises, 'access')
+      .mockImplementation(((target: fs.PathLike, mode?: number) =>
+        path.resolve(String(target)) === path.resolve(config)
+          ? Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }))
+          : access(target, mode)) as typeof fs.promises.access)
+
+    try {
+      const unreadable = await listInstallModels(installRecord(installPath), [])
+
+      expect(missing.truncated).toBe(false)
+      expect(unreadable).toEqual({
+        models: [{ folder: 'vae', name: 'own.safetensors', size: 1 }],
+        truncated: true
+      })
+    } finally {
+      denied.mockRestore()
+      vi.mocked(console.warn).mockRestore()
+    }
+  })
+
   it('leaves out the shared folders when the install does not use them', async () => {
     const installPath = path.join(tmp, 'install')
     const shared = path.join(tmp, 'shared-models')
