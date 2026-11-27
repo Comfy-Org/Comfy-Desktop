@@ -294,6 +294,7 @@ export function isUpdateAvailable(
   info: ReleaseCacheEntry | null
 ): boolean {
   if (!info || !info.latestTag) return false
+  if (installation.status === 'installing') return false
   const marker = installation.installPath ? readOpMarker(installation.installPath as string) : null
   if (marker?.op === 'update' && !marker.postHead) return true
   const cv = installation.comfyVersion as ComfyVersion | undefined
