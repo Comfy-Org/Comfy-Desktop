@@ -3,7 +3,7 @@ import { page, userEvent } from 'vitest/browser'
 import { config, mount } from '@vue/test-utils'
 import type { I18n } from 'vue-i18n'
 import zh from '@locales/zh.json'
-import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
+import { defineComponent, h, nextTick, ref, type Component, type Ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../../assets/main.css'
@@ -78,15 +78,50 @@ async function waitForCard(): Promise<HTMLElement> {
   return tourCard()!
 }
 
-function mountTour({ cardFails = false }: { cardFails?: boolean } = {}) {
+type BrokenCard = 'not_rendered' | 'off_screen' | 'hidden'
+
+function brokenPopover(style: string) {
+  return defineComponent(
+    (_, { slots }) =>
+      () =>
+        h(
+          'div',
+          { style: `position: fixed; left: 300px; top: 100px; width: 320px; ${style}` },
+          slots['default']?.()
+        )
+  )
+}
+
+const BROKEN_POPOVERS: Record<BrokenCard, Component | true> = {
+  not_rendered: true,
+  off_screen: brokenPopover('transform: translate(0, -200%); top: 0'),
+  hidden: brokenPopover('opacity: 0')
+}
+
+function mountTour({ card }: { card?: BrokenCard } = {}) {
   const host = document.createElement('div')
   document.body.append(host)
   anchors.push(host)
   return mount(HomeTour, {
     attachTo: host,
     props: { active: true },
-    global: cardFails ? { stubs: { PopoverContent: true } } : {}
+    global: card ? { stubs: { PopoverContent: BROKEN_POPOVERS[card] } } : {}
   })
+}
+
+function recordTelemetryContexts(): Array<{
+  actionName: string
+  context?: Record<string, unknown>
+}> {
+  const events: Array<{ actionName: string; context?: Record<string, unknown> }> = []
+  const record = (event: Event): void => {
+    events.push(
+      (event as CustomEvent<{ actionName: string; context?: Record<string, unknown> }>).detail
+    )
+  }
+  window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, record)
+  onTestFinished(() => window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, record))
+  return events
 }
 
 function menuContent(): HTMLElement | null {
@@ -240,13 +275,45 @@ describe('HomeTour', () => {
 
   it('lets Escape end the tour even when its card does not show, so Home is never stuck dimmed', async () => {
     placeAnchors()
-    mountTour({ cardFails: true })
+    mountTour({ card: 'not_rendered' })
     await expect.poll(() => dim()).not.toBeNull()
     expect(button('next')).toBeNull()
 
     await userEvent.keyboard('{Escape}')
     await expect.poll(() => dim()).toBeNull()
     expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+  })
+
+  it.each<BrokenCard>(['not_rendered', 'off_screen', 'hidden'])(
+    'ends the tour by itself when its card stays %s, so nobody is stuck behind the dim',
+    async (problem) => {
+      const events = recordTelemetryContexts()
+      placeAnchors()
+      mountTour({ card: problem })
+      await expect.poll(() => dim()).not.toBeNull()
+
+      await expect.poll(() => dim(), { timeout: 5000 }).toBeNull()
+      expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+      expect(
+        events.filter((event) => event.actionName === 'comfy.desktop.home_tour.card_missing')
+      ).toEqual([
+        {
+          actionName: 'comfy.desktop.home_tour.card_missing',
+          context: { audience: 'new', step: 1, reason: problem }
+        }
+      ])
+    }
+  )
+
+  it('keeps the tour up when its card shows', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+    expect(dim()).not.toBeNull()
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.card_missing')
   })
 
   it('leaves Escape alone while the tour shows nothing because its parts left the page', async () => {
