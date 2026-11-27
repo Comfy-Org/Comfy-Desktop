@@ -1447,6 +1447,40 @@ describe('PanelApp', () => {
     await flushPromises()
   })
 
+  it('opens ComfyUI from Create in the sidebar the way Open ComfyUI does, from any page', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const launching = { installationId: 'test-id', installationName: 'Test Install' }
+    api.onInstanceLaunching.mock.calls.forEach(([listener]) => listener(launching))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-description')).toBe(
+      wrapper.get('[data-testid="home-open-comfyui"]').attributes('aria-description')
+    )
+    expect(wrapper.get('[data-testid="sidebar-create"]').attributes('data-build-id')).toBe(
+      'test-id'
+    )
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="sidebar-create"]').trigger('click')
+    await flushPromises()
+    expect(api.focusComfyWindow).not.toHaveBeenCalled()
+    api.onInstanceStarted.mock.calls.forEach(([listener]) =>
+      listener({ ...launching, mode: 'console' })
+    )
+    await flushPromises()
+
+    expect(api.focusComfyWindow).toHaveBeenCalledTimes(1)
+    expect(api.focusComfyWindow).toHaveBeenCalledWith('test-id')
+    expect(wrapper.get('[data-testid="app-sidebar-assets"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(wrapper.get('[data-testid="sidebar-create"]').attributes('aria-current')).toBeUndefined()
+  })
+
   it('opens a build pressed on Home while it starts once it is ready, after the person moved on to Apps and Assets', async () => {
     mockState.installations = [SAMPLE_INSTALL]
     const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api

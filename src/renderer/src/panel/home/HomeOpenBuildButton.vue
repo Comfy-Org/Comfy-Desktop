@@ -1,14 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { DropdownMenuRadioGroup } from 'reka-ui'
 import { Cloud, Laptop, LoaderCircle } from '@lucide/vue'
-import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
-import Tooltip from '../../components/ui/Tooltip.vue'
-import { buildFailure } from '../../composables/useBuildProgress'
-import { useProgressStore } from '../../stores/progressStore'
-import { useSessionStore } from '../../stores/sessionStore'
+import OpenBuildMenuItems from './OpenBuildMenuItems.vue'
 import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
@@ -27,18 +22,7 @@ const { t } = useI18n()
 
 const open = ref(false)
 
-const sessionStore = useSessionStore()
-const progressStore = useProgressStore()
-
 const targetStarting = computed(() => statusOf(target) === 'starting')
-
-function isLive(build: Installation): boolean {
-  return statusOf(build) === 'running'
-}
-
-function problem(build: Installation): string | undefined {
-  return buildFailure(build, sessionStore, progressStore, t)?.label
-}
 
 function onWindowBlur(): void {
   open.value = false
@@ -78,35 +62,12 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <span>{{ t('home.openComfyUI') }}</span>
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
     <template v-if="builds.length > 1" #menu>
-      <DropdownMenuRadioGroup :model-value="target.id">
-        <Tooltip v-for="build in builds" :key="build.id" :text="problem(build)" side="left">
-          <BaseMenuRadioItem
-            as="button"
-            type="button"
-            :value="build.id"
-            :disabled="build.statusTag?.style === 'danger'"
-            :check="false"
-            class="group ui-select-option w-full"
-            data-testid="home-open-build-option"
-            @select="emit('pick', build)"
-          >
-            <span class="relative flex shrink-0">
-              <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="14" aria-hidden="true" />
-              <span
-                v-if="problem(build) || isLive(build)"
-                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full border-2 border-popover group-data-[state=checked]:border-[color-mix(in_srgb,var(--color-popover),white_6%)]"
-                :class="problem(build) ? 'bg-destructive' : 'bg-[#59d38c]'"
-                aria-hidden="true"
-                data-testid="home-open-build-status-dot"
-                :data-tone="problem(build) ? 'danger' : 'live'"
-              />
-            </span>
-            <span class="min-w-0 flex-1 truncate text-left" :title="build.name">{{
-              build.name
-            }}</span>
-          </BaseMenuRadioItem>
-        </Tooltip>
-      </DropdownMenuRadioGroup>
+      <OpenBuildMenuItems
+        :builds="builds"
+        :target="target"
+        :status-of="statusOf"
+        @pick="emit('pick', $event)"
+      />
     </template>
   </SplitButton>
 </template>

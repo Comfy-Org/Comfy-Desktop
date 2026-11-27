@@ -754,6 +754,7 @@ onUnmounted(() => {
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
         @open-build="openBuildFromSidebar"
+        @create="handleChooserPick"
         @new-build="handleChooserShowNewInstall"
       />
       <main

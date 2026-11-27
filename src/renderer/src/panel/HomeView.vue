@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -11,19 +11,15 @@ import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
 import HomeReadyToast from './home/HomeReadyToast.vue'
-import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
+import { isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
-import { useAutoStartReadyNotice } from './home/useAutoStartReadyNotice'
-import { useOpenWhenReady } from './home/useOpenWhenReady'
-import { useInstallList } from '../composables/useInstallList'
+import { useOpenComfyUI } from './home/useOpenComfyUI'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
-  buildProgressOf,
   launchFailed,
   useInstallingBuilds,
   useViewBuildLogs
 } from '../composables/useBuildProgress'
-import { isPromotingToWorkspace } from '../composables/useInstallContextMenu'
 import { useProgressStore } from '../stores/progressStore'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useAuthStore } from '../stores/authStore'
@@ -31,7 +27,6 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/ipc'
-import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 type WorkflowState = 'idle' | 'loading' | 'ready' | 'unavailable'
@@ -57,17 +52,19 @@ const { t } = useI18n()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
-const { visibleInstalls } = useInstallList({
-  installations: toRef(installationStore, 'installations')
-})
 const dashboardScope = useDashboardScopeStore()
 const authStore = useAuthStore()
 void dashboardScope.initialize()
-const workspaceBuilds = computed(() =>
-  visibleInstalls.value.filter((build) =>
-    isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
-  )
-)
+const {
+  workspaceBuilds,
+  openableBuilds,
+  openTarget,
+  pickedBuildId,
+  statusOf: buildStatus,
+  readyNotice,
+  opensWhenReady,
+  openBuild: pickBuild
+} = useOpenComfyUI((build) => emit('pick', build))
 const isInstalling = useInstallingBuilds()
 const progressStore = useProgressStore()
 const viewBuildLogs = useViewBuildLogs()
@@ -108,42 +105,11 @@ const narrowBuildIds = computed(() => {
     rest.find((build) => isInUse(build)) ?? rest.find((build) => isCloudBuild(build)) ?? rest[0]
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
-const openableBuilds = computed(() =>
-  workspaceBuilds.value.filter(
-    (build) =>
-      buildProgressOf(progressStore, build.id) === null &&
-      !isBuildOpenBlocked(buildStatus(build)) &&
-      !isPromotingToWorkspace(build)
-  )
-)
-const mostRecentBuild = computed(
-  () =>
-    openableBuilds.value.find(
-      (build) =>
-        build.statusTag?.style !== 'danger' &&
-        (typeof build.lastLaunchedAt === 'number' || !isCloudBuild(build))
-    ) ?? null
-)
-const pickedBuildId = ref<string | null>(null)
-const openTarget = computed(
-  () =>
-    openableBuilds.value.find(
-      (build) => build.id === pickedBuildId.value && build.statusTag?.style !== 'danger'
-    ) ?? mostRecentBuild.value
-)
-const readyNotice = useAutoStartReadyNotice()
 const readyBuild = computed(() => {
   const id = readyNotice.buildId.value
   if (id === null || !sessionStore.isRunning(id)) return null
   return installationStore.installations.find((build) => build.id === id) ?? null
 })
-const opensWhenReady = useOpenWhenReady((build) => emit('pick', build))
-function pickBuild(build: Installation): void {
-  readyNotice.dismiss(build.id)
-  if (opensWhenReady.openWhenReady(build)) return
-  opensWhenReady.forget()
-  emit('pick', build)
-}
 function openBuild(build: Installation): void {
   readyNotice.dismiss(build.id)
   if (build.statusTag?.style !== 'danger' && opensWhenReady.openWhenReady(build)) return
@@ -151,9 +117,6 @@ function openBuild(build: Installation): void {
   if (build.statusTag?.style === 'danger') emit('open-build', build)
   else if (launchFailed(progressStore, build.id)) viewBuildLogs(build.id)
   else emit('pick', build)
-}
-function buildStatus(build: Installation) {
-  return homeBuildStatus(build, sessionStore)
 }
 
 const { state: appsState, apps, loadApps } = useHomeApps()

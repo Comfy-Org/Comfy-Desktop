@@ -21,6 +21,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildMenu from './home/BuildMenu.vue'
 import SidebarPageMenu from './SidebarPageMenu.vue'
+import SidebarCreateButton from './SidebarCreateButton.vue'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
@@ -63,6 +64,7 @@ const {
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
   'open-build': [installation: Installation]
+  create: [installation: Installation]
   'open-app': [app: AppCard]
   'new-build': []
 }>()
@@ -366,6 +368,8 @@ function openSettings(): void {
         </Button>
       </Transition>
     </div>
+
+    <SidebarCreateButton :collapsed="collapsed" @open="emit('create', $event)" />
 
     <nav
       class="flex min-h-0 w-full flex-1 scrollbar-hide flex-col gap-1 overflow-x-hidden overflow-y-auto"
