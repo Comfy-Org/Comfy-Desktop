@@ -62,14 +62,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
       aria-describedby="global-missing-models-summary"
       data-missing-models
     >
+      <button type="button" class="mmd-close" aria-label="Close" @click="emit('close')">
+        <X :size="18" />
+      </button>
       <header class="mmd-head">
         <div class="mmd-heading">
           <h2 id="global-missing-models-warning" class="mmd-title">{{ COPY.title }}</h2>
           <p id="global-missing-models-summary" class="mmd-summary">{{ summary }}</p>
         </div>
-        <button type="button" class="rp-icon" aria-label="Close" @click="emit('close')">
-          <X :size="16" />
-        </button>
       </header>
       <div class="mmd-list">
         <section v-if="missing.models.length" class="mmd-group" data-missing-auto>
@@ -151,6 +151,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   width: min(580px, 100%);
   height: auto;
   flex-direction: column;
+  position: relative;
+  overflow: visible;
 }
 .mmd-head {
   display: flex;
@@ -302,5 +304,40 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   flex: none;
   gap: 8px;
   margin-left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .mmd-close {
+  position: absolute;
+  top: 0;
+  right: -48px;
+  z-index: 2;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background-color: var(--color-card-background);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  color: color-mix(in oklch, var(--color-base-foreground) 90%, transparent);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mmd-close:hover {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) 8%,
+    var(--color-card-background)
+  );
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mmd-close:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.mmd-head {
+  display: flex;
+  align-items: center;
 }
 </style>
