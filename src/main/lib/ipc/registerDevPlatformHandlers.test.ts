@@ -1234,6 +1234,18 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
+  it('does not upload if the active workspace changes while the models are listed', async () => {
+    mocks.listInstallModels.mockImplementationOnce(async () => {
+      mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+      return { models: [], truncated: false }
+    })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+  })
+
   it('does not upload if the instance gains workspace ownership during capture', async () => {
     const inst = {
       id: 'local-1',

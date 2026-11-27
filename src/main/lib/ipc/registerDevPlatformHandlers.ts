@@ -313,6 +313,10 @@ export function registerDevPlatformHandlers(): void {
         const snapshotCount = await getSnapshotCount(inst.installPath)
         await installations.update(inst.id, { lastSnapshot: filename, snapshotCount })
 
+        const sharedModelsDirs =
+          (settings.get('modelsDirs') as string[] | undefined) ?? settings.defaults.modelsDirs
+        const modelList = await listInstallModels(inst, sharedModelsDirs)
+
         const current = await installations.get(installationId)
         if (
           !current ||
@@ -324,10 +328,6 @@ export function registerDevPlatformHandlers(): void {
         if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
-
-        const sharedModelsDirs =
-          (settings.get('modelsDirs') as string[] | undefined) ?? settings.defaults.modelsDirs
-        const modelList = await listInstallModels(inst, sharedModelsDirs)
         const envelope = buildUploadEnvelope(inst.name, [{ filename, snapshot }], modelList)
         const draft = await getBuilderClient().createBuildDraft(envelope)
         if (draft.workspaceId !== workspaceId) {

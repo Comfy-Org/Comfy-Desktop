@@ -196,15 +196,18 @@ describe('listModelsInSearch', () => {
     expect(models).toEqual([{ folder: 'checkpoints', name: 'base.safetensors', size: 1 }])
   })
 
-  it('leaves out a name with a control character', async () => {
-    const root = path.join(tmp, 'models')
-    writeFile(path.join(root, 'loras', 'bad\nname.safetensors'))
-    writeFile(path.join(root, 'loras', 'good.safetensors'))
+  it.skipIf(process.platform === 'win32')(
+    'leaves out a name with a control character',
+    async () => {
+      const root = path.join(tmp, 'models')
+      writeFile(path.join(root, 'loras', 'bad\nname.safetensors'))
+      writeFile(path.join(root, 'loras', 'good.safetensors'))
 
-    const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
+      const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
-    expect(models).toEqual([{ folder: 'loras', name: 'good.safetensors', size: 1 }])
-  })
+      expect(models).toEqual([{ folder: 'loras', name: 'good.safetensors', size: 1 }])
+    }
+  )
 
   it('leaves out a name too long for the builder to keep', async () => {
     const root = path.join(tmp, 'models')
@@ -360,6 +363,61 @@ describe('listModelsInSearch', () => {
     const { models } = await listModelsInSearch(search({ modelRoots: [root] }))
 
     expect(models).toEqual([])
+  })
+
+  it('says the list was cut when a folder sits deeper than the walk goes', async () => {
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'checkpoints', ...Array(9).fill('d'), 'deep.safetensors'))
+
+    const result = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(result).toEqual({ models: [], truncated: true })
+  })
+
+  it('says the list was cut and warns when a model folder cannot be read', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const root = path.join(tmp, 'models')
+    const locked = path.join(root, 'loras', 'locked')
+    writeFile(path.join(locked, 'hidden.safetensors'))
+    writeFile(path.join(root, 'loras', 'open.safetensors'))
+    const readdir = fs.promises.readdir.bind(fs.promises)
+    const denied = vi.spyOn(fs.promises, 'readdir').mockImplementation(((
+      dir: fs.PathLike,
+      options: unknown
+    ) => {
+      if (String(dir) === locked) {
+        return Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }))
+      }
+      return readdir(dir, options as { withFileTypes: true })
+    }) as typeof fs.promises.readdir)
+
+    try {
+      const result = await listModelsInSearch(search({ modelRoots: [root] }))
+
+      expect(result).toEqual({
+        models: [{ folder: 'loras', name: 'open.safetensors', size: 1 }],
+        truncated: true
+      })
+      expect(warn).toHaveBeenCalledWith(
+        '[dev-platform] Some model folders could not be read; the models list is incomplete.'
+      )
+    } finally {
+      denied.mockRestore()
+      warn.mockRestore()
+    }
+  })
+
+  it('reads a broken link as missing, not as an unreadable folder', async () => {
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'loras', 'open.safetensors'))
+    fs.symlinkSync(path.join(tmp, 'gone'), path.join(root, 'loras', 'broken'), 'dir')
+
+    const result = await listModelsInSearch(search({ modelRoots: [root] }))
+
+    expect(result).toEqual({
+      models: [{ folder: 'loras', name: 'open.safetensors', size: 1 }],
+      truncated: false
+    })
   })
 
   it('returns nothing for a root that does not exist', async () => {

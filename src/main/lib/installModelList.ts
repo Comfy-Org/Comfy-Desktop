@@ -87,31 +87,56 @@ function isSkippedEntry(name: string): boolean {
   return name.startsWith('.') || name === TEMP_DIR_NAME
 }
 
-async function statOrNull(target: string): Promise<fs.Stats | null> {
+interface ScanState {
+  unreadable: boolean
+}
+
+function isMissing(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
+function noteFailure(state: ScanState, err: unknown): void {
+  if (!isMissing(err)) state.unreadable = true
+}
+
+async function statOrNull(target: string, state: ScanState): Promise<fs.Stats | null> {
   try {
     return await fs.promises.stat(target)
-  } catch {
+  } catch (err) {
+    noteFailure(state, err)
     return null
   }
 }
 
-async function readDirOrEmpty(dir: string): Promise<fs.Dirent[]> {
+async function realpathOrNull(target: string, state: ScanState): Promise<string | null> {
+  try {
+    return await fs.promises.realpath(target)
+  } catch (err) {
+    noteFailure(state, err)
+    return null
+  }
+}
+
+async function readDirOrEmpty(dir: string, state: ScanState): Promise<fs.Dirent[]> {
   try {
     return await fs.promises.readdir(dir, { withFileTypes: true })
-  } catch {
+  } catch (err) {
+    noteFailure(state, err)
     return []
   }
 }
 
-async function folderSourcesInRoot(root: string): Promise<FolderSource[]> {
+async function folderSourcesInRoot(root: string, state: ScanState): Promise<FolderSource[]> {
   const sources: FolderSource[] = []
-  const entries = await readDirOrEmpty(root)
+  const entries = await readDirOrEmpty(root, state)
   entries.sort((a, b) => compareText(a.name, b.name))
   for (const entry of entries) {
     if (isSkippedEntry(entry.name) || isNonModelFolder(entry.name)) continue
     const dir = path.join(root, entry.name)
     const isDir =
-      entry.isDirectory() || (!entry.isFile() && (await statOrNull(dir))?.isDirectory() === true)
+      entry.isDirectory() ||
+      (!entry.isFile() && (await statOrNull(dir, state))?.isDirectory() === true)
     if (!isDir) continue
     sources.push({ folder: modelFolderKind(entry.name), dir })
   }
@@ -130,7 +155,10 @@ class ModelCollector {
   private scanned = 0
   private stoppedEarly = false
 
-  constructor(private readonly deadline: number) {}
+  constructor(
+    private readonly deadline: number,
+    readonly state: ScanState
+  ) {}
 
   get full(): boolean {
     return this.scanned >= MAX_SCANNED_ENTRIES || Date.now() >= this.deadline
@@ -144,7 +172,10 @@ class ModelCollector {
   result(): InstallModelList {
     const all = [...this.byKey.values()].sort(compareEntries)
     const models = takeAcrossFolders(all).sort(compareEntries)
-    return { models, truncated: this.stoppedEarly || models.length < all.length }
+    return {
+      models,
+      truncated: this.stoppedEarly || this.state.unreadable || models.length < all.length
+    }
   }
 
   private async walk(
@@ -157,19 +188,18 @@ class ModelCollector {
       this.stoppedEarly = true
       return
     }
-    if (depth > MAX_MODEL_DIR_DEPTH) return
-    let real: string
-    try {
-      real = await fs.promises.realpath(dir)
-    } catch {
+    if (depth > MAX_MODEL_DIR_DEPTH) {
+      this.stoppedEarly = true
       return
     }
+    const real = await realpathOrNull(dir, this.state)
+    if (real === null) return
     const visitKey = `${folder}\u0000${real}`
     const visitedAt = this.visitedDepth.get(visitKey)
     if (visitedAt !== undefined && visitedAt <= depth) return
     this.visitedDepth.set(visitKey, depth)
 
-    const entries = await readDirOrEmpty(dir)
+    const entries = await readDirOrEmpty(dir, this.state)
     entries.sort((a, b) => compareText(a.name, b.name))
     for (const entry of entries) {
       if (this.full) {
@@ -180,7 +210,8 @@ class ModelCollector {
       if (isSkippedEntry(entry.name)) continue
       const target = path.join(dir, entry.name)
       const childSegments = [...segments, entry.name]
-      const stats = entry.isFile() || entry.isDirectory() ? null : await statOrNull(target)
+      const stats =
+        entry.isFile() || entry.isDirectory() ? null : await statOrNull(target, this.state)
       const isDir = entry.isDirectory() || stats?.isDirectory() === true
       if (isDir) {
         if (isNestedNonModelFolder(entry.name)) continue
@@ -188,7 +219,7 @@ class ModelCollector {
         continue
       }
       if (!isModelFile(entry.name)) continue
-      const fileStats = stats ?? (await statOrNull(target))
+      const fileStats = stats ?? (await statOrNull(target, this.state))
       if (!fileStats?.isFile()) continue
       this.add({ folder, name: childSegments.join('/'), size: fileStats.size })
     }
@@ -241,14 +272,20 @@ export async function listModelsInSearch(
   search: InstallModelSearch,
   timeBudgetMs = MODEL_LIST_TIME_BUDGET_MS
 ): Promise<InstallModelList> {
-  const collector = new ModelCollector(Date.now() + timeBudgetMs)
+  const state: ScanState = { unreadable: false }
+  const collector = new ModelCollector(Date.now() + timeBudgetMs, state)
   for (const root of search.modelRoots) {
-    for (const source of await folderSourcesInRoot(root)) {
+    for (const source of await folderSourcesInRoot(root, state)) {
       await collector.collect(source)
     }
   }
   for (const source of folderSourcesFromExtraPaths(search)) {
     await collector.collect(source)
+  }
+  if (state.unreadable) {
+    console.warn(
+      '[dev-platform] Some model folders could not be read; the models list is incomplete.'
+    )
   }
   return collector.result()
 }
