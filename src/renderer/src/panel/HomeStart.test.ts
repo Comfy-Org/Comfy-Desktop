@@ -6,7 +6,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import '../assets/main.css'
 import HomeView from './HomeView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
-import { READY_NOTICE_MS } from './home/useAutoStartReadyNotice'
 import { useProgressStore, type Operation } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
@@ -28,16 +27,12 @@ const OTHER: Installation = {
   lastLaunchedAt: 200
 }
 
-let readyListener: ((data: { installationId: string | null }) => void) | null
-let readyAtMount: string | null
 let host: HTMLElement
 const mounted: VueWrapper[] = []
 
 beforeAll(() => browserPage.viewport(1440, 900))
 
 beforeEach(() => {
-  readyListener = null
-  readyAtMount = null
   host = document.createElement('div')
   host.style.cssText = 'position: fixed; left: 0; top: 0; width: 1200px; height: 900px'
   document.body.append(host)
@@ -49,14 +44,6 @@ beforeEach(() => {
     getSetting: vi.fn().mockResolvedValue(undefined),
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
-    getAutoStartReady: vi.fn(async () => readyAtMount),
-    dismissAutoStartReady: vi.fn().mockResolvedValue(undefined),
-    onAutoStartReadyChanged: vi.fn((callback: typeof readyListener) => {
-      readyListener = callback
-      return () => {
-        readyListener = null
-      }
-    }),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {})
@@ -68,7 +55,6 @@ beforeEach(() => {
 afterEach(async () => {
   while (mounted.length) mounted.pop()?.unmount()
   host.remove()
-  vi.useRealTimers()
   await cdp().send('Emulation.setEmulatedMedia', { features: [] })
 })
 
@@ -114,15 +100,6 @@ function styleOf(className: string, property: 'color' | 'backgroundColor'): stri
   const value = getComputedStyle(probe)[property]
   probe.remove()
   return value
-}
-
-async function readyNotice(id: string | null): Promise<void> {
-  readyListener?.({ installationId: id })
-  await flushPromises()
-}
-
-function toast(): HTMLElement | null {
-  return host.querySelector<HTMLElement>('[data-testid="home-ready-toast"]')
 }
 
 describe('a build card while its ComfyUI starts', () => {
@@ -281,150 +258,5 @@ describe('Open ComfyUI while the build it opens is starting', () => {
     await flushPromises()
 
     expect(wrapper.emitted('pick')).toBeUndefined()
-  })
-})
-
-describe('the "ComfyUI is ready" notice', () => {
-  it('appears when the build Desktop started on its own is ready, and Open opens that build', async () => {
-    launching(AUTO.id)
-    const wrapper = await openHome()
-    expect(toast()).toBeNull()
-
-    running(AUTO.id)
-    await readyNotice(AUTO.id)
-
-    expect(toast()!.textContent).toContain('ComfyUI is ready')
-    expect(toast()!.getAttribute('role')).toBe('status')
-    expect(toast()!.getAttribute('aria-live')).toBe('polite')
-    const open = toast()!.querySelector<HTMLButtonElement>('[data-testid="home-ready-toast-open"]')!
-    open.focus()
-    expect(document.activeElement).toBe(open)
-    open.click()
-    await flushPromises()
-
-    expect(wrapper.emitted('pick')).toEqual([[AUTO]])
-    expect(toast()).toBeNull()
-    expect(window.api.dismissAutoStartReady).toHaveBeenCalledWith(AUTO.id)
-  })
-
-  it('sits just below Open ComfyUI, on its right edge, clear of the builds row', async () => {
-    running(AUTO.id)
-    await openHome()
-    await readyNotice(AUTO.id)
-
-    for (const animation of toast()!.getAnimations()) animation.finish()
-    const button = host.querySelector('[data-testid="home-open-build"]')!.getBoundingClientRect()
-    const notice = toast()!.getBoundingClientRect()
-    const builds = host.querySelector('[data-testid="home-builds"]')!.getBoundingClientRect()
-    expect(notice.top).toBeGreaterThan(button.bottom)
-    expect(notice.top - button.bottom).toBeLessThanOrEqual(16)
-    expect(notice.right).toBe(button.right)
-    expect(notice.bottom).toBeLessThan(builds.top)
-  })
-
-  it('shows a build that became ready before Home opened', async () => {
-    running(AUTO.id)
-    readyAtMount = AUTO.id
-    await openHome()
-
-    expect(toast()?.dataset.buildId).toBe(AUTO.id)
-  })
-
-  it('does not come back when it was closed elsewhere while Home was still asking whether it shows', async () => {
-    running(AUTO.id)
-    let answerRead: (id: string | null) => void = () => {}
-    vi.mocked(window.api.getAutoStartReady).mockReturnValue(
-      new Promise((resolve) => {
-        answerRead = resolve
-      })
-    )
-    await openHome()
-
-    await readyNotice(null)
-    answerRead(AUTO.id)
-    await flushPromises()
-
-    expect(toast()).toBeNull()
-  })
-
-  it('leaves no notice timer behind when Home closed before it heard whether the notice shows', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    running(AUTO.id)
-    let answerRead: (id: string | null) => void = () => {}
-    vi.mocked(window.api.getAutoStartReady).mockReturnValue(
-      new Promise((resolve) => {
-        answerRead = resolve
-      })
-    )
-    const wrapper = await openHome()
-    wrapper.unmount()
-    mounted.splice(mounted.indexOf(wrapper), 1)
-
-    answerRead(AUTO.id)
-    await flushPromises()
-    vi.advanceTimersByTime(READY_NOTICE_MS)
-    await flushPromises()
-
-    expect(window.api.dismissAutoStartReady).not.toHaveBeenCalled()
-  })
-
-  it('closes on X', async () => {
-    running(AUTO.id)
-    await openHome()
-    await readyNotice(AUTO.id)
-
-    const close = toast()!.querySelector<HTMLButtonElement>(
-      '[data-testid="home-ready-toast-dismiss"]'
-    )!
-    expect(close.getAttribute('aria-label')).toBe('Dismiss')
-    close.click()
-    await flushPromises()
-
-    expect(toast()).toBeNull()
-    expect(window.api.dismissAutoStartReady).toHaveBeenCalledWith(AUTO.id)
-  })
-
-  it('goes away by itself after 12 seconds', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    running(AUTO.id)
-    await openHome()
-    await readyNotice(AUTO.id)
-
-    vi.advanceTimersByTime(READY_NOTICE_MS - 1)
-    await flushPromises()
-    expect(toast()).not.toBeNull()
-
-    vi.advanceTimersByTime(1)
-    await flushPromises()
-    expect(toast()).toBeNull()
-  })
-
-  it('goes away when ComfyUI is opened another way', async () => {
-    running(AUTO.id)
-    const wrapper = await openHome()
-    await readyNotice(AUTO.id)
-
-    host.querySelector<HTMLElement>('[data-testid="home-open-comfyui"]')!.click()
-    await flushPromises()
-    expect(wrapper.emitted('pick')).toEqual([[AUTO]])
-    expect(toast()).toBeNull()
-    expect(window.api.dismissAutoStartReady).toHaveBeenCalledWith(AUTO.id)
-  })
-
-  it('never appears for a build the person started by hand, only for the Auto start one', async () => {
-    await openHome()
-    launchOperation(OTHER.id, -1)
-    launching(OTHER.id)
-    await flushPromises()
-    expect(statusOf(OTHER.id).textContent?.trim()).toBe('Starting…')
-    useProgressStore().operations.delete(OTHER.id)
-    running(OTHER.id)
-    await flushPromises()
-
-    expect(toast()).toBeNull()
-
-    running(AUTO.id)
-    await readyNotice(AUTO.id)
-    expect(toast()?.dataset.buildId).toBe(AUTO.id)
   })
 })

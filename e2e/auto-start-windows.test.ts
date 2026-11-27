@@ -71,7 +71,7 @@ async function windowState() {
   )
 }
 
-test('restarting Desktop with Auto start opens only Home and starts the build in the background @macos @linux', async () => {
+test('restarting Desktop with Auto start opens Home, starts the build in the background and opens its ComfyUI window once it runs @macos @linux', async () => {
   const profileDir = path.join(rootDir, 'profile')
   ctx = await launchApp(
     {
@@ -94,9 +94,12 @@ test('restarting Desktop with Auto start opens only Home and starts the build in
   ctx = await launchApp({ profileDir }, { stayOnHome: true })
   await expect.poll(() => ctx!.panel.textOf(CARD), { timeout: 90_000 }).toContain('Running')
   expect(await ctx.panel.isVisible(HOME)).toBe(true)
-  expect(await windowState()).toEqual({ total: 1, visibleBuilds: 0, visibleDashboards: 1 })
+  await expect
+    .poll(windowState, { timeout: 30_000 })
+    .toEqual({ total: 2, visibleBuilds: 1, visibleDashboards: 1 })
+  expect(await getIpcInvocations(ctx.app, 'run-action')).toEqual([])
 
-  await test.step('Open ComfyUI on the card opens a window on the running build', async () => {
+  await test.step('Open ComfyUI on the card brings back that window instead of opening another', async () => {
     expect(await ctx!.panel.click(CARD)).toBe(true)
     await expect
       .poll(windowState, { timeout: 30_000 })
@@ -138,7 +141,7 @@ test('Auto start waits for onboarding to finish @macos @linux', async () => {
   await expect.poll(windowState).toEqual({ total: 1, visibleBuilds: 0, visibleDashboards: 1 })
 })
 
-test('Open ComfyUI pressed while Auto start is still starting the build opens its window once it is ready @macos @linux', async () => {
+test('Open ComfyUI pressed while Auto start is still starting the build opens one window once it is ready @macos @linux', async () => {
   await writeFile(path.join(build.installPath!, 'startup-delay-ms'), '6000')
   ctx = await launchApp(
     {

@@ -261,28 +261,6 @@ export const SCENARIOS: PreviewScenario[] = [
     }
   },
   {
-    id: 'home-ready-toast',
-    title: 'Home once the Auto Start build is ready',
-    ready: '[data-testid="home-ready-toast"]',
-    seed: (machine) => {
-      const [autoStarted] = everydayBuilds(machine)
-      return {
-        installations: everydayBuilds(machine),
-        settings: { autoLaunchOnStartup: autoStarted!.id },
-        replies: {
-          getRunningInstances: async () => [
-            {
-              installationId: autoStarted!.id,
-              installationName: autoStarted!.name,
-              mode: 'console'
-            }
-          ],
-          getAutoStartReady: async () => autoStarted!.id
-        }
-      }
-    }
-  },
-  {
     id: 'update-confirm',
     title: 'Update a running build, confirm',
     ready: '.base-alert-panel',
