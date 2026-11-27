@@ -137,22 +137,6 @@ async function readDirOrEmpty(dir: string, state: ScanState): Promise<fs.Dirent[
   }
 }
 
-async function folderSourcesInRoot(root: string, state: ScanState): Promise<FolderSource[]> {
-  const sources: FolderSource[] = []
-  const entries = await readDirOrEmpty(root, state)
-  entries.sort((a, b) => compareText(a.name, b.name))
-  for (const entry of entries) {
-    if (isSkippedEntry(entry.name) || isNonModelFolder(entry.name)) continue
-    const dir = path.join(root, entry.name)
-    const isDir =
-      entry.isDirectory() ||
-      (!entry.isFile() && (await statOrNull(dir, state))?.isDirectory() === true)
-    if (!isDir) continue
-    sources.push({ folder: modelFolderKind(entry.name), dir })
-  }
-  return sources
-}
-
 function folderSourcesFromExtraPaths(search: InstallModelSearch): FolderSource[] {
   return search.extraPaths
     .filter((extra) => !isNonModelFolder(extra.type))
@@ -174,6 +158,25 @@ class ModelCollector {
     return this.scanned >= MAX_SCANNED_ENTRIES || Date.now() >= this.deadline
   }
 
+  async sourcesInRoot(root: string): Promise<FolderSource[]> {
+    const sources: FolderSource[] = []
+    if (this.stopIfFull()) return sources
+    const entries = await readDirOrEmpty(root, this.state)
+    entries.sort((a, b) => compareText(a.name, b.name))
+    for (const entry of entries) {
+      if (this.stopIfFull()) return sources
+      this.scanned += 1
+      if (isSkippedEntry(entry.name) || isNonModelFolder(entry.name)) continue
+      const dir = path.join(root, entry.name)
+      const isDir =
+        entry.isDirectory() ||
+        (!entry.isFile() && (await statOrNull(dir, this.state))?.isDirectory() === true)
+      if (!isDir) continue
+      sources.push({ folder: modelFolderKind(entry.name), dir })
+    }
+    return sources
+  }
+
   async collect(source: FolderSource): Promise<void> {
     if (!isSendableFolder(source.folder)) return
     await this.walk(source.folder, source.dir, [], 0)
@@ -186,6 +189,12 @@ class ModelCollector {
       models,
       truncated: this.stoppedEarly || this.state.unreadable || models.length < all.length
     }
+  }
+
+  private stopIfFull(): boolean {
+    if (!this.full) return false
+    this.stoppedEarly = true
+    return true
   }
 
   private async walk(
@@ -320,7 +329,7 @@ export async function listModelsInSearch(
   const state: ScanState = { unreadable: false }
   const collector = new ModelCollector(Date.now() + timeBudgetMs, state)
   for (const root of search.modelRoots) {
-    for (const source of await folderSourcesInRoot(root, state)) {
+    for (const source of await collector.sourcesInRoot(root)) {
       await collector.collect(source)
     }
   }

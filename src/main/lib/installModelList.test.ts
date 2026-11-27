@@ -347,6 +347,21 @@ describe('listModelsInSearch', () => {
     })
   })
 
+  it('reads no model root once the time budget is spent', async () => {
+    const root = path.join(tmp, 'models')
+    writeFile(path.join(root, 'loras', 'late.safetensors'))
+    const readdir = vi.spyOn(fs.promises, 'readdir')
+
+    try {
+      const { truncated } = await listModelsInSearch(search({ modelRoots: [root, root] }), 0)
+
+      expect(truncated).toBe(true)
+      expect(readdir).not.toHaveBeenCalled()
+    } finally {
+      readdir.mockRestore()
+    }
+  })
+
   it('says the list is whole when nothing was cut', async () => {
     const root = path.join(tmp, 'models')
     writeFile(path.join(root, 'loras', 'one.safetensors'))
