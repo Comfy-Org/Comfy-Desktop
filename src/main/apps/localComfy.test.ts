@@ -1564,8 +1564,8 @@ describe('the ComfyUI window of the Auto start build, opened once it is ready', 
     opened.push(installationId)
     mocks.windows.set(installationId, { window: {} })
   }
-  const startAndOpen = () =>
-    startWithDesktopAndOpen(build() as unknown as InstallationRecord, openComfyWindow)
+  const startAndOpen = (over: Record<string, unknown> = {}) =>
+    startWithDesktopAndOpen(build(over) as unknown as InstallationRecord, openComfyWindow)
 
   beforeEach(() => {
     resetAutoStartOpen()
@@ -1579,6 +1579,24 @@ describe('the ComfyUI window of the Auto start build, opened once it is ready', 
 
     expect(opened).toEqual([STUDIO])
     expect(launches).toHaveLength(1)
+  })
+
+  it('starts a build set to Console only but opens no window for it', async () => {
+    startsWhenLaunched()
+
+    expect(await startAndOpen({ launchMode: 'console' })).toBe(false)
+
+    expect(launches).toHaveLength(1)
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+    expect(opened).toEqual([])
+  })
+
+  it('opens a build set to App window', async () => {
+    startsWhenLaunched()
+
+    expect(await startAndOpen({ launchMode: 'window' })).toBe(true)
+
+    expect(opened).toEqual([STUDIO])
   })
 
   it('opens only once per Desktop launch', async () => {
