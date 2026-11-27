@@ -363,7 +363,6 @@
     "opensWhenReady": "Starting… opens when it's ready",
     "chooseBuildToOpen": "Choose the build to open",
     "opensIn": "Opens in {name}",
-    "allBuilds": "All builds",
     "newBuildDetail": "Run ComfyUI on this computer",
     "turnOnAutoStart": "Auto start",
     "turnOffAutoStart": "Turn off auto start",

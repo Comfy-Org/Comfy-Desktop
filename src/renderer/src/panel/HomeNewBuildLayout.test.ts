@@ -201,6 +201,24 @@ describe('New build next to All builds', () => {
     wrapper.unmount()
   })
 
+  it('brightens the Builds title on hover with no background and no tooltip', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
+    const title = host.querySelector<HTMLElement>('[data-testid="home-all-builds"]')!
+    const probe = document.createElement('span')
+    probe.className = 'text-foreground'
+    host.appendChild(probe)
+
+    await userEvent.hover(title)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(getComputedStyle(title).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    expect(getComputedStyle(title).color).toBe(getComputedStyle(probe).color)
+    expect(document.body.textContent).not.toContain('All builds')
+    probe.remove()
+    await userEvent.unhover(title)
+    wrapper.unmount()
+  })
+
   it('shows the Builds title in the secondary text color, brighter than a plain section label', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
     const title = host.querySelector<HTMLElement>('[data-testid="home-all-builds"]')!
@@ -230,6 +248,65 @@ describe('New build next to All builds', () => {
     host.querySelector<HTMLElement>('[data-testid="home-new-build-button"]')!.click()
 
     expect(wrapper.emitted('new-build')).toHaveLength(1)
+    wrapper.unmount()
+  })
+})
+
+const QUIET_CONTROLS = [
+  ['the Builds title', 'home-all-builds', 'Builds'],
+  ['the +', 'home-new-build-button', 'New build'],
+  ['See all workflows', 'home-see-all-workflows', 'See all workflows'],
+  ['See all apps', 'home-see-all-apps', 'See all apps']
+] as const
+
+function hoverFillClasses(el: HTMLElement): string[] {
+  return [...el.classList].filter(
+    (name) => name.startsWith('hover:bg-') && name !== 'hover:bg-transparent'
+  )
+}
+
+describe('Home section links brighten on hover without a fill', () => {
+  it.each(QUIET_CONTROLS)(
+    '%s keeps its button role and name and has no hover fill class',
+    async (_control, testId, name) => {
+      const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
+      const control = host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!
+
+      expect(hoverFillClasses(control), 'hover fill classes').toEqual([])
+      expect(control.classList.contains('hover:bg-transparent')).toBe(true)
+      expect(browserPage.getByRole('button', { name, exact: true }).element()).toBe(control)
+      wrapper.unmount()
+    }
+  )
+
+  it.each(QUIET_CONTROLS)(
+    '%s shows no background and turns the foreground color on hover',
+    async (_control, testId) => {
+      const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
+      const control = host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!
+      const probe = document.createElement('span')
+      probe.className = 'text-foreground'
+      host.appendChild(probe)
+
+      await userEvent.hover(control)
+
+      await expect.poll(() => getComputedStyle(control).color).toBe(getComputedStyle(probe).color)
+      expect(getComputedStyle(control).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+      probe.remove()
+      await userEvent.unhover(control)
+      wrapper.unmount()
+    }
+  )
+
+  it('keeps a visible focus ring on the + for the keyboard', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
+    const plus = host.querySelector<HTMLElement>('[data-testid="home-new-build-button"]')!
+
+    plus.focus()
+    await userEvent.keyboard('{Shift>}{/Shift}')
+
+    await expect.poll(() => getComputedStyle(plus).boxShadow).not.toBe('none')
+    expect(getComputedStyle(plus).backgroundColor).toBe('rgba(0, 0, 0, 0)')
     wrapper.unmount()
   })
 })

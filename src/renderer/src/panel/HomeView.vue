@@ -30,10 +30,10 @@ import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 type WorkflowState = 'idle' | 'loading' | 'ready' | 'unavailable'
 
 const HOME_BUILD_LIMIT = 3
-const BUILDS_TITLE_LINK_CLASS =
-  '-mx-2 -my-1 h-8 gap-1 rounded-lg px-2 text-muted-foreground hover:bg-secondary hover:text-foreground'
-const TEXT_LINK_CLASS =
-  '-my-1 h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
+const BRIGHTEN_ON_HOVER_CLASS =
+  'text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:text-foreground'
+const BUILDS_TITLE_LINK_CLASS = '-my-1 h-8 gap-1'
+const TEXT_LINK_CLASS = '-my-1 h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium'
 
 const emit = defineEmits<{
   'open-app': [app: AppCard]
@@ -162,7 +162,7 @@ onMounted(() => {
             type="button"
             variant="muted-textonly"
             size="unset"
-            :class="[TEXT_LINK_CLASS, '-mr-3']"
+            :class="[TEXT_LINK_CLASS, BRIGHTEN_ON_HOVER_CLASS, '-mr-3']"
             data-testid="home-see-all-workflows"
             @click="emit('show-workflows')"
           >
@@ -210,7 +210,7 @@ onMounted(() => {
             type="button"
             variant="muted-textonly"
             size="unset"
-            :class="[TEXT_LINK_CLASS, '-mr-3']"
+            :class="[TEXT_LINK_CLASS, BRIGHTEN_ON_HOVER_CLASS, '-mr-3']"
             data-testid="home-see-all-apps"
             @click="emit('show-apps')"
           >
@@ -266,19 +266,17 @@ onMounted(() => {
       >
         <div class="mb-2.5 flex h-6 items-center justify-between">
           <h2 id="home-builds" class="m-0">
-            <Tooltip :text="t('home.allBuilds')">
-              <Button
-                type="button"
-                variant="muted-textonly"
-                size="unset"
-                :class="[SECTION_TITLE_CLASS, BUILDS_TITLE_LINK_CLASS]"
-                data-testid="home-all-builds"
-                @click="emit('show-builds')"
-              >
-                {{ t('sidebar.builds') }}
-                <ChevronRight :size="13" aria-hidden="true" />
-              </Button>
-            </Tooltip>
+            <Button
+              type="button"
+              variant="muted-textonly"
+              size="unset"
+              :class="[SECTION_TITLE_CLASS, BUILDS_TITLE_LINK_CLASS, BRIGHTEN_ON_HOVER_CLASS]"
+              data-testid="home-all-builds"
+              @click="emit('show-builds')"
+            >
+              {{ t('sidebar.builds') }}
+              <ChevronRight :size="13" aria-hidden="true" />
+            </Button>
           </h2>
           <div
             v-if="!installationStore.loading && (!showNewBuildSlot || !newBuildTileFitsNarrow)"
@@ -288,9 +286,9 @@ onMounted(() => {
             <Tooltip :text="t('sidebar.newBuild')">
               <Button
                 type="button"
-                variant="secondary"
+                variant="muted-textonly"
                 size="icon"
-                class="size-8 rounded-lg"
+                :class="['size-8 rounded-lg', BRIGHTEN_ON_HOVER_CLASS]"
                 :aria-label="t('sidebar.newBuild')"
                 data-testid="home-new-build-button"
                 @click="emit('new-build')"
