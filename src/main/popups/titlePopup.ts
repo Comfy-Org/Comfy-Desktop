@@ -1,10 +1,16 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import type { WebContentsView } from 'electron'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
-import { OPEN_RUNNING_APP_CHANNEL, PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
+import {
+  OPEN_RUNNING_APP_CHANNEL,
+  PICKER_SETTINGS_CHANNELS,
+  POPUP_KIND,
+  RUNNING_APP_ITEM
+} from '../../types/ipc'
 import type {
   PopupTheme,
   RunningApp,
+  TitleBarRunOverview,
   TitlePopupKind,
   TitlePopupMenuApp,
   TitlePopupMenuItem
@@ -319,6 +325,7 @@ type TitlePopupConfig =
   | { kind: typeof POPUP_KIND.downloadsFull; theme: PopupTheme }
   | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot; theme: PopupTheme }
   | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.runs; overview: TitleBarRunOverview; theme: PopupTheme }
 
 export interface TitlePopupEntry {
   view: EmbeddedPopupView
@@ -482,7 +489,6 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 
 const POPUP_WIDTH = 220
 const APPS_POPUP_WIDTH = 260
-const RUNNING_APP_ITEM = 'running-app:'
 const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8
@@ -745,6 +751,46 @@ export function openRunningAppsMenu(
   })
 }
 
+export function openRunsPopup(
+  windowKey: number,
+  overview: TitleBarRunOverview,
+  anchor: { x: number; y: number }
+): void {
+  const entry = comfyWindows.get(windowKey)
+  if (!entry || entry.window.isDestroyed()) return
+  openTitlePopup({
+    parent: entry.window,
+    parentEntryId: windowKey,
+    kind: POPUP_KIND.runs,
+    overview,
+    anchor,
+    theme: entry.lastTheme,
+    titleBarSender: entry.titleBarView.webContents
+  })
+}
+
+function openRunsPopupEntry(windowKey: number): TitlePopupEntry | null {
+  const parent = comfyWindows.get(windowKey)?.window
+  const entry = parent ? titlePopupsByParent.get(parent.id) : undefined
+  return entry?.kind === POPUP_KIND.runs && entry.view.isOpen ? entry : null
+}
+
+export function isRunsPopupOpen(windowKey: number): boolean {
+  return openRunsPopupEntry(windowKey) !== null
+}
+
+export function refreshRunsPopup(windowKey: number, overview: TitleBarRunOverview): void {
+  const entry = openRunsPopupEntry(windowKey)
+  const theme = comfyWindows.get(windowKey)?.lastTheme
+  if (!entry || !theme) return
+  syncTitlePopupConfig(entry, { kind: POPUP_KIND.runs, overview, theme }, false)
+}
+
+export function closeRunsPopup(windowKey: number): void {
+  const entry = openRunsPopupEntry(windowKey)
+  if (entry) hideTitlePopup(entry, { releaseFocusToParent: true })
+}
+
 function hideTitlePopup(
   entry: TitlePopupEntry,
   opts: { releaseFocusToParent?: boolean } = {}
@@ -784,6 +830,26 @@ function showTitlePopupNow(entry: TitlePopupEntry): void {
 const DOWNLOADS_POPUP_WIDTH = 405
 const DOWNLOADS_POPUP_MAX_HEIGHT_PX = 396
 const DOWNLOADS_POPUP_MAX_HEIGHT_RATIO = 0.6
+const RUNS_POPUP_WIDTH = 405
+const RUNS_POPUP_MAX_HEIGHT_PX = 560
+const RUNS_POPUP_MAX_HEIGHT_RATIO = 0.7
+
+function fitsContentHeightCeiling(kind: TitlePopupKind, parent: BrowserWindow): number | null {
+  const contentHeight = parent.getContentBounds().height
+  if (kind === POPUP_KIND.downloads) {
+    return Math.min(
+      DOWNLOADS_POPUP_MAX_HEIGHT_PX,
+      Math.round(contentHeight * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
+    )
+  }
+  if (kind === POPUP_KIND.runs) {
+    return Math.min(
+      RUNS_POPUP_MAX_HEIGHT_PX,
+      Math.round(contentHeight * RUNS_POPUP_MAX_HEIGHT_RATIO)
+    )
+  }
+  return null
+}
 
 const PICKER_SIDE_GUTTER = 24
 const PICKER_BOTTOM_GUTTER = 24
@@ -928,13 +994,8 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   }
 
   let height = cur.height
-  if (entry.kind === 'downloads') {
-    const ceiling = Math.min(
-      DOWNLOADS_POPUP_MAX_HEIGHT_PX,
-      Math.round(parent.getContentBounds().height * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
-    )
-    height = Math.max(1, Math.min(cur.height, ceiling))
-  }
+  const ceiling = fitsContentHeightCeiling(entry.kind, parent)
+  if (ceiling !== null) height = Math.max(1, Math.min(cur.height, ceiling))
   const x = clampPopupX(cur.x, cur.width, parent)
   if (x === cur.x && height === cur.height) return
   entry.view.popup.setBounds({ x, y: cur.y, width: cur.width, height })
@@ -952,6 +1013,7 @@ type OpenTitlePopupOpts = {
   | { kind: typeof POPUP_KIND.downloadsFull }
   | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot }
   | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot }
+  | { kind: typeof POPUP_KIND.runs; overview: TitleBarRunOverview }
 )
 
 export function requiresPerOpenConfigSync(
@@ -1011,12 +1073,9 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     width = opts.items.some((item) => item.app) ? APPS_POPUP_WIDTH : POPUP_WIDTH
     height = computePopupHeight(opts.items)
     x = clampPopupX(rawX, width, opts.parent)
-  } else if (opts.kind === 'downloads') {
-    width = DOWNLOADS_POPUP_WIDTH
-    height = Math.min(
-      DOWNLOADS_POPUP_MAX_HEIGHT_PX,
-      Math.round(opts.parent.getContentBounds().height * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
-    )
+  } else if (opts.kind === 'downloads' || opts.kind === 'runs') {
+    width = opts.kind === 'downloads' ? DOWNLOADS_POPUP_WIDTH : RUNS_POPUP_WIDTH
+    height = fitsContentHeightCeiling(opts.kind, opts.parent) ?? 1
     x = clampPopupX(rawX, width, opts.parent)
   } else {
     ;({ x, y, width, height } = modalBounds(opts.kind, opts.parent))
@@ -1039,6 +1098,8 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     config = { kind: POPUP_KIND.downloads, theme: opts.theme }
   } else if (opts.kind === POPUP_KIND.downloadsFull) {
     config = { kind: POPUP_KIND.downloadsFull, theme: opts.theme }
+  } else if (opts.kind === POPUP_KIND.runs) {
+    config = { kind: POPUP_KIND.runs, overview: opts.overview, theme: opts.theme }
   } else if (opts.kind === POPUP_KIND.instancePicker) {
     config = { kind: POPUP_KIND.instancePicker, snapshot: opts.snapshot, theme: opts.theme }
     entry.lastPickerBroadcastJson = JSON.stringify(opts.snapshot)
@@ -1563,17 +1624,13 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   ipcMain.on('comfy-titlepopup:request-size', (event, payload: { height?: unknown }) => {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return
-    if (entry.kind !== 'downloads') return
     const requested = payload?.height
     if (typeof requested !== 'number' || !Number.isFinite(requested)) return
     const parent = comfyWindows.get(entry.parentEntryId)?.window
     if (!parent || parent.isDestroyed()) return
 
-    const contentHeight = parent.getContentBounds().height
-    const ceiling = Math.min(
-      DOWNLOADS_POPUP_MAX_HEIGHT_PX,
-      Math.round(contentHeight * DOWNLOADS_POPUP_MAX_HEIGHT_RATIO)
-    )
+    const ceiling = fitsContentHeightCeiling(entry.kind, parent)
+    if (ceiling === null) return
     const next = Math.max(1, Math.min(ceiling, Math.ceil(requested)))
     const cur = entry.view.popup.getBounds()
     if (cur.height === next) return

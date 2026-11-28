@@ -19,6 +19,9 @@ export type {
   DraftClosingStop,
   RunningApp,
   TitleBarApps,
+  TitleBarOpenApp,
+  TitleBarRun,
+  TitleBarRunOverview,
   AssetKind,
   AssetSummary,
   CloudAssetPage,
@@ -115,4 +118,4 @@ export type {
   InstallBuildResult,
   ElectronApi
 } from '../../../types/ipc'
-export { LOCAL_ASSETS_SOURCE, REQUIRES_STOPPED } from '../../../types/ipc'
+export { LOCAL_ASSETS_SOURCE, REQUIRES_STOPPED, RUNNING_APP_ITEM } from '../../../types/ipc'

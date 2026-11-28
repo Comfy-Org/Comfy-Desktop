@@ -24,7 +24,7 @@ import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
 import type { KnownSettingKey, KnownSettings } from '../main/settings'
-import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
+import type { ComfyDesktopOpenInComfy, ComfyDesktopRun } from './comfyDesktopBridge'
 
 export interface CoachmarkBeakPayload {
   beakFraction: number
@@ -1711,7 +1711,8 @@ export const POPUP_KIND = {
   downloads: 'downloads',
   downloadsFull: 'downloads-full',
   instancePicker: 'instance-picker',
-  globalSettings: 'global-settings'
+  globalSettings: 'global-settings',
+  runs: 'runs'
 } as const
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
@@ -1734,6 +1735,23 @@ export interface TitlePopupMenuItem {
 }
 
 export const OPEN_RUNNING_APP_CHANNEL = 'apps:open-running-app'
+
+export const RUNNING_APP_ITEM = 'running-app:'
+
+export interface TitleBarRun extends ComfyDesktopRun {
+  appId: string
+  appTitle: string
+  picture: string | null
+  buildId: string | null
+  buildName: string | null
+}
+
+export interface TitleBarOpenApp extends RunningApp, TitlePopupMenuApp {}
+
+export interface TitleBarRunOverview {
+  runs: TitleBarRun[]
+  apps: TitleBarOpenApp[]
+}
 
 export interface PopupTheme {
   bg: string

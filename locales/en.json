@@ -568,6 +568,20 @@
     "appsMany": "{count} apps",
     "showApps": "Show apps"
   },
+  "runOverview": {
+    "cloud": "Comfy Cloud",
+    "thisComputer": "This computer",
+    "running": "Running",
+    "waiting": "Waiting",
+    "next": "Next",
+    "ahead": "{n} run ahead | {n} runs ahead",
+    "stepOf": "Step {index} of {count}",
+    "done": "Done",
+    "failed": "Failed",
+    "otherApps": "Other apps",
+    "finished": "Finished · {count}",
+    "openApp": "Open {app}"
+  },
   "comfyUISettings": {
     "title": "Settings",
     "tabConfig": "Startup arguments",

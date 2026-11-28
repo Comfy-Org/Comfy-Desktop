@@ -25,6 +25,14 @@ const mocks = vi.hoisted(() => ({
   ready: [] as { id: string; title: string }[],
   noteAppPageRunning: vi.fn(),
   noteAppPageRuns: vi.fn(),
+  reportedRunPages: [] as { appId: string; title: string; page: unknown; runs: unknown[] }[],
+  reportedRunsListeners: [] as ((windowKey: number) => void)[],
+  pageBuildId: vi.fn((_page: unknown): string | null => 'build-1'),
+  usableLocalBuilds: vi.fn(async () => [{ id: 'build-1', name: 'My ComfyUI' }]),
+  openRunsPopup: vi.fn(),
+  refreshRunsPopup: vi.fn(),
+  closeRunsPopup: vi.fn(),
+  runsPopupOpen: false,
   appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
   appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
   closeAppPage: vi.fn(),
@@ -50,6 +58,11 @@ vi.mock('../../apps/appPageView', () => ({
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
   noteAppPageRuns: mocks.noteAppPageRuns,
+  onReportedRunsChanged: (listener: (windowKey: number) => void) => {
+    mocks.reportedRunsListeners.push(listener)
+    return () => {}
+  },
+  reportedRunPages: () => mocks.reportedRunPages,
   showAppPage: vi.fn(),
   tellPanelsTheListChanged: mocks.tellPanelsTheListChanged,
   titleBarApps: () => ({ running: mocks.running, ready: mocks.ready })
@@ -67,13 +80,19 @@ vi.mock('../../apps/appsCatalog', () => ({
   pictureForListedApp: (id: string) =>
     id === 'remove-background' ? 'https://comfy.org/rb.webp' : null
 }))
+vi.mock('../../apps/localBuild', () => ({ usableLocalBuilds: mocks.usableLocalBuilds }))
+vi.mock('../../apps/localComfy', () => ({ pageBuildId: mocks.pageBuildId }))
 vi.mock('../../host/registry', () => ({
   isPanelSender: () => mocks.isPanel,
   findEntryByTitleBarSender: () => mocks.titleBarEntry
 }))
 vi.mock('../../popups/titlePopup', () => ({
   isGlobalSettingsSender: () => mocks.isGlobalSettings,
-  openRunningAppsMenu: mocks.openRunningAppsMenu
+  closeRunsPopup: mocks.closeRunsPopup,
+  isRunsPopupOpen: () => mocks.runsPopupOpen,
+  openRunningAppsMenu: mocks.openRunningAppsMenu,
+  openRunsPopup: mocks.openRunsPopup,
+  refreshRunsPopup: mocks.refreshRunsPopup
 }))
 vi.mock('../../apps/draftApps', () => ({
   currentDrafts: mocks.currentDrafts,
@@ -388,6 +407,8 @@ describe('runs of apps kept open', () => {
   const hostWindow = { isDestroyed: () => false }
   const REMOVE_BACKGROUND = { id: 'remove-background', title: 'Remove Background' }
   const HDR = { id: 'sdr-to-hdr', title: 'SDR to HDR' }
+  const UPSCALE = { id: 'upscale', title: 'Upscale' }
+  const RELIGHT = { id: 'relight', title: 'Relight' }
 
   function listener(channel: string): Handler {
     const handler = mocks.listeners.get(channel)
@@ -408,6 +429,9 @@ describe('runs of apps kept open', () => {
     mocks.isAppsPage = true
     mocks.running = []
     mocks.ready = []
+    mocks.reportedRunPages = []
+    mocks.reportedRunsListeners = []
+    mocks.runsPopupOpen = false
     mocks.titleBarEntry = {
       id: 7,
       entry: {
@@ -462,17 +486,6 @@ describe('runs of apps kept open', () => {
     expect(mocks.noteAppPageRunning).toHaveBeenCalledTimes(1)
   })
 
-  it('takes a run list only from an app page', () => {
-    const sender = {}
-    const runs = [{ id: 'a', where: 'cloud', state: 'running' }]
-    listener('apps-page:runs')({ sender, senderFrame: {} }, runs)
-    expect(mocks.noteAppPageRuns).toHaveBeenCalledExactlyOnceWith(sender, runs)
-
-    mocks.isAppsPage = false
-    listener('apps-page:runs')({ sender, senderFrame: {} }, runs)
-    expect(mocks.noteAppPageRuns).toHaveBeenCalledTimes(1)
-  })
-
   it('opens the one running app when its title bar indicator is clicked', () => {
     mocks.running = [REMOVE_BACKGROUND]
 
@@ -524,6 +537,121 @@ describe('runs of apps kept open', () => {
       { ...REMOVE_BACKGROUND, picture: 'https://comfy.org/rb.webp', state: 'running' },
       { ...HDR, picture: null, state: 'ready' }
     ])
+  })
+
+  it('takes a run list only from an app page', () => {
+    const sender = {}
+    const runs = [{ id: 'a', where: 'cloud', state: 'running' }]
+    listener('apps-page:runs')({ sender, senderFrame: {} }, runs)
+    expect(mocks.noteAppPageRuns).toHaveBeenCalledExactlyOnceWith(sender, runs)
+
+    mocks.isAppsPage = false
+    listener('apps-page:runs')({ sender, senderFrame: {} }, runs)
+    expect(mocks.noteAppPageRuns).toHaveBeenCalledTimes(1)
+  })
+
+  describe('when app pages report their runs', () => {
+    const CLOUD_RUN = { id: 'c1', where: 'cloud', state: 'running', step: 'Swapping the face' }
+    const LOCAL_RUN = { id: 'l1', where: 'local', state: 'queued', ahead: 1 }
+
+    beforeEach(() => {
+      mocks.running = [REMOVE_BACKGROUND, HDR]
+      mocks.reportedRunPages = [
+        {
+          ...REMOVE_BACKGROUND,
+          appId: REMOVE_BACKGROUND.id,
+          page: {},
+          runs: [CLOUD_RUN, LOCAL_RUN]
+        },
+        { ...HDR, appId: HDR.id, page: {}, runs: [] }
+      ]
+    })
+
+    it('opens the run overview with each run, its app and the build it runs on', async () => {
+      clickRunningApps()
+
+      await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
+      const app = {
+        appId: REMOVE_BACKGROUND.id,
+        appTitle: REMOVE_BACKGROUND.title,
+        picture: 'https://comfy.org/rb.webp'
+      }
+      expect(mocks.openRunsPopup).toHaveBeenCalledWith(
+        7,
+        {
+          runs: [
+            { ...CLOUD_RUN, ...app, buildId: null, buildName: null },
+            { ...LOCAL_RUN, ...app, buildId: 'build-1', buildName: 'My ComfyUI' }
+          ],
+          apps: [{ ...HDR, picture: null, state: 'running' }]
+        },
+        { x: 812, y: 36 }
+      )
+      expect(mocks.openRunningAppsMenu).not.toHaveBeenCalled()
+      expect(panelSend).not.toHaveBeenCalled()
+    })
+
+    it('lists the open apps that send no run list next to the runs', async () => {
+      mocks.running = [REMOVE_BACKGROUND, HDR, UPSCALE]
+      mocks.ready = [RELIGHT]
+
+      clickRunningApps()
+
+      await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
+      expect(mocks.openRunsPopup.mock.lastCall?.[1].apps).toEqual([
+        { ...HDR, picture: null, state: 'running' },
+        { ...UPSCALE, picture: null, state: 'running' },
+        { ...RELIGHT, picture: null, state: 'ready' }
+      ])
+    })
+
+    it('opens the overview once for a second click while the first is still opening', async () => {
+      clickRunningApps()
+      clickRunningApps()
+
+      await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
+      await Promise.resolve()
+      expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1)
+      expect(mocks.usableLocalBuilds).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the apps menu while no page has a run in its list', () => {
+      mocks.reportedRunPages = [{ ...HDR, appId: HDR.id, page: {}, runs: [] }]
+
+      clickRunningApps()
+
+      expect(mocks.openRunningAppsMenu).toHaveBeenCalledTimes(1)
+      expect(mocks.openRunsPopup).not.toHaveBeenCalled()
+    })
+
+    it('refreshes the open run overview when a page reports again, and only then', async () => {
+      const [changed] = mocks.reportedRunsListeners
+      changed?.(7)
+      expect(mocks.refreshRunsPopup).not.toHaveBeenCalled()
+
+      clickRunningApps()
+      await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
+      mocks.runsPopupOpen = true
+      changed?.(7)
+
+      expect(mocks.refreshRunsPopup).toHaveBeenCalledTimes(1)
+      expect(mocks.refreshRunsPopup.mock.lastCall?.[0]).toBe(7)
+      expect(mocks.refreshRunsPopup.mock.lastCall?.[1].runs).toHaveLength(2)
+      expect(mocks.refreshRunsPopup.mock.lastCall?.[1].runs[1].buildName).toBe('My ComfyUI')
+      expect(mocks.usableLocalBuilds).toHaveBeenCalledTimes(1)
+    })
+
+    it('closes the open run overview once nothing is left to list', () => {
+      const [changed] = mocks.reportedRunsListeners
+      mocks.runsPopupOpen = true
+      mocks.running = []
+      mocks.reportedRunPages = [{ ...HDR, appId: HDR.id, page: {}, runs: [] }]
+
+      changed?.(7)
+
+      expect(mocks.closeRunsPopup).toHaveBeenCalledWith(7)
+      expect(mocks.refreshRunsPopup).not.toHaveBeenCalled()
+    })
   })
 
   it('does nothing for a click from outside a title bar, or with nothing running', () => {
