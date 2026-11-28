@@ -19,11 +19,12 @@ import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { attachContextMenu } from '../lib/contextMenu'
+import { recordExposure } from '../lib/experiments'
 import { tryOpenExternalUrl } from '../lib/openExternal'
 import * as mainTelemetry from '../lib/telemetry'
 import { COMFY_BG } from '../lib/theme'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
-import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
+import { pageTestGroupForListedApp, pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { currentAppsLocation } from './appsConfig'
 import { startAnsweringFromKeptCopies, stopAnsweringFromKeptCopies } from './appsOffline'
 import { registerAppsPage } from './appsPages'
@@ -31,6 +32,8 @@ import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from '
 import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
 import type { DraftApp } from './draftApps'
 import { cloudIdentity, isDraftStillAllowed } from './draftLinks'
+import { pageTestPropertiesFor, pageTestPropertiesOf, rememberPageTestGroup } from './pageTest'
+import type { PageTestGroup } from './pageTest'
 
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
@@ -239,7 +242,11 @@ function setStatus(windowKey: number, hosted: HostedPage, status: AppPageStatus)
 
 function fail(windowKey: number, hosted: HostedPage, reason: PageFailure): void {
   if (hosted.status !== 'failed') {
-    mainTelemetry.capture(APP_PAGE_FAILED_EVENT, { app_id: hosted.appId, reason })
+    mainTelemetry.capture(APP_PAGE_FAILED_EVENT, {
+      app_id: hosted.appId,
+      ...pageTestPropertiesFor(hosted.appId),
+      reason
+    })
   }
   setStatus(windowKey, hosted, 'failed')
 }
@@ -269,8 +276,22 @@ function isInAppRoute(base: string, url: string): boolean {
   return at === route || at.startsWith(`${route}/`)
 }
 
+function pageTestGroupForApp(appId: string): PageTestGroup | null {
+  return draftPageUrl(appId) === null ? pageTestGroupForListedApp(appId) : null
+}
+
 function pageUrlForApp(appId: string): string | null {
-  return draftPageUrl(appId) ?? pageUrlForListedApp(appId) ?? pageUrlForHiddenApp(appId)
+  return (
+    draftPageUrl(appId) ??
+    pageTestGroupForListedApp(appId)?.pageUrl ??
+    pageUrlForListedApp(appId) ??
+    pageUrlForHiddenApp(appId)
+  )
+}
+
+function noteAppOpened(appId: string, pageTest: PageTestGroup | null): void {
+  mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId, ...pageTestPropertiesOf(pageTest) })
+  if (pageTest) recordExposure(pageTest.key, pageTest.variant, 'shard')
 }
 
 function sessionForApp(appId: string): Session {
@@ -712,6 +733,8 @@ export async function showAppPage(
   const pageUrl = pageUrlForApp(appId)
   const host = hostOf(panel)
   if (!pageUrl || !host) return 'failed'
+  const pageTest = pageTestGroupForApp(appId)
+  rememberPageTestGroup(appId, pageTest)
   const appsSession = sessionForApp(appId)
   const shown = hostedFor(host)?.appId ?? null
   if (shown !== appId) dropDraft(host.windowKey, shown)
@@ -727,7 +750,7 @@ export async function showAppPage(
     hosted.openedBy = cloudIdentity()
     load(host.windowKey, hosted, pageUrl)
   }
-  if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
+  if (placement.justOpened) noteAppOpened(appId, pageTest)
   hosted.wanted = !placement.hidden
   hosted.focusWhenReady = hosted.focusWhenReady || askedFresh || placement.focus === true
   place(host.entry, hosted.view, placement)

@@ -5,9 +5,12 @@ import { stillsOf } from '../../shared/appStills'
 import { APP_ID_PATTERN, isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
 import type { AppBadge, AppBadgeStyle, AppBadgeWords, AppCard, AppCover } from '../../types/ipc'
+import { savedInstallationId } from '../lib/deviceId'
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
+import { pageTestGroup, parsePageTest } from './pageTest'
+import type { PageTest, PageTestGroup } from './pageTest'
 import { inTurns, readStill, stillDataUrl } from './stillPictures'
 
 const LIST_FILE = 'apps.json'
@@ -31,6 +34,7 @@ const MAX_LISTED_COVERS = 200
 interface ListedApp {
   card: AppCard
   pageUrl: string
+  pageTest?: PageTest
 }
 
 type JsonRecord = Record<string, unknown>
@@ -138,8 +142,10 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
   if (!pageUrl) return null
   const badges = badgesFrom(record.badges)
   const coverPlayback = record.cover_playback === 'always' ? 'always' : null
+  const pageTest = parsePageTest(record.page_test, (page) => pageUrlFor(id, page, location))
   return {
     pageUrl,
+    ...(pageTest && { pageTest }),
     card: {
       id,
       title,
@@ -347,12 +353,23 @@ export async function listApps(): Promise<AppCard[]> {
   return (await loadApps()).map((app) => app.card)
 }
 
+function listedApp(id: string): ListedApp | null {
+  return cache?.apps.find((app) => app.card.id === id) ?? null
+}
+
 export function pageUrlForListedApp(id: string): string | null {
-  return cache?.apps.find((app) => app.card.id === id)?.pageUrl ?? null
+  return listedApp(id)?.pageUrl ?? null
+}
+
+export function pageTestGroupForListedApp(id: string): PageTestGroup | null {
+  const test = listedApp(id)?.pageTest
+  if (!test) return null
+  const installationId = savedInstallationId()
+  return installationId ? pageTestGroup(test, installationId) : null
 }
 
 function listedCard(id: string): AppCard | null {
-  return cache?.apps.find((app) => app.card.id === id)?.card ?? null
+  return listedApp(id)?.card ?? null
 }
 
 export function titleForListedApp(id: string): string | null {

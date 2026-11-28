@@ -286,6 +286,11 @@ export function getDeviceId(): string {
   return id
 }
 
+export function savedInstallationId(): string | null {
+  if (!cached || cached.idClass === 'provisional' || !hasPersistedDeviceId()) return null
+  return cached.installationId
+}
+
 export function getIdClass(): IdClass {
   return cached?.idClass ?? 'random_fallback'
 }

@@ -4,6 +4,7 @@ import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 
 import type { AppOutputs } from '../../types/ipc'
 import type { DraftApp } from './draftApps'
+import type { PageTestGroup } from './pageTest'
 
 type PermissionCheck = (contents: unknown, permission: string, requestingOrigin: string) => boolean
 type PermissionRequest = (
@@ -25,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   startAnswering: vi.fn(),
   stopAnswering: vi.fn(),
   capture: vi.fn(),
+  recordExposure: vi.fn(),
+  pageTests: new Map<string, PageTestGroup>(),
   pages: new Map<string, string>(),
   titles: new Map<string, string>(),
   drafts: new Map<string, { url: string; accepted: boolean; card?: { title: string } }>(),
@@ -62,7 +65,10 @@ vi.mock('../lib/telemetry', () => ({
   capture: mocks.capture,
   DEFAULT_EVENT_PROPERTY_NAMES: new Set<string>()
 }))
+vi.mock('../lib/experiments', () => ({ recordExposure: mocks.recordExposure }))
 vi.mock('./appsCatalog', () => ({
+  pageTestGroupForListedApp: (id: string) =>
+    mocks.pages.has(id) ? (mocks.pageTests.get(id) ?? null) : null,
   pageUrlForListedApp: (id: string) => mocks.pages.get(id) ?? null,
   titleForListedApp: (id: string) => mocks.titles.get(id) ?? null
 }))
@@ -146,6 +152,7 @@ import {
   showAppPage
 } from './appPageView'
 import { trackFromAppsPage } from '../lib/ipc/registerAppsTelemetryHandlers'
+import { _resetPageTestsForTest } from './pageTest'
 
 const APPS_URL = 'https://comfy.org/apps/'
 const CUTOUT = 'remove-background'
@@ -299,6 +306,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   _resetForTest()
   forgetAppsPages()
+  _resetPageTestsForTest()
+  mocks.pageTests = new Map()
   mocks.pages = new Map([
     [CUTOUT, CUTOUT_URL],
     [UPSCALE, UPSCALE_URL]
@@ -2015,5 +2024,160 @@ describe('outputs an app page shows', () => {
     await openCutout({ ...PLACEMENT, focus: true })
 
     expect(hostedPage().webContents.focus).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('an app with a page_test', () => {
+  const KEY = 't2i-2026-12'
+  const VARIANT_URL = `${APPS_URL}prompt-to-image/desktop.html`
+  const IN_VARIANT: PageTestGroup = { key: KEY, variant: 'comfy', pageUrl: VARIANT_URL }
+  const IN_CONTROL: PageTestGroup = { key: KEY, variant: 'control', pageUrl: null }
+
+  function openedEvents(): unknown[][] {
+    return mocks.capture.mock.calls.filter(([name]) => name === APP_OPENED_EVENT)
+  }
+
+  async function openCutoutFresh(): Promise<string> {
+    return openCutout({ ...PLACEMENT, justOpened: true })
+  }
+
+  it("loads the variant's page for an install in the variant, under the card's own id", async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+
+    await openCutoutFresh()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(VARIANT_URL)
+    expect(hostedPage().webContents.loadURL).not.toHaveBeenCalledWith(CUTOUT_URL)
+    expect(openedEvents()).toEqual([
+      [APP_OPENED_EVENT, { app_id: CUTOUT, page_test_key: KEY, page_test_variant: 'comfy' }]
+    ])
+  })
+
+  it('records the exposure once per opening, with source shard, and not on a resize', async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+
+    await openCutoutFresh()
+    finishLoading(VARIANT_URL)
+    await openCutout()
+
+    expect(mocks.recordExposure.mock.calls).toEqual([[KEY, 'comfy', 'shard']])
+  })
+
+  it("loads the card's own page for an install past the shares, and records it as control", async () => {
+    mocks.pageTests.set(CUTOUT, IN_CONTROL)
+
+    await openCutoutFresh()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
+    expect(openedEvents()).toEqual([
+      [APP_OPENED_EVENT, { app_id: CUTOUT, page_test_key: KEY, page_test_variant: 'control' }]
+    ])
+    expect(mocks.recordExposure.mock.calls).toEqual([[KEY, 'control', 'shard']])
+  })
+
+  it('records no exposure and adds no page_test properties for an app with no page_test', async () => {
+    await openCutoutFresh()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
+    expect(openedEvents()).toEqual([[APP_OPENED_EVENT, { app_id: CUTOUT }]])
+    expect(mocks.recordExposure).not.toHaveBeenCalled()
+  })
+
+  it('holds the variant page as the app it opened, through moves within it', async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+    await openCutoutFresh()
+    finishLoading(VARIANT_URL)
+    const page = hostedPage().webContents
+
+    page.emit('did-navigate-in-page', {}, `${VARIANT_URL}?example=dog`, true)
+
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: CUTOUT, document: 1 })
+    expect(hostedPage().visible).toBe(true)
+  })
+
+  it('lets the variant page move within the apps site without sending it outside', async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+    await openCutoutFresh()
+    finishLoading(VARIANT_URL)
+    const event = navigationEvent()
+
+    hostedPage().webContents.emit('will-navigate', event, `${VARIANT_URL}?step=2`)
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('loads the same variant page again when the person retries a failed page', async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+    await openCutoutFresh()
+    finishLoading(VARIANT_URL, 404)
+
+    await openCutout({ ...PLACEMENT, retry: true })
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(VARIANT_URL)
+  })
+
+  it('tags a failed page with the page_test key and variant', async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+    await openCutoutFresh()
+    finishLoading(VARIANT_URL, 404)
+
+    expect(mocks.capture).toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, {
+      app_id: CUTOUT,
+      page_test_key: KEY,
+      page_test_variant: 'comfy',
+      reason: 'http_status'
+    })
+  })
+
+  it("tags the variant page's own events with the card's id, key and variant", async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+    await openCutoutFresh()
+    finishLoading(VARIANT_URL)
+
+    await trackFromAppsPage(eventFrom(hostedPage().webContents), RUN)
+
+    expect(runsSent()).toEqual([
+      [
+        'comfy.desktop.apps.run_started',
+        { where: 'cloud', app_id: CUTOUT, page_test_key: KEY, page_test_variant: 'comfy' }
+      ]
+    ])
+  })
+
+  it('sends no page_test properties on the events of an app with no page_test', async () => {
+    await openCutoutFresh()
+    finishLoading()
+
+    await trackFromAppsPage(eventFrom(hostedPage().webContents), RUN)
+
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: CUTOUT }]
+    ])
+  })
+
+  it('keeps a page from setting its own page_test properties', async () => {
+    await openCutoutFresh()
+    finishLoading()
+
+    await trackFromAppsPage(eventFrom(hostedPage().webContents), {
+      name: 'run_started',
+      props: { where: 'cloud', page_test_key: 'made-up', page_test_variant: 'comfy' }
+    })
+
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: CUTOUT }]
+    ])
+  })
+
+  it('opens a draft of the same app at the draft, with no page_test and no exposure', async () => {
+    mocks.pageTests.set(CUTOUT, IN_VARIANT)
+    mocks.drafts.set(CUTOUT, { url: DRAFT_URL, accepted: true })
+
+    await openCutoutFresh()
+
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(DRAFT_URL)
+    expect(openedEvents()).toEqual([[APP_OPENED_EVENT, { app_id: CUTOUT }]])
+    expect(mocks.recordExposure).not.toHaveBeenCalled()
   })
 })

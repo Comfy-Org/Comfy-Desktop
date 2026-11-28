@@ -34,6 +34,7 @@ vi.mock('posthog-node', () => ({
 }))
 
 import * as telemetry from '../lib/telemetry'
+import { _resetPageTestsForTest, rememberPageTestGroup } from './pageTest'
 import {
   _resetForTest,
   buildsWithRuns,
@@ -101,6 +102,7 @@ beforeEach(() => {
   telemetry._test_resetVolumeGuards()
   telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
   _resetForTest()
+  _resetPageTestsForTest()
   sdkCaptures.length = 0
 })
 
@@ -924,5 +926,53 @@ describe('which app a build is busy with', () => {
     stop()
     runAccepted('run-2', 'inst-1', 'remove-background', 3)
     expect(watcher).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('run_finished and setup for an app with a page_test', () => {
+  const KEY = 't2i-2026-12'
+
+  beforeEach(allowTelemetry)
+
+  function finishOneRun(appId: string | null): void {
+    runAccepted(RUN, BUILD, appId, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    noteRunMessage(message('execution_success', { timestamp: T0 + 1_000 }))
+  }
+
+  it("carry the card's id with the page_test key and the variant shown", () => {
+    rememberPageTestGroup(APP, { key: KEY, variant: 'comfy', pageUrl: 'https://comfy.org/apps/x/' })
+
+    finishOneRun(APP)
+    setupStarted('start', APP).finished()
+
+    const tags = { app_id: APP, page_test_key: KEY, page_test_variant: 'comfy' }
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([expect.objectContaining(tags)])
+    expect(sent(SETUP_EVENT)).toEqual([
+      expect.objectContaining({ ...tags, outcome: 'started' }),
+      expect.objectContaining({ ...tags, outcome: 'finished' })
+    ])
+  })
+
+  it("carry control for an install on the card's own page", () => {
+    rememberPageTestGroup(APP, { key: KEY, variant: 'control', pageUrl: null })
+
+    finishOneRun(APP)
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ app_id: APP, page_test_key: KEY, page_test_variant: 'control' })
+    ])
+  })
+
+  it('carry no page_test properties for an app with no page_test, or a run no app asked for', () => {
+    rememberPageTestGroup('other-app', { key: KEY, variant: 'comfy', pageUrl: null })
+
+    finishOneRun(APP)
+    setupStarted('start', null).finished()
+
+    for (const event of [...sent(RUN_FINISHED_EVENT), ...sent(SETUP_EVENT)]) {
+      expect(event).not.toHaveProperty('page_test_key')
+      expect(event).not.toHaveProperty('page_test_variant')
+    }
   })
 })
