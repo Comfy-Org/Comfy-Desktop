@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
+import { __resetHomeTourForTest, useHomeTour } from './home/useHomeTour'
 import type { AppCard, AppCover, CatalogWorkflow } from '../types/ipc'
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
@@ -84,6 +85,7 @@ const mounted: VueWrapper[] = []
 
 afterEach(() => {
   while (mounted.length) mounted.pop()?.unmount()
+  __resetHomeTourForTest()
 })
 
 async function openHome() {
@@ -149,6 +151,29 @@ describe('Home carousel tabs', () => {
     await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
 
     expect(panel().attributes('aria-label')).toBe('Apps')
+  })
+
+  it('opens on Apps while the Home tour runs, so its New: Apps step points at apps, and goes back to Workflows when it ends', async () => {
+    const settings: Record<string, unknown> = { homeTourAudience: 'new', homeTourDone: false }
+    const api = window.api as unknown as Record<string, unknown>
+    api.getSetting = vi.fn((key: string) => Promise.resolve(settings[key]))
+    api.getHomeTourReplay = vi.fn().mockResolvedValue({ id: 0, pending: false })
+    api.onHomeTourReplayChanged = vi.fn(() => () => {})
+    api.finishHomeTour = vi.fn().mockResolvedValue(undefined)
+    const tour = useHomeTour()
+    await flushPromises()
+    expect(tour.done.value).toBe(false)
+
+    const wrapper = await openHome()
+
+    expect(tabs(wrapper).map((tab) => tab.attributes('aria-pressed'))).toEqual(['false', 'true'])
+    expect(cardAt(wrapper, 0).text()).toContain('Genjutsu')
+
+    await tour.finish()
+    await flushPromises()
+
+    expect(tabs(wrapper).map((tab) => tab.attributes('aria-pressed'))).toEqual(['true', 'false'])
+    expect(arc(wrapper)).toEqual(['0:Upscale and restore detail'])
   })
 
   it('loads both lists when Home opens, so switching tabs shows the apps at once', async () => {

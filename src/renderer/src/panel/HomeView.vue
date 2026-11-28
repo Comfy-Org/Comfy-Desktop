@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -13,6 +13,7 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useOpenComfyUI } from './home/useOpenComfyUI'
+import { useHomeTour } from './home/useHomeTour'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
   launchFailed,
@@ -109,7 +110,12 @@ function openBuild(build: Installation): void {
 }
 
 const { state: appsState, apps, loadApps } = useHomeApps()
-const tab = ref<HomeTab>('workflows')
+const { done: homeTourDone } = useHomeTour()
+const tabDuringTour = (tourDone: boolean): HomeTab => (tourDone ? 'workflows' : 'apps')
+const tab = ref<HomeTab>(tabDuringTour(homeTourDone.value))
+watch(homeTourDone, (tourDone) => {
+  tab.value = tabDuringTour(tourDone)
+})
 const tabs = computed(() => [
   { value: 'workflows' as const, label: t('sidebar.workflows'), testId: 'home-workflows-tab' },
   { value: 'apps' as const, label: t('sidebar.apps'), testId: 'home-apps-tab' }
