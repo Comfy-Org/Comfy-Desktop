@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import en from '@locales/en.json'
 import zh from '@locales/zh.json'
 import RunOverviewView from './RunOverviewView.vue'
-import type { TitleBarRun } from '../types/ipc'
+import type { TitleBarOpenApp, TitleBarRun } from '../types/ipc'
 
 const SWAP = { appId: 'character-swap', appTitle: 'Character Swap', picture: null }
 const CUTOUT = { appId: 'remove-background', appTitle: 'Remove Background', picture: null }
@@ -13,8 +13,9 @@ const CLOUD = { where: 'cloud' as const, buildId: null, buildName: null }
 const MY_COMFY = { where: 'local' as const, buildId: 'b1', buildName: 'My ComfyUI' }
 
 const runs: TitleBarRun[] = [
-  { ...EXTEND, ...MY_COMFY, id: 'e1', state: 'queued', ahead: 1 },
-  { ...SWAP, ...CLOUD, id: 's2', state: 'queued', ahead: 3 },
+  { ...EXTEND, ...MY_COMFY, id: 'e1', state: 'queued', ahead: 0 },
+  { ...SWAP, ...CLOUD, id: 's3', state: 'queued', ahead: 2 },
+  { ...SWAP, ...CLOUD, id: 's2', state: 'queued', ahead: 1 },
   {
     ...SWAP,
     ...CLOUD,
@@ -32,14 +33,30 @@ const runs: TitleBarRun[] = [
 
 let wrapper: VueWrapper | undefined
 
-function mountOverview(list: TitleBarRun[] = runs, locale = 'en'): VueWrapper {
+function mountOverview(
+  list: TitleBarRun[] = runs,
+  locale = 'en',
+  apps: TitleBarOpenApp[] = []
+): VueWrapper {
   const i18n = createI18n({ legacy: false, locale, messages: { en, zh } })
   wrapper = mount(RunOverviewView, {
-    props: { runs: list },
+    props: { overview: { runs: list, apps } },
     attachTo: document.body,
     global: { plugins: [i18n] }
   })
   return wrapper
+}
+
+function statusOf(row: DOMWrapper<Element>): string {
+  return row
+    .get('[data-testid="run-overview-status"]')
+    .findAll('span')
+    .map((part) => part.text())
+    .join(' ')
+}
+
+function nextFrames(): Promise<void> {
+  return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
 }
 
 function placeLines(view: VueWrapper, where: 'cloud' | 'local'): string[] {
@@ -48,10 +65,7 @@ function placeLines(view: VueWrapper, where: 'cloud' | 'local'): string[] {
     place.get('h2').text(),
     ...place
       .findAll('[data-testid="run-overview-run"]')
-      .map(
-        (row) =>
-          `${row.attributes('aria-label')}: ${row.get('[data-testid="run-overview-status"]').text()}`
-      )
+      .map((row) => `${row.attributes('aria-label')}: ${statusOf(row)}`)
   ]
 }
 
@@ -67,7 +81,8 @@ describe('RunOverviewView', () => {
     expect(placeLines(view, 'cloud')).toEqual([
       'Comfy Cloud',
       'Open Character Swap: Swapping the face · Step 3 of 4',
-      'Open Character Swap: 3 runs ahead'
+      'Open Character Swap: 1 run ahead',
+      'Open Character Swap: 2 runs ahead'
     ])
     expect(placeLines(view, 'local')).toEqual([
       'My ComfyUI',
@@ -109,10 +124,63 @@ describe('RunOverviewView', () => {
     expect(view.emitted('open')).toEqual([[SWAP.appId]])
   })
 
-  it('says there are no runs when every run is gone', () => {
-    const view = mountOverview([])
+  it('still lists open apps that send no runs, and opens them on click', async () => {
+    const view = mountOverview(runs, 'en', [
+      { id: 'upscale', title: 'Upscale', picture: null, state: 'running' },
+      { id: 'relight', title: 'Relight', picture: null, state: 'ready' }
+    ])
+    const apps = view.findAll('[data-testid="run-overview-app"]')
 
-    expect(view.text()).toBe('No runs right now')
+    expect(view.get('[data-testid="run-overview-apps"] h2').text()).toBe('Other apps')
+    expect(apps.map((row) => `${row.attributes('aria-label')}: ${statusOf(row)}`)).toEqual([
+      'Open Upscale: Running',
+      'Open Relight: Ready'
+    ])
+
+    await apps[1]?.trigger('click')
+
+    expect(view.emitted('open')).toEqual([['relight']])
+  })
+
+  it('shows the full name and step on hover, and keeps the step count apart', () => {
+    const view = mountOverview()
+    const running = view.findAll('[data-testid="run-overview-run"]')[0]
+
+    expect(running?.find('[title="Character Swap"]').exists()).toBe(true)
+    expect(running?.find('[title="Swapping the face · Step 3 of 4"]').exists()).toBe(true)
+    expect(running?.findAll('[data-testid="run-overview-status"] > span')[1]?.classes()).toContain(
+      'shrink-0'
+    )
+  })
+
+  it('shows the app icon when a run has no picture or its picture fails', async () => {
+    const view = mountOverview([
+      { ...SWAP, ...CLOUD, picture: 'data:image/png;base64,broken', id: 's1', state: 'queued' },
+      { ...CUTOUT, ...MY_COMFY, id: 'c1', state: 'queued' }
+    ])
+    await view.get('img').trigger('error')
+
+    expect(view.findAll('img')).toHaveLength(0)
+    expect(view.findAll('[data-testid="run-overview-app-icon"]')).toHaveLength(2)
+  })
+
+  it('asks for a new height when the finished runs open and close', async () => {
+    const view = mountOverview()
+    await nextFrames()
+    const before = view.emitted('resize')?.length ?? 0
+
+    await view.get('[data-testid="run-overview-finished-toggle"]').trigger('click')
+    await nextFrames()
+    const lastHeight = (): number | undefined => view.emitted<[number]>('resize')?.at(-1)?.[0]
+    const openedHeight = lastHeight()
+
+    expect(view.emitted('resize')?.length).toBeGreaterThan(before)
+    expect(openedHeight).toBe(view.get('.run-overview-content').element.clientHeight)
+
+    await view.get('[data-testid="run-overview-finished-toggle"]').trigger('click')
+    await nextFrames()
+
+    expect(lastHeight()).toBeLessThan(openedHeight ?? 0)
   })
 
   it('speaks Chinese when Desktop does', () => {
@@ -120,5 +188,6 @@ describe('RunOverviewView', () => {
 
     expect(placeLines(view, 'local')[0]).toBe('My ComfyUI')
     expect(placeLines(view, 'local')[2]).toBe('打开 Extend the Picture: 下一个')
+    expect(placeLines(view, 'cloud')[2]).toBe('打开 Character Swap: 前面还有 1 个任务')
   })
 })

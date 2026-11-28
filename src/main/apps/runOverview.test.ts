@@ -69,6 +69,15 @@ describe('readReportedRuns', () => {
     expect(run).toEqual({ id: 'a', where: 'cloud', state: 'running', progress: 1 })
   })
 
+  it('drops a step number past the step count', () => {
+    const [run] =
+      readReportedRuns([
+        { id: 'a', where: 'local', state: 'running', stepIndex: 5, stepCount: 4 }
+      ]) ?? []
+
+    expect(run).toEqual({ id: 'a', where: 'local', state: 'running' })
+  })
+
   it(`keeps at most ${MAX_REPORTED_RUNS} runs`, () => {
     const many = Array.from({ length: MAX_REPORTED_RUNS + 5 }, (_, i) => ({
       id: `r${i}`,

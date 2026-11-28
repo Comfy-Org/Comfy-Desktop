@@ -12,7 +12,7 @@ import { useModal } from '../composables/useModal'
 import { dismissPickerModals } from './dismissPickerModals'
 import { popupLocaleSource } from './pickerSettingsApiShim'
 import { useAppLocale } from '../lib/useAppLocale'
-import type { DetailSection, SnapshotListData, TitleBarRun } from '../types/ipc'
+import type { DetailSection, SnapshotListData, TitleBarRunOverview } from '../types/ipc'
 import { RUNNING_APP_ITEM } from '../types/ipc'
 import type { PopupDownloadsState as DownloadsState } from '../../../preload/comfyTitlePopupPreload'
 
@@ -127,7 +127,7 @@ type PopupConfig =
     }
   | {
       kind: 'runs'
-      runs: TitleBarRun[]
+      overview: TitleBarRunOverview
       theme: { bg: string; text: string }
     }
 
@@ -197,7 +197,8 @@ const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   }
 })
 const downloadsState = ref<DownloadsState>({ active: [], recent: [] })
-const runs = ref<TitleBarRun[]>([])
+const NO_RUN_OVERVIEW: TitleBarRunOverview = { runs: [], apps: [] }
+const runOverview = ref<TitleBarRunOverview>(NO_RUN_OVERVIEW)
 
 function handleActivate(id: string): void {
   bridge?.activate(id)
@@ -228,6 +229,10 @@ let unsubDismissModals: (() => void) | undefined
 
 let renderSeq = 0
 
+function requestRunOverviewSize(contentHeight: number): void {
+  bridge?.requestSize(contentHeight + 2)
+}
+
 function measureAndRequestSize(): void {
   if (kind.value === 'downloads') {
     const headEl = document.querySelector('.downloads-head') as HTMLElement | null
@@ -250,8 +255,8 @@ function measureAndRequestSize(): void {
     return
   }
   if (kind.value === 'runs') {
-    const rootEl = document.querySelector('.run-overview') as HTMLElement | null
-    if (rootEl) bridge?.requestSize(rootEl.offsetHeight + 2)
+    const contentEl = document.querySelector('.run-overview-content') as HTMLElement | null
+    if (contentEl) requestRunOverviewSize(contentEl.offsetHeight)
     return
   }
   if (kind.value === 'instance-picker') {
@@ -269,7 +274,7 @@ onMounted(() => {
     }
     kind.value = cfg.kind
     items.value = cfg.kind === 'menu' ? cfg.items : []
-    runs.value = cfg.kind === 'runs' ? cfg.runs : []
+    runOverview.value = cfg.kind === 'runs' ? cfg.overview : NO_RUN_OVERVIEW
     if (cfg.kind === 'instance-picker') {
       pickerSnapshot.value = cfg.snapshot
     } else if (cfg.kind === 'global-settings') {
@@ -358,7 +363,12 @@ onUnmounted(() => {
     <DownloadsView v-else-if="kind === 'downloads'" :state="downloadsState" />
     <DownloadsFullView v-else-if="kind === 'downloads-full'" :state="downloadsState" />
     <InstancePickerView v-else-if="kind === 'instance-picker'" :snapshot="pickerSnapshot" />
-    <RunOverviewView v-else-if="kind === 'runs'" :runs="runs" @open="openRunApp" />
+    <RunOverviewView
+      v-else-if="kind === 'runs'"
+      :overview="runOverview"
+      @open="openRunApp"
+      @resize="requestRunOverviewSize"
+    />
     <GlobalSettingsView v-else :snapshot="globalSettingsSnapshot" />
     <ModalDialog />
     <DialogHost />

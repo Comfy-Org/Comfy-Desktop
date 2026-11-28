@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   usableLocalBuilds: vi.fn(async () => [{ id: 'build-1', name: 'My ComfyUI' }]),
   openRunsPopup: vi.fn(),
   refreshRunsPopup: vi.fn(),
+  closeRunsPopup: vi.fn(),
   runsPopupOpen: false,
   appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
   appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
@@ -87,6 +88,7 @@ vi.mock('../../host/registry', () => ({
 }))
 vi.mock('../../popups/titlePopup', () => ({
   isGlobalSettingsSender: () => mocks.isGlobalSettings,
+  closeRunsPopup: mocks.closeRunsPopup,
   isRunsPopupOpen: () => mocks.runsPopupOpen,
   openRunningAppsMenu: mocks.openRunningAppsMenu,
   openRunsPopup: mocks.openRunsPopup,
@@ -405,6 +407,8 @@ describe('runs of apps kept open', () => {
   const hostWindow = { isDestroyed: () => false }
   const REMOVE_BACKGROUND = { id: 'remove-background', title: 'Remove Background' }
   const HDR = { id: 'sdr-to-hdr', title: 'SDR to HDR' }
+  const UPSCALE = { id: 'upscale', title: 'Upscale' }
+  const RELIGHT = { id: 'relight', title: 'Relight' }
 
   function listener(channel: string): Handler {
     const handler = mocks.listeners.get(channel)
@@ -574,14 +578,40 @@ describe('runs of apps kept open', () => {
       }
       expect(mocks.openRunsPopup).toHaveBeenCalledWith(
         7,
-        [
-          { ...CLOUD_RUN, ...app, buildId: null, buildName: null },
-          { ...LOCAL_RUN, ...app, buildId: 'build-1', buildName: 'My ComfyUI' }
-        ],
+        {
+          runs: [
+            { ...CLOUD_RUN, ...app, buildId: null, buildName: null },
+            { ...LOCAL_RUN, ...app, buildId: 'build-1', buildName: 'My ComfyUI' }
+          ],
+          apps: []
+        },
         { x: 812, y: 36 }
       )
       expect(mocks.openRunningAppsMenu).not.toHaveBeenCalled()
       expect(panelSend).not.toHaveBeenCalled()
+    })
+
+    it('lists the open apps that send no run list next to the runs', async () => {
+      mocks.running = [REMOVE_BACKGROUND, HDR, UPSCALE]
+      mocks.ready = [RELIGHT]
+
+      clickRunningApps()
+
+      await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
+      expect(mocks.openRunsPopup.mock.lastCall?.[1].apps).toEqual([
+        { ...UPSCALE, picture: null, state: 'running' },
+        { ...RELIGHT, picture: null, state: 'ready' }
+      ])
+    })
+
+    it('opens the overview once for a second click while the first is still opening', async () => {
+      clickRunningApps()
+      clickRunningApps()
+
+      await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
+      await Promise.resolve()
+      expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1)
+      expect(mocks.usableLocalBuilds).toHaveBeenCalledTimes(1)
     })
 
     it('keeps the apps menu while no page has a run in its list', () => {
@@ -596,15 +626,30 @@ describe('runs of apps kept open', () => {
     it('refreshes the open run overview when a page reports again, and only then', async () => {
       const [changed] = mocks.reportedRunsListeners
       changed?.(7)
-      await Promise.resolve()
       expect(mocks.refreshRunsPopup).not.toHaveBeenCalled()
 
+      clickRunningApps()
+      await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
       mocks.runsPopupOpen = true
       changed?.(7)
 
-      await vi.waitFor(() => expect(mocks.refreshRunsPopup).toHaveBeenCalledTimes(1))
+      expect(mocks.refreshRunsPopup).toHaveBeenCalledTimes(1)
       expect(mocks.refreshRunsPopup.mock.lastCall?.[0]).toBe(7)
-      expect(mocks.refreshRunsPopup.mock.lastCall?.[1]).toHaveLength(2)
+      expect(mocks.refreshRunsPopup.mock.lastCall?.[1].runs).toHaveLength(2)
+      expect(mocks.refreshRunsPopup.mock.lastCall?.[1].runs[1].buildName).toBe('My ComfyUI')
+      expect(mocks.usableLocalBuilds).toHaveBeenCalledTimes(1)
+    })
+
+    it('closes the open run overview once nothing is left to list', () => {
+      const [changed] = mocks.reportedRunsListeners
+      mocks.runsPopupOpen = true
+      mocks.running = []
+      mocks.reportedRunPages = [{ ...HDR, appId: HDR.id, page: {}, runs: [] }]
+
+      changed?.(7)
+
+      expect(mocks.closeRunsPopup).toHaveBeenCalledWith(7)
+      expect(mocks.refreshRunsPopup).not.toHaveBeenCalled()
     })
   })
 

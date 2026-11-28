@@ -26,6 +26,7 @@ export function createRunReporter(
 ): RunReporter {
   let stopWatching: (() => void) | null = null
   let pageReports = false
+  let pageListsRuns = false
   return {
     watchToast() {
       if (pageReports || stopWatching) return
@@ -37,14 +38,12 @@ export function createRunReporter(
       stopWatching = null
       const running = typeof state === 'object' && state !== null && 'running' in state
       send(running && state.running === true)
-      if (
-        typeof state === 'object' &&
-        state !== null &&
-        'runs' in state &&
-        Array.isArray(state.runs)
-      ) {
-        sendRuns(state.runs)
-      }
+      const runs =
+        typeof state === 'object' && state !== null && 'runs' in state && Array.isArray(state.runs)
+          ? state.runs
+          : null
+      if (runs) pageListsRuns = true
+      if (pageListsRuns) sendRuns(runs ?? [])
     }
   }
 }

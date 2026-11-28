@@ -106,7 +106,7 @@ describe('createRunReporter', () => {
     expect(send.mock.calls).toEqual([[false], [false]])
   })
 
-  it('passes on the run list when the page sends one, and nothing when it does not', () => {
+  it('passes on the run list once the page sends one, and nothing before', () => {
     const sendRuns = vi.fn()
     const reporter = createRunReporter(document, vi.fn(), sendRuns)
     const runs = [{ id: 'a', where: 'cloud', state: 'running' }]
@@ -116,5 +116,16 @@ describe('createRunReporter', () => {
     reporter.reportRun({ running: true, runs })
 
     expect(sendRuns.mock.calls).toEqual([[runs]])
+  })
+
+  it('clears the run list when a page that listed runs reports without one', () => {
+    const sendRuns = vi.fn()
+    const reporter = createRunReporter(document, vi.fn(), sendRuns)
+    const runs = [{ id: 'a', where: 'cloud', state: 'running' }]
+
+    reporter.reportRun({ running: true, runs })
+    reporter.reportRun({ running: false })
+
+    expect(sendRuns.mock.calls).toEqual([[runs], [[]]])
   })
 })

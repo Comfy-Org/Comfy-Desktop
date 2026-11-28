@@ -40,13 +40,17 @@ function readRun(value: unknown): ComfyDesktopRun | null {
   const where = raw.where as ComfyDesktopRun['where']
   const state = raw.state as ComfyDesktopRun['state']
   if (id === undefined || !WHERE.has(where) || !STATES.has(state)) return null
+  const stepIndex = count(raw.stepIndex, 1)
+  const stepCount = count(raw.stepCount, 1)
+  const stepsMakeSense =
+    stepIndex !== undefined && stepCount !== undefined && stepIndex <= stepCount
   return withoutUnset({
     id,
     where,
     state,
     step: text(raw.step, MAX_STEP_LENGTH),
-    stepIndex: count(raw.stepIndex, 1),
-    stepCount: count(raw.stepCount, 1),
+    stepIndex: stepsMakeSense ? stepIndex : undefined,
+    stepCount: stepsMakeSense ? stepCount : undefined,
     progress: fraction(raw.progress),
     ahead: count(raw.ahead, 0),
     startedAt: time(raw.startedAt),

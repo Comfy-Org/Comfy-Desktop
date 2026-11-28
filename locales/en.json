@@ -572,12 +572,12 @@
     "running": "Running",
     "waiting": "Waiting",
     "next": "Next",
-    "ahead": "no runs ahead | {n} run ahead | {n} runs ahead",
+    "ahead": "{n} run ahead | {n} runs ahead",
     "stepOf": "Step {index} of {count}",
     "done": "Done",
     "failed": "Failed",
+    "otherApps": "Other apps",
     "finished": "Finished · {count}",
-    "empty": "No runs right now",
     "openApp": "Open {app}"
   },
   "comfyUISettings": {

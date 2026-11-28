@@ -1746,6 +1746,13 @@ export interface TitleBarRun extends ComfyDesktopRun {
   buildName: string | null
 }
 
+export interface TitleBarOpenApp extends RunningApp, TitlePopupMenuApp {}
+
+export interface TitleBarRunOverview {
+  runs: TitleBarRun[]
+  apps: TitleBarOpenApp[]
+}
+
 export interface PopupTheme {
   bg: string
   text: string

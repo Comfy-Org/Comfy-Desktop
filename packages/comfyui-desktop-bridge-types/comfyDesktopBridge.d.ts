@@ -412,7 +412,10 @@ export interface ComfyDesktopRun {
   stepCount?: number
   /** From 0 to 1, while `running`. */
   progress?: number
-  /** How many runs wait ahead of it in its place's queue, while `queued`. */
+  /**
+   * How many queued runs wait ahead of it in its place's queue, while `queued`.
+   * A run that is going now does not count, so the next run to start has 0.
+   */
   ahead?: number
   /** When it started, in milliseconds since the epoch. */
   startedAt?: number
@@ -425,7 +428,8 @@ export interface ComfyDesktopRunState {
   /**
    * Each run the page has, newest first: the ones going and the ones that
    * ended and are still on the page. Desktop keeps the first 20. Desktop
-   * builds that predate the run overview ignore it.
+   * builds that predate the run overview ignore it. Once a page has sent
+   * `runs`, a report without it clears the page's list.
    */
   runs?: ComfyDesktopRun[]
 }

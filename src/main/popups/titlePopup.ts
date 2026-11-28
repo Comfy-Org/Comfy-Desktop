@@ -10,7 +10,7 @@ import {
 import type {
   PopupTheme,
   RunningApp,
-  TitleBarRun,
+  TitleBarRunOverview,
   TitlePopupKind,
   TitlePopupMenuApp,
   TitlePopupMenuItem
@@ -325,7 +325,7 @@ type TitlePopupConfig =
   | { kind: typeof POPUP_KIND.downloadsFull; theme: PopupTheme }
   | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot; theme: PopupTheme }
   | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.runs; runs: TitleBarRun[]; theme: PopupTheme }
+  | { kind: typeof POPUP_KIND.runs; overview: TitleBarRunOverview; theme: PopupTheme }
 
 export interface TitlePopupEntry {
   view: EmbeddedPopupView
@@ -753,7 +753,7 @@ export function openRunningAppsMenu(
 
 export function openRunsPopup(
   windowKey: number,
-  runs: TitleBarRun[],
+  overview: TitleBarRunOverview,
   anchor: { x: number; y: number }
 ): void {
   const entry = comfyWindows.get(windowKey)
@@ -762,7 +762,7 @@ export function openRunsPopup(
     parent: entry.window,
     parentEntryId: windowKey,
     kind: POPUP_KIND.runs,
-    runs,
+    overview,
     anchor,
     theme: entry.lastTheme,
     titleBarSender: entry.titleBarView.webContents
@@ -779,11 +779,16 @@ export function isRunsPopupOpen(windowKey: number): boolean {
   return openRunsPopupEntry(windowKey) !== null
 }
 
-export function refreshRunsPopup(windowKey: number, runs: TitleBarRun[]): void {
+export function refreshRunsPopup(windowKey: number, overview: TitleBarRunOverview): void {
   const entry = openRunsPopupEntry(windowKey)
   const theme = comfyWindows.get(windowKey)?.lastTheme
   if (!entry || !theme) return
-  syncTitlePopupConfig(entry, { kind: POPUP_KIND.runs, runs, theme }, false)
+  syncTitlePopupConfig(entry, { kind: POPUP_KIND.runs, overview, theme }, false)
+}
+
+export function closeRunsPopup(windowKey: number): void {
+  const entry = openRunsPopupEntry(windowKey)
+  if (entry) hideTitlePopup(entry, { releaseFocusToParent: true })
 }
 
 function hideTitlePopup(
@@ -1008,7 +1013,7 @@ type OpenTitlePopupOpts = {
   | { kind: typeof POPUP_KIND.downloadsFull }
   | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot }
   | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot }
-  | { kind: typeof POPUP_KIND.runs; runs: TitleBarRun[] }
+  | { kind: typeof POPUP_KIND.runs; overview: TitleBarRunOverview }
 )
 
 export function requiresPerOpenConfigSync(
@@ -1094,7 +1099,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   } else if (opts.kind === POPUP_KIND.downloadsFull) {
     config = { kind: POPUP_KIND.downloadsFull, theme: opts.theme }
   } else if (opts.kind === POPUP_KIND.runs) {
-    config = { kind: POPUP_KIND.runs, runs: opts.runs, theme: opts.theme }
+    config = { kind: POPUP_KIND.runs, overview: opts.overview, theme: opts.theme }
   } else if (opts.kind === POPUP_KIND.instancePicker) {
     config = { kind: POPUP_KIND.instancePicker, snapshot: opts.snapshot, theme: opts.theme }
     entry.lastPickerBroadcastJson = JSON.stringify(opts.snapshot)
