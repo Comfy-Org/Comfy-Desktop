@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { MAX_REPORTED_RUNS } from '../shared/reportedRuns'
 import { createRunReporter, watchAppRun } from './appRunWatcher'
 
 const toasts = document.createElement('div')
@@ -116,6 +117,21 @@ describe('createRunReporter', () => {
     reporter.reportRun({ running: true, runs })
 
     expect(sendRuns.mock.calls).toEqual([[runs]])
+  })
+
+  it(`sends at most ${MAX_REPORTED_RUNS} runs, and an empty list when the page's list cannot be sent`, () => {
+    const sendRuns = vi.fn((runs: unknown[]) => {
+      if (runs.some((run) => typeof run === 'function'))
+        throw new Error('An object could not be cloned.')
+    })
+    const reporter = createRunReporter(document, vi.fn(), sendRuns)
+    const many = Array.from({ length: MAX_REPORTED_RUNS + 5 }, (_, i) => ({ id: `r${i}` }))
+
+    reporter.reportRun({ running: true, runs: many })
+    expect(() => reporter.reportRun({ running: true, runs: [() => 'run'] })).not.toThrow()
+
+    expect(sendRuns.mock.calls[0]?.[0]).toHaveLength(MAX_REPORTED_RUNS)
+    expect(sendRuns.mock.calls.at(-1)).toEqual([[]])
   })
 
   it('clears the run list when a page that listed runs reports without one', () => {
