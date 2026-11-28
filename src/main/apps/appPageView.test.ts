@@ -1515,6 +1515,44 @@ describe('keeping apps running in the background', () => {
     stop()
   })
 
+  it('tells only run list listeners about a new run list, and nobody about the same list again', async () => {
+    const changed = vi.fn()
+    const stop = onReportedRunsChanged(changed)
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    const runs = [{ id: 'r1', where: 'cloud', state: 'running', progress: 0.2 }]
+    const panelSends = sentToPanel(APP_RUNS_CHANNEL).length
+    changed.mockClear()
+
+    noteAppPageRuns(cutout.webContents as unknown as WebContents, runs)
+    noteAppPageRuns(cutout.webContents as unknown as WebContents, runs)
+
+    expect(changed).toHaveBeenCalledTimes(1)
+    expect(sentToPanel(APP_RUNS_CHANNEL)).toHaveLength(panelSends)
+    stop()
+  })
+
+  it('drops the runs of a page that moves outside its app, and takes its clearing report there', async () => {
+    const changed = vi.fn()
+    const stop = onReportedRunsChanged(changed)
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    finishLoading(UPSCALE_URL)
+    const page = hostedPage().webContents as unknown as WebContents
+    noteAppPageRuns(page, [{ id: 'r1', where: 'cloud', state: 'running' }])
+    expect(reportedRunPages(WINDOW_KEY)).toHaveLength(1)
+
+    hostedPage().webContents.emit('did-navigate-in-page', {}, `${APPS_URL}#/other-app`, true)
+    expect(reportedRunPages(WINDOW_KEY)).toEqual([])
+    changed.mockClear()
+
+    noteAppPageRuns(page, [])
+
+    expect(changed).toHaveBeenCalledExactlyOnceWith(WINDOW_KEY)
+    hostedPage().webContents.emit('did-navigate-in-page', {}, `${UPSCALE_URL}/step-2`, true)
+    expect(reportedRunPages(WINDOW_KEY)).toEqual([])
+    stop()
+  })
+
   it('forgets the runs a page reported when its page crashes', async () => {
     const cutout = await runInBackground(CUTOUT)
     await openAndLoad(HDR)

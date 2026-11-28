@@ -28,7 +28,7 @@ import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { currentAppsLocation } from './appsConfig'
 import { startAnsweringFromKeptCopies, stopAnsweringFromKeptCopies } from './appsOffline'
 import { registerAppsPage } from './appsPages'
-import { readReportedRuns } from './runOverview'
+import { readReportedRuns } from '../../shared/reportedRuns'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
 import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
 import type { DraftApp } from './draftApps'
@@ -177,6 +177,10 @@ function listedTitleOf(appId: string): string | null {
   return titleForListedApp(appId) ?? titleForHiddenApp(appId)
 }
 
+function titleOf(hosted: HostedPage, appId: string): string {
+  return listedTitleOf(appId) ?? hosted.staffTitle ?? appId
+}
+
 function runsOf(windowKey: number): AppRun[] {
   return pagesOf(windowKey).flatMap(({ appId, running, finished }) =>
     appId !== null && (running || finished) ? [{ appId, running, finished }] : []
@@ -189,7 +193,7 @@ function appsWhere(windowKey: number, matches: (run: AppRun) => boolean): Runnin
     if (appId === null || !(running || finished) || !matches({ appId, running, finished })) {
       return []
     }
-    return [{ id: appId, title: listedTitleOf(appId) ?? hosted.staffTitle ?? appId }]
+    return [{ id: appId, title: titleOf(hosted, appId) }]
   })
 }
 
@@ -221,10 +225,20 @@ export function onReportedRunsChanged(listener: (windowKey: number) => void): ()
 export function reportedRunPages(windowKey: number): ReportedRunPage[] {
   return pagesOf(windowKey).flatMap((hosted) => {
     const { appId, runs } = hosted
-    if (appId === null || runs === null || hosted.view.webContents.isDestroyed()) return []
-    const title = listedTitleOf(appId) ?? hosted.staffTitle ?? appId
-    return [{ appId, title, page: hosted.view.webContents, runs }]
+    if (
+      appId === null ||
+      runs === null ||
+      !hosted.loaded ||
+      hosted.view.webContents.isDestroyed()
+    ) {
+      return []
+    }
+    return [{ appId, title: titleOf(hosted, appId), page: hosted.view.webContents, runs }]
   })
+}
+
+function announceRunLists(windowKey: number): void {
+  for (const listener of reportedRunsListeners) listener(windowKey)
 }
 
 function announceRuns(windowKey: number): void {
@@ -233,7 +247,7 @@ function announceRuns(windowKey: number): void {
   if (titleBar && !titleBar.isDestroyed()) {
     titleBar.send(TITLE_BAR_APPS_CHANNEL, titleBarApps(windowKey))
   }
-  for (const listener of reportedRunsListeners) listener(windowKey)
+  announceRunLists(windowKey)
 }
 
 function forgetRun(hosted: HostedPage): void {
@@ -728,8 +742,12 @@ function concealWhenPanelGoes(windowKey: number, panel: WebContents): void {
   })
 }
 
+function hostedPageOf(contents: WebContents): HostedPage | undefined {
+  return everyPage().find((hosted) => hosted.view.webContents === contents)
+}
+
 export function loadedAppPage(contents: WebContents): LoadedAppPage | null {
-  return everyPage().find((hosted) => hosted.view.webContents === contents)?.loaded ?? null
+  return hostedPageOf(contents)?.loaded ?? null
 }
 
 export async function showAppPage(
@@ -817,16 +835,18 @@ export async function captureAppPage(panel: WebContents): Promise<string | null>
 
 export function noteAppPageRunning(contents: WebContents, running: unknown): void {
   if (typeof running !== 'boolean') return
-  const hosted = everyPage().find((page) => page.view.webContents === contents)
+  const hosted = hostedPageOf(contents)
   if (!hosted || (running && !hosted.loaded)) return
   setRunning(hosted, running)
 }
 
 export function noteAppPageRuns(contents: WebContents, runs: unknown): void {
-  const hosted = everyPage().find((page) => page.view.webContents === contents)
-  if (!hosted?.loaded) return
-  hosted.runs = readReportedRuns(runs)
-  announceRuns(hosted.windowKey)
+  const hosted = hostedPageOf(contents)
+  if (!hosted) return
+  const next = hosted.loaded ? readReportedRuns(runs) : null
+  if (JSON.stringify(next) === JSON.stringify(hosted.runs)) return
+  hosted.runs = next
+  announceRunLists(hosted.windowKey)
 }
 
 export function askPageToStopRun(windowKey: number, appId: unknown, runId: unknown): boolean {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { MAX_REPORTED_RUNS, readReportedRuns } from './runOverview'
+import { MAX_REPORTED_RUNS, readReportedRuns } from './reportedRuns'
 
 describe('readReportedRuns', () => {
   it('means the page sends no run list when the value is not a list', () => {

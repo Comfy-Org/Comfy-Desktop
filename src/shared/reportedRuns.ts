@@ -1,4 +1,4 @@
-import type { ComfyDesktopRun } from '../../types/comfyDesktopBridge'
+import type { ComfyDesktopRun } from '../types/comfyDesktopBridge'
 
 export const MAX_REPORTED_RUNS = 20
 const MAX_ID_LENGTH = 128
