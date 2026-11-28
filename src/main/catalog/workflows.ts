@@ -102,8 +102,7 @@ function isNativeTemplate(item: unknown, index: TemplateIndex): boolean {
   const data = asRecord(asRecord(item)?.data)
   if (!data || listsCustomNodes(data.requires_custom_nodes)) return false
   const name = text(data.template_name)
-  const byName = name ? index.nativeByName.get(name) : undefined
-  if (byName !== undefined) return byName
+  if (name) return index.nativeByName.get(name) === true
   const title = text(data.title)
   return title !== null && index.nativeByTitle.get(titleKey(title)) === true
 }

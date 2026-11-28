@@ -239,7 +239,7 @@ describe('Home example workflows from the Comfy content catalog', () => {
     expect(workflows.map((workflow) => workflow.id)).toEqual(['native'])
   })
 
-  it('goes by the template name the catalog gives before the title', async () => {
+  it('goes by the template name the catalog gives, and only by the title when it gives none', async () => {
     serveCatalog({
       templates: [
         { name: 'template_qwen_multiangle', title: 'Qwen: Multiple Angles' },
@@ -255,6 +255,10 @@ describe('Home example workflows from the Comfy content catalog', () => {
         catalogItem({
           uid: 'custom-by-name',
           data: { template_name: 'video_wan_s2v', title: 'Make a character talk' }
+        }),
+        catalogItem({
+          uid: 'unlisted-name',
+          data: { template_name: 'not_released_yet', title: 'Make a character talk' }
         })
       ]
     })
