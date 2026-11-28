@@ -5,12 +5,14 @@ const electron = vi.hoisted(() => ({
   online: true,
   fetchStill: vi.fn<(url: string, init?: RequestInit) => Promise<Response>>()
 }))
+const install = vi.hoisted(() => ({ id: null as string | null }))
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/user-data' },
   net: { isOnline: () => electron.online },
   session: { defaultSession: { fetch: electron.fetchStill } }
 }))
+vi.mock('../lib/deviceId', () => ({ savedInstallationId: () => install.id }))
 vi.mock('../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 vi.mock('../lib/safe-file', () => ({ readFileSafeAsync: vi.fn(), writeFileSafeAsync: vi.fn() }))
 vi.mock('./appsConfig', () => ({
@@ -26,6 +28,7 @@ import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import {
   _resetAppsCatalogForTest,
   listApps,
+  pageTestGroupForListedApp,
   pageUrlForListedApp,
   pictureForListedApp,
   savedListBody
@@ -89,6 +92,7 @@ beforeEach(() => {
   mockedWriteSaved.mockReset().mockResolvedValue(undefined)
   electron.online = true
   electron.fetchStill.mockReset().mockRejectedValue(new Error('offline'))
+  install.id = null
   _resetAppsCatalogForTest()
 })
 
@@ -849,5 +853,130 @@ describe('the apps Desktop lists with no internet', () => {
     _resetAppsCatalogForTest()
     mockedReadSaved.mockResolvedValue({ kind: 'absent' })
     expect(await savedListBody(LIST_URL)).toBeNull()
+  })
+})
+
+describe("an app's page_test in the list Desktop reads", () => {
+  const KEY = 't2i-2026-12'
+  const OWN_PAGE = 'https://comfy.org/apps/remove-background/desktop.html'
+  const COMFY_PAGE = 'https://comfy.org/apps/prompt-to-image/desktop.html'
+  const IN_VARIANT = 'install-a'
+  const PAST_SHARES = 'install-1'
+
+  function testedApp(pageTest: unknown): Record<string, unknown> {
+    return websiteApp({ page_test: pageTest })
+  }
+
+  function comfyHalf(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      key: KEY,
+      pages: { comfy: { page: '/apps/prompt-to-image/desktop.html', share: 50, ...over } }
+    }
+  }
+
+  async function groupListed(pageTest: unknown, installationId: string | null = IN_VARIANT) {
+    install.id = installationId
+    mockedFetchJSON.mockResolvedValue([testedApp(pageTest)])
+    await listApps()
+    return pageTestGroupForListedApp('remove-background')
+  }
+
+  it("sends an install inside the shares to the variant's page", async () => {
+    expect(await groupListed(comfyHalf())).toEqual({
+      key: KEY,
+      variant: 'comfy',
+      pageUrl: COMFY_PAGE
+    })
+  })
+
+  it("keeps an install past the shares on the card's own page, as control", async () => {
+    expect(await groupListed(comfyHalf(), PAST_SHARES)).toEqual({
+      key: KEY,
+      variant: 'control',
+      pageUrl: null
+    })
+  })
+
+  it('gives an install the same group every time it asks', async () => {
+    const first = await groupListed(comfyHalf())
+    _resetAppsCatalogForTest()
+    expect(await groupListed(comfyHalf())).toEqual(first)
+  })
+
+  it('gives no group when Desktop has no saved installation id', async () => {
+    expect(await groupListed(comfyHalf(), null)).toBeNull()
+    expect(pageUrlForListedApp('remove-background')).toBe(OWN_PAGE)
+  })
+
+  it("keeps the card's own page and card as they were", async () => {
+    await groupListed(comfyHalf())
+
+    expect(pageUrlForListedApp('remove-background')).toBe(OWN_PAGE)
+    expect((await listApps())[0]).toEqual({
+      id: 'remove-background',
+      title: 'Remove Background',
+      description: 'Cut the subject out of a picture or video.',
+      covers: [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }]
+    })
+  })
+
+  it('gives no group to an app with no page_test, or one never listed', async () => {
+    install.id = IN_VARIANT
+    mockedFetchJSON.mockResolvedValue([websiteApp()])
+    await listApps()
+
+    expect(pageTestGroupForListedApp('remove-background')).toBeNull()
+    expect(pageTestGroupForListedApp('never-listed')).toBeNull()
+  })
+
+  it.each<[string, unknown]>([
+    ['a bad key', { ...comfyHalf(), key: 'Not A Slug' }],
+    [
+      'a variant named control',
+      { key: KEY, pages: { control: { page: '/apps/a.html', share: 50 } } }
+    ],
+    ['a share out of range', comfyHalf({ share: 0 })],
+    [
+      'shares over 100',
+      {
+        key: KEY,
+        pages: {
+          comfy: { page: '/apps/a.html', share: 51 },
+          studio: { page: '/apps/b.html', share: 50 }
+        }
+      }
+    ],
+    [
+      'more than four variants',
+      {
+        key: KEY,
+        pages: Object.fromEntries(
+          ['a', 'b', 'c', 'd', 'e'].map((name) => [name, { page: `/apps/${name}.html`, share: 5 }])
+        )
+      }
+    ],
+    ['a page on another site', comfyHalf({ page: 'https://evil.example/apps/x.html' })],
+    ['a page outside the apps scope', comfyHalf({ page: '/blog/desktop.html' })],
+    ['the list file as a page', comfyHalf({ page: '/apps/apps.json' })],
+    ['the list file with a query as a page', comfyHalf({ page: '/apps/apps.json?v=2#top' })],
+    ['the list page as a page', comfyHalf({ page: '/apps/#/' })]
+  ])('is dropped whole for %s, and the app still opens its own page', async (_case, pageTest) => {
+    expect(await groupListed(pageTest)).toBeNull()
+    expect(pageUrlForListedApp('remove-background')).toBe(OWN_PAGE)
+  })
+
+  it('still splits installs when the list comes from the saved copy with no internet', async () => {
+    vi.useFakeTimers()
+    install.id = IN_VARIANT
+    savedOnDisk(LIST_URL, [testedApp(comfyHalf())])
+    mockedFetchJSON.mockRejectedValue(new Error('offline'))
+
+    await afterAllTries(listApps())
+
+    expect(pageTestGroupForListedApp('remove-background')).toEqual({
+      key: KEY,
+      variant: 'comfy',
+      pageUrl: COMFY_PAGE
+    })
   })
 })

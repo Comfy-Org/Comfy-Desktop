@@ -501,6 +501,55 @@ describe('deviceId', () => {
     })
   })
 
+  describe('savedInstallationId', () => {
+    it('is the installation id once it is derived and saved', async () => {
+      await mod.initDeviceId()
+
+      expect(mod.savedInstallationId()).toBe(expectedIdFor('aabbccdd-eeff-0011-2233-445566778899'))
+    })
+
+    it('is the same id on the next launch', async () => {
+      await mod.initDeviceId()
+      const first = mod.savedInstallationId()
+
+      vi.resetModules()
+      mod = await import('./deviceId')
+      await mod.initDeviceId()
+
+      expect(mod.savedInstallationId()).toBe(first)
+    })
+
+    it('is a stored id read before initDeviceId', () => {
+      fs.writeFileSync(path.join(testUserData, 'device-id.txt'), 'seeded-id-value')
+      mod.getDeviceId()
+
+      expect(mod.savedInstallationId()).toBe('seeded-id-value')
+    })
+
+    it('is none before any id is known', () => {
+      expect(mod.savedInstallationId()).toBeNull()
+    })
+
+    it('is none for a random id that was never saved', () => {
+      mod.getDeviceId()
+
+      expect(mod.savedInstallationId()).toBeNull()
+    })
+
+    it('is none for a provisional id while the hardware lookup has not answered', async () => {
+      setPlatform('win32')
+      vi.useFakeTimers()
+      mockLookupHangs = true
+      const pending = mod.initDeviceId()
+      await vi.advanceTimersByTimeAsync(2000)
+      await pending
+      vi.useRealTimers()
+
+      expect(mod.getIdClass()).toBe('provisional')
+      expect(mod.savedInstallationId()).toBeNull()
+    })
+  })
+
   describe('markIdentityMigrationCompleted', () => {
     it('writes the guard file', async () => {
       await mod.initDeviceId()

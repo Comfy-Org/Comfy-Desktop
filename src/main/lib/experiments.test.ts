@@ -251,5 +251,19 @@ describe('experiments', () => {
       const events = captured.filter((c) => c.event === 'comfy.desktop.experiment.exposed')
       expect(events).toHaveLength(2)
     })
+
+    it('sends a split worked out on this machine once, with source shard', () => {
+      experiments.recordExposure('t2i-2026-12', 'comfy', 'shard')
+      experiments.recordExposure('t2i-2026-12', 'comfy', 'shard')
+
+      const events = captured.filter((c) => c.event === 'comfy.desktop.experiment.exposed')
+      expect(events.map((event) => event.properties)).toEqual([
+        expect.objectContaining({
+          experiment_key: 't2i-2026-12',
+          variant: 'comfy',
+          source: 'shard'
+        })
+      ])
+    })
   })
 })

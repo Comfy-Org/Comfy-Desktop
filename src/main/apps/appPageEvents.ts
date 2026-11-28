@@ -1,6 +1,7 @@
 import { APP_ID_PATTERN } from '../../shared/appsLocation'
 import * as mainTelemetry from '../lib/telemetry'
 import type { TelemetryContext } from '../lib/telemetry'
+import { pageTestPropertiesFor } from './pageTest'
 
 export const APP_PAGE_EVENT_PREFIX = 'comfy.desktop.apps.'
 export const MAX_PAGE_EVENT_PROPERTIES = 16
@@ -19,7 +20,12 @@ export const DESKTOP_APP_EVENTS: ReadonlySet<string> = new Set([
   'setup'
 ])
 export const UNLIMITED_EVENT_NAMES: ReadonlySet<string> = new Set(['error'])
-const DESKTOP_PROPERTIES: ReadonlySet<string> = new Set(['app', 'app_id'])
+const DESKTOP_PROPERTIES: ReadonlySet<string> = new Set([
+  'app',
+  'app_id',
+  'page_test_key',
+  'page_test_variant'
+])
 
 type PropertyValue = boolean | number | string
 
@@ -72,6 +78,7 @@ export function checkAppPageEvent(
     kept++
   }
   properties['app_id'] = appId
+  Object.assign(properties, pageTestPropertiesFor(appId))
   return { event: `${APP_PAGE_EVENT_PREFIX}${name}`, properties }
 }
 

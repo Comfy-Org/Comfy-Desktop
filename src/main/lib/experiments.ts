@@ -6,7 +6,7 @@ import type { FeatureFlagValue } from './telemetry'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 
-export type ExperimentExposureSource = 'cache' | 'remote' | 'fallback'
+export type ExperimentExposureSource = 'cache' | 'remote' | 'fallback' | 'shard'
 
 function cacheFilePath(): string {
   return path.join(configDir(), 'experiment-flags.json')

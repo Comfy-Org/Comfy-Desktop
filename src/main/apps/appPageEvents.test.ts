@@ -43,6 +43,7 @@ import {
   checkAppPageEvent,
   trackAppPageEvent
 } from './appPageEvents'
+import { _resetPageTestsForTest, rememberPageTestGroup } from './pageTest'
 
 const APP = 'remove-background'
 
@@ -234,5 +235,43 @@ describe('trackAppPageEvent through Desktop telemetry', () => {
     expect(trackAppPageEvent('click', {}, null)).toBe(false)
 
     expect(appCaptures()).toEqual([])
+  })
+})
+
+describe('page events from an app with a page_test', () => {
+  const KEY = 't2i-2026-12'
+
+  beforeEach(() => {
+    _resetPageTestsForTest()
+  })
+
+  it('carry the page_test key and variant Desktop chose, beside the app id', () => {
+    rememberPageTestGroup(APP, { key: KEY, variant: 'comfy', pageUrl: null })
+
+    expect(checkAppPageEvent('run_started', { where: 'cloud' }, APP)?.properties).toEqual({
+      where: 'cloud',
+      app_id: APP,
+      page_test_key: KEY,
+      page_test_variant: 'comfy'
+    })
+  })
+
+  it('ignore the page_test properties a page names for itself', () => {
+    rememberPageTestGroup(APP, { key: KEY, variant: 'control', pageUrl: null })
+
+    expect(
+      checkAppPageEvent(
+        'click',
+        { page_test_key: 'made-up', page_test_variant: 'comfy', target: 'run' },
+        APP
+      )?.properties
+    ).toEqual({ target: 'run', app_id: APP, page_test_key: KEY, page_test_variant: 'control' })
+  })
+
+  it('carry none for an app with no page_test, even when the page names them', () => {
+    expect(
+      checkAppPageEvent('click', { page_test_key: 'made-up', page_test_variant: 'comfy' }, APP)
+        ?.properties
+    ).toEqual({ app_id: APP })
   })
 })

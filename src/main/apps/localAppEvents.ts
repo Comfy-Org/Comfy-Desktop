@@ -1,5 +1,6 @@
 import * as mainTelemetry from '../lib/telemetry'
 import type { TelemetryContext } from '../lib/telemetry'
+import { pageTestPropertiesFor } from './pageTest'
 import { isPartnerRefusal } from './partnerRefusal'
 
 export const RUN_FINISHED_EVENT = 'comfy.desktop.apps.run_finished'
@@ -81,7 +82,7 @@ function wholeSeconds(ms: number): number {
 }
 
 function appIdOf(appId: string | null): TelemetryContext {
-  return appId ? { app_id: appId } : {}
+  return appId ? { app_id: appId, ...pageTestPropertiesFor(appId) } : {}
 }
 
 export function errorClassOf(exceptionType: unknown): string | undefined {
