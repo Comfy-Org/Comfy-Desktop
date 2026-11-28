@@ -580,6 +580,7 @@
     "failed": "失败",
     "otherApps": "其他应用",
     "finished": "已结束 · {count}",
+    "stopRun": "停止 {app} 的任务",
     "openApp": "打开 {app}"
   },
   "comfyUISettings": {

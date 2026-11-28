@@ -183,6 +183,26 @@ describe('RunOverviewView', () => {
     expect(lastHeight()).toBeLessThan(openedHeight ?? 0)
   })
 
+  it('shows Stop only for runs the page can stop, and asks once until the list changes', async () => {
+    const stoppable: TitleBarRun = { ...SWAP, ...CLOUD, id: 's1', state: 'running', canStop: true }
+    const view = mountOverview([stoppable, { ...CUTOUT, ...MY_COMFY, id: 'c1', state: 'queued' }])
+    const stops = view.findAll('[data-testid="run-overview-stop"]')
+
+    expect(stops).toHaveLength(1)
+    expect(stops[0]?.attributes('aria-label')).toBe('Stop the Character Swap run')
+
+    await stops[0]?.trigger('click')
+    await stops[0]?.trigger('click')
+
+    expect(view.emitted('stop')).toEqual([[SWAP.appId, 's1']])
+    expect(view.emitted('open')).toBeUndefined()
+    expect(stops[0]?.attributes('disabled')).toBeDefined()
+
+    await view.setProps({ overview: { runs: [{ ...stoppable, canStop: false }], apps: [] } })
+
+    expect(view.findAll('[data-testid="run-overview-stop"]')).toHaveLength(0)
+  })
+
   it('speaks Chinese when Desktop does', () => {
     const view = mountOverview(runs, 'zh')
 

@@ -54,7 +54,8 @@ function readRun(value: unknown): ComfyDesktopRun | null {
     progress: fraction(raw.progress),
     ahead: count(raw.ahead, 0),
     startedAt: time(raw.startedAt),
-    endedAt: time(raw.endedAt)
+    endedAt: time(raw.endedAt),
+    canStop: raw.canStop === true && (state === 'queued' || state === 'running') ? true : undefined
   })
 }
 

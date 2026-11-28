@@ -829,6 +829,17 @@ export function noteAppPageRuns(contents: WebContents, runs: unknown): void {
   announceRuns(hosted.windowKey)
 }
 
+export function askPageToStopRun(windowKey: number, appId: unknown, runId: unknown): boolean {
+  const hosted = pagesOf(windowKey).find(
+    (page) =>
+      page.appId === appId &&
+      page.runs?.some((run) => run.id === runId && run.canStop === true) === true
+  )
+  if (!hosted || hosted.view.webContents.isDestroyed()) return false
+  hosted.view.webContents.send('apps-page:stop-run', runId)
+  return true
+}
+
 export function appSwitchStopsRun(panel: WebContents, appId: unknown): AppSwitchStop | null {
   const host = hostOf(panel)
   const current = host && hostedFor(host)

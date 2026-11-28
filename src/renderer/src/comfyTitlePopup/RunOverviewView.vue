@@ -9,14 +9,19 @@ import {
   CircleCheck,
   Cloud,
   Laptop,
-  LoaderCircle
+  LoaderCircle,
+  Square
 } from '@lucide/vue'
 import RunOverviewRow from './RunOverviewRow.vue'
 import type { TitleBarRun, TitleBarRunOverview } from '../types/ipc'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 
 const props = defineProps<{ overview: TitleBarRunOverview }>()
-const emit = defineEmits<{ open: [appId: string]; resize: [height: number] }>()
+const emit = defineEmits<{
+  open: [appId: string]
+  stop: [appId: string, runId: string]
+  resize: [height: number]
+}>()
 
 const { t } = useI18n()
 
@@ -56,6 +61,22 @@ const finished = computed(() =>
 )
 
 const showFinished = ref(false)
+
+const runKey = (run: TitleBarRun): string => `${run.appId}:${run.id}`
+const stopping = ref(new Set<string>())
+
+watch(
+  () => props.overview.runs,
+  (runs) => {
+    const stillStoppable = new Set(runs.filter((run) => run.canStop).map(runKey))
+    stopping.value = new Set([...stopping.value].filter((key) => stillStoppable.has(key)))
+  }
+)
+
+function stop(run: TitleBarRun): void {
+  stopping.value = new Set([...stopping.value, runKey(run)])
+  emit('stop', run.appId, run.id)
+}
 const finishedList = useTemplateRef<HTMLElement>('finishedList')
 
 async function toggleFinished(): Promise<void> {
@@ -151,8 +172,8 @@ function progressWidth(run: TitleBarRun): string {
         <ol class="m-0 flex list-none flex-col overflow-hidden rounded-xl bg-card p-0">
           <li
             v-for="run in place.runs"
-            :key="`${run.appId}:${run.id}`"
-            class="relative border-t border-solid border-border first:border-t-0"
+            :key="runKey(run)"
+            class="relative flex items-center border-t border-solid border-border first:border-t-0"
           >
             <RunOverviewRow
               :app-title="run.appTitle"
@@ -160,6 +181,7 @@ function progressWidth(run: TitleBarRun): string {
               :status="statusLine(run)"
               :step-count="stepCountOf(run)"
               :waiting="run.state === 'queued'"
+              class="min-w-0 flex-auto"
               data-testid="run-overview-run"
               @open="emit('open', run.appId)"
             >
@@ -176,6 +198,19 @@ function progressWidth(run: TitleBarRun): string {
                 }}</span>
               </template>
             </RunOverviewRow>
+            <Button
+              v-if="run.canStop"
+              variant="muted-textonly"
+              size="icon"
+              class="mr-1.5 shrink-0"
+              :disabled="stopping.has(runKey(run))"
+              :aria-label="t('runOverview.stopRun', { app: run.appTitle })"
+              :title="t('runOverview.stopRun', { app: run.appTitle })"
+              data-testid="run-overview-stop"
+              @click="stop(run)"
+            >
+              <Square :size="12" fill="currentColor" aria-hidden="true" />
+            </Button>
             <span
               v-if="run.state === 'running' && run.progress !== undefined"
               class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-secondary"
