@@ -33,7 +33,8 @@ export const EMBEDDED_SESSION_CHANNELS = {
   changed: 'desktop2-auth:changed'
 } as const
 
-const DISABLED: ComfyDesktop2AuthState = { status: 'disabled' }
+const NOT_LOCAL: ComfyDesktop2AuthState = { status: 'disabled', reason: 'not_local' }
+const OFF: ComfyDesktop2AuthState = { status: 'disabled', reason: 'off' }
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
 export interface EmbeddedSessionSender {
@@ -93,7 +94,7 @@ async function enabledForLocalView(): Promise<boolean> {
 async function sessionState(
   enabled: () => Promise<boolean> = isEmbeddedSessionEnabled
 ): Promise<ComfyDesktop2AuthState> {
-  if (!(await enabled())) return DISABLED
+  if (!(await enabled())) return OFF
   const session = getCloudSession()
   const grant = await session.getGrantAccessToken()
   const identity = grant ? identityOf(grant) : null
@@ -128,7 +129,7 @@ export async function stateForSender(
   event: EmbeddedSessionSender
 ): Promise<ComfyDesktop2AuthState> {
   const gate = gateForSender(event)
-  return gate ? sessionState(gate) : DISABLED
+  return gate ? sessionState(gate) : NOT_LOCAL
 }
 
 export async function cloudOriginForSender(event: EmbeddedSessionSender): Promise<string | null> {

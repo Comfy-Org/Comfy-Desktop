@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
+import type {
+  ComfyDesktop2AuthState,
+  ComfyDesktop2SignInFailure
+} from '../../../types/comfyDesktopBridge'
 import { SignInFailure } from '../../cloud/signInFailure'
 
 const mocks = vi.hoisted(() => ({
@@ -79,6 +82,8 @@ function reported(): unknown[] {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  vi.spyOn(console, 'info').mockImplementation(() => undefined)
   mocks.handle.mockReset()
   registerEmbeddedSessionHandlers()
 })
@@ -140,18 +145,126 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
     }
   )
 
-  it('passes the sign-in failure back to the view', async () => {
+  it.for<{ name: string; failure: Error; signInFailure: ComfyDesktop2SignInFailure }>([
+    {
+      name: 'a cancelled sign-in',
+      failure: new SignInFailure('access_denied', 'cancelled'),
+      signInFailure: 'cancelled'
+    },
+    {
+      name: 'a timed-out sign-in',
+      failure: new SignInFailure('Loopback OAuth callback timed out', 'timeout'),
+      signInFailure: 'timeout'
+    },
+    {
+      name: 'a refused token exchange',
+      failure: new SignInFailure('OAuth token request failed: 503 down', 'server_error', {
+        httpStatus: 503,
+        oauthError: 'temporarily_unavailable'
+      }),
+      signInFailure: 'server_error'
+    },
+    { name: 'an unclassified error', failure: new Error('boom'), signInFailure: 'unknown' }
+  ])('resolves $name with the view state and why it failed', async ({ failure, signInFailure }) => {
     mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
-    const failure = new SignInFailure('Loopback OAuth callback timed out', 'timeout')
     mocks.signInToCloud.mockRejectedValue(failure)
 
-    await expect(requestSignIn()({})).rejects.toBe(failure)
+    await expect(requestSignIn()({})).resolves.toStrictEqual({
+      status: 'signed_out',
+      signInFailure
+    })
   })
 
-  it('reports nothing while the embedded session is disabled', async () => {
-    mocks.stateForSender.mockResolvedValue({ status: 'disabled' })
+  it.for<{ name: string; failure: Error; error: boolean }>([
+    {
+      name: 'a cancelled sign-in',
+      failure: new SignInFailure('access_denied', 'cancelled'),
+      error: false
+    },
+    {
+      name: 'a sign-in a sign-out cut short',
+      failure: new SignInFailure('Signed out while signing in', 'superseded'),
+      error: false
+    },
+    {
+      name: 'a timed-out sign-in',
+      failure: new SignInFailure('Loopback OAuth callback timed out', 'timeout'),
+      error: true
+    },
+    {
+      name: 'a sign-in with no network',
+      failure: new SignInFailure('fetch failed', 'network'),
+      error: true
+    },
+    {
+      name: 'a sign-in with no browser to open',
+      failure: new SignInFailure('no browser', 'browser_unavailable'),
+      error: true
+    },
+    {
+      name: 'a sign-in the identity provider refused',
+      failure: new SignInFailure('missing authorization code', 'idp_error'),
+      error: true
+    },
+    {
+      name: 'a sign-in the server refused',
+      failure: new SignInFailure('OAuth token request failed: 503', 'server_error'),
+      error: true
+    },
+    { name: 'an unclassified error', failure: new Error('boom'), error: true }
+  ])('logs $name as an error only when it is one ($error)', async ({ failure, error }) => {
+    mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
+    mocks.signInToCloud.mockRejectedValue(failure)
 
-    await expect(requestSignIn()({})).resolves.toEqual({ status: 'disabled' })
+    await requestSignIn()({})
+
+    expect(vi.mocked(console.error).mock.calls).toEqual(
+      error ? [[expect.any(String), failure]] : []
+    )
+    expect(vi.mocked(console.info).mock.calls).toEqual(
+      error ? [] : [[expect.any(String), (failure as SignInFailure).reason]]
+    )
+  })
+
+  it.for<{ name: string; after: ComfyDesktop2AuthState }>([
+    { name: 'still signed in', after: SIGNED_IN },
+    { name: 'refused because sharing was turned off', after: { status: 'disabled', reason: 'off' } }
+  ])('resolves a cancel with the view $name when that is its state by then', async ({ after }) => {
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValue(after)
+    mocks.signInToCloud.mockRejectedValue(new SignInFailure('access_denied', 'cancelled'))
+
+    await expect(requestSignIn()({})).resolves.toStrictEqual({
+      ...after,
+      signInFailure: 'cancelled'
+    })
+  })
+
+  it('resolves a sign-in a sign-out overtook without an error as plain signed-out', async () => {
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_OUT).mockResolvedValue(SIGNED_OUT)
+    mocks.signInToCloud.mockResolvedValue(undefined)
+
+    await expect(requestSignIn()({})).resolves.toStrictEqual({ status: 'signed_out' })
+  })
+
+  it('resolves a sign-in a sign-out cut short with the state the view is in by then', async () => {
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValue(SIGNED_OUT)
+    mocks.signInToCloud.mockRejectedValue(
+      new SignInFailure('Signed out while signing in', 'superseded')
+    )
+
+    await expect(requestSignIn()({})).resolves.toStrictEqual({
+      status: 'signed_out',
+      signInFailure: 'superseded'
+    })
+  })
+
+  it.for<ComfyDesktop2AuthState>([
+    { status: 'disabled', reason: 'not_local' },
+    { status: 'disabled', reason: 'off' }
+  ])('reports nothing while the embedded session is disabled ($reason)', async (disabled) => {
+    mocks.stateForSender.mockResolvedValue(disabled)
+
+    await expect(requestSignIn()({})).resolves.toEqual(disabled)
 
     expect(mocks.signInToCloud).not.toHaveBeenCalled()
     expect(mocks.emit).not.toHaveBeenCalled()
@@ -177,6 +290,22 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
       { stage: 'requested', host: 'desktop' },
       { stage: 'completed', host: 'desktop' }
     ])
+  })
+
+  it('resolves both a request and its repeat when the shared sign-in is cancelled', async () => {
+    let cancel!: (failure: SignInFailure) => void
+    const pending = new Promise<void>((_resolve, reject) => (cancel = reject))
+    mocks.signInToCloud.mockReturnValue(pending)
+    mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
+
+    const first = requestSignIn()({})
+    await vi.waitFor(() => expect(mocks.signInToCloud).toHaveBeenCalledTimes(1))
+    const repeat = requestSignIn()({})
+    await vi.waitFor(() => expect(mocks.signInToCloud).toHaveBeenCalledTimes(2))
+    cancel(new SignInFailure('access_denied', 'cancelled'))
+
+    const cancelled = { status: 'signed_out', signInFailure: 'cancelled' }
+    await expect(Promise.all([first, repeat])).resolves.toStrictEqual([cancelled, cancelled])
   })
 })
 
@@ -252,9 +381,20 @@ describe('desktop2-auth:sign-out', () => {
 
   it('does nothing for a view Desktop does not share its session with', async () => {
     mocks.isTrustedSender.mockReturnValue(false)
-    mocks.stateForSender.mockResolvedValue({ status: 'disabled' })
+    mocks.stateForSender.mockResolvedValue({ status: 'disabled', reason: 'not_local' })
 
-    await expect(signOut()({ sender: {} })).resolves.toEqual({ status: 'disabled' })
+    await expect(signOut()({ sender: {} })).resolves.toEqual({
+      status: 'disabled',
+      reason: 'not_local'
+    })
+    expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a local view whose sharing is turned off', async () => {
+    mocks.isTrustedSender.mockReturnValue(true)
+    mocks.stateForSender.mockResolvedValue({ status: 'disabled', reason: 'off' })
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual({ status: 'disabled', reason: 'off' })
     expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
   })
 })
