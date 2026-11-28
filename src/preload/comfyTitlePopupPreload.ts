@@ -7,6 +7,7 @@ import type {
   DraftAppPasteAnswer,
   PopupTheme,
   TerminalRestore,
+  TitleBarRun,
   TitlePopupMenuItem
 } from '../types/ipc'
 
@@ -108,6 +109,7 @@ export type TitlePopupConfig =
       snapshot: PopupGlobalSettingsSnapshot
       theme: PopupTheme
     }
+  | { kind: typeof POPUP_KIND.runs; runs: TitleBarRun[]; theme: PopupTheme }
 
 export interface PopupDownloadEntry {
   id?: string

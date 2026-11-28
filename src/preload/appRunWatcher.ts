@@ -19,7 +19,11 @@ export interface RunReporter {
   reportRun(state: unknown): void
 }
 
-export function createRunReporter(page: Document, send: (running: boolean) => void): RunReporter {
+export function createRunReporter(
+  page: Document,
+  send: (running: boolean) => void,
+  sendRuns: (runs: unknown[]) => void
+): RunReporter {
   let stopWatching: (() => void) | null = null
   let pageReports = false
   return {
@@ -33,6 +37,14 @@ export function createRunReporter(page: Document, send: (running: boolean) => vo
       stopWatching = null
       const running = typeof state === 'object' && state !== null && 'running' in state
       send(running && state.running === true)
+      if (
+        typeof state === 'object' &&
+        state !== null &&
+        'runs' in state &&
+        Array.isArray(state.runs)
+      ) {
+        sendRuns(state.runs)
+      }
     }
   }
 }

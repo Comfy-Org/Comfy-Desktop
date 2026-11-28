@@ -10,6 +10,9 @@ import {
   closeStaffPagesOfOtherAccounts,
   hideAppPage,
   noteAppPageRunning,
+  noteAppPageRuns,
+  onReportedRunsChanged,
+  reportedRunPages,
   showAppPage,
   tellPanelsTheListChanged,
   titleBarApps
@@ -29,10 +32,18 @@ import {
   draftsStillAllowed,
   openPastedDraft
 } from '../../apps/draftLinks'
+import { usableLocalBuilds } from '../../apps/localBuild'
+import { pageBuildId } from '../../apps/localComfy'
 import { findEntryByTitleBarSender, isPanelSender } from '../../host/registry'
-import { isGlobalSettingsSender, openRunningAppsMenu } from '../../popups/titlePopup'
+import {
+  isGlobalSettingsSender,
+  isRunsPopupOpen,
+  openRunningAppsMenu,
+  openRunsPopup,
+  refreshRunsPopup
+} from '../../popups/titlePopup'
 import { OPEN_RUNNING_APP_CHANNEL } from '../../../types/ipc'
-import type { RunningApp } from '../../../types/ipc'
+import type { RunningApp, TitleBarRun } from '../../../types/ipc'
 import { cloudAuthEvents } from '../cloudAuthEvents'
 import { sendSurveyResponse } from '../telemetry'
 
@@ -65,15 +76,48 @@ function anchorCoordinate(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0
 }
 
+function pictureOf(appId: string): string | null {
+  return pictureForListedApp(appId) ?? pictureForHiddenApp(appId)
+}
+
+function hasReportedRuns(windowKey: number): boolean {
+  return reportedRunPages(windowKey).some(({ runs }) => runs.length > 0)
+}
+
+async function titleBarRuns(windowKey: number): Promise<TitleBarRun[]> {
+  const pages = reportedRunPages(windowKey)
+  const builds = await usableLocalBuilds().catch(() => [])
+  const buildNames = new Map(builds.map(({ id, name }) => [id, name]))
+  return pages.flatMap(({ appId, title, page, runs }) => {
+    const pageBuild = pageBuildId(page)
+    return runs.map((run) => {
+      const buildId = run.where === 'local' ? pageBuild : null
+      return {
+        ...run,
+        appId,
+        appTitle: title,
+        picture: pictureOf(appId),
+        buildId,
+        buildName: buildId === null ? null : (buildNames.get(buildId) ?? null)
+      }
+    })
+  })
+}
+
 function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): void {
   const found = findEntryByTitleBarSender(event.sender)
   if (!found || found.entry.window.isDestroyed()) return
+  const at = { x: anchorCoordinate(anchor?.x), y: anchorCoordinate(anchor?.y) }
+  if (hasReportedRuns(found.id)) {
+    void titleBarRuns(found.id).then((runs) => openRunsPopup(found.id, runs, at))
+    return
+  }
   const panel = found.entry.panelView?.webContents
   if (!panel || panel.isDestroyed()) return
   const { running, ready } = titleBarApps(found.id)
   const withState = (state: 'running' | 'ready') => (app: RunningApp) => ({
     ...app,
-    picture: pictureForListedApp(app.id) ?? pictureForHiddenApp(app.id),
+    picture: pictureOf(app.id),
     state
   })
   const apps = [...running.map(withState('running')), ...ready.map(withState('ready'))]
@@ -83,10 +127,12 @@ function openRunningApps(event: IpcMainEvent, anchor: MenuAnchor | undefined): v
     panel.send(OPEN_RUNNING_APP_CHANNEL, only.id)
     return
   }
-  openRunningAppsMenu(found.id, apps, {
-    x: anchorCoordinate(anchor?.x),
-    y: anchorCoordinate(anchor?.y)
-  })
+  openRunningAppsMenu(found.id, apps, at)
+}
+
+async function refreshOpenRunsPopup(windowKey: number): Promise<void> {
+  if (!isRunsPopupOpen(windowKey)) return
+  refreshRunsPopup(windowKey, await titleBarRuns(windowKey))
 }
 
 export function registerAppsHandlers(): void {
@@ -128,6 +174,12 @@ export function registerAppsHandlers(): void {
   ipcMain.on('apps-page:running', (event, running: unknown) => {
     if (isAppsPageSender(event.sender, event.senderFrame)) noteAppPageRunning(event.sender, running)
   })
+
+  ipcMain.on('apps-page:runs', (event, runs: unknown) => {
+    if (isAppsPageSender(event.sender, event.senderFrame)) noteAppPageRuns(event.sender, runs)
+  })
+
+  onReportedRunsChanged((windowKey) => void refreshOpenRunsPopup(windowKey))
 
   ipcMain.on('comfy-titlebar:click-running-apps', (event, payload: { anchor?: MenuAnchor }) =>
     openRunningApps(event, payload?.anchor)

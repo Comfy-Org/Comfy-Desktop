@@ -5,13 +5,15 @@ import DownloadsView from './DownloadsView.vue'
 import DownloadsFullView from './DownloadsFullView.vue'
 import InstancePickerView from './InstancePickerView.vue'
 import GlobalSettingsView from './GlobalSettingsView.vue'
+import RunOverviewView from './RunOverviewView.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import { useModal } from '../composables/useModal'
 import { dismissPickerModals } from './dismissPickerModals'
 import { popupLocaleSource } from './pickerSettingsApiShim'
 import { useAppLocale } from '../lib/useAppLocale'
-import type { DetailSection, SnapshotListData } from '../types/ipc'
+import type { DetailSection, SnapshotListData, TitleBarRun } from '../types/ipc'
+import { RUNNING_APP_ITEM } from '../types/ipc'
 import type { PopupDownloadsState as DownloadsState } from '../../../preload/comfyTitlePopupPreload'
 
 interface MenuItem {
@@ -123,6 +125,11 @@ type PopupConfig =
       snapshot: GlobalSettingsSnapshot
       theme: { bg: string; text: string }
     }
+  | {
+      kind: 'runs'
+      runs: TitleBarRun[]
+      theme: { bg: string; text: string }
+    }
 
 interface Bridge {
   activate(id: string): void
@@ -190,9 +197,14 @@ const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   }
 })
 const downloadsState = ref<DownloadsState>({ active: [], recent: [] })
+const runs = ref<TitleBarRun[]>([])
 
 function handleActivate(id: string): void {
   bridge?.activate(id)
+}
+
+function openRunApp(appId: string): void {
+  bridge?.activate(`${RUNNING_APP_ITEM}${appId}`)
 }
 
 const { state: modalState } = useModal()
@@ -237,6 +249,11 @@ function measureAndRequestSize(): void {
     bridge?.requestSize(total)
     return
   }
+  if (kind.value === 'runs') {
+    const rootEl = document.querySelector('.run-overview') as HTMLElement | null
+    if (rootEl) bridge?.requestSize(rootEl.offsetHeight + 2)
+    return
+  }
   if (kind.value === 'instance-picker') {
     const rootEl = document.querySelector('.picker') as HTMLElement | null
     if (!rootEl) return
@@ -252,6 +269,7 @@ onMounted(() => {
     }
     kind.value = cfg.kind
     items.value = cfg.kind === 'menu' ? cfg.items : []
+    runs.value = cfg.kind === 'runs' ? cfg.runs : []
     if (cfg.kind === 'instance-picker') {
       pickerSnapshot.value = cfg.snapshot
     } else if (cfg.kind === 'global-settings') {
@@ -340,6 +358,7 @@ onUnmounted(() => {
     <DownloadsView v-else-if="kind === 'downloads'" :state="downloadsState" />
     <DownloadsFullView v-else-if="kind === 'downloads-full'" :state="downloadsState" />
     <InstancePickerView v-else-if="kind === 'instance-picker'" :snapshot="pickerSnapshot" />
+    <RunOverviewView v-else-if="kind === 'runs'" :runs="runs" @open="openRunApp" />
     <GlobalSettingsView v-else :snapshot="globalSettingsSnapshot" />
     <ModalDialog />
     <DialogHost />

@@ -93,8 +93,10 @@ contextBridge.exposeInMainWorld('comfyDesktopTelemetry', telemetry)
 contextBridge.exposeInMainWorld('comfyDesktopOutputs', outputs)
 contextBridge.exposeInMainWorld('comfyDesktopAssets', assets)
 
-const runReporter = createRunReporter(document, (running) =>
-  ipcRenderer.send('apps-page:running', running)
+const runReporter = createRunReporter(
+  document,
+  (running) => ipcRenderer.send('apps-page:running', running),
+  (reported) => ipcRenderer.send('apps-page:runs', reported)
 )
 
 const runs: ComfyDesktopHostedRunsBridge = {
