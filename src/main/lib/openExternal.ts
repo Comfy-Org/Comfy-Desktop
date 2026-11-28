@@ -1,18 +1,30 @@
 import { app, shell } from 'electron'
 import { recordShellOpenExternal } from './e2eOverrides'
+import type { AgentApp } from '../../types/ipc'
 
 const OPENABLE_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 
 interface AgentAppLink {
+  protocol: string
   host: string
   pathname: string
   promptParam: string
 }
 
-const AGENT_APP_LINKS: ReadonlyMap<string, AgentAppLink> = new Map([
-  ['claude:', { host: 'code', pathname: '/new', promptParam: 'q' }],
-  ['codex:', { host: 'new', pathname: '', promptParam: 'prompt' }]
-])
+const AGENT_APP_LINKS: Readonly<Record<AgentApp, AgentAppLink>> = {
+  claude: { protocol: 'claude:', host: 'code', pathname: '/new', promptParam: 'q' },
+  codex: { protocol: 'codex:', host: 'new', pathname: '', promptParam: 'prompt' }
+}
+
+const AGENT_APP_LINKS_BY_PROTOCOL: ReadonlyMap<string, AgentAppLink> = new Map(
+  Object.values(AGENT_APP_LINKS).map((link) => [link.protocol, link])
+)
+
+export const LONGEST_AGENT_APP_LINK = 2048
+
+export function isAgentApp(candidate: unknown): candidate is AgentApp {
+  return typeof candidate === 'string' && Object.hasOwn(AGENT_APP_LINKS, candidate)
+}
 
 const LONGEST_LOGGED_SCHEME = 16
 
@@ -32,7 +44,7 @@ function openableHref(candidate: unknown): string | null {
 
 function agentAppHref(candidate: unknown): string | null {
   const url = parsedUrl(candidate)
-  const link = url && AGENT_APP_LINKS.get(url.protocol)
+  const link = url && AGENT_APP_LINKS_BY_PROTOCOL.get(url.protocol)
   if (!url || !link) return null
   if (url.host !== link.host || url.pathname !== link.pathname) return null
   if (url.username !== '' || url.password !== '' || url.hash !== '') return null
@@ -85,4 +97,20 @@ export function tryOpenExternalUrlOrAgentApp(candidate: unknown): Promise<boolea
     () => true,
     () => false
   )
+}
+
+const LONE_SURROGATES = /([\uD800-\uDBFF][\uDC00-\uDFFF])|[\uD800-\uDFFF]/g
+
+function wellFormed(text: string): string {
+  return text.replace(LONE_SURROGATES, (_, pair?: string) => pair ?? '\uFFFD')
+}
+
+export async function openAgentApp(app: AgentApp, prompt: string): Promise<void> {
+  const link = AGENT_APP_LINKS[app]
+  const encodedPrompt = encodeURIComponent(wellFormed(prompt))
+  const href = `${link.protocol}//${link.host}${link.pathname}?${link.promptParam}=${encodedPrompt}`
+  if (href.length > LONGEST_AGENT_APP_LINK) {
+    throw new RangeError('The prompt is too long to hand to the agent app.')
+  }
+  await handToTheOs(href)
 }

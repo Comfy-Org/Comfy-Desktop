@@ -9,7 +9,9 @@ vi.mock('electron', () => electron)
 
 import { getShellOpenExternalCalls, resetShellOpenExternalCalls } from './e2eOverrides'
 import {
+  isAgentApp,
   isOpenableExternalUrl,
+  openAgentApp,
   openExternalUrl,
   tryOpenExternalUrl,
   tryOpenExternalUrlOrAgentApp
@@ -209,5 +211,47 @@ describe('a refused link', () => {
     await tryOpenExternalUrl('https://comfy.org/')
 
     expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('starting an agent app from a prompt Desktop wrote', () => {
+  it.each([
+    ['claude', 'claude://code/new?q=Deploy%20%22my%20build%22%0Anow'],
+    ['codex', 'codex://new?prompt=Deploy%20%22my%20build%22%0Anow']
+  ] as const)('hands the %s link to the OS with the prompt in it', async (app, opened) => {
+    await openAgentApp(app, 'Deploy "my build"\nnow')
+
+    expect(handedToTheOs()).toEqual([opened])
+  })
+
+  it('hands the OS a link a ComfyUI page would also be allowed to open', async () => {
+    await openAgentApp('claude', 'Folder: /Users/me/ComfyUI & co?#1')
+
+    const [opened] = handedToTheOs()
+    electron.shell.openExternal.mockClear()
+    expect(await tryOpenExternalUrlOrAgentApp(opened)).toBe(true)
+    expect(handedToTheOs()).toEqual([opened])
+  })
+
+  it('replaces a broken character instead of failing to build the link', async () => {
+    await openAgentApp('codex', 'name \uD800 end')
+
+    expect(handedToTheOs()).toEqual(['codex://new?prompt=name%20%EF%BF%BD%20end'])
+  })
+
+  it('refuses a prompt whose link the OS could cut short', async () => {
+    await expect(openAgentApp('claude', '名'.repeat(300))).rejects.toThrow(RangeError)
+
+    expect(handedToTheOs()).toEqual([])
+  })
+
+  it.each([
+    ['claude', true],
+    ['codex', true],
+    ['cursor', false],
+    ['toString', false],
+    [undefined, false]
+  ])('knows whether %j is an agent app', (candidate, known) => {
+    expect(isAgentApp(candidate)).toBe(known)
   })
 })

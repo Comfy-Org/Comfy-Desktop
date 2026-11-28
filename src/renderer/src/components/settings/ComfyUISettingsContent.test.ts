@@ -7,6 +7,8 @@ import { computed, ref, nextTick } from 'vue'
 
 import type { Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useAuthStore } from '../../stores/authStore'
+import { closeDeployToCloud, deployToCloudTarget } from '../../composables/useDeployToCloud'
 import '../../assets/main.css'
 import { TID } from '../../../../shared/testIds'
 import '../../assets/main.css'
@@ -1700,6 +1702,75 @@ describe('ComfyUISettingsContent', () => {
 
       w.unmount()
       target.remove()
+    })
+  })
+
+  describe('Deploy to Cloud on the build page', () => {
+    const LOCAL_BUILD = {
+      ...SAMPLE_INSTALL,
+      installPath: '/builds/my-install'
+    } as unknown as Installation
+
+    beforeEach(() => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'remove', label: 'Forget' }]
+    })
+
+    afterEach(() => {
+      closeDeployToCloud()
+    })
+
+    async function mountPage(signedInToWorkspace: boolean) {
+      if (signedInToWorkspace) {
+        const status = { signedIn: true, workspaceId: 'ws-1' }
+        const api = (window as unknown as { api: { comfybuilder: Record<string, unknown> } }).api
+        api.comfybuilder.getAuthStatus = vi.fn().mockResolvedValue(status)
+        useAuthStore().status = status
+      }
+      const target = document.createElement('div')
+      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(target)
+      const w = await mountContent({
+        installation: LOCAL_BUILD,
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
+      onTestFinished(() => {
+        w.unmount()
+        target.remove()
+      })
+      return { w, target }
+    }
+
+    function deployButton(target: HTMLElement): HTMLButtonElement | null {
+      return target.querySelector('[data-testid="build-page-deploy-to-cloud"]')
+    }
+
+    it('sits beside Start and leaves the page menu', async () => {
+      const { w, target } = await mountPage(true)
+
+      const button = deployButton(target)
+      expect(button?.textContent?.trim()).toBe('Deploy to Cloud')
+      expect(button?.nextElementSibling?.getAttribute('data-testid')).toBe(TID.pickerPrimaryCta)
+      const actions = w.findAllComponents({ name: 'MoreMenu' })[0]!.props('actions') as {
+        id: string
+      }[]
+      expect(actions.map(({ id }) => id)).not.toContain('promote-to-workspace')
+    })
+
+    it('opens the Deploy to Cloud dialog for this build', async () => {
+      const { target } = await mountPage(true)
+
+      deployButton(target)!.click()
+      await flushPromises()
+
+      expect(deployToCloudTarget.value).toMatchObject({ id: LOCAL_BUILD.id })
+    })
+
+    it('is not offered when signed out', async () => {
+      const { target } = await mountPage(false)
+
+      expect(deployButton(target)).toBeNull()
     })
   })
 })

@@ -180,6 +180,13 @@ function registerHostWithPanel(key: number, opts: { destroyed?: boolean; none?: 
   return send
 }
 
+function panelEvent(key = 1) {
+  const mainFrame = {}
+  const webContents = { isDestroyed: () => false, send: vi.fn(), mainFrame }
+  comfyWindows.set(key, { panelView: { webContents } } as unknown as ComfyWindowEntry)
+  return { sender: webContents, senderFrame: mainFrame }
+}
+
 describe('registerDevPlatformHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -348,6 +355,62 @@ describe('registerDevPlatformHandlers', () => {
       'A workspace is required to open Builds.'
     )
 
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['claude', 'claude://code/new?q=Deploy%20my%20build'],
+    ['codex', 'codex://new?prompt=Deploy%20my%20build']
+  ])('opens %s with the prompt Desktop wrote', async (app, url) => {
+    await expect(
+      handler('comfybuilder:openAgentApp')(panelEvent(), app, 'Deploy my build')
+    ).resolves.toBe(true)
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url)
+  })
+
+  it.each([
+    ['an app Desktop does not know', 'vscode', 'Deploy my build'],
+    ['an empty prompt', 'claude', ''],
+    ['a prompt that is not text', 'codex', { prompt: 'x' }],
+    ['a prompt too long for a link', 'claude', 'x'.repeat(2_049)],
+    ['a prompt that grows too long once encoded', 'codex', '名'.repeat(300)]
+  ])('opens nothing for %s', async (_label, app, prompt) => {
+    await expect(handler('comfybuilder:openAgentApp')(panelEvent(), app, prompt)).resolves.toBe(
+      false
+    )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('reports an agent app the OS could not open', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.openExternal.mockRejectedValueOnce(new Error('no handler'))
+
+    await expect(
+      handler('comfybuilder:openAgentApp')(panelEvent(), 'claude', 'Deploy')
+    ).resolves.toBe(false)
+  })
+
+  it('opens nothing when the ask comes from outside a panel', async () => {
+    const stranger = { mainFrame: {} }
+
+    await expect(
+      handler('comfybuilder:openAgentApp')(
+        { sender: stranger, senderFrame: stranger.mainFrame },
+        'claude',
+        'Deploy'
+      )
+    ).resolves.toBe(false)
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('opens nothing when the ask comes from a frame inside the panel', async () => {
+    const { sender } = panelEvent()
+
+    await expect(
+      handler('comfybuilder:openAgentApp')({ sender, senderFrame: {} }, 'claude', 'Deploy')
+    ).resolves.toBe(false)
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 

@@ -461,6 +461,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     openSettingsPage: async () => {},
     installBuild: async () => ({ ok: false }),
     promoteLocalInstance: async () => ({ ok: false }),
+    openAgentApp: async () => false,
     ...seed.cloud
   }
 

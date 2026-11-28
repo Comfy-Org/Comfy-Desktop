@@ -20,6 +20,7 @@ vi.mock('./useModal', () => ({
 }))
 
 import { useInstallContextMenu } from './useInstallContextMenu'
+import { closeDeployToCloud, deployToCloudTarget } from './useDeployToCloud'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
@@ -603,13 +604,14 @@ describe('useInstallContextMenu - promote to workspace', () => {
   beforeEach(() => {
     apiMock.comfybuilder.promoteLocalInstance.mockReset().mockResolvedValue({ ok: true })
     modalMock.alert.mockReset()
+    closeDeployToCloud()
   })
 
   it('shows the item only when the dashboard eligibility gate accepts the install', () => {
     const eligible = mountHarness(makeInstall(), undefined, () => true)
     expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Upload build',
-      hint: 'Upload this build to Comfy Developer Platform.',
+      label: 'Deploy to Cloud',
+      hint: 'Run this build on Comfy Cloud.',
       hintUrl: 'https://platform.comfy.org/profile/deploy',
       hintLinkLabel: 'Read more'
     })
@@ -618,7 +620,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
     expect(findItem(ineligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toBeUndefined()
   })
 
-  it('keeps Upload build unavailable while a task is changing the build', () => {
+  it('keeps Deploy to Cloud unavailable while a task is changing the build', () => {
     const inst = makeInstall()
     const { menu } = mountHarness(
       inst,
@@ -643,56 +645,15 @@ describe('useInstallContextMenu - promote to workspace', () => {
     })
   })
 
-  it('asks main to create the draft and stays silent on success', async () => {
+  it('opens the Deploy to Cloud dialog instead of creating the draft', async () => {
     const inst = makeInstall()
     const { menu } = mountHarness(inst, undefined, () => true)
 
     await menu.triggerAction('promote-to-workspace', inst)
 
-    expect(apiMock.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith(inst.id)
+    expect(deployToCloudTarget.value).toEqual(inst)
+    expect(apiMock.comfybuilder.promoteLocalInstance).not.toHaveBeenCalled()
     expect(modalMock.alert).not.toHaveBeenCalled()
-  })
-
-  it('shows promotion progress and prevents duplicate requests', async () => {
-    let finishPromotion!: (result: { ok: true }) => void
-    apiMock.comfybuilder.promoteLocalInstance.mockReturnValue(
-      new Promise((resolve) => {
-        finishPromotion = resolve
-      })
-    )
-    const inst = makeInstall()
-    const { menu } = mountHarness(inst, undefined, () => true)
-
-    const promotion = menu.triggerAction('promote-to-workspace', inst)
-
-    expect(menu.isPromotingToWorkspace(inst)).toBe(true)
-    expect(findItem(menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Creating…',
-      disabled: true
-    })
-
-    await menu.triggerAction('promote-to-workspace', inst)
-    expect(apiMock.comfybuilder.promoteLocalInstance).toHaveBeenCalledOnce()
-
-    finishPromotion({ ok: true })
-    await promotion
-    expect(menu.isPromotingToWorkspace(inst)).toBe(false)
-  })
-
-  it('surfaces a draft creation failure', async () => {
-    apiMock.comfybuilder.promoteLocalInstance.mockResolvedValue({
-      ok: false,
-      message: 'Snapshot upload failed.'
-    })
-    const inst = makeInstall()
-    const { menu } = mountHarness(inst, undefined, () => true)
-
-    await menu.triggerAction('promote-to-workspace', inst)
-
-    expect(modalMock.alert).toHaveBeenCalledWith({
-      title: 'Could not upload build',
-      message: 'Snapshot upload failed.'
-    })
   })
 })
 

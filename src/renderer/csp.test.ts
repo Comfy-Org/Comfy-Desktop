@@ -52,6 +52,11 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['img-src']).toContain('https://comfy.org')
   })
 
+  it('plays the Deploy to Cloud video and shows its poster from media.comfy.org', () => {
+    expect(csp['media-src']).toContain('https://media.comfy.org')
+    expect(csp['img-src']).toContain('https://media.comfy.org')
+  })
+
   it('restricts script-src to self only', () => {
     expect(csp['script-src']).toBe("'self'")
   })
