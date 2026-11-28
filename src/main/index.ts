@@ -31,7 +31,7 @@ import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { relaunchIntoUninstallCleanup } from './lib/uninstallCleanup'
-import { saveWindowBounds } from './lib/windowState'
+import { flushWindowStateSync, saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
@@ -128,6 +128,7 @@ import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignF
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { runningAppCount, runningApps } from './apps/appPageView'
 import { appsQuitPrompt, QUIT_BUTTON } from './apps/appsQuitPrompt'
+import { releaseWindowWorkspaceClaim } from './apps/workspaceClaims'
 import { DRAFT_LINK_SCHEME, findDraftLink } from './apps/draftApps'
 import { openDraftLink } from './apps/draftLinks'
 import {
@@ -140,12 +141,8 @@ import {
   type DraftLinkStartup
 } from './apps/draftLinkStartup'
 import { runningPortOf } from './apps/localBuild'
-import {
-  isRunningForAppsOnly,
-  runsWithItsWindowClosed,
-  startWithDesktop,
-  stopBuildsRunningForAppsOnly
-} from './apps/localComfy'
+import { startWithDesktopAndOpen } from './apps/autoStartOpen'
+import { opensInDesktopWindow, stopBuildsRunningForAppsOnly } from './apps/localComfy'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -316,7 +313,7 @@ async function openStartupSurface(): Promise<void> {
 
   openOrFocusHomeHostWindow()
 
-  if (explicitInst) void startWithDesktop(explicitInst)
+  if (explicitInst) void startWithDesktopAndOpen(explicitInst, openWindowForAppsBuild)
 }
 
 function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
@@ -742,7 +739,7 @@ ipcMain.on('comfy-window:show-home', (event) => {
   const found = findEntryByTitleBarSender(event.sender)
   if (!found || !isInstallHost(found.entry)) return
   recordIpcInvocation('comfy-window:show-home')
-  openOrFocusHomeHostWindow()
+  openOrFocusHomeHostWindow('home')
 })
 
 function startHomeTour(fromWindowKey: number): void {
@@ -761,6 +758,7 @@ async function prepareBuildWindowFocus(
   requester?: BrowserWindow | null,
   pickerWorkspaceId?: string
 ): Promise<boolean> {
+  if (entry.installationId) releaseWindowWorkspaceClaim(entry.installationId)
   try {
     return (
       (await syncCloudWindowWorkspace(entry, { pickerWorkspaceId })) && !entry.window.isDestroyed()
@@ -797,7 +795,19 @@ async function focusOpenComfyWindow(
   return !entry.window.isDestroyed()
 }
 
-async function openWindowForAppsBuild(installationId: string): Promise<boolean> {
+const appsBuildWindowOpens = new Map<string, Promise<boolean>>()
+
+function openWindowForAppsBuild(installationId: string): Promise<boolean> {
+  const pending = appsBuildWindowOpens.get(installationId)
+  if (pending) return pending
+  const opening = openAppsBuildWindow(installationId).finally(() =>
+    appsBuildWindowOpens.delete(installationId)
+  )
+  appsBuildWindowOpens.set(installationId, opening)
+  return opening
+}
+
+async function openAppsBuildWindow(installationId: string): Promise<boolean> {
   const installation = await getInstallation(installationId)
   if (await focusOpenComfyWindow(installationId)) return true
   const port = runningPortOf(installationId)
@@ -819,9 +829,7 @@ ipcMain.handle(
     const workspaceId =
       requester && typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
     if (await focusOpenComfyWindow(installationId, requester, workspaceId)) return true
-    if (isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)) {
-      return openWindowForAppsBuild(installationId)
-    }
+    if (await opensInDesktopWindow(installationId)) return openWindowForAppsBuild(installationId)
 
     const proc = ipc.getSessionProcess(installationId)
     if (proc?.pid) {
@@ -1053,7 +1061,9 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       relaunchStates,
       computeInstallUpdateAvailable
     })
-    setHostFactories({ createChooser: openChooserHostWindow })
+    setHostFactories({
+      createChooser: (dashboardPage) => openChooserHostWindow('comfy', { dashboardPage })
+    })
     registerPanelViewIpc()
     registerOutputFolderHandlers()
 
@@ -1771,6 +1781,7 @@ if (!holdsInstanceLockAtStart(draftLinkStartup)) {
       _stopPeriodicReleaseChecks = null
     }
     flushLastSessionSync()
+    flushWindowStateSync()
     flushOperationOutput()
     cleanupTempDownloads()
     stopAgentPrefetches()

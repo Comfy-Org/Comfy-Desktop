@@ -2,6 +2,10 @@
 
 Rules the Desktop UI follows on top of `@comfyorg/design-system`. Each rule names the components to use and the tests that pin it.
 
+## Reference
+
+When `@comfyorg/design-system` and these rules don't decide how a component looks or behaves, follow shadcn/ui. Text sizes always come from the Desktop type scale in `design-system-theme.css`: `text-ui` 13px, `text-heading` 16px, `text-subtitle` 18px, `text-title` 22px and `text-display` 34px. Where shadcn uses a Tailwind size, take the nearest step of that scale; add a step there instead of writing a pixel size.
+
 ## Destructive actions
 
 A destructive action deletes files or data that cannot be brought back: Uninstall, Delete snapshot, Delete benchmark files, Delete asset, Delete workflow, Remove Comfy Desktop data.
@@ -14,6 +18,14 @@ A destructive action deletes files or data that cannot be brought back: Uninstal
 A confirm for something that is not destructive uses the white primary button (`inverted`), never red and never blue. That is the default: a confirm is only red when it asks for `danger`. Stop, Restart, Quit, Close window, Back to Home, Cancel operation, Quit setup and Discard setup all stop or undo work in progress but delete nothing, so they confirm with the white button and start from plain items.
 
 An error or info notice closes with the white OK. It never takes a tone, because pressing OK changes nothing.
+
+## Modal titles
+
+Every modal title is `text-subtitle font-semibold` (18px on a 28px line), the scale step that matches the `text-lg` shadcn/ui gives its `DialogTitle`. Use `MODAL_TITLE_CLASS` from `lib/modalTitle.ts`; the title size never depends on how wide the modal is. That covers the shared confirm, notice and choice boxes (`BaseAlert`, `ModalDialog`), prompts (`BasePrompt`), action sheets (`BaseActionSheet`), App request, Feedback, Why try Cloud, Custom model paths, Performance tests, the build progress dialog, `SetupModal` (first use and New build) and the legal documents (`TermsModal`, moving from 22px in #2148).
+
+A section heading inside a modal stays smaller than its title, so the title still leads.
+
+Pinned by `ExtraModelPathsModal.test.ts`.
 
 ## Decided cases
 

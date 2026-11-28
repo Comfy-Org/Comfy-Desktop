@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import en from '@locales/en.json'
 import zh from '@locales/zh.json'
 import { i18n } from '../i18n'
 import { runConfirmChain, runPromptChain } from './actionShoppingList'
@@ -130,6 +131,57 @@ describe('runConfirmChain confirm colour', () => {
       modal
     )
     expect(confirmWithOptions.mock.calls[0]![0].confirmStyle).toBe(confirmStyle)
+  })
+})
+
+describe('runConfirmChain confirm notes', () => {
+  const update = {
+    id: 'update-comfyui',
+    label: 'Update now',
+    confirm: {
+      title: 'Update ComfyUI to v0.46.3?',
+      message: '**v0.46.1** → **v0.46.3**',
+      hint: 'ComfyUI is running and will restart.',
+      note: 'If custom nodes break, restore the previous version from Snapshots.'
+    }
+  } as ActionDef
+
+  it('hands the hint and note to the panel confirm apart from the message', async () => {
+    const confirm = vi.fn().mockResolvedValue(false)
+    await runConfirmChain(
+      update,
+      {} as Parameters<typeof runConfirmChain>[1],
+      { confirm } as unknown as NonNullable<Parameters<typeof runConfirmChain>[2]>
+    )
+    expect(confirm.mock.calls[0]![0]).toMatchObject({
+      title: 'Update ComfyUI to v0.46.3?',
+      message: '**v0.46.1** → **v0.46.3**',
+      hint: 'ComfyUI is running and will restart.',
+      note: 'If custom nodes break, restore the previous version from Snapshots.'
+    })
+  })
+
+  it.each([
+    ['en', en],
+    ['zh', zh]
+  ])(
+    'keeps the %s update notes free of emoji, since the dialog draws the Info icon',
+    (_, locale) => {
+      const notes = [
+        locale.standalone.updateSnapshotUndoHint,
+        locale.comfybuilder.updateConfirmInfo,
+        locale.errors.willRestartRunning
+      ]
+      for (const note of notes) expect(note).not.toMatch(/\p{Extended_Pictographic}/u)
+    }
+  )
+
+  it('folds the hint and note into the message for the modal, which has no note line', async () => {
+    const confirm = vi.fn().mockResolvedValue(false)
+    await runConfirmChain(update, { confirm } as unknown as Parameters<typeof runConfirmChain>[1])
+    expect(confirm.mock.calls[0]![0].message).toBe(
+      '**v0.46.1** → **v0.46.3**\n\nComfyUI is running and will restart.\n\nIf custom nodes break, restore the previous version from Snapshots.'
+    )
   })
 })
 

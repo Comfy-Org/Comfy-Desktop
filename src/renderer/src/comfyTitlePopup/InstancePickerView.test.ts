@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '../stores/sessionStore'
 
 import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
+import '../assets/main.css'
 import InstancePickerView from './InstancePickerView.vue'
 
 const START_DECISION: NavDecision = { verb: 'start', primaryLabel: NAV_LABEL.start }
@@ -306,26 +307,99 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bravoRow.find('.picker-row-recency').exists()).toBe(true)
     })
 
-    it('paints the row dot orange when update available, including when also running', async () => {
+    it('marks a build with an update with a neutral Update pill in place of the orange dot and the last-launched time', async () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({
             id: 'a',
             name: 'Alpha',
+            lastLaunchedAt: Date.now() - 3_600_000,
             statusTag: { style: 'update', label: 'Update' }
           }),
-          makeInstall({ id: 'b', name: 'Bravo' })
+          makeInstall({ id: 'b', name: 'Bravo', lastLaunchedAt: Date.now() - 3_600_000 })
         ],
         activeInstallationId: null,
         runningInstallationIds: ['a']
       })
       const rows = wrapper.findAll('.picker-row')
       const alphaRow = rows.find((c) => c.text().includes('Alpha'))!
-      expect(alphaRow.find('.picker-row-update-dot').exists()).toBe(true)
-      expect(alphaRow.find('.picker-row-running-dot').exists()).toBe(false)
+      const pill = alphaRow.find('.picker-row-update-pill')
+      expect(pill.exists()).toBe(true)
+      expect(pill.find('[aria-hidden="true"]').text()).toBe('Update')
+      expect(pill.find('.sr-only').text()).toBe('Update available')
+      expect(pill.attributes('title')).toBe('Update available')
+      expect(alphaRow.find('.picker-row-update-dot').exists()).toBe(false)
+      expect(alphaRow.find('.picker-row-running-dot').exists()).toBe(true)
+      expect(alphaRow.find('.picker-row-recency').exists()).toBe(false)
       const bravoRow = rows.find((c) => c.text().includes('Bravo'))!
-      expect(bravoRow.find('.picker-row-update-dot').exists()).toBe(false)
+      expect(bravoRow.find('.picker-row-update-pill').exists()).toBe(false)
+      expect(bravoRow.find('.picker-row-recency').exists()).toBe(true)
       expect(bravoRow.find('.picker-row-running-dot').exists()).toBe(false)
+    })
+
+    it('gives the Update pill the exact look of the Current pill', async () => {
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({ id: 'a', name: 'Alpha' }),
+          makeInstall({ id: 'b', name: 'Bravo', statusTag: { style: 'update', label: 'Update' } })
+        ],
+        activeInstallationId: 'a',
+        runningInstallationIds: []
+      })
+      const styleClasses = (selector: string) =>
+        wrapper
+          .get(selector)
+          .classes()
+          .filter((name) => !name.startsWith('picker-row-'))
+      expect(styleClasses('.picker-row-update-pill')).toEqual(
+        styleClasses('.picker-row-current-pill')
+      )
+    })
+
+    it('shows only the Current pill on the current build, even with an update, so its name has room', async () => {
+      const host = document.createElement('div')
+      host.style.width = '820px'
+      host.style.height = '560px'
+      document.body.append(host)
+      onTestFinished(() => host.remove())
+      const wrapper = mount(InstancePickerView, {
+        props: {
+          snapshot: {
+            installs: [
+              makeInstall({
+                id: 'a',
+                name: 'ComfyUI',
+                lastLaunchedAt: Date.now() - 60_000,
+                statusTag: { style: 'update', label: 'Update' }
+              })
+            ],
+            activeInstallationId: 'a',
+            runningInstallationIds: ['a'],
+            selectedInstallationId: 'a',
+            selectedSettings: null,
+            selectedSnapshots: emptySnapshotListPayload,
+            launchingInstallationIds: []
+          },
+          globalSettingsSnapshot: {
+            sharedDirectoriesFields: [],
+            modelsDirs: [],
+            modelsSystemDefault: ''
+          }
+        },
+        global: { plugins: [createPinia()] },
+        attachTo: host
+      })
+      onTestFinished(() => wrapper.unmount())
+      await flushPromises()
+      const body = wrapper.get('.picker-row .picker-row-body')
+      const children = Array.from(body.element.children).map((el) => el.className.split(' ')[0])
+      expect(children).toEqual(['picker-row-name', 'picker-row-current-pill'])
+      expect(body.find('.picker-row-update-pill').exists()).toBe(false)
+      expect(wrapper.find('.picker-row-update-dot').exists()).toBe(false)
+      expect(wrapper.find('.picker-row-running-dot').exists()).toBe(true)
+      const name = body.get<HTMLElement>('.picker-row-name').element
+      expect(name.clientWidth).toBeGreaterThan(0)
+      expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth)
     })
   })
 

@@ -159,7 +159,8 @@ describe('comfybuilder.getDetailSections', () => {
     expect(update?.showProgress).toBe(true)
     expect(update?.confirm).toEqual({
       title: 'comfybuilder.updateConfirmTitle',
-      message: 'comfybuilder.updateConfirmMessage\n\ncomfybuilder.updateConfirmInfo',
+      message: 'comfybuilder.updateConfirmMessage',
+      note: 'comfybuilder.updateConfirmInfo',
       confirmLabel: 'comfybuilder.updateNow'
     })
 

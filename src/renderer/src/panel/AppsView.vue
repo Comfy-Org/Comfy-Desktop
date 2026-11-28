@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, Plus, Search } from '@lucide/vue'
+import { useEventListener, useLocalStorage } from '@vueuse/core'
 import { stillsOf } from '../../../shared/appStills'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -9,18 +10,32 @@ import AppPageHost from './AppPageHost.vue'
 import AppCardTile from './AppCardTile.vue'
 import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import CatalogWorkflowsGallery from './CatalogWorkflowsGallery.vue'
+import ExploreLayoutOptions from './ExploreLayoutOptions.vue'
+import ExploreWorkflowFilters from './ExploreWorkflowFilters.vue'
+import {
+  CARD_SIZES,
+  NO_FILTERS,
+  WORKFLOW_SORTS,
+  workflowFacets,
+  type CardSize,
+  type WorkflowFilters,
+  type WorkflowSort
+} from './exploreWorkflows'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { shortcutBelongsToOverlay } from '../lib/pageShortcuts'
 import { badgeDescriptionIds } from './appCardBadges'
 import { RHYTHM_GRID_CLASS, rhythmSpanClass } from './appGridRhythm'
 import { useAppSwitchConfirm, useBackToListConfirm } from './useAppSwitchConfirm'
-import type { AppCard, DraftClosingStop } from '../types/ipc'
+import type { AppCard, CatalogWorkflow, DraftClosingStop } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
+type ExploreTab = 'apps' | 'workflows'
 
 const SKELETON_CARD_COUNT = 7
 
-const { revisit = 0 } = defineProps<{ revisit?: number }>()
+const { revisit = 0, tab = 'apps' } = defineProps<{ revisit?: number; tab?: ExploreTab }>()
 
 const startWith = defineModel<AppCard | null>('startWith', { default: null })
 
@@ -29,13 +44,57 @@ const emit = defineEmits<{
   'current-app': [app: AppCard | null]
   'apps-loaded': [apps: AppCard[]]
   'view-in-assets': [name: string]
+  'open-workflow': [workflow: CatalogWorkflow]
 }>()
 
 const { t } = useI18n()
 
 const state = ref<LoadState>('loading')
 const apps = ref<AppCard[]>([])
-const query = ref('')
+const queries = reactive<Record<ExploreTab, string>>({ apps: '', workflows: '' })
+const query = computed({
+  get: () => queries[tab],
+  set: (value: string) => {
+    queries[tab] = value
+  }
+})
+const workflowsVisited = ref(false)
+const listedWorkflows = ref<CatalogWorkflow[]>([])
+const facets = computed(() => workflowFacets(listedWorkflows.value))
+const filters = ref<WorkflowFilters>({ ...NO_FILTERS })
+const storedSize = useLocalStorage<string>('comfy.desktop.explore.workflowSize', 'medium')
+const storedSort = useLocalStorage<string>('comfy.desktop.explore.workflowSort', 'popular')
+const cardSize = computed<CardSize>({
+  get: () =>
+    CARD_SIZES.includes(storedSize.value as CardSize) ? (storedSize.value as CardSize) : 'medium',
+  set: (value) => {
+    storedSize.value = value
+  }
+})
+const workflowSort = computed<WorkflowSort>({
+  get: () =>
+    WORKFLOW_SORTS.includes(storedSort.value as WorkflowSort)
+      ? (storedSort.value as WorkflowSort)
+      : 'popular',
+  set: (value) => {
+    storedSort.value = value
+  }
+})
+const searchField = ref<HTMLElement | null>(null)
+const searchShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ /' : 'Ctrl /'
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key !== '/' || !(event.metaKey || event.ctrlKey) || openApp.value) return
+  if (shortcutBelongsToOverlay(event)) return
+  event.preventDefault()
+  searchField.value?.querySelector('input')?.focus()
+})
+const showsSearch = computed(
+  () =>
+    tab === 'workflows' ||
+    state.value === 'loading' ||
+    (state.value === 'ready' && apps.value.length > 0)
+)
 const openApp = ref<AppCard | null>(null)
 const requestOpen = ref(false)
 const cardButtons = new Map<string, HTMLElement>()
@@ -49,7 +108,7 @@ let stopBackToListAsks: (() => void) | null = null
 let stopListUpdates: (() => void) | null = null
 
 const matchingApps = computed(() => {
-  const needle = query.value.trim().toLowerCase()
+  const needle = queries.apps.trim().toLowerCase()
   if (!needle) return apps.value
   return apps.value.filter((app) =>
     `${app.title}\n${app.description}`.toLowerCase().includes(needle)
@@ -241,6 +300,14 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => tab,
+  (section) => {
+    if (section === 'workflows') workflowsVisited.value = true
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())
   stopBackToListAsks = window.api.onAppBackToListAsked(
@@ -264,31 +331,66 @@ onBeforeUnmount(() => {
       v-show="!openApp"
       class="@container/apps flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
       :class="PAGE_SPOTLIGHT_CLASS"
-      data-testid="apps-view"
+      :data-testid="`${tab}-view`"
     >
-      <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
+      <header class="mx-auto w-full max-w-300 shrink-0 px-10 pt-9 pb-3">
         <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
-          {{ t('sidebar.apps') }}
+          {{ t(`sidebar.${tab}`) }}
         </h1>
       </header>
 
       <div
-        v-if="state === 'loading' || (state === 'ready' && apps.length > 0)"
-        class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3"
+        class="mx-auto flex min-h-8 w-full max-w-300 shrink-0 flex-wrap items-center gap-2 px-10 py-3"
       >
-        <div class="ml-auto w-[220px]">
-          <BaseInput
-            v-model="query"
-            class="h-8 [&_input]:text-ui"
-            :placeholder="t('apps.search')"
-            :aria-label="t('apps.search')"
-          >
-            <template #leading><Search :size="14" /></template>
-          </BaseInput>
+        <div class="ml-auto flex min-w-0 items-center gap-2">
+          <ExploreWorkflowFilters
+            v-if="tab === 'workflows' && listedWorkflows.length > 0"
+            v-model="filters"
+            :facets="facets"
+          />
+          <div v-if="showsSearch" ref="searchField" class="w-[220px] min-w-0">
+            <BaseInput
+              v-model="query"
+              class="h-[34px] [&_input]:text-ui"
+              :placeholder="t(`${tab}.search`)"
+              :aria-label="t(`${tab}.search`)"
+            >
+              <template #leading><Search :size="14" /></template>
+              <template #trailing>
+                <kbd
+                  class="rounded-[5px] bg-accent px-1.5 font-[inherit] text-[11px]/4 text-muted-foreground"
+                  aria-hidden="true"
+                  >{{ searchShortcut }}</kbd
+                >
+              </template>
+            </BaseInput>
+          </div>
+          <ExploreLayoutOptions
+            v-if="tab === 'workflows'"
+            v-model:size="cardSize"
+            v-model:sort="workflowSort"
+          />
         </div>
       </div>
 
-      <div class="mx-auto w-full max-w-300 px-10 pb-10">
+      <div
+        v-if="workflowsVisited"
+        v-show="tab === 'workflows'"
+        class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10"
+      >
+        <CatalogWorkflowsGallery
+          :query="queries.workflows"
+          :filters="filters"
+          :sort="workflowSort"
+          :size="cardSize"
+          @loaded="listedWorkflows = $event"
+          @clear-filters="filters = { ...NO_FILTERS }"
+          @open-workflow="emit('open-workflow', $event)"
+          @clear-search="queries.workflows = ''"
+        />
+      </div>
+
+      <div v-show="tab === 'apps'" class="mx-auto w-full max-w-300 shrink-0 px-10 pb-10">
         <ul
           v-if="state === 'loading'"
           :class="RHYTHM_GRID_CLASS"

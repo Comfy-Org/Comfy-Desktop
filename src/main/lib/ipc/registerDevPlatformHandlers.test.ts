@@ -42,14 +42,21 @@ const mocks = vi.hoisted(() => ({
   saveSnapshot: vi.fn(),
   loadSnapshot: vi.fn(),
   getSnapshotCount: vi.fn(),
-  buildExportEnvelope: vi.fn(),
+  buildUploadEnvelope: vi.fn(),
+  listInstallModels: vi.fn(),
+  settingsGet: vi.fn((_key: string): unknown => undefined),
   broadcastToRenderer: vi.fn(),
   operationAborts: new Map<string, AbortController>(),
   translate: vi.fn((key: string) => key),
   endViewGrants: vi.fn(),
   allowDesktopWorkspace: vi.fn(),
   creditBalanceAuthChanged: vi.fn(),
-  cloudAuthChanged: vi.fn()
+  cloudAuthChanged: vi.fn(),
+  reconcileCloudViewSession: vi.fn(async () => {})
+}))
+
+vi.mock('../../auth/cloudViewSession', () => ({
+  reconcileCloudViewSession: mocks.reconcileCloudViewSession
 }))
 
 vi.mock('../cloudAuthEvents', () => ({
@@ -134,10 +141,19 @@ vi.mock('./shared', () => ({
   saveSnapshot: mocks.saveSnapshot,
   loadSnapshot: mocks.loadSnapshot,
   getSnapshotCount: mocks.getSnapshotCount,
-  buildExportEnvelope: mocks.buildExportEnvelope,
+  buildUploadEnvelope: mocks.buildUploadEnvelope,
   _broadcastToRenderer: mocks.broadcastToRenderer,
   _operationAborts: mocks.operationAborts,
   i18n: { t: mocks.translate }
+}))
+
+vi.mock('../installModelList', () => ({
+  listInstallModels: mocks.listInstallModels
+}))
+
+vi.mock('../../settings', () => ({
+  get: mocks.settingsGet,
+  defaults: { modelsDirs: ['/shared/models'] }
 }))
 
 import type { WebContents } from 'electron'
@@ -160,13 +176,27 @@ function handler(channel: string): IpcHandler {
   return call![1] as IpcHandler
 }
 
+function hostedView(destroyed = false) {
+  return { webContents: { isDestroyed: () => destroyed } }
+}
+
 function registerHostWithPanel(key: number, opts: { destroyed?: boolean; none?: boolean } = {}) {
   const send = vi.fn()
   const panelView = opts.none
     ? null
     : { webContents: { isDestroyed: () => opts.destroyed ?? false, send } }
-  comfyWindows.set(key, { panelView } as unknown as ComfyWindowEntry)
+  comfyWindows.set(key, { panelView, comfyView: hostedView() } as unknown as ComfyWindowEntry)
   return send
+}
+
+function registerHostWithView(key: number, sourceCategory: string | null, destroyed = false) {
+  const comfyView = hostedView(destroyed)
+  comfyWindows.set(key, {
+    panelView: null,
+    comfyView,
+    sourceCategory
+  } as unknown as ComfyWindowEntry)
+  return comfyView.webContents
 }
 
 describe('registerDevPlatformHandlers', () => {
@@ -185,7 +215,11 @@ describe('registerDevPlatformHandlers', () => {
     mocks.saveSnapshot.mockResolvedValue('fresh.json')
     mocks.loadSnapshot.mockResolvedValue({ version: 2, createdAt: '2026-08-21T00:00:00.000Z' })
     mocks.getSnapshotCount.mockResolvedValue(3)
-    mocks.buildExportEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
+    mocks.listInstallModels.mockResolvedValue({
+      models: [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }],
+      truncated: false
+    })
+    mocks.buildUploadEnvelope.mockReturnValue({ type: 'comfyui-desktop-2-snapshot' })
     mocks.listBuilds.mockResolvedValue([])
     mocks.listWorkspaces.mockResolvedValue([
       { id: 'w1', name: 'Personal', type: 'personal', role: 'owner' }
@@ -392,12 +426,24 @@ describe('registerDevPlatformHandlers', () => {
     })
   })
 
+  it('syncs the Cloud sign-in of every hosted view when Desktop signs out, whatever source the view came from', async () => {
+    const cloud = registerHostWithView(1, 'cloud')
+    const remote = registerHostWithView(2, 'remote')
+    const local = registerHostWithView(3, 'local')
+    registerHostWithView(4, 'cloud', true)
+
+    await handler('comfybuilder:signOut')({})
+
+    expect(mocks.reconcileCloudViewSession.mock.calls).toEqual([[cloud], [remote], [local]])
+  })
+
   it('keeps the session and installation running when sign-out is cancelled', async () => {
     const abort = new AbortController()
     const sender = {}
     const parent = { isDestroyed: () => false }
     comfyWindows.set(1, {
       panelView: { webContents: sender },
+      comfyView: hostedView(),
       window: parent
     } as unknown as ComfyWindowEntry)
     mocks.operationAborts.set('install-1', abort)
@@ -426,6 +472,7 @@ describe('registerDevPlatformHandlers', () => {
     const sender = { isDestroyed: () => false, send: vi.fn() }
     comfyWindows.set(1, {
       panelView: { webContents: sender },
+      comfyView: hostedView(),
       window: { isDestroyed: () => false },
       lastTheme: { bg: '#171718', text: '#fff' }
     } as unknown as ComfyWindowEntry)
@@ -450,6 +497,7 @@ describe('registerDevPlatformHandlers', () => {
     const sender = { isDestroyed: () => false, send: vi.fn() }
     comfyWindows.set(1, {
       panelView: { webContents: sender },
+      comfyView: hostedView(),
       window: { isDestroyed: () => false },
       lastTheme: { bg: '#171718', text: '#fff' }
     } as unknown as ComfyWindowEntry)
@@ -1027,17 +1075,43 @@ describe('registerDevPlatformHandlers', () => {
       lastSnapshot: 'fresh.json',
       snapshotCount: 3
     })
-    expect(mocks.buildExportEnvelope).toHaveBeenCalledWith('Local One', [
+    expect(mocks.listInstallModels).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: 'local-1', installPath: '/installs/local-1' }),
+      ['/shared/models'],
+      expect.any(Function)
+    )
+    expect(mocks.buildUploadEnvelope).toHaveBeenCalledWith(
+      'Local One',
+      [
+        {
+          filename: 'fresh.json',
+          snapshot: { version: 2, createdAt: '2026-08-21T00:00:00.000Z' }
+        }
+      ],
       {
-        filename: 'fresh.json',
-        snapshot: { version: 2, createdAt: '2026-08-21T00:00:00.000Z' }
+        models: [{ folder: 'loras', name: 'sdxl/detail.safetensors', size: 1024 }],
+        truncated: false
       }
-    ])
+    )
     expect(mocks.createBuildDraft).toHaveBeenCalledExactlyOnceWith({
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
       'https://platform.comfy.org/profile/builds/build-1/draft?workspace=w1'
+    )
+  })
+
+  it('lists models from the shared folders the user chose', async () => {
+    mocks.settingsGet.mockImplementation((key: string) =>
+      key === 'modelsDirs' ? ['/mnt/library/models'] : undefined
+    )
+
+    await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(mocks.listInstallModels).toHaveBeenCalledWith(
+      expect.anything(),
+      ['/mnt/library/models'],
+      expect.any(Function)
     )
   })
 
@@ -1196,6 +1270,18 @@ describe('registerDevPlatformHandlers', () => {
     expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
     expect(mocks.createBuildDraft).not.toHaveBeenCalled()
     expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('does not upload if the active workspace changes while the models are listed', async () => {
+    mocks.listInstallModels.mockImplementationOnce(async () => {
+      mocks.status.mockReturnValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+      return { models: [], truncated: false }
+    })
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'The active workspace changed. Try again.' })
+    expect(mocks.createBuildDraft).not.toHaveBeenCalled()
   })
 
   it('does not upload if the instance gains workspace ownership during capture', async () => {

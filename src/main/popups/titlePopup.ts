@@ -1403,9 +1403,9 @@ function buildGlobalSettingsSnapshot(
   const modelsPayload = buildModelsPayload()
   const generalRaw = findSettingsFields(settingsSections, 'settings.general', 0)
   const desktopUpdateFields = generalRaw.filter((f) => f.id === 'autoInstallUpdates')
-  const languageFields = generalRaw.filter((f) => f.id === 'language')
+  const languageFields = generalRaw.filter((f) => f.id === 'language' || f.id === 'startPage')
   const generalFields = generalRaw.filter(
-    (f) => f.id !== 'autoInstallUpdates' && f.id !== 'language'
+    (f) => f.id !== 'autoInstallUpdates' && f.id !== 'language' && f.id !== 'startPage'
   )
   const telemetryFields = findSettingsFields(settingsSections, 'settings.telemetry', 1)
   const cache = findSettingsFields(settingsSections, 'settings.cache', 2)
@@ -2134,8 +2134,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   ipcMain.on(
     'comfy-titlepopup:global-settings-open-external',
     (event, payload: { url?: unknown }) => {
-      const popupEntry = titlePopupsByWebContents.get(event.sender.id)
-      if (!popupEntry || popupEntry.kind !== 'global-settings') return
+      if (!settingsEntryFor(event.sender.id)) return
       void tryOpenExternalUrl(payload?.url)
     }
   )

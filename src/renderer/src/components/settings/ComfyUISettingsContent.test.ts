@@ -579,14 +579,7 @@ describe('ComfyUISettingsContent', () => {
     const CONSOLE_TOOLTIP =
       "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
-    const TAB_LABELS = new Set([
-      'Overview',
-      'Startup Args',
-      'Snapshots',
-      'Folders',
-      'Storage',
-      'Terminal'
-    ])
+    const TAB_LABELS = new Set(['Overview', 'Startup Args', 'Snapshots', 'Folders', 'Terminal'])
 
     function tabTooltips(w: VueWrapper) {
       return w
@@ -1161,6 +1154,61 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
+  describe('Overview tab when an update is available', () => {
+    const UPDATE_INSTALL = {
+      ...SAMPLE_INSTALL,
+      status: 'update-available',
+      statusTag: { style: 'update', label: 'Update' }
+    } as unknown as Installation
+    let host: HTMLElement
+    const mounted: VueWrapper[] = []
+
+    beforeEach(() => {
+      host = document.createElement('div')
+      host.style.width = '1200px'
+      document.body.append(host)
+    })
+
+    afterEach(() => {
+      mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+      host.remove()
+    })
+
+    async function mountOn(installation: Installation): Promise<VueWrapper> {
+      const wrapper = mount(ComfyUISettingsContent, {
+        props: { installation, initialTab: 'update', activeOperation: null },
+        global: { plugins: [getActivePinia() ?? createPinia()] },
+        attachTo: host
+      }) as VueWrapper
+      mounted.push(wrapper)
+      await flushPromises()
+      return wrapper
+    }
+
+    function tabEdges(wrapper: VueWrapper): string[] {
+      return wrapper.findAll<HTMLElement>('.settings-v2-tab').map(({ element }) => {
+        const rect = element.getBoundingClientRect()
+        return `${element.dataset.testid}:${rect.left}-${rect.right}`
+      })
+    }
+
+    it('shows only the label on the Overview tab, with no update dot', async () => {
+      const wrapper = await mountOn(UPDATE_INSTALL)
+      const overview = wrapper.get(`[data-testid="${TID.settingsTab('update')}"]`)
+      expect(overview.findAll('[aria-hidden="true"]')).toHaveLength(0)
+      expect(overview.element.children).toHaveLength(1)
+      expect(overview.text()).toBe('Overview')
+    })
+
+    it('keeps every tab in the same place whether or not an update is available', async () => {
+      const without = tabEdges(await mountOn(SAMPLE_INSTALL))
+      mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+      const withUpdate = tabEdges(await mountOn(UPDATE_INSTALL))
+      expect(withUpdate.length).toBeGreaterThan(1)
+      expect(withUpdate).toEqual(without)
+    })
+  })
+
   describe('Startup Args stacked layout', () => {
     let priorSections: unknown[]
     let target: HTMLElement
@@ -1197,13 +1245,18 @@ describe('ComfyUISettingsContent', () => {
       expect(await stackedFor({})).toBe(false)
     })
 
-    it('keeps a cloud build in its own layout, where that tab is labelled Storage', async () => {
-      expect(
-        await stackedFor({
-          pageActionsTarget: '#page-actions',
-          installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
-        })
-      ).toBe(false)
+    it('gives a cloud build a Folders tab in the Folders layout instead of the settings list', async () => {
+      const w = await mountContent({
+        initialTab: 'config',
+        pageActionsTarget: '#page-actions',
+        installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
+      })
+      expect(w.get(`[data-testid="${TID.settingsTab('config')}"]`).text()).toBe('Folders')
+      const pane = w.findComponent({ name: 'CloudStoragePane' })
+      expect(pane.exists()).toBe(true)
+      expect(pane.props('sections')).toEqual([{ tab: 'settings', fields: [] }])
+      expect(w.findComponent({ name: 'SettingsSectionList' }).exists()).toBe(false)
+      w.unmount()
     })
 
     it('keeps the Update tab out of the stacked layout on the build page', async () => {

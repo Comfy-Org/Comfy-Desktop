@@ -12,6 +12,7 @@ import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import AssetsView from './AssetsView.vue'
 import AppsView from './AppsView.vue'
+import CatalogWorkflowDialog from './CatalogWorkflowDialog.vue'
 import StaffAppsView from './StaffAppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
@@ -54,12 +55,14 @@ import { provideBuildMenuHost } from './home/useBuildMenu'
 import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
+import { provideOpenWhenReady } from './home/useOpenWhenReady'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { runningAppIds, watchAppRuns } from './appRuns'
 import { useAppSwitchConfirm } from './useAppSwitchConfirm'
 import { useStaffApps } from './useStaffApps'
 import type {
   AppCard,
+  CatalogWorkflow,
   DashboardPage,
   DraftAppRequest,
   HiddenAppCard,
@@ -193,7 +196,7 @@ if (params.get('e2e') === '1') {
 
 type DashboardHomePage = Extract<
   DashboardPage,
-  'home' | 'apps' | 'chooser' | 'assets' | 'staff-apps'
+  'home' | 'workflows' | 'apps' | 'chooser' | 'assets' | 'staff-apps'
 >
 
 type AppHomePage = Extract<DashboardHomePage, 'apps' | 'staff-apps'>
@@ -218,6 +221,11 @@ const sidebarPage = computed<DashboardPage | null>(() => {
 
 const buildDetailsId = ref<string | null>(null)
 const dashboardScope = useDashboardScopeStore()
+const workspaceInstallations = computed(() =>
+  installationStore.installations.filter((inst) =>
+    isInstallationInWorkspace(inst, dashboardScope.selectedWorkspaceId)
+  )
+)
 const buildDetailsInstall = computed(() => {
   const inst = buildDetailsId.value ? installationStore.getById(buildDetailsId.value) : undefined
   return inst && isInstallationInWorkspace(inst, dashboardScope.selectedWorkspaceId) ? inst : null
@@ -303,6 +311,7 @@ const appsVisits = ref(0)
 const appIsOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
+const selectedWorkflow = ref<CatalogWorkflow | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
 let stayOnAppsAfterClose = false
@@ -314,10 +323,6 @@ function homePageOf(app: AppCard): AppHomePage {
 
 const openedAppHome = ref<AppHomePage>('apps')
 const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHome.value : 'apps'))
-
-const railApps = computed(() =>
-  appHome.value === 'staff-apps' ? liveStaffApps.value : listedApps.value
-)
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
@@ -463,13 +468,14 @@ function viewInAssets(name: string): void {
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   assetsFocusName.value = null
-  if (page === 'apps') {
+  if (page === 'apps' || page === 'workflows') {
     stayOnAppsAfterClose = true
     appsVisits.value += 1
   }
   if (page === 'staff-apps' && !staffApps.shown.value) return
   if (
     page === 'home' ||
+    page === 'workflows' ||
     page === 'apps' ||
     page === 'chooser' ||
     page === 'assets' ||
@@ -526,6 +532,7 @@ chooserHandoff = useChooserHandoff({
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
 provideAutoStartBuild()
+provideOpenWhenReady((build) => void handleChooserPick(build))
 provideBuildMenuHost({
   launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
   openDetails: openBuildFromSidebar,
@@ -752,13 +759,12 @@ onUnmounted(() => {
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
         :app-in-progress="appInProgress"
-        :apps="railApps"
         :app-home="appHome"
         :show-staff-apps="staffApps.shown.value"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
-        @switch-app="openAppFromHome"
         @open-build="openBuildFromSidebar"
+        @create="handleChooserPick"
         @new-build="handleChooserShowNewInstall"
       />
       <main
@@ -788,16 +794,20 @@ onUnmounted(() => {
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
               @show-apps="handleSidebarNavigate('apps')"
+              @show-workflows="handleSidebarNavigate('workflows')"
+              @open-workflow="selectedWorkflow = $event"
               @new-build="handleChooserShowNewInstall"
             />
             <AppsView
-              v-else-if="dashboardHomePage === 'apps'"
+              v-else-if="dashboardHomePage === 'apps' || dashboardHomePage === 'workflows'"
               v-model:start-with="appPickedOnHome"
+              :tab="dashboardHomePage"
               :revisit="appsVisits"
               @app-open-change="noteAppOpen"
               @current-app="noteCurrentApp"
               @apps-loaded="listedApps = $event"
               @view-in-assets="viewInAssets"
+              @open-workflow="selectedWorkflow = $event"
             />
             <StaffAppsView
               v-else-if="dashboardHomePage === 'staff-apps' && staffApps.shown.value"
@@ -840,6 +850,15 @@ onUnmounted(() => {
         </div>
       </main>
     </div>
+
+    <CatalogWorkflowDialog
+      v-if="selectedWorkflow"
+      :key="selectedWorkflow.id"
+      :workflow="selectedWorkflow"
+      :installations="workspaceInstallations"
+      :workspace-id="dashboardScope.selectedWorkspaceId"
+      @close="selectedWorkflow = null"
+    />
 
     <template v-if="currentOverlay?.kind === 'takeover'">
       <ProgressModal

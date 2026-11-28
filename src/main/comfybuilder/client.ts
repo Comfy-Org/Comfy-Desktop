@@ -6,12 +6,14 @@ import type {
   ModelManifest,
   TokenProvider
 } from './types'
-import type { SnapshotExportEnvelope } from '../lib/snapshots/types'
+import type { SnapshotUploadEnvelope } from '../lib/snapshots/types'
 import { isSecureDownloadUrl, isValidSha256 } from './integrity'
 
 export const DEFAULT_BASE_URL = 'https://platformapi.comfy.org/builder'
 
 const DEFAULT_TIMEOUT_MS = 30_000
+
+export const DESKTOP_SNAPSHOT_UI_ORIGIN = 'desktop-snapshot'
 
 export type ComfyBuilderErrorKind =
   'unauthorized' | 'forbidden' | 'not-found' | 'network' | 'server'
@@ -69,12 +71,8 @@ interface ReleaseDetailResponse {
 interface SignedDownloadResponse {
   downloadUrl?: string
 }
-interface SnapshotResolutionResponse {
-  definition?: unknown
-}
-interface CreatedBuildResponse {
-  id?: unknown
-  workspaceId?: unknown
+interface SnapshotBuildResponse {
+  build?: unknown
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,27 +115,18 @@ export class ComfyBuilderClient {
     return builds
   }
 
-  async createBuildDraft(snapshot: SnapshotExportEnvelope): Promise<BuildDraft> {
+  async createBuildDraft(snapshot: SnapshotUploadEnvelope): Promise<BuildDraft> {
     const name = snapshot.installationName.trim()
     if (!name || name.length > 200 || snapshot.snapshots.length !== 1) {
       throw new ComfyBuilderApiError('server', 'Desktop snapshot cannot be promoted')
     }
     const envelope = { ...snapshot, installationName: name }
-    const token = await this.accessToken()
-    const resolvedBody = await this.post<SnapshotResolutionResponse>(
-      '/v1/snapshots/resolve',
-      { snapshot: envelope },
-      token
-    )
-    if (!isRecord(resolvedBody.definition)) {
-      throw new ComfyBuilderApiError('server', 'Builder returned an invalid snapshot resolution')
-    }
-
-    const created = await this.post<CreatedBuildResponse>(
-      '/v1/builds',
-      { name, definition: { ...resolvedBody.definition, uiOrigin: 'desktop-snapshot' } },
-      token
-    )
+    const body = await this.post<SnapshotBuildResponse>('/v1/builds/from-snapshot', {
+      name,
+      snapshot: envelope,
+      uiOrigin: DESKTOP_SNAPSHOT_UI_ORIGIN
+    })
+    const created: Record<string, unknown> = isRecord(body.build) ? body.build : {}
     if (!isOpaqueId(created.id) || !isOpaqueId(created.workspaceId)) {
       throw new ComfyBuilderApiError('server', 'Builder returned an invalid draft Build')
     }

@@ -37,6 +37,7 @@ import {
 import type { ComfyWindowEntry } from './registry'
 import { navigatorFor } from './buildNavigator'
 import { createUserAttention } from './userAttention'
+import { reconcileCloudViewSession } from '../auth/cloudViewSession'
 
 const APP_VERSION = getAppVersion()
 
@@ -301,6 +302,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
     if (!isLocal) {
       comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => {})
+      void reconcileCloudViewSession(comfyContents)
       void refreshCloudUserTier(comfyContents)
       noteCloudEntered()
     } else {

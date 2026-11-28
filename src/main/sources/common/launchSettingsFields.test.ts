@@ -8,6 +8,11 @@ import { lookupEnMessage } from '../../lib/localeTestHelper'
 
 const holder = vi.hoisted(() => ({ comfyDir: '', resolved: [] as ResolvedExtraPath[] }))
 
+vi.mock('../../settings', () => ({
+  get: () => undefined,
+  defaults: { inputDir: '/shared/input', outputDir: '/shared/output' }
+}))
+
 vi.mock('../../lib/paths', () => ({
   dataDir: () => os.tmpdir()
 }))

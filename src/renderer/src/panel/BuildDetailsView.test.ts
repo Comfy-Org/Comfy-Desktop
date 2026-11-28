@@ -93,6 +93,18 @@ describe('BuildDetailsView', () => {
     expect(wrapper.find('.build-details-status').exists()).toBe(false)
   })
 
+  it('names Cloud once when where it runs and what it is are both Cloud', async () => {
+    const { wrapper } = await mountDetails({
+      id: 'a',
+      name: 'Comfy Cloud',
+      sourceId: 'cloud',
+      sourceLabel: 'Comfy Cloud',
+      sourceCategory: 'cloud'
+    })
+
+    expect(wrapper.get('.build-details-meta').text()).toBe('Cloud')
+  })
+
   it('shows a running build as running', async () => {
     const { wrapper } = await mountDetails()
 
@@ -309,16 +321,32 @@ describe('BuildDetailsView', () => {
     expect(wrapper.emitted('launch')).toEqual([[INSTALL]])
   })
 
-  it.each(['navigate-list', 'request-close', 'request-dismiss'])(
-    'returns to the list on %s',
-    async (event) => {
-      const { wrapper, content } = await mountDetails()
+  it.each(['navigate-list', 'request-close'])('returns to the list on %s', async (event) => {
+    const { wrapper, content } = await mountDetails()
 
-      content.vm.$emit(event)
+    content.vm.$emit(event)
 
-      expect(wrapper.emitted('back')).toHaveLength(1)
-    }
-  )
+    expect(wrapper.emitted('back')).toHaveLength(1)
+  })
+
+  it('stays on the build page after the build is stopped from its menu', async () => {
+    const sessionStore = useSessionStore()
+    sessionStore.runningInstances.set('a', {
+      installationId: 'a',
+      installationName: 'Video Lab',
+      mode: 'window'
+    })
+    const { wrapper, content } = await mountDetails()
+    expect(wrapper.get('.build-details-status').text()).toBe('Running')
+
+    sessionStore.runningInstances.delete('a')
+    content.vm.$emit('request-dismiss')
+    await flushPromises()
+
+    expect(wrapper.emitted('back'), 'stopping the build leaves its page open').toBeUndefined()
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(true)
+    expect(wrapper.find('.build-details-status').exists()).toBe(false)
+  })
 
   it('has no back link, since the sidebar returns to the list', async () => {
     const { wrapper } = await mountDetails()

@@ -3,7 +3,10 @@ import * as settings from '../../settings'
 import * as installations from '../../installations'
 import { writeAppLog } from '../appLog'
 import { dataDir } from '../paths'
-import { installOutputDir, resolveInstallModelSearchPaths } from '../models'
+import { resolveInstallModelSearchPaths } from '../models'
+import { effectiveFolderOf } from '../effectiveFolders'
+import { sharedFolder } from '../startupArgFolders'
+import { _runningSessions } from './runningSessions'
 import { classifyPaths, type DriveInfo } from '../storageInfo'
 import { sourceMap } from './shared'
 import { scrubAll } from '../../../shared/piiScrub'
@@ -71,10 +74,9 @@ export async function emitStorageTelemetry(installationId: string): Promise<void
     const primaryDir = search.downloadBaseDir
 
     const cachePath = (settings.get('cacheDir') as string | undefined) || settings.defaults.cacheDir
-    const useSharedIO = (inst.useSharedInputOutput as boolean | undefined) !== false
-    const outputPath = useSharedIO
-      ? (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
-      : (inst.outputDir as string | undefined) || installOutputDir(inst.installPath)
+    const outputPath =
+      effectiveFolderOf(inst, 'output', _runningSessions.get(inst.id))?.path ??
+      sharedFolder('output')
     const appDataPath = dataDir()
 
     const allPaths = [

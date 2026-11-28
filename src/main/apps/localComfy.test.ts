@@ -104,6 +104,7 @@ import type { InstallationRecord } from '../installations'
 import { sessionLifecycleEvents } from '../lib/ipc/shared'
 import * as local from './localComfy'
 import { busyAppOn } from './localAppEvents'
+import { _resetForTest as resetAutoStartOpen, startWithDesktopAndOpen } from './autoStartOpen'
 
 const { LOCAL_EVENT_CHANNEL, LOCAL_IDLE_STOP_MS, _resetForTest } = local
 
@@ -1489,6 +1490,25 @@ describe('the Auto start build, started when Desktop opens', () => {
     expect(getAllCrashes()).toEqual([])
   })
 
+  it('reports whether it is ready, so Desktop opens ComfyUI only for a build that came up', async () => {
+    startsWhenLaunched()
+    expect(await startWithDesktop()).toBe(true)
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+    expect(await startWithDesktop()).toBe(false)
+
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+    expect(await startWithDesktop()).toBe(false)
+
+    expect(
+      await local.startWithDesktop(
+        build({ sourceId: 'remote', installPath: '' }) as unknown as InstallationRecord
+      )
+    ).toBe(false)
+  })
+
   it('says nothing when its start was cancelled', async () => {
     mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
 
@@ -1496,6 +1516,154 @@ describe('the Auto start build, started when Desktop opens', () => {
 
     expect(mocks.broadcasts).toEqual([])
     expect(getAllCrashes()).toEqual([])
+  })
+
+  it('is not reported ready when it is a Legacy Desktop build, whose start never waits for ComfyUI to answer', async () => {
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      mocks.sessions.set(STUDIO, { port: 0 })
+      return { ok: true, mode: 'console' }
+    }
+
+    expect(await startWithDesktop()).toBe(false)
+    expect(launches).toHaveLength(1)
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
+  })
+
+  it('opens in a Desktop window only once its start is through, also when it restarts for new model folders after it came up', async () => {
+    let finishRestart: () => void = () => {}
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      running(STUDIO)
+      await new Promise<void>((resolve) => {
+        finishRestart = resolve
+      })
+      return { ok: true, mode: 'console', port: PORT }
+    }
+    const started = startWithDesktop()
+    await vi.advanceTimersByTimeAsync(0)
+
+    let answer: boolean | undefined
+    void local.opensInDesktopWindow(STUDIO).then((opens) => {
+      answer = opens
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(answer).toBeUndefined()
+
+    finishRestart()
+    expect(await started).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(answer).toBe(true)
+  })
+})
+
+describe('the ComfyUI window of the Auto start build, opened once it is ready', () => {
+  const opened: string[] = []
+  const openComfyWindow = async (installationId: string): Promise<void> => {
+    opened.push(installationId)
+    mocks.windows.set(installationId, { window: {} })
+  }
+  const startAndOpen = (over: Record<string, unknown> = {}) =>
+    startWithDesktopAndOpen(build(over) as unknown as InstallationRecord, openComfyWindow)
+
+  beforeEach(() => {
+    resetAutoStartOpen()
+    opened.length = 0
+  })
+
+  it('opens once the build Desktop started on launch is running', async () => {
+    startsWhenLaunched()
+
+    expect(await startAndOpen()).toBe(true)
+
+    expect(opened).toEqual([STUDIO])
+    expect(launches).toHaveLength(1)
+  })
+
+  it('starts a build set to Console only but opens no window for it', async () => {
+    startsWhenLaunched()
+
+    expect(await startAndOpen({ launchMode: 'console' })).toBe(false)
+
+    expect(launches).toHaveLength(1)
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+    expect(opened).toEqual([])
+  })
+
+  it('opens a build set to App window', async () => {
+    startsWhenLaunched()
+
+    expect(await startAndOpen({ launchMode: 'window' })).toBe(true)
+
+    expect(opened).toEqual([STUDIO])
+  })
+
+  it('opens only once per Desktop launch', async () => {
+    startsWhenLaunched()
+    await startAndOpen()
+    mocks.windows.delete(STUDIO)
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+
+    expect(await startAndOpen()).toBe(false)
+
+    expect(opened).toEqual([STUDIO])
+    expect(launches).toHaveLength(1)
+  })
+
+  it('opens nothing when a ComfyUI window for that build is already open', async () => {
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      running(STUDIO)
+      mocks.windows.set(STUDIO, { window: {} })
+      return { ok: true, mode: 'console', port: PORT }
+    }
+
+    expect(await startAndOpen()).toBe(false)
+
+    expect(opened).toEqual([])
+  })
+
+  it('opens nothing when the start fails, and Home still hears that it did not start', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+
+    expect(await startAndOpen()).toBe(false)
+
+    expect(opened).toEqual([])
+    expect(mocks.broadcasts).toMatchObject([['instance-crashed', { installationId: STUDIO }]])
+  })
+
+  it('opens nothing when the person cancelled the start before it was ready', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+
+    expect(await startAndOpen()).toBe(false)
+
+    expect(opened).toEqual([])
+    expect(mocks.broadcasts).toEqual([])
+  })
+
+  it('opens nothing when the person stopped the build as its start finished', async () => {
+    mocks.handleLaunch = async (ctx) => {
+      launches.push(ctx as Record<string, unknown>)
+      return { ok: true, mode: 'console', port: PORT }
+    }
+
+    expect(await startAndOpen()).toBe(false)
+
+    expect(opened).toEqual([])
+  })
+
+  it('opens nothing for a build the person started by hand', async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab' })]
+    startsWhenLaunched()
+    await startAndOpen()
+
+    running(LAB, LAB_PORT)
+    sessionLifecycleEvents.emit('changed')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(opened).toEqual([STUDIO])
   })
 })
 

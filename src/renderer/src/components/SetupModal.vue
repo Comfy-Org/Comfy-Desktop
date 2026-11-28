@@ -4,6 +4,7 @@ import { X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandTakeoverLayout from './BrandTakeoverLayout.vue'
 import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
+import { MODAL_TITLE_CLASS } from '../lib/modalTitle'
 
 defineOptions({ inheritAttrs: false })
 
@@ -98,7 +99,8 @@ const hostProps = computed(() =>
         >
           <h2
             v-if="title"
-            class="setup-modal-title m-0 text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"
+            class="setup-modal-title m-0 tracking-[-0.01em] text-neutral-100"
+            :class="MODAL_TITLE_CLASS"
           >
             {{ title }}
           </h2>

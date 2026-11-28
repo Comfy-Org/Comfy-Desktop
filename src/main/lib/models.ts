@@ -136,6 +136,17 @@ const SECONDARY_TYPE_DIRS: Readonly<Record<string, string[]>> = {
   controlnet: ['t2i_adapter']
 }
 
+export function modelFolderKind(dirName: string): string {
+  for (const [kind, dirs] of Object.entries(SECONDARY_TYPE_DIRS)) {
+    if (dirs.includes(dirName)) return kind
+  }
+  return mapLegacyFolderType(dirName)
+}
+
+export function isNonModelFolder(name: string): boolean {
+  return NON_MODEL_FOLDERS.has(name)
+}
+
 function samePath(a: string, b: string): boolean {
   return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }
@@ -375,6 +386,10 @@ export function resolveExtraModelPaths(yamlPath: string): ResolvedExtraPath[] {
   } catch {
     return []
   }
+  return extraModelPathsFromContent(yamlPath, content)
+}
+
+export function extraModelPathsFromContent(yamlPath: string, content: string): ResolvedExtraPath[] {
   const yamlDir = path.dirname(path.resolve(yamlPath))
   const out: ResolvedExtraPath[] = []
   for (const section of parseExtraModelsSections(content)) {
@@ -447,14 +462,13 @@ export interface InstallModelSearch {
   extraPaths: ResolvedExtraPath[]
 }
 
-export function resolveInstallModelSearchPaths(
-  inst: InstallationRecord,
-  sharedModelsDirs: string[]
-): InstallModelSearch {
-  const installPath = inst.installPath
-  const comfyDir = resolveComfyDir(installPath)
-  const builtinRoot = path.resolve(installModelsDir(installPath))
+export type InstallModelRoots = Omit<InstallModelSearch, 'extraPaths'>
 
+export function resolveInstallModelRoots(
+  inst: InstallationRecord,
+  sharedModelsDirs: string[],
+  builtinRoot: string = path.resolve(installModelsDir(inst.installPath))
+): InstallModelRoots {
   const { dirs: launcherRoots, primaryDir } = resolveLauncherModelDirs(inst, sharedModelsDirs)
   const primary = primaryDir ?? builtinRoot
 
@@ -466,8 +480,14 @@ export function resolveInstallModelSearchPaths(
     seen.add(key)
     modelRoots.push(root)
   }
+  return { downloadBaseDir: primary, modelRoots }
+}
 
+export function resolveInstallModelSearchPaths(
+  inst: InstallationRecord,
+  sharedModelsDirs: string[]
+): InstallModelSearch {
+  const comfyDir = resolveComfyDir(inst.installPath)
   const extraPaths = resolveExtraModelPaths(path.join(comfyDir, 'extra_model_paths.yaml'))
-
-  return { downloadBaseDir: primary, modelRoots, extraPaths }
+  return { ...resolveInstallModelRoots(inst, sharedModelsDirs), extraPaths }
 }

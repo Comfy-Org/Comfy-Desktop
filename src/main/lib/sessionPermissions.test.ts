@@ -66,6 +66,26 @@ describe('permission requests from pages in a guarded session', () => {
     expect(handedToTheOs()).toEqual(['mailto:hello@comfy.org'])
   })
 
+  it.each([
+    ['claude://code/new?q=Deploy%20my%20workflow', 'claude://code/new?q=Deploy%20my%20workflow'],
+    ['codex://new?prompt=Deploy%20my%20workflow', 'codex://new?prompt=Deploy%20my%20workflow']
+  ])('a link to %j is refused to the page and opened by the app instead', (externalURL, opened) => {
+    const { ask } = guardedSession()
+
+    expect(answerTo(ask, page(), 'openExternal', externalURL)).toBe(false)
+    expect(handedToTheOs()).toEqual([opened])
+  })
+
+  it.each(['claude://settings/new?q=x', 'claude://code/open?q=x', 'codex://settings?prompt=x'])(
+    'a link to another part of an agent app, %j, is refused and nothing reaches the OS',
+    (externalURL) => {
+      const { ask } = guardedSession()
+
+      expect(answerTo(ask, page(), 'openExternal', externalURL)).toBe(false)
+      expect(handedToTheOs()).toEqual([])
+    }
+  )
+
   it('an ordinary page keeps its other permissions', () => {
     const { ask } = guardedSession()
 
@@ -73,13 +93,14 @@ describe('permission requests from pages in a guarded session', () => {
     expect(answerTo(ask, page(), 'clipboard-read')).toBe(true)
   })
 
-  it('a page whose permissions are withheld gets nothing, mail links included', () => {
+  it('a page whose permissions are withheld gets nothing, mail and agent app links included', () => {
     const { ask } = guardedSession()
     const withheld = page()
     withholdPermissionsFrom(withheld)
 
     expect(answerTo(ask, withheld, 'media')).toBe(false)
     expect(answerTo(ask, withheld, 'openExternal', 'mailto:hello@comfy.org')).toBe(false)
+    expect(answerTo(ask, withheld, 'openExternal', 'claude://code/new?q=x')).toBe(false)
     expect(answerTo(ask, null, 'notifications')).toBe(false)
     expect(handedToTheOs()).toEqual([])
   })

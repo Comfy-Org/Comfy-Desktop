@@ -1,16 +1,21 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
+import { h } from 'vue'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import { useDialogs } from '../composables/useDialogs'
 
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
 import AppPageHost from './AppPageHost.vue'
+import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import type {
   AppBadge,
   AppCard,
   AppPagePlacement,
   AppPageStatus,
+  CatalogWorkflow,
   DraftClosingStop
 } from '../types/ipc'
 
@@ -59,7 +64,50 @@ const GENJUTSU: AppCard = {
   badges: [NEW_CHIP]
 }
 
+function catalogWorkflow(
+  over: Partial<CatalogWorkflow> & Pick<CatalogWorkflow, 'id' | 'title'>
+): CatalogWorkflow {
+  return {
+    description: '',
+    thumbnailUrl: COVER,
+    canOpenLocal: true,
+    canOpenCloud: true,
+    minComfyUIVersion: null,
+    hubUrl: `https://comfy.org/hub/workflows/${over.id}`,
+    longDescription: null,
+    author: null,
+    generationType: null,
+    useCases: [],
+    models: [],
+    uses: null,
+    license: null,
+    publishedAt: null,
+    media: [],
+    tutorialUrl: null,
+    ...over
+  }
+}
+
+const UPSCALE_WORKFLOW = catalogWorkflow({
+  id: 'upscale-workflow',
+  title: 'Upscale detail',
+  description: 'Restore a low-resolution picture.',
+  useCases: ['upscale-and-restore'],
+  models: ['SeedVR2'],
+  publishedAt: '2025-05-01'
+})
+const VIDEO_WORKFLOW = catalogWorkflow({
+  id: 'ltx-video',
+  title: 'LTX-2.3: Image to Video',
+  description: 'Bring a still picture to life.',
+  canOpenLocal: false,
+  useCases: ['generate-video'],
+  models: ['LTX-2.3'],
+  publishedAt: '2026-01-16'
+})
+
 const listApps = vi.fn<() => Promise<AppCard[]>>()
+const listCatalogWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const listHiddenApps = vi.fn()
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const hideAppPage = vi.fn()
@@ -77,12 +125,16 @@ let appsListChanged: () => void = () => {}
 
 async function mountApps(
   apps: AppCard[] | Promise<AppCard[]> = [CUTOUT, HDR, GENJUTSU],
-  props: { startWith?: AppCard } = {}
+  props: { startWith?: AppCard; tab?: 'apps' | 'workflows' } = {}
 ) {
   listApps.mockReturnValue(Promise.resolve(apps))
   const wrapper = mount(AppsView, { attachTo: page, props })
   await flushPromises()
   return wrapper
+}
+
+async function mountWorkflows() {
+  return mountApps(undefined, { tab: 'workflows' })
 }
 
 function srcOf(card: { element: Element }, role: string): string | null {
@@ -146,8 +198,10 @@ beforeEach(() => {
   page.style.cssText = `position: fixed; display: flex; left: 0; top: 0; width: ${WIDE_PAGE_WIDTH}px; height: 840px`
   document.body.append(page)
   showAppPage.mockResolvedValue('loading')
+  listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW])
   ;(window as unknown as { api: unknown }).api = {
     listApps,
+    listCatalogWorkflows,
     listHiddenApps,
     showAppPage,
     captureAppPage: vi.fn().mockResolvedValue(null),
@@ -200,6 +254,29 @@ describe('AppsView badge glass', () => {
     expect(card.find('[data-testid="app-badge-square"]').exists()).toBe(true)
     expect(card.find('[data-testid="app-badge-glass-picture"]').exists()).toBe(false)
   })
+
+  it('keeps the badges still while the picture zooms on hover, outside the zooming layer', async () => {
+    const wrapper = await mountApps([{ ...CUTOUT, badges: [CROWN] }])
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const picture = card.get('[data-testid="app-card-picture"]').element
+    const badges = card.get('[data-testid="app-badges"]').element
+
+    expect(picture.className).toContain('group-hover:scale-[1.04]')
+    expect(picture.contains(badges)).toBe(false)
+    expect(badges.parentElement).toBe(card.element)
+
+    const restingPicture = picture.getBoundingClientRect()
+    const restingBadges = badges.getBoundingClientRect()
+    await userEvent.hover(card.element)
+    await expect
+      .poll(() => picture.getBoundingClientRect().width, { timeout: 2_000 })
+      .toBeCloseTo(restingPicture.width * 1.04, 0)
+    const hoveredBadges = badges.getBoundingClientRect()
+    expect(hoveredBadges.left).toBe(restingBadges.left)
+    expect(hoveredBadges.top).toBe(restingBadges.top)
+    expect(hoveredBadges.width).toBe(restingBadges.width)
+    await userEvent.unhover(card.element)
+  })
 })
 
 describe('AppsView', () => {
@@ -207,6 +284,7 @@ describe('AppsView', () => {
     const wrapper = await mountApps()
 
     expect(wrapper.get('h1').text()).toBe('Apps')
+    expect(wrapper.find('[data-testid="explore-workflows-tab"]').exists()).toBe(false)
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
     expect(card.text()).toContain('Remove Background')
     expect(card.text()).toContain('Cut the subject out of a picture or video.')
@@ -785,7 +863,7 @@ describe('AppsView', () => {
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
   })
 
-  it("draws an app's badges on the top left of its picture, the crown alone in the credits gold, and none on an app without badges", async () => {
+  it("draws an app's badges on the top left of its picture, the crown in the credits gold beside the chip, and none on an app without badges", async () => {
     const wrapper = await mountApps()
 
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
@@ -796,8 +874,12 @@ describe('AppsView', () => {
     expect(Math.round(badgesBox.top - picture.top)).toBe(8)
     expect(
       badges.findAll('[data-badge-style]').map((badge) => badge.attributes('data-badge-style'))
-    ).toEqual(['crown'])
-    expect(Math.round(badgesBox.width)).toBe(28)
+    ).toEqual(['crown', 'chip'])
+    const crownBox = badges.get('[data-testid="app-badge-square"]').element.getBoundingClientRect()
+    const chipBox = badges.get('[data-testid="app-badge-new"]').element.getBoundingClientRect()
+    expect(Math.round(crownBox.width)).toBe(28)
+    expect(chipBox.top).toBe(crownBox.top)
+    expect(chipBox.left).toBeGreaterThan(crownBox.right)
     document.documentElement.dataset.theme = 'dark'
     expect(getComputedStyle(badges.get('[data-testid="app-badge-crown"]').element).color).toBe(
       'rgb(233, 196, 34)'
@@ -910,5 +992,199 @@ describe('AppsView', () => {
     expect(listHiddenApps).not.toHaveBeenCalled()
     expect(wrapper.findAll(APP_CARDS)).toHaveLength(3)
     expect(wrapper.text()).not.toContain('Explore Worlds')
+  })
+})
+
+describe('Explore Workflows', () => {
+  function cardIds(wrapper: Awaited<ReturnType<typeof mountApps>>): string[] {
+    return wrapper
+      .findAll('[data-testid="workflows-grid"] [data-testid^="workflow-card-"]')
+      .map((card) => card.attributes('data-testid')!.replace('workflow-card-', ''))
+  }
+
+  function onMenu(testId: string): HTMLElement {
+    const found = document.body.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+    if (!found) throw new Error(`${testId} is not on the page`)
+    return found
+  }
+
+  it('narrows the workflows by use case and where they run, and clears the filters again', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
+    const wrapper = await mountWorkflows()
+    expect(cardIds(wrapper)).toEqual(['upscale-workflow', 'ltx-video'])
+
+    await userEvent.click(wrapper.get('[data-testid="explore-filters"]').element)
+    await userEvent.click(onMenu('explore-filter-useCase'))
+    await userEvent.click(onMenu('explore-filter-useCase-generate-video'))
+    await flushPromises()
+
+    expect(cardIds(wrapper)).toEqual(['ltx-video'])
+    expect(wrapper.get('[data-testid="explore-filters-count"]').text()).toBe('1')
+    expect(onMenu('explore-filter-value-useCase').textContent?.trim()).toBe('Video generation')
+
+    await userEvent.click(onMenu('explore-filter-runsOn'))
+    await userEvent.click(onMenu('explore-filter-runsOn-local'))
+    await flushPromises()
+    await userEvent.keyboard('{Escape}')
+
+    expect(cardIds(wrapper)).toEqual([])
+    expect(wrapper.get('[data-testid="explore-filters-count"]').text()).toBe('2')
+    await wrapper.get('[data-testid="workflows-clear-filters"]').trigger('click')
+    await flushPromises()
+
+    expect(cardIds(wrapper)).toEqual(['upscale-workflow', 'ltx-video'])
+    expect(wrapper.find('[data-testid="explore-filters-count"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('leaves ⌘/ and ⌘⌫ to the workflow page while it is open, even from its menus', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
+    const wrapper = await mountWorkflows()
+    await userEvent.click(wrapper.get('[data-testid="explore-filters"]').element)
+    await userEvent.click(onMenu('explore-filter-useCase'))
+    await userEvent.click(onMenu('explore-filter-useCase-generate-video'))
+    await userEvent.keyboard('{Escape}')
+    await flushPromises()
+    expect(cardIds(wrapper)).toEqual(['ltx-video'])
+    const search = wrapper.get('input').element
+    let searchFocused = 0
+    search.addEventListener('focus', () => (searchFocused += 1))
+    const workflowPage = mount(
+      () =>
+        h(DesktopDialogSurface, { open: true, ariaLabel: 'LTX Video' }, () =>
+          h(
+            Menu,
+            { modal: false, label: 'Open in' },
+            {
+              trigger: () =>
+                h('button', { type: 'button', 'data-testid': 'workflow-page-menu' }, 'Open in'),
+              default: () => h(MenuItem, () => 'This computer')
+            }
+          )
+        ),
+      { attachTo: document.body }
+    )
+    await flushPromises()
+    await userEvent.click(onMenu('workflow-page-menu'))
+    await flushPromises()
+
+    await userEvent.keyboard('{Control>}/{/Control}')
+    await userEvent.keyboard('{Control>}{Backspace}{/Control}')
+    await flushPromises()
+
+    expect(searchFocused).toBe(0)
+    expect(cardIds(wrapper)).toEqual(['ltx-video'])
+
+    workflowPage.unmount()
+    await flushPromises()
+    const press = (key: string): void => {
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true })
+      )
+    }
+    press('/')
+    press('Backspace')
+    await flushPromises()
+
+    expect(document.activeElement).toBe(search)
+    expect(cardIds(wrapper)).toEqual(['upscale-workflow', 'ltx-video'])
+    wrapper.unmount()
+  })
+
+  it('keeps the toolbar above the cards when the list is longer than the window', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue(
+      Array.from({ length: 40 }, (_, index) =>
+        catalogWorkflow({ id: `workflow-${index}`, title: `Workflow ${index}` })
+      )
+    )
+    const wrapper = await mountWorkflows()
+
+    const toolbarBottom = wrapper
+      .get('[data-testid="explore-filters"]')
+      .element.getBoundingClientRect().bottom
+    const firstCardTop = wrapper
+      .get('[data-testid="workflow-card-workflow-0"]')
+      .element.getBoundingClientRect().top
+    expect(toolbarBottom).toBeLessThanOrEqual(firstCardTop)
+    wrapper.unmount()
+  })
+
+  it('sorts newest first and keeps the chosen card size for next time', async () => {
+    window.localStorage.clear()
+    listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
+    const wrapper = await mountWorkflows()
+    const columns = () =>
+      getComputedStyle(
+        wrapper.get('[data-testid="workflows-grid"]').element
+      ).gridTemplateColumns.split(' ').length
+    const mediumColumns = columns()
+
+    await userEvent.click(wrapper.get('[data-testid="explore-layout"]').element)
+    await userEvent.click(onMenu('explore-size-large'))
+    await userEvent.click(onMenu('explore-sort'))
+    onMenu('explore-sort-newest').click()
+    await flushPromises()
+
+    expect(cardIds(wrapper)).toEqual(['ltx-video', 'upscale-workflow'])
+    expect(columns()).toBeLessThan(mediumColumns)
+    wrapper.unmount()
+
+    const again = await mountWorkflows()
+    expect(cardIds(again)).toEqual(['ltx-video', 'upscale-workflow'])
+    again.unmount()
+  })
+
+  it('loads catalog workflows on demand with independent searches for Apps and Workflows', async () => {
+    const wrapper = await mountApps()
+
+    await wrapper.get('input').setValue('hdr')
+    expect(listCatalogWorkflows).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ tab: 'workflows' })
+    await flushPromises()
+
+    expect(listCatalogWorkflows).toHaveBeenCalledOnce()
+    const workflow = wrapper.get('[data-testid="workflow-card-upscale-workflow"]')
+    expect(workflow.get('img').attributes('src')).toBe(COVER)
+    expect(workflow.text()).toContain(UPSCALE_WORKFLOW.description)
+    await workflow.trigger('click')
+    expect(wrapper.emitted('open-workflow')).toEqual([[UPSCALE_WORKFLOW]])
+    expect(showAppPage).not.toHaveBeenCalled()
+
+    await wrapper.get('input').setValue('video')
+    expect(wrapper.get('[data-testid="workflows-no-matches"]').text()).toContain('video')
+    await wrapper.setProps({ tab: 'apps' })
+    expect(wrapper.findAll(APP_CARDS)).toHaveLength(1)
+    expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').exists()).toBe(true)
+
+    await wrapper.setProps({ tab: 'workflows' })
+    await flushPromises()
+    expect(listCatalogWorkflows).toHaveBeenCalledOnce()
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('video')
+  })
+
+  it('heads the list Workflows and shows only workflows, with no switch to Apps', async () => {
+    const wrapper = await mountWorkflows()
+
+    expect(wrapper.get('h1').text()).toBe('Workflows')
+    expect(wrapper.find('[data-testid="workflows-view"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="workflow-card-upscale-workflow"]').isVisible()).toBe(true)
+    expect(wrapper.findAll(APP_CARDS).filter((card) => card.isVisible())).toEqual([])
+    expect(wrapper.find('[data-testid="explore-apps-tab"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="explore-workflows-tab"]').exists()).toBe(false)
+  })
+
+  it('offers a retry on Workflows when the catalog fails', async () => {
+    listCatalogWorkflows.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = await mountWorkflows()
+    expect(wrapper.get('[data-testid="workflows-failed"]').isVisible()).toBe(true)
+
+    await wrapper.get('[data-testid="workflows-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="workflow-card-upscale-workflow"]').isVisible()).toBe(true)
   })
 })
