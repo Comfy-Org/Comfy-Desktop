@@ -376,7 +376,9 @@ function reportRendererError(payload: {
         exitCode: context['exitCode'],
         exit_code: context['exit_code'],
         type: context['type'],
-        error_type: context['error_type']
+        error_type: context['error_type'],
+        code: context['code'],
+        outcome: context['outcome']
       })
     } catch {}
   }
