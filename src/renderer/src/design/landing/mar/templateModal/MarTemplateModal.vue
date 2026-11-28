@@ -170,16 +170,52 @@ const examples = computed(() =>
 )
 const exampleAt = ref(0)
 const example = computed(() => examples.value[exampleAt.value])
-const stagePic = computed(() => example.value?.pic ?? media.value?.hero ?? '')
+const stagePic = computed(
+  () => feedPick.value?.pic ?? example.value?.pic ?? media.value?.hero ?? ''
+)
+const stageClip = computed(() => feedPick.value?.clip ?? example.value?.clip)
 function pickExample(i: number): void {
-  if (i === exampleAt.value) return
+  if (i === exampleAt.value && !feedPick.value) return
+  feedPick.value = undefined
   exampleAt.value = i
   zoom.value = 100
 }
+const stripOn = computed(() => tplFeed.id === 'strip')
 const feedItems = computed(() =>
-  tplFeed.id === 'feed' && template.value && !saved.value ? feedFor(template.value) : []
+  tplFeed.id !== 'off' && template.value && !saved.value ? feedFor(template.value) : []
 )
-const hasFeed = computed(() => feedItems.value.length > 0)
+const seeAll = ref(false)
+const hasFeed = computed(() => feedItems.value.length > 0 && (!stripOn.value || seeAll.value))
+const stripFeed = computed(() => (stripOn.value ? feedItems.value : []))
+const stripWrap = ref<HTMLElement>()
+const stripHover = ref<{ item: FeedItem; x: number }>()
+function hoverStrip(e: Event, x?: FeedItem): void {
+  if (!x) {
+    stripHover.value = undefined
+    return
+  }
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const left = stripWrap.value?.getBoundingClientRect().left ?? 0
+  stripHover.value = { item: x, x: r.left + r.width / 2 - left }
+}
+const stripFade = ref({ start: false, end: true })
+function fadeStrip(e: Event): void {
+  const el = e.currentTarget as HTMLElement
+  stripFade.value = {
+    start: el.scrollLeft > 1,
+    end: el.scrollLeft + el.clientWidth < el.scrollWidth - 1
+  }
+}
+function pickStrip(x: FeedItem): void {
+  stripHover.value = undefined
+  if (feedPick.value?.id === x.id) return
+  pickFeed(x)
+  zoom.value = 100
+}
+function pickFromGrid(x: FeedItem): void {
+  pickFeed(x)
+  if (stripOn.value && feedPick.value) seeAll.value = false
+}
 const feedSort = ref<FeedSort>('recent')
 const feedSorted = computed(() => sortFeed(feedItems.value, feedSort.value))
 const feedPick = ref<FeedItem>()
@@ -606,6 +642,9 @@ watch(
     exampleAt.value = 0
     feedPick.value = undefined
     feedSort.value = 'recent'
+    seeAll.value = false
+    stripHover.value = undefined
+    stripFade.value = { start: false, end: true }
     panelTab.value = defaultTab()
     buildMenu.value = false
     ratio.value = 16 / 9
@@ -819,6 +858,11 @@ function focusPicker(e: Event): void {
 }
 /** Escape closes an open menu first, then the modal. */
 function onEscape(e: KeyboardEvent): void {
+  if (seeAll.value) {
+    e.preventDefault()
+    seeAll.value = false
+    return
+  }
   if (zoomCtl.value?.open) {
     e.preventDefault()
     zoomCtl.value.open = false
@@ -1261,7 +1305,7 @@ const full = computed(() => can.value.onboarding)
           <header class="mad-bar">
             <MarSeg v-model="view" :options="VIEWS" label="Preview" class="mar-tpl-views" />
             <span
-              v-if="view === 'result' && !hasFeed && example?.madeWith"
+              v-if="view === 'result' && !hasFeed && !feedPick && example?.madeWith"
               class="mar-tpl-made-with"
               >Made with {{ example.madeWith }}</span
             >
@@ -1269,15 +1313,15 @@ const full = computed(() => can.value.onboarding)
           <div
             v-if="view === 'result' && !hasFeed"
             class="mad-view"
-            :class="examples.length > 0 && 'has-strip'"
+            :class="(examples.length > 0 || stripFeed.length > 0) && 'has-strip'"
           >
             <div class="mad-fit" :class="natural > 0 && 'is-natural'" :style="fitStyle">
               <div ref="mediaEl" class="mad-media" :style="{ scale: zoom / 100 }">
                 <video
-                  v-if="example?.clip"
-                  :key="example.id"
-                  :src="example.clip"
-                  :poster="example.pic"
+                  v-if="stageClip"
+                  :key="feedPick?.id ?? example?.id"
+                  :src="stageClip"
+                  :poster="stagePic"
                   autoplay
                   muted
                   loop
@@ -1292,7 +1336,7 @@ const full = computed(() => can.value.onboarding)
                   draggable="false"
                   @load="measure"
                 />
-                <template v-if="media.quadrants && exampleAt === 0">
+                <template v-if="media.quadrants && exampleAt === 0 && !feedPick">
                   <span
                     v-for="(q, i) in media.quadrants"
                     :key="q"
@@ -1305,7 +1349,7 @@ const full = computed(() => can.value.onboarding)
             </div>
           </div>
           <div v-else-if="view === 'result'" ref="feedEl" class="mar-tpl-feed" data-tpl-feed>
-            <div class="mar-tpl-feed-hero">
+            <div v-if="!stripOn" class="mar-tpl-feed-hero">
               <div class="mad-fit" :class="natural > 0 && 'is-natural'" :style="fitStyle">
                 <div class="mad-media">
                   <video
@@ -1345,10 +1389,27 @@ const full = computed(() => can.value.onboarding)
                 </div>
               </div>
             </div>
-            <section class="mar-tpl-feed-sec" aria-label="Made with this workflow">
+            <section
+              class="mar-tpl-feed-sec"
+              :class="stripOn && 'is-all'"
+              aria-label="Made with this workflow"
+            >
               <header class="mar-tpl-feed-head">
                 <h3 class="mad-label">Made with this workflow · {{ feedItems.length }} results</h3>
-                <MarSeg v-model="feedSort" :options="FEED_SORTS" label="Sort by" tone="text" />
+                <span class="mar-tpl-feed-tools">
+                  <MarSeg v-model="feedSort" :options="FEED_SORTS" label="Sort by" tone="text" />
+                  <Tooltip v-if="stripOn" content="Back to the preview">
+                    <button
+                      type="button"
+                      class="mad-icon mar-tpl-feed-clear"
+                      aria-label="Back to the preview"
+                      data-tpl-see-all-close
+                      @click="seeAll = false"
+                    >
+                      <X :size="14" />
+                    </button>
+                  </Tooltip>
+                </span>
               </header>
               <div class="mar-tpl-feed-grid">
                 <button
@@ -1359,7 +1420,7 @@ const full = computed(() => can.value.onboarding)
                   :aria-current="feedPick?.id === x.id"
                   :aria-label="`${x.prompt}, by @${x.creator.handle}`"
                   data-tpl-feed-item
-                  @click="pickFeed(x)"
+                  @click="pickFromGrid(x)"
                   @mouseenter="playTile($event, true)"
                   @mouseleave="playTile($event, false)"
                 >
@@ -1396,8 +1457,74 @@ const full = computed(() => can.value.onboarding)
           <!-- Zoom, where the asset view keeps it, bottom right, for the
                picture and the graph alike. -->
           <footer v-if="!hasFeed || view !== 'result'" class="mad-foot">
+            <div
+              v-if="view === 'result' && stripFeed.length"
+              ref="stripWrap"
+              class="mar-tpl-strip"
+              :class="stripHover && 'is-hover'"
+              data-tpl-strip
+            >
+              <h3 class="mad-label mar-tpl-strip-label">Made with this workflow</h3>
+              <nav
+                class="mad-strip mar-tpl-examples"
+                :class="[stripFade.start && 'is-fade-start', stripFade.end && 'is-fade-end']"
+                aria-label="Made with this workflow"
+                @scroll.passive="fadeStrip"
+              >
+                <button
+                  v-for="(x, i) in examples"
+                  :key="x.id"
+                  type="button"
+                  class="mad-thumb"
+                  :aria-current="i === exampleAt && !feedPick"
+                  :aria-label="`Example ${i + 1} of ${examples.length}`"
+                  :title="x.madeWith ? `Made with ${x.madeWith}` : `Example ${i + 1}`"
+                  data-tpl-example
+                  @click="pickExample(i)"
+                >
+                  <img :src="x.pic" alt="" loading="lazy" draggable="false" />
+                  <Film v-if="x.clip" :size="11" class="mar-tpl-example-clip" />
+                </button>
+                <button
+                  v-for="x in stripFeed"
+                  :key="x.id"
+                  type="button"
+                  class="mad-thumb"
+                  :aria-current="feedPick?.id === x.id"
+                  :aria-label="`${x.prompt}, by @${x.creator.handle}`"
+                  data-tpl-strip-item
+                  @click="pickStrip(x)"
+                  @mouseenter="hoverStrip($event, x)"
+                  @mouseleave="hoverStrip($event)"
+                  @focus="hoverStrip($event, x)"
+                  @blur="hoverStrip($event)"
+                >
+                  <img :src="x.pic" alt="" loading="lazy" draggable="false" />
+                  <Film v-if="x.clip" :size="11" class="mar-tpl-example-clip" />
+                </button>
+                <button
+                  type="button"
+                  class="mad-thumb mar-tpl-see-all"
+                  :aria-label="`See all ${feedItems.length}`"
+                  data-tpl-see-all
+                  @click="seeAll = true"
+                >
+                  <span>See all</span><b>{{ feedItems.length }}</b>
+                </button>
+              </nav>
+              <span
+                v-if="stripHover"
+                class="mar-tpl-strip-who"
+                :style="{ left: `${stripHover.x}px` }"
+                aria-hidden="true"
+                ><Avatar size="xs" class="mar-tpl-feed-avatar">{{
+                  initialOf(stripHover.item.creator)
+                }}</Avatar
+                >{{ stripHover.item.creator.name }}</span
+              >
+            </div>
             <nav
-              v-if="view === 'result' && examples.length"
+              v-else-if="view === 'result' && examples.length"
               class="mad-strip mar-tpl-examples"
               aria-label="Example results"
             >
