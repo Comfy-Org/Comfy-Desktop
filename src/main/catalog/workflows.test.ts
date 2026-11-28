@@ -36,8 +36,29 @@ function catalogItem(over: {
   }
 }
 
-function serveCatalog(pages: { desktop: unknown[]; everything: unknown[] }): void {
+const UPSCALE_TEMPLATE = { name: 'upscale_and_restore', title: 'Upscale and restore detail' }
+
+function templateIndex(templates: Record<string, unknown>[] = [UPSCALE_TEMPLATE]): unknown {
+  return [{ title: 'Image', templates }]
+}
+
+function isTemplateIndexRequest(url: string): boolean {
+  return new URL(url).pathname === '/templates/index.json'
+}
+
+function catalogRequests(): string[] {
+  return mockedFetchJSON.mock.calls
+    .map(([url]) => url)
+    .filter((url) => new URL(url).pathname === '/api/v1/catalog/items')
+}
+
+function serveCatalog(pages: {
+  desktop: unknown[]
+  everything: unknown[]
+  templates?: Record<string, unknown>[]
+}): void {
   mockedFetchJSON.mockImplementation(async (url) => {
+    if (isTemplateIndexRequest(url)) return templateIndex(pages.templates)
     const surface = new URL(url).searchParams.get('surface')
     return { items: surface === 'desktop_starters' ? pages.desktop : pages.everything }
   })
@@ -160,7 +181,7 @@ describe('Home example workflows from the Comfy content catalog', () => {
     expect(workflow?.media).toEqual([])
   })
 
-  it("falls back to the catalog's own order while no workflow is marked for Desktop", async () => {
+  it("falls back to the catalog's templates in its own order while none is marked for Desktop", async () => {
     serveCatalog({
       desktop: [],
       everything: [catalogItem({ uid: 'first' }), catalogItem({ uid: 'second' })]
@@ -169,6 +190,124 @@ describe('Home example workflows from the Comfy content catalog', () => {
     const workflows = await listHomeWorkflows('en')
 
     expect(workflows.map((workflow) => workflow.id)).toEqual(['first', 'second'])
+  })
+
+  it('shows only official templates, never the workflows people published to the Hub', async () => {
+    serveCatalog({
+      desktop: [],
+      everything: [
+        catalogItem({ uid: 'published-to-hub', data: { title: 'My upscaler with extra packs' } }),
+        catalogItem({ uid: 'template' })
+      ]
+    })
+
+    const workflows = await listHomeWorkflows('en')
+
+    expect(workflows.map((workflow) => workflow.id)).toEqual(['template'])
+  })
+
+  it('falls back to the templates when what the catalog marks for Desktop is not one', async () => {
+    serveCatalog({
+      desktop: [catalogItem({ uid: 'hub-pick', data: { title: 'A Hub favourite' } })],
+      everything: [catalogItem({ uid: 'template' })]
+    })
+
+    const workflows = await listHomeWorkflows('en')
+
+    expect(workflows.map((workflow) => workflow.id)).toEqual(['template'])
+  })
+
+  it('leaves out a template that needs custom nodes, whether the template list or the catalog says so', async () => {
+    serveCatalog({
+      templates: [
+        UPSCALE_TEMPLATE,
+        { name: 'video_ltx_i2v', title: 'LTX: Image to Video', requiresCustomNodes: ['kjnodes'] }
+      ],
+      desktop: [],
+      everything: [
+        catalogItem({ uid: 'listed-as-custom', data: { title: 'LTX: Image to Video' } }),
+        catalogItem({
+          uid: 'catalog-says-custom',
+          data: { requires_custom_nodes: ['comfyui_essentials'] }
+        }),
+        catalogItem({ uid: 'native', data: { requires_custom_nodes: [] } })
+      ]
+    })
+
+    const workflows = await listHomeWorkflows('en')
+
+    expect(workflows.map((workflow) => workflow.id)).toEqual(['native'])
+  })
+
+  it('goes by the template name the catalog gives, and only by the title when it gives none', async () => {
+    serveCatalog({
+      templates: [
+        { name: 'template_qwen_multiangle', title: 'Qwen: Multiple Angles' },
+        { name: 'video_wan_s2v', title: 'Make your character talk', requiresCustomNodes: ['wan'] },
+        { name: 'image_talking_card', title: 'Make a character talk' }
+      ],
+      desktop: [],
+      everything: [
+        catalogItem({
+          uid: 'renamed-template',
+          data: { template_name: 'template_qwen_multiangle', title: 'See a new angle' }
+        }),
+        catalogItem({
+          uid: 'custom-by-name',
+          data: { template_name: 'video_wan_s2v', title: 'Make a character talk' }
+        }),
+        catalogItem({
+          uid: 'unlisted-name',
+          data: { template_name: 'not_released_yet', title: 'Make a character talk' }
+        })
+      ]
+    })
+
+    const workflows = await listHomeWorkflows('en')
+
+    expect(workflows.map((workflow) => workflow.id)).toEqual(['renamed-template'])
+  })
+
+  it('leaves out a title that several templates share when any of them needs custom nodes', async () => {
+    serveCatalog({
+      templates: [
+        { name: 'image_flux_dev', title: 'Flux Dev' },
+        { name: 'image_flux_dev_lora', title: 'flux dev', requiresCustomNodes: ['lora-pack'] }
+      ],
+      desktop: [],
+      everything: [catalogItem({ uid: 'ambiguous', data: { title: 'Flux Dev' } })]
+    })
+
+    expect(await listHomeWorkflows('en')).toEqual([])
+  })
+
+  it('reads further catalog pages until the Home row is full, and stops after a few', async () => {
+    mockedFetchJSON.mockImplementation(async (url) => {
+      if (isTemplateIndexRequest(url)) return templateIndex()
+      const cursor = Number(new URL(url).searchParams.get('cursor') ?? 0)
+      return {
+        items: [
+          catalogItem({ uid: `hub-${cursor}`, data: { title: 'Not a template' } }),
+          ...(cursor === 1 ? [catalogItem({ uid: 'template-on-page-two' })] : [])
+        ],
+        has_more: true,
+        next_cursor: String(cursor + 1)
+      }
+    })
+
+    const workflows = await listHomeWorkflows('en')
+
+    expect(workflows.map((workflow) => workflow.id)).toEqual(['template-on-page-two'])
+    expect(catalogRequests()).toHaveLength(3)
+  })
+
+  it('reports a failure when the template list cannot be read', async () => {
+    mockedFetchJSON.mockImplementation(async (url) => {
+      if (isTemplateIndexRequest(url)) throw new Error('templates offline')
+      return { items: [catalogItem({})] }
+    })
+
+    await expect(listHomeWorkflows('en')).rejects.toThrow('templates offline')
   })
 
   it('never shows more cards than the Home row holds', async () => {
@@ -261,18 +400,33 @@ describe('Home example workflows from the Comfy content catalog', () => {
   })
 
   it('reports a failure when the catalog answers with something that is not a list', async () => {
-    mockedFetchJSON.mockResolvedValue({ code: 'invalid', message: 'invalid catalog query' })
+    mockedFetchJSON.mockImplementation(async (url) =>
+      isTemplateIndexRequest(url)
+        ? templateIndex()
+        : { code: 'invalid', message: 'invalid catalog query' }
+    )
 
-    await expect(listHomeWorkflows('en')).rejects.toThrow()
+    await expect(listHomeWorkflows('en')).rejects.toThrow('Catalog response has no items list')
   })
 
-  it('asks the catalog once while several pages wait for the same list', async () => {
+  it('reports a failure when the template list is not a list', async () => {
+    mockedFetchJSON.mockImplementation(async (url) =>
+      isTemplateIndexRequest(url) ? { templates: [] } : { items: [catalogItem({})] }
+    )
+
+    await expect(listHomeWorkflows('en')).rejects.toThrow('Template index is not a list')
+  })
+
+  it('asks the catalog and the template list once while several pages wait for the same list', async () => {
     serveCatalog({ desktop: [catalogItem({})], everything: [] })
 
     await Promise.all([listHomeWorkflows('en'), listHomeWorkflows('en'), listHomeWorkflows('en')])
     await listHomeWorkflows('en')
 
-    expect(mockedFetchJSON).toHaveBeenCalledTimes(1)
+    expect(catalogRequests()).toHaveLength(1)
+    expect(mockedFetchJSON.mock.calls.filter(([url]) => isTemplateIndexRequest(url))).toHaveLength(
+      1
+    )
   })
 })
 
@@ -307,9 +461,14 @@ describe('opening an example workflow', () => {
 
   it('opens a card from a list that arrived while the language was being switched', async () => {
     let answerEnglish: (page: unknown) => void = () => {}
-    mockedFetchJSON
-      .mockImplementationOnce(() => new Promise((resolve) => (answerEnglish = resolve)))
-      .mockResolvedValue({ items: [catalogItem({ uid: 'chinese-card' })] })
+    let catalogAnswers = 0
+    mockedFetchJSON.mockImplementation((url) => {
+      if (isTemplateIndexRequest(url)) return Promise.resolve(templateIndex())
+      catalogAnswers += 1
+      return catalogAnswers === 1
+        ? new Promise((resolve) => (answerEnglish = resolve))
+        : Promise.resolve({ items: [catalogItem({ uid: 'chinese-card' })] })
+    })
 
     const english = listHomeWorkflows('en')
     await listHomeWorkflows('zh')
@@ -361,6 +520,15 @@ describe('the dedicated workflow catalog', () => {
 
     await expect(listCatalogWorkflows('en')).rejects.toThrow('did not finish')
     expect(mockedFetchJSON).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps every Hub workflow, template or not, without asking for the template list', async () => {
+    mockedFetchJSON.mockResolvedValue({
+      items: [catalogItem({ uid: 'hub-pick', data: { title: 'A Hub favourite' } })]
+    })
+
+    expect((await listCatalogWorkflows('en')).map((workflow) => workflow.id)).toEqual(['hub-pick'])
+    expect(mockedFetchJSON.mock.calls.some(([url]) => isTemplateIndexRequest(url))).toBe(false)
   })
 
   it('stops after a hundred pages when the catalog never says it is done', async () => {

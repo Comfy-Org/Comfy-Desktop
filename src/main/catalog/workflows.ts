@@ -11,6 +11,8 @@ export const HOME_WORKFLOW_LIMIT = 12
 const HUB_WORKFLOW_PATH_PREFIX = '/hub/workflows/'
 const CATALOG_PAGE_SIZE = 100
 const MAX_CATALOG_PAGES = 100
+const MAX_HOME_CATALOG_PAGES = 3
+const TEMPLATE_INDEX_PATH = '/templates/index.json'
 const WORKFLOW_FILE_KEYS = ['$.workflow_files[0].file', '$.workflow_versions[0].download'] as const
 const CATALOG_MEDIA_PATH_PREFIX = '/catalog-media/'
 const DESKTOP_SURFACE = 'desktop_starters'
@@ -53,6 +55,56 @@ export function catalogWorkflowsUrl(
   url.searchParams.set('limit', String(limit))
   if (cursor) url.searchParams.set('cursor', cursor)
   return url.toString()
+}
+
+function templateIndexUrl(): string {
+  return new URL(TEMPLATE_INDEX_PATH, CLOUD_CONFIG.issuer).toString()
+}
+
+interface TemplateIndex {
+  nativeByName: Map<string, boolean>
+  nativeByTitle: Map<string, boolean>
+}
+
+function listsCustomNodes(value: unknown): boolean {
+  if (value === undefined || value === null || value === false) return false
+  return !Array.isArray(value) || value.length > 0
+}
+
+function titleKey(title: string): string {
+  return title.toLowerCase()
+}
+
+function noteTemplate(byKey: Map<string, boolean>, key: string, native: boolean): void {
+  byKey.set(key, (byKey.get(key) ?? true) && native)
+}
+
+function parseTemplateIndex(raw: unknown): TemplateIndex {
+  if (!Array.isArray(raw)) throw new Error('Template index is not a list of categories')
+  const index: TemplateIndex = { nativeByName: new Map(), nativeByTitle: new Map() }
+  for (const category of raw) {
+    const templates = asRecord(category)?.templates
+    if (!Array.isArray(templates)) continue
+    for (const entry of templates) {
+      const template = asRecord(entry)
+      if (!template) continue
+      const native = !listsCustomNodes(template.requiresCustomNodes)
+      const name = text(template.name)
+      const title = text(template.title)
+      if (name) noteTemplate(index.nativeByName, name, native)
+      if (title) noteTemplate(index.nativeByTitle, titleKey(title), native)
+    }
+  }
+  return index
+}
+
+function isNativeTemplate(item: unknown, index: TemplateIndex): boolean {
+  const data = asRecord(asRecord(item)?.data)
+  if (!data || listsCustomNodes(data.requires_custom_nodes)) return false
+  const name = text(data.template_name)
+  if (name) return index.nativeByName.get(name) === true
+  const title = text(data.title)
+  return title !== null && index.nativeByTitle.get(titleKey(title)) === true
 }
 
 function translationFor(data: JsonRecord, locale: string): JsonRecord | null {
@@ -253,11 +305,13 @@ export function toCatalogWorkflow(item: unknown, locale: string): ResolvedWorkfl
 
 function parseCatalogPage(
   raw: unknown,
-  locale: string
+  locale: string,
+  keep: (item: unknown) => boolean = () => true
 ): { workflows: ResolvedWorkflow[]; nextCursor: string | null } {
   const page = asRecord(raw)
   if (!page || !Array.isArray(page.items)) throw new Error('Catalog response has no items list')
   const workflows = page.items.flatMap((item) => {
+    if (!keep(item)) return []
     const workflow = toCatalogWorkflow(item, locale)
     return workflow === null ? [] : [workflow]
   })
@@ -277,16 +331,13 @@ function uniqueWorkflows(workflows: ResolvedWorkflow[]): ResolvedWorkflow[] {
   })
 }
 
-async function fetchPage(url: string): Promise<unknown> {
+async function withinTimeout<T>(request: Promise<T>, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      fetchJSON(url, { refresh: true }),
+      request,
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('Catalog workflows request timed out')),
-          FETCH_TIMEOUT_MS
-        )
+        timer = setTimeout(() => reject(new Error(`${what} request timed out`)), FETCH_TIMEOUT_MS)
         timer.unref?.()
       })
     ])
@@ -295,14 +346,37 @@ async function fetchPage(url: string): Promise<unknown> {
   }
 }
 
-async function homePage(surface: string | null, locale: string): Promise<ResolvedWorkflow[]> {
-  const { workflows } = parseCatalogPage(await fetchPage(catalogWorkflowsUrl(surface)), locale)
-  return uniqueWorkflows(workflows).slice(0, HOME_WORKFLOW_LIMIT)
+function fetchPage(url: string): Promise<unknown> {
+  return withinTimeout(fetchJSON(url, { refresh: true }), 'Catalog workflows')
+}
+
+async function fetchTemplateIndex(): Promise<TemplateIndex> {
+  return parseTemplateIndex(await withinTimeout(fetchJSON(templateIndexUrl()), 'Template index'))
+}
+
+async function homeTemplates(
+  surface: string | null,
+  locale: string,
+  templates: TemplateIndex
+): Promise<ResolvedWorkflow[]> {
+  const found: ResolvedWorkflow[] = []
+  let cursor: string | undefined
+  for (let pages = 0; pages < MAX_HOME_CATALOG_PAGES; pages++) {
+    const url = catalogWorkflowsUrl(surface, CATALOG_PAGE_SIZE, cursor)
+    const page = parseCatalogPage(await fetchPage(url), locale, (item) =>
+      isNativeTemplate(item, templates)
+    )
+    found.push(...page.workflows)
+    if (page.nextCursor === null || uniqueWorkflows(found).length >= HOME_WORKFLOW_LIMIT) break
+    cursor = page.nextCursor
+  }
+  return uniqueWorkflows(found).slice(0, HOME_WORKFLOW_LIMIT)
 }
 
 async function fetchHomeWorkflows(locale: string): Promise<ResolvedWorkflow[]> {
-  const forDesktop = await homePage(DESKTOP_SURFACE, locale)
-  return forDesktop.length > 0 ? forDesktop : homePage(null, locale)
+  const templates = await fetchTemplateIndex()
+  const forDesktop = await homeTemplates(DESKTOP_SURFACE, locale, templates)
+  return forDesktop.length > 0 ? forDesktop : homeTemplates(null, locale, templates)
 }
 
 async function fetchCatalogWorkflows(locale: string): Promise<ResolvedWorkflow[]> {

@@ -253,12 +253,13 @@ test.beforeAll(async () => {
           website_media_types: { [CATALOG_WORKFLOW_FILE]: 'application/json' }
         }
       }
-      reply(res, 200, {
-        items:
-          url.searchParams.get('surface') === 'desktop_starters'
-            ? [featured]
-            : [featured, catalogOnly]
-      })
+      reply(res, 200, { items: [featured, catalogOnly] })
+      return true
+    }
+    if (url.pathname === '/templates/index.json') {
+      reply(res, 200, [
+        { title: 'Image', templates: [{ name: 'featured', title: FEATURED_WORKFLOW_TITLE }] }
+      ])
       return true
     }
     if (url.pathname !== '/api/prompt') return false
