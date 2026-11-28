@@ -1636,6 +1636,7 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     await wrapper.get('[data-testid="home-see-all-apps"]').trigger('click')
     await flushPromises()
 
@@ -1797,6 +1798,7 @@ describe('PanelApp', () => {
 
     await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
     await vi.waitFor(() => expect(dialogButton('base-alert-cancel')).not.toBeNull())
     dialogButton('base-alert-cancel')!.click()
@@ -2232,6 +2234,7 @@ describe('PanelApp', () => {
     ])
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     expect(
       wrapper
         .findAll('[data-testid="home-carousel-name"]')
@@ -2253,6 +2256,7 @@ describe('PanelApp', () => {
     ])
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
@@ -2279,6 +2283,7 @@ describe('PanelApp', () => {
     ])
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
@@ -2306,6 +2311,7 @@ describe('PanelApp', () => {
     ])
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
@@ -2359,6 +2365,7 @@ describe('PanelApp', () => {
     ])
     const wrapper = mountPanel()
     await flushPromises()
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
     await flushPromises()
 
@@ -2519,6 +2526,7 @@ describe('PanelApp', () => {
     await flushPromises()
     const events = captureTelemetry()
 
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
     await wrapper.get('[data-testid="home-see-all-apps"]').trigger('click')
     await flushPromises()
 
