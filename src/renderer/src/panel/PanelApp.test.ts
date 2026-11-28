@@ -2116,6 +2116,62 @@ describe('PanelApp', () => {
     wrapper.unmount()
   })
 
+  it('says the Hub page could not open when Desktop could not open it', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, reasons: ['hub_only'], page: 'missing', opens: 'hub' }]
+    })
+    vi.mocked(window.api.openHiddenAppHubPage).mockResolvedValue(false)
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+        "Couldn't open this Hub page"
+      )
+    )
+
+    expect(window.api.openHiddenAppHubPage).toHaveBeenCalledExactlyOnceWith('relight')
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(true)
+    document
+      .querySelector<HTMLElement>('[role="alertdialog"] [data-testid="base-alert-action"]')!
+      .click()
+    await flushPromises()
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('says the Hub page could not open when asking Desktop to open it fails', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, reasons: ['hub_only'], page: 'missing', opens: 'hub' }]
+    })
+    vi.mocked(window.api.openHiddenAppHubPage).mockRejectedValue(new Error('IPC failed'))
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+        "Couldn't open this Hub page"
+      )
+    )
+
+    expect(window.api.openHiddenAppHubPage).toHaveBeenCalledExactlyOnceWith('relight')
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(true)
+    document
+      .querySelector<HTMLElement>('[role="alertdialog"] [data-testid="base-alert-action"]')!
+      .click()
+    await flushPromises()
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
   async function openRelightFromDevelopment(): Promise<ReturnType<typeof mountPanel>> {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })

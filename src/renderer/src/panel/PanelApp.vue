@@ -414,8 +414,9 @@ async function openStaffDraft(app: HiddenAppCard): Promise<void> {
   if (request) await answerDraftApp(request, 'staff-apps')
 }
 
-function openStaffHubPage(app: HiddenAppCard): void {
-  void window.api.openHiddenAppHubPage(app.id).catch(() => false)
+async function openStaffHubPage(app: HiddenAppCard): Promise<void> {
+  const opened = await window.api.openHiddenAppHubPage(app.id).catch(() => false)
+  if (!opened) await dialogs.alert({ title: t('staffApps.hubFailed') })
 }
 
 async function answerDraftApp(
