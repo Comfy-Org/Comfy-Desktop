@@ -2287,6 +2287,70 @@ describe('PanelApp', () => {
     wrapper.unmount()
   })
 
+  it('leaves a newer draft question open when the Hub page fails to open late', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [
+        { ...RELIGHT_STAFF_APP, reasons: ['hub_only'], page: 'missing', opens: 'hub' },
+        {
+          id: 'sketch',
+          title: 'Sketch',
+          description: 'Turn a photo into a drawing.',
+          covers: [],
+          reasons: ['off' as const],
+          page: 'missing' as const,
+          opens: 'draft' as const
+        }
+      ]
+    })
+    let finishOpeningHubPage!: (opened: boolean) => void
+    vi.mocked(window.api.openHiddenAppHubPage).mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        finishOpeningHubPage = resolve
+      })
+    )
+    vi.mocked(window.api.openHiddenAppDraft).mockResolvedValue({
+      kind: 'ask',
+      appId: 'draft-pr450-sketch-4e5f6a7b',
+      token: 'question-8',
+      title: 'Open a draft app from comfy-website-preview-pr-450.vercel.app?',
+      message: '"Sketch". It is not published, and it runs with your Comfy Cloud account.'
+    })
+    vi.mocked(window.api.acceptDraftApp).mockResolvedValue({
+      kind: 'open',
+      card: { id: 'draft-pr450-sketch-4e5f6a7b', title: 'Sketch', description: '', covers: [] }
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    await wrapper.get('[data-testid="staff-app-card-sketch"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+        'comfy-website-preview-pr-450.vercel.app'
+      )
+    )
+    finishOpeningHubPage(false)
+    await flushPromises()
+
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'comfy-website-preview-pr-450.vercel.app'
+    )
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).not.toContain(
+      "Couldn't open this Hub page"
+    )
+    document
+      .querySelector<HTMLElement>('[role="alertdialog"] [data-testid="base-alert-action"]')!
+      .click()
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Sketch')
+    )
+    expect(window.api.acceptDraftApp).toHaveBeenCalledExactlyOnceWith('question-8')
+    wrapper.unmount()
+  })
+
   async function openRelightFromDevelopment(): Promise<ReturnType<typeof mountPanel>> {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })
