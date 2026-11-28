@@ -389,9 +389,45 @@ export interface ComfyDesktopHostedLocalBridge {
    */
   machine?(): Promise<ComfyDesktopMachine>
 }
+/**
+ * One run of a Comfy page hosted in Desktop's Apps view, as Desktop's run
+ * overview in the title bar lists it. Desktop never orders runs: a run waits
+ * only in the queue of the place it runs, Comfy Cloud or the page's ComfyUI
+ * build on this computer.
+ */
+export interface ComfyDesktopRun {
+  /** Stays the same for the life of the run on that page. */
+  id: string
+  /** `cloud` for Comfy Cloud, `local` for the page's ComfyUI build on this computer. */
+  where: 'cloud' | 'local'
+  state: 'queued' | 'running' | 'done' | 'failed'
+  /**
+   * What the run does now, short and in the page's language, such as
+   * `Swapping the face`. For `failed`, why it failed, such as `Not enough GPU memory`.
+   */
+  step?: string
+  /** The step's number, from 1, while `running`. */
+  stepIndex?: number
+  /** How many steps the run has, while `running`. */
+  stepCount?: number
+  /** From 0 to 1, while `running`. */
+  progress?: number
+  /** How many runs wait ahead of it in its place's queue, while `queued`. */
+  ahead?: number
+  /** When it started, in milliseconds since the epoch. */
+  startedAt?: number
+  /** When it ended, in milliseconds since the epoch, once `done` or `failed`. */
+  endedAt?: number
+}
 /** Whether a Comfy page hosted in Desktop's Apps view has a run going. */
 export interface ComfyDesktopRunState {
   running: boolean
+  /**
+   * Each run the page has, newest first: the ones going and the ones that
+   * ended and are still on the page. Desktop keeps the first 20. Desktop
+   * builds that predate the run overview ignore it.
+   */
+  runs?: ComfyDesktopRun[]
 }
 /**
  * Run state from a Comfy page hosted in Desktop's Apps view. Desktop exposes
@@ -409,6 +445,8 @@ export interface ComfyDesktopHostedRunsBridge {
    * the last one finishes, fails or is cancelled. Once a page calls this,
    * Desktop uses only these reports for that page. Pages that never call it
    * are followed through their run progress toast (`.cs-toasts .cs-toast`).
+   * Send `runs` with every report, and report again whenever a run's state,
+   * step or progress changes, so the run overview stays current.
    */
   reportRun(state: ComfyDesktopRunState): void
 }

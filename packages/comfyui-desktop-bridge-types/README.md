@@ -48,6 +48,9 @@ account session, `window.comfyDesktopLocal`, a ComfyUI on this computer,
 `window.comfyDesktopOutputs`, Desktop's output dialog,
 `window.comfyDesktopAssets`, the person's pictures for the page's inputs, and
 `window.comfyDesktopRuns`, where the page says when a run starts and ends.
+`reportRun({ running, runs })` can also list the page's runs, with where each
+runs, its state and its step, for Desktop's run overview. Desktop builds
+before the run overview ignore `runs`.
 
 ```ts
 import type {
