@@ -1231,6 +1231,9 @@ export function forwardToRenderer(event: string, context: TelemetryContext = {})
   }
 }
 
+const FORWARDED_TOKEN_KEYS = ['code', 'outcome'] as const
+const FORWARDED_TOKEN = /^[a-z0-9_]{1,64}$/
+
 export function forwardExceptionToRenderer(context: TelemetryContext = {}, error?: Error): void {
   const allowedKeys = [
     'origin',
@@ -1247,6 +1250,10 @@ export function forwardExceptionToRenderer(context: TelemetryContext = {}, error
   for (const key of allowedKeys) {
     const value = context[key]
     if (!Array.isArray(value)) safeContext[key] = value
+  }
+  for (const key of FORWARDED_TOKEN_KEYS) {
+    const value = context[key]
+    if (typeof value === 'string' && FORWARDED_TOKEN.test(value)) safeContext[key] = value
   }
   const payload = {
     source: String(
