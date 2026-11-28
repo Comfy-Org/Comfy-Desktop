@@ -2792,3 +2792,102 @@ describe('AssetsView Comfy Cloud pages', () => {
     )
   })
 })
+
+describe('AssetsView folders', () => {
+  const ROOT = '/Volumes/Work/Video Lab/output'
+
+  function dated(path: string, name: string, day: string): AssetSummary {
+    return asset(path, name, 'image', { createdAt: `2026-11-${day}T00:00:00Z` })
+  }
+
+  async function pickFolder(path: string): Promise<void> {
+    document.querySelector<HTMLElement>('[data-testid="assets-folder-picker"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLElement>(`[data-testid="assets-folder-${path}"]`)!.click()
+    await flushPromises()
+  }
+
+  async function folderChoices(): Promise<string[]> {
+    document.querySelector<HTMLElement>('[data-testid="assets-folder-picker"]')!.click()
+    await flushPromises()
+    const shown = [...document.querySelectorAll('[data-testid^="assets-folder-"]')]
+      .filter((item) => item.getAttribute('data-testid') !== 'assets-folder-picker')
+      .map((item) => shownText(item))
+    await press('Escape')
+    return shown
+  }
+
+  it('sets the place and folder apart from the filters with a line', async () => {
+    const wrapper = await mountAssets([
+      dated(`${ROOT}/forest.png`, 'forest.png', '03'),
+      dated(`${ROOT}/2026-11/crane.png`, 'crane.png', '01')
+    ])
+
+    const row = wrapper.get('[data-testid="assets-toolbar"] > div').element
+    const after = (one: string, two: string): boolean =>
+      !!(
+        row.querySelector(one)!.compareDocumentPosition(row.querySelector(two)!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+
+    expect(
+      after('[data-testid="assets-folder-picker"]', '[data-testid="assets-toolbar-divider"]'),
+      'the line follows where you are looking'
+    ).toBe(true)
+    expect(
+      after('[data-testid="assets-toolbar-divider"]', '[data-testid="assets-kind-all"]'),
+      'and comes before what you filter'
+    ).toBe(true)
+  })
+
+  it('shows every file until a folder narrows the view to its own', async () => {
+    const wrapper = await mountAssets([
+      dated(`${ROOT}/forest.png`, 'forest.png', '03'),
+      dated(`${ROOT}/2026-11/harbor.png`, 'harbor.png', '02'),
+      dated(`${ROOT}/2026-11/crane.png`, 'crane.png', '01'),
+      dated(`${ROOT}/2026-11/final/hero.png`, 'hero.png', '04')
+    ])
+
+    expect(
+      assetNames(wrapper),
+      'All files holds every file, whichever folder it was saved in'
+    ).toEqual(['hero.png', 'forest.png', 'harbor.png', 'crane.png'])
+    expect(
+      await folderChoices(),
+      'every folder is one click away, counting every file under it'
+    ).toEqual(['All files', '2026-11 3', '2026-11/final 1'])
+
+    await pickFolder('2026-11')
+
+    expect(
+      assetNames(wrapper),
+      'a folder holds its own files and those of its sub-folders'
+    ).toEqual(['hero.png', 'harbor.png', 'crane.png'])
+    expect(
+      document.querySelector('[data-testid="assets-pagination"]'),
+      'paging the whole listing says nothing about a folder'
+    ).toBeNull()
+
+    await pickFolder('2026-11/final')
+
+    expect(assetNames(wrapper)).toEqual(['hero.png'])
+
+    await pickFolder('all')
+
+    expect(assetNames(wrapper)).toEqual(['hero.png', 'forest.png', 'harbor.png', 'crane.png'])
+  })
+
+  it('lays every match out flat while a search is on', async () => {
+    const wrapper = await mountAssets([
+      dated(`${ROOT}/forest.png`, 'forest.png', '03'),
+      dated(`${ROOT}/2026-11/harbor.png`, 'harbor.png', '02')
+    ])
+
+    await wrapper.get('input').setValue('r')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="assets-folder-picker"]')).toBeNull()
+    )
+
+    expect(assetNames(wrapper)).toEqual(['forest.png', 'harbor.png'])
+  })
+})
