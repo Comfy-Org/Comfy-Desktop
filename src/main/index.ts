@@ -184,6 +184,7 @@ import {
 } from './host/createHostWindow'
 import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
 import { navigatorFor } from './host/buildNavigator'
+import { restartLoadAbandoned } from './host/restartLoad'
 import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import type { CloseComfyWindowOptions } from '../types/ipc'
@@ -387,15 +388,13 @@ function onComfyRestarted({
     }
   }
 
-  const isStale = (): boolean => {
-    const current = relaunchStates.get(installationId)
-    return !!current && current.token !== myToken
-  }
+  const abandoned = (): boolean =>
+    restartLoadAbandoned(entry, installationId, relaunchStates.get(installationId), myToken)
 
   waitForPort(port, '127.0.0.1', { timeoutMs: COMFY_BOOT_TIMEOUT_MS })
     .then(async () => {
       for (let attempt = 0; attempt < 10; attempt++) {
-        if (entry.window.isDestroyed() || isStale()) {
+        if (abandoned()) {
           cleanupRelaunchState()
           return
         }
@@ -407,7 +406,7 @@ function onComfyRestarted({
           await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
         }
       }
-      if (entry.window.isDestroyed() || isStale()) {
+      if (abandoned()) {
         cleanupRelaunchState()
         return
       }
