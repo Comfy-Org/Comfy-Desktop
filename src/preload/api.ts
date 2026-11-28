@@ -144,6 +144,8 @@ export function buildElectronApi(): ElectronApi {
     },
     listApps: () => ipcRenderer.invoke('apps:list'),
     listHiddenApps: () => ipcRenderer.invoke('apps:list-hidden'),
+    openHiddenAppDraft: (appId) => ipcRenderer.invoke('apps:open-hidden-draft', appId),
+    openHiddenAppHubPage: (appId) => ipcRenderer.invoke('apps:open-hidden-hub-page', appId),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
     getAppRuns: () => ipcRenderer.invoke('apps:get-runs'),

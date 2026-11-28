@@ -2453,6 +2453,7 @@
     "body": "Apps in the catalog that are not on the Apps page. Only Comfy staff see this page.",
     "search": "Search development apps",
     "noMatchesHint": "Try another word.",
+    "hubFailed": "Couldn't open this Hub page",
     "noPage": "No page on comfy.org yet",
     "pageUnchecked": "Couldn't check the page on comfy.org",
     "reason": {
@@ -2466,6 +2467,12 @@
       "draft": "Never published",
       "hubOnly": "Not listed for Desktop",
       "unpublished": "Has saved edits that are not published"
+    },
+    "opens": {
+      "draft": "Draft"
+    },
+    "opensDescription": {
+      "draft": "Opens its draft page from a website preview"
     }
   }
 }

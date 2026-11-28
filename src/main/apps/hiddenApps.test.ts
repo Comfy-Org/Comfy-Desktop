@@ -18,8 +18,11 @@ vi.mock('./draftLinks', () => ({ cloudIdentity: vi.fn(), signedInAccount: vi.fn(
 vi.mock('./appsCatalog', () => ({ listApps: vi.fn() }))
 
 import {
+  draftForHiddenApp,
   forgetHiddenApps,
   hiddenPageUrlOf,
+  hubPageForHiddenApp,
+  hubPageUrlOf,
   listHiddenApps,
   pageUrlForHiddenApp,
   pictureForHiddenApp,
@@ -465,6 +468,160 @@ describe('the page a hidden app opens', () => {
     expect(titleForHiddenApp('explore-worlds', deps())).toBe('Title of explore-worlds')
     expect(pictureForHiddenApp('explore-worlds', deps())).toMatch(/^data:image\/png;base64,/)
     expect(titleForHiddenApp('relight', deps())).toBeNull()
+  })
+})
+
+describe('a hidden app with no page on comfy.org', () => {
+  const DRAFT = 'https://comfy-website-preview-pr-445.vercel.app/apps/compose-scene/desktop.html'
+
+  function listedOpening(): Promise<[string, string, string | undefined][]> {
+    return listHiddenApps(deps()).then(({ apps }) =>
+      apps.map((app) => [app.id, app.page, app.opens])
+    )
+  }
+
+  it('opens its draft page on a comfy-website preview, and says so on the card', async () => {
+    catalogPages.set('', pageOf([row('compose-scene', { enabled: false, draft_page: DRAFT })]))
+
+    expect(await listedOpening()).toEqual([['compose-scene', 'missing', 'draft']])
+    expect(draftForHiddenApp('compose-scene', deps())).toEqual({
+      origin: 'https://comfy-website-preview-pr-445.vercel.app',
+      path: '/apps/compose-scene/desktop.html',
+      slug: 'compose-scene',
+      pr: 445,
+      mount: '/'
+    })
+    expect(pageUrlForHiddenApp('compose-scene', deps())).toBeNull()
+  })
+
+  it('opens its comfy.org page, not the draft, once comfy.org has one', async () => {
+    catalogPages.set('', pageOf([row('compose-scene', { draft_page: DRAFT })]))
+    livePages.add(pageUrl('compose-scene'))
+
+    expect(await listedOpening()).toEqual([['compose-scene', 'live', undefined]])
+    expect(draftForHiddenApp('compose-scene', deps())).toBeNull()
+    expect(pageUrlForHiddenApp('compose-scene', deps())).toBe(pageUrl('compose-scene'))
+  })
+
+  it('opens no draft while the comfy.org page could not be checked', async () => {
+    catalogPages.set('', pageOf([row('compose-scene', { draft_page: DRAFT })]))
+    const fetch = vi.fn(async (url: string, init: RequestInit) =>
+      url === pageUrl('compose-scene') ? new Response(null, { status: 503 }) : fetchMock(url, init)
+    )
+
+    const { apps } = await listHiddenApps(deps({ fetch }))
+
+    expect(apps.map((app) => [app.page, app.opens])).toEqual([['unchecked', undefined]])
+    expect(draftForHiddenApp('compose-scene', deps())).toBeNull()
+  })
+
+  it.each([
+    [
+      'for another app',
+      'https://comfy-website-preview-pr-445.vercel.app/apps/upscale/desktop.html'
+    ],
+    ['on another site', 'https://evil.example/apps/compose-scene/desktop.html'],
+    ['on comfy.org itself', 'https://comfy.org/apps/compose-scene/desktop.html'],
+    ['over plain http', 'http://comfy-website-preview-pr-445.vercel.app/apps/compose-scene/'],
+    ['with a sign-in', 'https://me:pw@comfy-website-preview-pr-445.vercel.app/apps/compose-scene/'],
+    ['that is not text', { href: DRAFT }]
+  ])('opens no draft page %s, and says there is no page', async (_label, draftPage) => {
+    catalogPages.set('', pageOf([row('compose-scene', { draft_page: draftPage })]))
+
+    expect(await listedOpening()).toEqual([['compose-scene', 'missing', undefined]])
+    expect(draftForHiddenApp('compose-scene', deps())).toBeNull()
+  })
+
+  it('opens the Hub page of a Hub-only app on comfy.org', async () => {
+    catalogPages.set(
+      '',
+      pageOf([row('reshoot', { on_desktop: false, hub_page: '/hub/apps/reshoot/' })])
+    )
+
+    expect(await listedOpening()).toEqual([['reshoot', 'missing', 'hub']])
+    expect(await hubPageForHiddenApp('reshoot', deps())).toBe('https://comfy.org/hub/apps/reshoot/')
+    expect(draftForHiddenApp('reshoot', deps())).toBeNull()
+  })
+
+  it('opens the draft page of a Hub-only app that has both', async () => {
+    catalogPages.set(
+      '',
+      pageOf([
+        row('compose-scene', { on_desktop: false, draft_page: DRAFT, hub_page: '/hub/apps/x/' })
+      ])
+    )
+
+    expect(await listedOpening()).toEqual([['compose-scene', 'missing', 'draft']])
+    expect(await hubPageForHiddenApp('compose-scene', deps())).toBeNull()
+  })
+
+  it('opens no Hub page for an app listed for Desktop', async () => {
+    catalogPages.set('', pageOf([row('reshoot', { hub_page: '/hub/apps/reshoot/' })]))
+
+    expect(await listedOpening()).toEqual([['reshoot', 'missing', undefined]])
+    expect(await hubPageForHiddenApp('reshoot', deps())).toBeNull()
+  })
+
+  it.each([
+    ['a full address', 'https://evil.example/hub/apps/reshoot/'],
+    ['an address on another host', '//evil.example/hub/apps/reshoot/'],
+    ['a path outside the Hub', '/apps/reshoot/desktop.html'],
+    ['a path that climbs out', '/hub/../admin'],
+    ['a query', '/hub/apps/reshoot/?next=https://evil.example'],
+    ['something that is not text', 42]
+  ])('opens no Hub page given %s', async (_label, hubPage) => {
+    catalogPages.set('', pageOf([row('reshoot', { on_desktop: false, hub_page: hubPage })]))
+
+    expect(await listedOpening()).toEqual([['reshoot', 'missing', undefined]])
+    expect(await hubPageForHiddenApp('reshoot', deps())).toBeNull()
+  })
+
+  it('builds the Hub address on comfy.org only from a plain Hub path', () => {
+    expect(hubPageUrlOf('/hub/apps/reshoot/')).toBe('https://comfy.org/hub/apps/reshoot/')
+    expect(hubPageUrlOf('/hub/apps/reshoot')).toBe('https://comfy.org/hub/apps/reshoot')
+    expect(hubPageUrlOf('/hub/')).toBeNull()
+    expect(hubPageUrlOf('/hub//evil.example')).toBeNull()
+    expect(hubPageUrlOf(`/hub/${'a'.repeat(300)}`)).toBeNull()
+  })
+
+  it('opens no Hub page for someone who is no longer staff, or another account', async () => {
+    catalogPages.set(
+      '',
+      pageOf([row('reshoot', { on_desktop: false, hub_page: '/hub/apps/reshoot/' })])
+    )
+    await listHiddenApps(deps())
+
+    account = { email: 'someone@gmail.com', signInProvider: 'google.com' }
+    expect(await hubPageForHiddenApp('reshoot', deps())).toBeNull()
+
+    account = STAFF
+    owner = OTHER_OWNER
+    expect(await hubPageForHiddenApp('reshoot', deps())).toBeNull()
+    expect(draftForHiddenApp('reshoot', deps())).toBeNull()
+  })
+
+  it('opens no Hub page when the account changes while Desktop checks it is staff', async () => {
+    catalogPages.set(
+      '',
+      pageOf([row('reshoot', { on_desktop: false, hub_page: '/hub/apps/reshoot/' })])
+    )
+    await listHiddenApps(deps())
+
+    const signedInAccount = vi.fn(async () => {
+      owner = OTHER_OWNER
+      return STAFF
+    })
+
+    expect(await hubPageForHiddenApp('reshoot', deps({ signedInAccount }))).toBeNull()
+  })
+
+  it('opens nothing for an id that is not text or not on the list', async () => {
+    catalogPages.set('', pageOf([row('compose-scene', { draft_page: DRAFT })]))
+    await listHiddenApps(deps())
+
+    expect(draftForHiddenApp(42, deps())).toBeNull()
+    expect(draftForHiddenApp('never-listed', deps())).toBeNull()
+    expect(await hubPageForHiddenApp(null, deps())).toBeNull()
   })
 })
 

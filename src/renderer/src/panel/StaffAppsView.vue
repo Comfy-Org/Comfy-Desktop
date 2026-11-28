@@ -14,7 +14,11 @@ import type { AppCard, HiddenAppCard } from '../types/ipc'
 
 const { apps } = defineProps<{ apps: HiddenAppCard[] }>()
 
-const emit = defineEmits<{ 'open-app': [app: AppCard] }>()
+const emit = defineEmits<{
+  'open-app': [app: AppCard]
+  'open-draft': [app: HiddenAppCard]
+  'open-hub-page': [app: HiddenAppCard]
+}>()
 
 const { t } = useI18n()
 
@@ -27,7 +31,7 @@ const cards = computed<HiddenAppCard[]>(() => {
   const needle = query.value.trim().toLowerCase()
   return apps
     .filter((app) => !needle || `${app.title}\n${app.description}`.toLowerCase().includes(needle))
-    .map((app) => ({ ...app, badges: hiddenAppBadges(app.reasons, t) }))
+    .map((app) => ({ ...app, badges: hiddenAppBadges(app, t) }))
 })
 
 function badgeIdPrefixFor(app: AppCard): string {
@@ -48,9 +52,15 @@ function playsCover(app: AppCard): boolean {
   return hoveredId.value === app.id || keyboardFocusedId.value === app.id
 }
 
+function opens(app: HiddenAppCard): boolean {
+  return app.page === 'live' || app.opens !== undefined
+}
+
 function openPicked(app: HiddenAppCard): void {
   hoveredId.value = null
-  emit('open-app', app)
+  if (app.page === 'live') emit('open-app', app)
+  else if (app.opens === 'draft') emit('open-draft', app)
+  else if (app.opens === 'hub') emit('open-hub-page', app)
 }
 </script>
 
@@ -109,7 +119,7 @@ function openPicked(app: HiddenAppCard): void {
           :class="rhythmSpanClass(index)"
         >
           <AppCardTile
-            v-if="app.page === 'live'"
+            v-if="opens(app)"
             :app="app"
             :playing="playsCover(app)"
             :revealed="keyboardFocusedId === app.id"

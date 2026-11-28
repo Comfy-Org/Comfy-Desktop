@@ -65,6 +65,7 @@ import type {
   CatalogWorkflow,
   DashboardPage,
   DraftAppRequest,
+  HiddenAppCard,
   Installation
 } from '../types/ipc'
 
@@ -314,8 +315,10 @@ const selectedWorkflow = ref<CatalogWorkflow | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
 let stayOnAppsAfterClose = false
+let openingFromDevelopment: string | null = null
 
 function homePageOf(app: AppCard): AppHomePage {
+  if (app.id === openingFromDevelopment) return 'staff-apps'
   if (listedApps.value?.some((listed) => listed.id === app.id)) return 'apps'
   return liveStaffApps.value.some((staffApp) => staffApp.id === app.id) ? 'staff-apps' : 'apps'
 }
@@ -325,7 +328,8 @@ const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHo
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
-function showApp(app: AppCard): void {
+function showApp(app: AppCard, openedFrom: AppHomePage = 'apps'): void {
+  openingFromDevelopment = openedFrom === 'staff-apps' ? app.id : null
   stayOnAppsAfterClose = false
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
@@ -333,7 +337,13 @@ function showApp(app: AppCard): void {
 
 function noteCurrentApp(app: AppCard | null): void {
   appInProgress.value = app
-  if (app) openedAppHome.value = homePageOf(app)
+  if (!app) return
+  openedAppHome.value = homePageOf(app)
+  openingFromDevelopment = null
+}
+
+function returnPageOf(app: AppCard): AppHomePage {
+  return app.id === appInProgress.value?.id ? openedAppHome.value : 'apps'
 }
 
 function noteAppOpen(open: boolean): void {
@@ -355,8 +365,8 @@ async function switchStillWanted(app: AppCard): Promise<boolean> {
   return confirmed && stillCurrent()
 }
 
-async function openAppFromHome(app: AppCard): Promise<void> {
-  if (await switchStillWanted(app)) showApp(app)
+async function openAppFromHome(app: AppCard, openedFrom: AppHomePage = 'apps'): Promise<void> {
+  if (await switchStillWanted(app)) showApp(app, openedFrom)
 }
 
 watch(staffApps.shown, (shown) => {
@@ -387,7 +397,7 @@ async function openRunningApp(appId: string): Promise<void> {
   }
   closeBuildDetails()
   assetsFocusName.value = null
-  showApp(app)
+  showApp(app, returnPageOf(app))
 }
 
 async function confirmLeavingRuns(): Promise<boolean> {
@@ -406,7 +416,23 @@ async function confirmLeavingRuns(): Promise<boolean> {
   return choice === 'primary'
 }
 
-async function answerDraftApp(request: DraftAppRequest): Promise<void> {
+let draftRequests = 0
+
+async function openStaffDraft(app: HiddenAppCard): Promise<void> {
+  const draftRequest = ++draftRequests
+  const request = await window.api.openHiddenAppDraft(app.id).catch(() => null)
+  if (request && draftRequest === draftRequests) await answerDraftApp(request, 'staff-apps')
+}
+
+async function openStaffHubPage(app: HiddenAppCard): Promise<void> {
+  const opened = await window.api.openHiddenAppHubPage(app.id).catch(() => false)
+  if (!opened && !dialogs.state.open) await dialogs.alert({ title: t('staffApps.hubFailed') })
+}
+
+async function answerDraftApp(
+  request: DraftAppRequest,
+  openedFrom: AppHomePage = 'apps'
+): Promise<void> {
   if (request.kind === 'refused') {
     await dialogs.alert({ title: request.title, message: request.message })
     return
@@ -419,14 +445,14 @@ async function answerDraftApp(request: DraftAppRequest): Promise<void> {
       cancelLabel: 'Cancel'
     })
     const accepted = choice === 'primary' ? await window.api.acceptDraftApp(request.token) : null
-    if (accepted) await answerDraftApp(accepted)
+    if (accepted) await answerDraftApp(accepted, openedFrom)
     return
   }
   if (!(await switchStillWanted(request.card))) return
   if (activePanel.value !== 'chooser') await switchPanel('chooser', 'install')
   closeBuildDetails()
   assetsFocusName.value = null
-  showApp(request.card)
+  showApp(request.card, openedFrom)
 }
 
 const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
@@ -447,7 +473,7 @@ function returnToApp(app: AppCard): void {
   })
   closeBuildDetails()
   assetsFocusName.value = null
-  void openAppFromHome(app)
+  void openAppFromHome(app, returnPageOf(app))
 }
 
 function viewInAssets(name: string): void {
@@ -685,7 +711,10 @@ onMounted(async () => {
     appInProgress.value = null
   })
 
-  unsubOpenDraftApp = window.api.onOpenDraftApp((request) => void answerDraftApp(request))
+  unsubOpenDraftApp = window.api.onOpenDraftApp((request) => {
+    draftRequests += 1
+    void answerDraftApp(request)
+  })
 
   try {
     const shouldOpenFirstUse =
@@ -803,6 +832,8 @@ onUnmounted(() => {
               v-else-if="dashboardHomePage === 'staff-apps' && staffApps.shown.value"
               :apps="staffApps.apps.value"
               @open-app="openAppFromHome"
+              @open-draft="openStaffDraft"
+              @open-hub-page="openStaffHubPage"
             />
             <AssetsView
               v-else-if="dashboardHomePage === 'assets'"

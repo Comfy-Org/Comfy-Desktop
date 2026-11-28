@@ -2453,6 +2453,7 @@
     "body": "目录中不在“应用”页面上的应用。只有 Comfy 员工能看到此页面。",
     "search": "搜索开发中的应用",
     "noMatchesHint": "换个词试试。",
+    "hubFailed": "无法打开此 Hub 页面",
     "noPage": "comfy.org 上还没有页面",
     "pageUnchecked": "无法检查 comfy.org 上的页面",
     "reason": {
@@ -2466,6 +2467,12 @@
       "draft": "从未发布",
       "hubOnly": "未在 Desktop 中列出",
       "unpublished": "有已保存但未发布的修改"
+    },
+    "opens": {
+      "draft": "草稿"
+    },
+    "opensDescription": {
+      "draft": "从网站预览打开草稿页面"
     }
   }
 }

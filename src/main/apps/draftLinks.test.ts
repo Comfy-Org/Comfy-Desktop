@@ -36,6 +36,7 @@ import {
   draftOf,
   draftPageUrl,
   hasDrafts,
+  parseStaffDraftPage,
   revokeDraft
 } from './draftApps'
 import {
@@ -47,7 +48,8 @@ import {
   draftsStillAllowed,
   isDraftStillAllowed,
   openDraftLink,
-  openPastedDraft
+  openPastedDraft,
+  openStaffDraft
 } from './draftLinks'
 import type { DraftLinkDeps } from './draftLinks'
 
@@ -305,6 +307,88 @@ describe('openPastedDraft', () => {
       expect(mocks.capture).toHaveBeenCalledWith(DRAFT_REFUSED_EVENT, { reason })
     }
   )
+})
+
+describe('openStaffDraft', () => {
+  const COMPOSE_SCENE = parseStaffDraftPage(
+    'https://comfy-website-preview-pr-445.vercel.app/apps/compose-scene/desktop.html',
+    'compose-scene'
+  )!
+
+  beforeEach(() => {
+    mocks.fetch.mockResolvedValue(new Response('<title>Compose Scene</title>'))
+  })
+
+  it('answers the Development page with the same question as a link, and sends the home window nothing', async () => {
+    const d = deps()
+    const question = await openStaffDraft(COMPOSE_SCENE, d)
+
+    expect(question).toEqual({
+      kind: 'ask',
+      appId: expect.stringMatching(/^draft-pr445-compose-scene-[0-9a-f]{8}$/),
+      token: expect.any(String),
+      title: 'Open a draft app from comfy-website-preview-pr-445.vercel.app?',
+      message: '"Compose Scene". It is not published, and it runs with your Comfy Cloud account.'
+    })
+    expect(d.sendToPanel).not.toHaveBeenCalled()
+    expect(draftCards()).toEqual([])
+    if (question.kind !== 'ask') throw new Error('No draft app question was asked')
+    expect(draftPageUrl(question.appId)).toBeNull()
+  })
+
+  it('opens the draft at comfy.org once the person says Open', async () => {
+    const d = deps()
+    const question = await openStaffDraft(COMPOSE_SCENE, d)
+    if (question.kind !== 'ask') throw new Error('No draft app question was asked')
+
+    expect((await acceptDraft(PANEL, question.token, d))?.kind).toBe('open')
+    expect(draftPageUrl(question.appId)).toBe('https://comfy.org/apps/compose-scene/desktop.html')
+    expect(mocks.capture).toHaveBeenCalledWith(DRAFT_OPENED_EVENT, { app_id: question.appId })
+  })
+
+  it.each([
+    ['signed_out', { signedInAccount: async () => null }, 'Sign in to open draft apps'],
+    [
+      'not_staff',
+      { signedInAccount: async () => OUTSIDER_ACCOUNT },
+      'Draft apps are for Comfy staff'
+    ],
+    [
+      'not_staff',
+      { signedInAccount: async () => ({ email: 'purz@comfy.org', signInProvider: 'password' }) },
+      'Draft apps are for Comfy staff'
+    ]
+  ] as [string, Partial<DraftLinkDeps>, string][])(
+    'refuses with why when the answer is %s, and registers no draft',
+    async (reason, overrides, title) => {
+      const d = deps(overrides)
+      await expect(openStaffDraft(COMPOSE_SCENE, d)).resolves.toEqual({
+        kind: 'refused',
+        title,
+        message: expect.any(String)
+      })
+      expect(hasDrafts()).toBe(false)
+      expect(mocks.fetch).not.toHaveBeenCalled()
+      expect(mocks.capture).toHaveBeenCalledWith(DRAFT_REFUSED_EVENT, { reason })
+    }
+  )
+
+  it('refuses when the account changes while the draft page loads', async () => {
+    let identity: string | null = STAFF
+    mocks.fetch.mockImplementation(async () => {
+      identity = OTHER_ACCOUNT
+      return new Response('<title>Compose Scene</title>')
+    })
+
+    await expect(
+      openStaffDraft(COMPOSE_SCENE, deps({ cloudIdentity: () => identity }))
+    ).resolves.toEqual({
+      kind: 'refused',
+      title: "Couldn't open this draft app",
+      message: 'The Comfy Cloud account changed while the draft app was loading. Try again.'
+    })
+    expect(hasDrafts()).toBe(false)
+  })
 })
 
 describe('canPasteDrafts', () => {

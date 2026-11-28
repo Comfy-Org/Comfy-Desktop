@@ -120,25 +120,34 @@ export function draftQuestion(link: DraftLink, title: string): { title: string; 
   }
 }
 
+async function questionFor(
+  parsed: DraftLink,
+  owner: string | null,
+  deps: DraftLinkDeps
+): Promise<DraftAppRequest | null> {
+  const draft =
+    owner === null ? null : await registerDraft(parsed, owner, () => deps.cloudIdentity() === owner)
+  if (!draft) {
+    mainTelemetry.capture(DRAFT_REFUSED_EVENT, { reason: 'account_changed' })
+    return null
+  }
+  return {
+    kind: 'ask',
+    appId: draft.id,
+    token: draft.token,
+    ...draftQuestion(parsed, draft.card.title)
+  }
+}
+
 async function askToOpen(
   parsed: DraftLink,
   owner: string | null,
   window: () => BrowserWindow,
   deps: DraftLinkDeps
 ): Promise<boolean> {
-  const draft =
-    owner === null ? null : await registerDraft(parsed, owner, () => deps.cloudIdentity() === owner)
-  if (!draft) {
-    mainTelemetry.capture(DRAFT_REFUSED_EVENT, { reason: 'account_changed' })
-    return false
-  }
-  deps.sendToPanel(window(), {
-    kind: 'ask',
-    appId: draft.id,
-    token: draft.token,
-    ...draftQuestion(parsed, draft.card.title)
-  })
-  return true
+  const question = await questionFor(parsed, owner, deps)
+  if (question) deps.sendToPanel(window(), question)
+  return question !== null
 }
 
 export async function openDraftLink(
@@ -177,6 +186,24 @@ export async function openPastedDraft(
   }
   if (await askToOpen(parsed, owner, deps.homeWindow, deps)) return { kind: 'asked' }
   return { kind: 'refused', ...PASTE_REFUSAL_WORDS.account_changed }
+}
+
+export async function openStaffDraft(
+  link: DraftLink,
+  deps: DraftLinkDeps = defaultDeps
+): Promise<DraftAppRequest> {
+  const owner = deps.cloudIdentity()
+  const refusal = refusalFor(link, await deps.signedInAccount())
+  if (refusal) {
+    mainTelemetry.capture(DRAFT_REFUSED_EVENT, { reason: refusal })
+    return { kind: 'refused', ...PASTE_REFUSAL_WORDS[refusal] }
+  }
+  return (
+    (await questionFor(link, owner, deps)) ?? {
+      kind: 'refused',
+      ...PASTE_REFUSAL_WORDS.account_changed
+    }
+  )
 }
 
 export async function canPasteDrafts(deps: DraftLinkDeps = defaultDeps): Promise<boolean> {

@@ -17,7 +17,9 @@ import {
 import { listApps, pictureForListedApp } from '../../apps/appsCatalog'
 import { isAppsPageSender } from '../../apps/appsPages'
 import {
+  draftForHiddenApp,
   forgetHiddenApps,
+  hubPageForHiddenApp,
   listHiddenApps,
   NO_HIDDEN_APPS,
   pictureForHiddenApp
@@ -27,13 +29,15 @@ import {
   acceptDraft,
   canPasteDrafts,
   draftsStillAllowed,
-  openPastedDraft
+  openPastedDraft,
+  openStaffDraft
 } from '../../apps/draftLinks'
 import { findEntryByTitleBarSender, isPanelSender } from '../../host/registry'
 import { isGlobalSettingsSender, openRunningAppsMenu } from '../../popups/titlePopup'
 import { OPEN_RUNNING_APP_CHANNEL } from '../../../types/ipc'
-import type { RunningApp } from '../../../types/ipc'
+import type { DraftAppRequest, RunningApp } from '../../../types/ipc'
 import { cloudAuthEvents } from '../cloudAuthEvents'
+import { tryOpenExternalUrl } from '../openExternal'
 import { sendSurveyResponse } from '../telemetry'
 
 const APP_REQUEST_SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
@@ -48,6 +52,16 @@ async function closeDraftsNoLongerAllowed(): Promise<void> {
   const allowed = await draftsStillAllowed().catch(() => false)
   if (allowed || change !== authChanges) return
   closeDraftPages(inspected)
+}
+
+async function openHiddenAppDraft(appId: unknown): Promise<DraftAppRequest | null> {
+  const draft = draftForHiddenApp(appId)
+  return draft ? openStaffDraft(draft) : null
+}
+
+async function openHiddenAppHubPage(appId: unknown): Promise<boolean> {
+  const hubPage = await hubPageForHiddenApp(appId).catch(() => null)
+  return hubPage ? tryOpenExternalUrl(hubPage) : false
 }
 
 function dropHiddenApps(): void {
@@ -100,6 +114,14 @@ export function registerAppsHandlers(): void {
     if (!isPanelSender(event.sender)) return NO_HIDDEN_APPS
     return listHiddenApps().catch(() => NO_HIDDEN_APPS)
   })
+
+  ipcMain.handle('apps:open-hidden-draft', (event, appId: unknown) =>
+    isPanelSender(event.sender) ? openHiddenAppDraft(appId) : null
+  )
+
+  ipcMain.handle('apps:open-hidden-hub-page', (event, appId: unknown) =>
+    isPanelSender(event.sender) ? openHiddenAppHubPage(appId) : false
+  )
 
   ipcMain.handle('apps:show-page', (event, appId: unknown, placement: unknown) =>
     showAppPage(event.sender, appId, placement)
