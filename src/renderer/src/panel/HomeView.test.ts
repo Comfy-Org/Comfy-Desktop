@@ -26,7 +26,8 @@ function build(over: Partial<Installation> & { id: string; name: string }): Inst
   return { sourceLabel: 'Standalone', sourceCategory: 'local', status: 'installed', ...over }
 }
 
-const UPSCALE_PICTURE = 'https://comfy.org/apps-media/upscale/v1'
+const UPSCALE_PICTURE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 const UPSCALE: AppCard = {
   id: 'upscale',
   title: 'Upscale and restore detail',
