@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   running: [] as { id: string; title: string }[],
   ready: [] as { id: string; title: string }[],
   noteAppPageRunning: vi.fn(),
+  noteAppPageRuns: vi.fn(),
   appRuns: vi.fn(() => [{ appId: 'remove-background', running: true, finished: false }]),
   appSwitchStopsRun: vi.fn(() => ({ appTitle: 'Remove Background', otherRuns: 3 })),
   closeAppPage: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock('../../apps/appPageView', () => ({
   closeStaffPagesOfOtherAccounts: mocks.closeStaffPagesOfOtherAccounts,
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
+  noteAppPageRuns: mocks.noteAppPageRuns,
   showAppPage: vi.fn(),
   tellPanelsTheListChanged: mocks.tellPanelsTheListChanged,
   titleBarApps: () => ({ running: mocks.running, ready: mocks.ready })
@@ -458,6 +460,17 @@ describe('runs of apps kept open', () => {
     mocks.isAppsPage = false
     listener('apps-page:running')({ sender, senderFrame: {} }, false)
     expect(mocks.noteAppPageRunning).toHaveBeenCalledTimes(1)
+  })
+
+  it('takes a run list only from an app page', () => {
+    const sender = {}
+    const runs = [{ id: 'a', where: 'cloud', state: 'running' }]
+    listener('apps-page:runs')({ sender, senderFrame: {} }, runs)
+    expect(mocks.noteAppPageRuns).toHaveBeenCalledExactlyOnceWith(sender, runs)
+
+    mocks.isAppsPage = false
+    listener('apps-page:runs')({ sender, senderFrame: {} }, runs)
+    expect(mocks.noteAppPageRuns).toHaveBeenCalledTimes(1)
   })
 
   it('opens the one running app when its title bar indicator is clicked', () => {

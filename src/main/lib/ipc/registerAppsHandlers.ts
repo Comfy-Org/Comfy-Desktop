@@ -10,6 +10,7 @@ import {
   closeStaffPagesOfOtherAccounts,
   hideAppPage,
   noteAppPageRunning,
+  noteAppPageRuns,
   showAppPage,
   tellPanelsTheListChanged,
   titleBarApps
@@ -127,6 +128,10 @@ export function registerAppsHandlers(): void {
 
   ipcMain.on('apps-page:running', (event, running: unknown) => {
     if (isAppsPageSender(event.sender, event.senderFrame)) noteAppPageRunning(event.sender, running)
+  })
+
+  ipcMain.on('apps-page:runs', (event, runs: unknown) => {
+    if (isAppsPageSender(event.sender, event.senderFrame)) noteAppPageRuns(event.sender, runs)
   })
 
   ipcMain.on('comfy-titlebar:click-running-apps', (event, payload: { anchor?: MenuAnchor }) =>

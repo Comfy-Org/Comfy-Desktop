@@ -137,6 +137,9 @@ import {
   hideAppPage,
   loadedAppPage,
   noteAppPageRunning,
+  noteAppPageRuns,
+  onReportedRunsChanged,
+  reportedRunPages,
   runningAppCount,
   runningApps,
   sendAppOutputAction,
@@ -1486,6 +1489,51 @@ describe('keeping apps running in the background', () => {
     finishLoading()
     reportRun(hostedPage(), 'yes')
     expect(runningAppCount()).toBe(0)
+  })
+
+  it('lists the runs each page reports with its app, and tells listeners when they change', async () => {
+    const changed = vi.fn()
+    const stop = onReportedRunsChanged(changed)
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+
+    noteAppPageRuns(cutout.webContents as unknown as WebContents, [
+      { id: 'r1', where: 'cloud', state: 'running', step: 'Removing the background' },
+      { id: 'r2', where: 'moon', state: 'running' }
+    ])
+
+    expect(changed).toHaveBeenLastCalledWith(WINDOW_KEY)
+    expect(reportedRunPages(WINDOW_KEY)).toEqual([
+      {
+        appId: CUTOUT,
+        title: 'Remove Background',
+        page: cutout.webContents,
+        runs: [{ id: 'r1', where: 'cloud', state: 'running', step: 'Removing the background' }]
+      }
+    ])
+    stop()
+  })
+
+  it('forgets the runs a page reported when its page crashes', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    noteAppPageRuns(cutout.webContents as unknown as WebContents, [
+      { id: 'r1', where: 'cloud', state: 'running' }
+    ])
+
+    cutout.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+
+    expect(reportedRunPages(WINDOW_KEY)).toEqual([])
+  })
+
+  it('ignores a run list from a page with no app loaded', async () => {
+    await openCutout()
+
+    noteAppPageRuns(hostedPage().webContents as unknown as WebContents, [
+      { id: 'r1', where: 'cloud', state: 'running' }
+    ])
+
+    expect(reportedRunPages(WINDOW_KEY)).toEqual([])
   })
 
   it('does not call a run done when its page crashes', async () => {

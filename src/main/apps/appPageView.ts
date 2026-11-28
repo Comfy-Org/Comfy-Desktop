@@ -15,6 +15,7 @@ import type {
   RunningApp,
   TitleBarApps
 } from '../../types/ipc'
+import type { ComfyDesktopRun } from '../../types/comfyDesktopBridge'
 import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
@@ -27,6 +28,7 @@ import { pageUrlForListedApp, titleForListedApp } from './appsCatalog'
 import { currentAppsLocation } from './appsConfig'
 import { startAnsweringFromKeptCopies, stopAnsweringFromKeptCopies } from './appsOffline'
 import { registerAppsPage } from './appsPages'
+import { readReportedRuns } from './runOverview'
 import { draftOf, draftPageUrl, draftSession, forgetDrafts, revokeDraft } from './draftApps'
 import { pageUrlForHiddenApp, titleForHiddenApp } from './hiddenApps'
 import type { DraftApp } from './draftApps'
@@ -80,6 +82,7 @@ interface HostedPage {
   outputs: ShownOutputs | null
   running: boolean
   finished: boolean
+  runs: ComfyDesktopRun[] | null
   staffTitle: string | null
   fromStaffList: boolean
   openedBy: string | null
@@ -201,16 +204,42 @@ export function titleBarApps(windowKey: number): TitleBarApps {
   }
 }
 
+export interface ReportedRunPage {
+  appId: string
+  title: string
+  page: WebContents
+  runs: ComfyDesktopRun[]
+}
+
+const reportedRunsListeners = new Set<(windowKey: number) => void>()
+
+export function onReportedRunsChanged(listener: (windowKey: number) => void): () => void {
+  reportedRunsListeners.add(listener)
+  return () => reportedRunsListeners.delete(listener)
+}
+
+export function reportedRunPages(windowKey: number): ReportedRunPage[] {
+  return pagesOf(windowKey).flatMap((hosted) => {
+    const { appId, runs } = hosted
+    if (appId === null || runs === null || hosted.view.webContents.isDestroyed()) return []
+    const title = listedTitleOf(appId) ?? hosted.staffTitle ?? appId
+    return [{ appId, title, page: hosted.view.webContents, runs }]
+  })
+}
+
 function announceRuns(windowKey: number): void {
   panelOf(windowKey)?.send(APP_RUNS_CHANNEL, runsOf(windowKey))
   const titleBar = comfyWindows.get(windowKey)?.titleBarView?.webContents
   if (titleBar && !titleBar.isDestroyed()) {
     titleBar.send(TITLE_BAR_APPS_CHANNEL, titleBarApps(windowKey))
   }
+  for (const listener of reportedRunsListeners) listener(windowKey)
 }
 
 function forgetRun(hosted: HostedPage): void {
-  if (!hosted.running && !hosted.finished) return
+  const hadRuns = hosted.runs !== null
+  hosted.runs = null
+  if (!hosted.running && !hosted.finished && !hadRuns) return
   hosted.running = false
   hosted.finished = false
   announceRuns(hosted.windowKey)
@@ -496,6 +525,7 @@ function createHostedPage(
     outputs: null,
     running: false,
     finished: false,
+    runs: null,
     staffTitle: null,
     fromStaffList: false,
     openedBy: null,
@@ -790,6 +820,13 @@ export function noteAppPageRunning(contents: WebContents, running: unknown): voi
   const hosted = everyPage().find((page) => page.view.webContents === contents)
   if (!hosted || (running && !hosted.loaded)) return
   setRunning(hosted, running)
+}
+
+export function noteAppPageRuns(contents: WebContents, runs: unknown): void {
+  const hosted = everyPage().find((page) => page.view.webContents === contents)
+  if (!hosted?.loaded) return
+  hosted.runs = readReportedRuns(runs)
+  announceRuns(hosted.windowKey)
 }
 
 export function appSwitchStopsRun(panel: WebContents, appId: unknown): AppSwitchStop | null {
