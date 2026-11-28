@@ -29,10 +29,21 @@ let _entries: Record<string, ReleaseCacheEntry> = {}
 let _loaded: boolean = false
 
 function _ensureLoaded(): void {
-  if (_loaded) return
+  if (_loaded && fs.existsSync(CACHE_FILE)) return
+
+  _entries = {}
+  if (!fs.existsSync(CACHE_FILE)) {
+    _loaded = false
+    return
+  }
+
   try {
     const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'))
-    _entries = (raw.entries as Record<string, ReleaseCacheEntry>) || {}
+    const loadedEntries =
+      raw && typeof raw === 'object'
+        ? (raw as { entries?: Record<string, ReleaseCacheEntry> }).entries
+        : undefined
+    _entries = loadedEntries || {}
   } catch {
     _entries = {}
   }

@@ -1033,6 +1033,17 @@ describe('system git fallback on pygit2 auth failure', () => {
       ).toBe(true)
     })
 
+    it('classifies certificate rejection as auth failure', () => {
+      expect(
+        isPygit2AuthFailure({
+          exitCode: 1,
+          stdout: '',
+          stderr:
+            'fatal: unable to access https://github.com/: user rejected certificate for github.com'
+        })
+      ).toBe(true)
+    })
+
     it('does not classify a generic failure as auth failure', () => {
       expect(
         isPygit2AuthFailure({ exitCode: 1, stdout: '', stderr: 'fatal: not a git repository' })
