@@ -52,7 +52,9 @@ account session, `window.comfyDesktopLocal`, a ComfyUI on this computer,
 runs, its state and its step, for Desktop's run overview. Desktop builds
 before the run overview ignore `runs`.
 A run reported with `canStop: true` gets a Stop button there, and
-`onStopRequested(callback)` tells the page which run to stop.
+`onStopRequested(callback)` tells the page which run to stop. Once the stop
+is under way, report that run without `canStop`. If it still has `canStop`
+5 seconds after the press, Desktop says it did not stop and offers Stop again.
 
 ```ts
 import type {

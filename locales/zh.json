@@ -581,6 +581,8 @@
     "otherApps": "其他应用",
     "finished": "已结束 · {count}",
     "stopRun": "停止 {app} 的任务",
+    "stopping": "正在停止…",
+    "stopFailed": "未能停止，请重试。",
     "openApp": "打开 {app}"
   },
   "comfyUISettings": {

@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
   ready: [] as { id: string; title: string }[],
   noteAppPageRunning: vi.fn(),
   noteAppPageRuns: vi.fn(),
-  askPageToStopRun: vi.fn(() => true),
+  askPageToStopRun: vi.fn(),
   runsPopupWindowKey: null as number | null,
   reportedRunPages: [] as { appId: string; title: string; page: unknown; runs: unknown[] }[],
   reportedRunsListeners: [] as ((windowKey: number) => void)[],

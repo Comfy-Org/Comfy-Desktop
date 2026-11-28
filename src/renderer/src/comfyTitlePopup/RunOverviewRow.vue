@@ -26,7 +26,7 @@ const fullStatus = computed(() => [props.status, props.stepCount].filter(Boolean
 <template>
   <button
     type="button"
-    class="flex w-full cursor-pointer items-center gap-3 border-none bg-transparent px-3 py-2.5 text-left [font:inherit] text-foreground hover:bg-card-hover/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+    class="flex w-full cursor-pointer items-center gap-3 border-none bg-transparent px-3 py-2.5 text-left [font:inherit] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
     :aria-label="t('runOverview.openApp', { app: appTitle })"
     @click="emit('open')"
   >

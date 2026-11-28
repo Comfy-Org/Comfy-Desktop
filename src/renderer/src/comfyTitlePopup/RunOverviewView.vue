@@ -63,20 +63,55 @@ const finished = computed(() =>
 const showFinished = ref(false)
 
 const runKey = (run: TitleBarRun): string => `${run.appId}:${run.id}`
-const stopping = ref(new Set<string>())
+const STOP_ANSWER_MS = 5000
+const stopping = ref(new Map<string, ReturnType<typeof setTimeout>>())
+const stopFailed = ref(new Map<string, string>())
+const reportOf = (run: TitleBarRun): string => JSON.stringify(run)
+
+function endStopping(key: string): void {
+  const timer = stopping.value.get(key)
+  if (timer === undefined) return
+  clearTimeout(timer)
+  const next = new Map(stopping.value)
+  next.delete(key)
+  stopping.value = next
+}
+
+function markStopFailed(key: string): void {
+  endStopping(key)
+  const run = props.overview.runs.find((candidate) => runKey(candidate) === key)
+  if (run?.canStop) stopFailed.value = new Map(stopFailed.value).set(key, reportOf(run))
+}
 
 watch(
   () => props.overview.runs,
   (runs) => {
-    const stillStoppable = new Set(runs.filter((run) => run.canStop).map(runKey))
-    stopping.value = new Set([...stopping.value].filter((key) => stillStoppable.has(key)))
+    const stoppable = new Map(runs.filter((run) => run.canStop).map((run) => [runKey(run), run]))
+    for (const key of stopping.value.keys()) if (!stoppable.has(key)) endStopping(key)
+    stopFailed.value = new Map(
+      [...stopFailed.value].filter(([key, report]) => {
+        const run = stoppable.get(key)
+        return run !== undefined && reportOf(run) === report
+      })
+    )
   }
 )
 
 function stop(run: TitleBarRun): void {
-  stopping.value = new Set([...stopping.value, runKey(run)])
+  const key = runKey(run)
+  if (stopping.value.has(key)) return
+  const failed = new Map(stopFailed.value)
+  failed.delete(key)
+  stopFailed.value = failed
+  const timer = setTimeout(() => markStopFailed(key), STOP_ANSWER_MS)
+  stopping.value = new Map(stopping.value).set(key, timer)
   emit('stop', run.appId, run.id)
 }
+
+const isStopping = (run: TitleBarRun): boolean => stopping.value.has(runKey(run))
+const reserveStopSpace = computed(() =>
+  places.value.some(({ runs }) => runs.some((run) => run.canStop))
+)
 const finishedList = useTemplateRef<HTMLElement>('finishedList')
 
 async function toggleFinished(): Promise<void> {
@@ -117,10 +152,13 @@ onMounted(() => {
 })
 onUnmounted(() => {
   stopTicker()
+  for (const timer of stopping.value.values()) clearTimeout(timer)
   resizeObserver?.disconnect()
 })
 
 function statusLine(run: TitleBarRun): string {
+  if (isStopping(run)) return t('runOverview.stopping')
+  if (stopFailed.value.has(runKey(run))) return t('runOverview.stopFailed')
   if (run.state === 'queued') {
     if (run.ahead === undefined) return t('runOverview.waiting')
     return run.ahead === 0 ? t('runOverview.next') : t('runOverview.ahead', run.ahead)
@@ -131,6 +169,7 @@ function statusLine(run: TitleBarRun): string {
 }
 
 function stepCountOf(run: TitleBarRun): string | null {
+  if (isStopping(run) || stopFailed.value.has(runKey(run))) return null
   if (run.state !== 'running' || run.stepIndex === undefined || run.stepCount === undefined) {
     return null
   }
@@ -173,7 +212,7 @@ function progressWidth(run: TitleBarRun): string {
           <li
             v-for="run in place.runs"
             :key="runKey(run)"
-            class="relative flex items-center border-t border-solid border-border first:border-t-0"
+            class="relative flex items-center border-t border-solid border-border first:border-t-0 hover:bg-card-hover/80"
           >
             <RunOverviewRow
               :app-title="run.appTitle"
@@ -203,7 +242,7 @@ function progressWidth(run: TitleBarRun): string {
               variant="muted-textonly"
               size="icon"
               class="mr-1.5 shrink-0"
-              :disabled="stopping.has(runKey(run))"
+              :disabled="isStopping(run)"
               :aria-label="t('runOverview.stopRun', { app: run.appTitle })"
               :title="t('runOverview.stopRun', { app: run.appTitle })"
               data-testid="run-overview-stop"
@@ -211,6 +250,12 @@ function progressWidth(run: TitleBarRun): string {
             >
               <Square :size="12" fill="currentColor" aria-hidden="true" />
             </Button>
+            <span
+              v-else-if="reserveStopSpace"
+              class="mr-1.5 size-8 shrink-0"
+              aria-hidden="true"
+              data-testid="run-overview-stop-space"
+            />
             <span
               v-if="run.state === 'running' && run.progress !== undefined"
               class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-secondary"
@@ -237,7 +282,7 @@ function progressWidth(run: TitleBarRun): string {
           <li
             v-for="app in overview.apps"
             :key="app.id"
-            class="border-t border-solid border-border first:border-t-0"
+            class="border-t border-solid border-border first:border-t-0 hover:bg-card-hover/80"
           >
             <RunOverviewRow
               :app-title="app.title"
@@ -283,7 +328,7 @@ function progressWidth(run: TitleBarRun): string {
           <li
             v-for="run in finished"
             :key="`${run.appId}:${run.id}`"
-            class="border-t border-solid border-border first:border-t-0"
+            class="border-t border-solid border-border first:border-t-0 hover:bg-card-hover/80"
           >
             <RunOverviewRow
               :app-title="run.appTitle"

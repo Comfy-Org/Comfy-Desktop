@@ -1575,12 +1575,12 @@ describe('keeping apps running in the background', () => {
     const stopsSent = (): unknown[] =>
       cutout.webContents.send.mock.calls.filter(([channel]) => channel === 'apps-page:stop-run')
 
-    expect(askPageToStopRun(WINDOW_KEY, CUTOUT, 'r2')).toBe(false)
-    expect(askPageToStopRun(WINDOW_KEY, HDR, 'r1')).toBe(false)
-    expect(askPageToStopRun(WINDOW_KEY + 1, CUTOUT, 'r1')).toBe(false)
+    askPageToStopRun(WINDOW_KEY, CUTOUT, 'r2')
+    askPageToStopRun(WINDOW_KEY, HDR, 'r1')
+    askPageToStopRun(WINDOW_KEY + 1, CUTOUT, 'r1')
     expect(stopsSent()).toEqual([])
 
-    expect(askPageToStopRun(WINDOW_KEY, CUTOUT, 'r1')).toBe(true)
+    askPageToStopRun(WINDOW_KEY, CUTOUT, 'r1')
     expect(stopsSent()).toEqual([['apps-page:stop-run', 'r1']])
   })
 

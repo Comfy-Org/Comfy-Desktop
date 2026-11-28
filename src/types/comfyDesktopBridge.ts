@@ -457,8 +457,12 @@ export interface ComfyDesktopHostedRunsBridge {
   /**
    * Calls back with a run's `id` when the person presses Stop for it in
    * Desktop's run overview. Stop it as the page's own Stop does, then report
-   * again. Desktop asks only for runs reported with `canStop: true`. Returns a
-   * function that stops the callbacks. Absent on Desktop builds before it.
+   * again. Desktop asks only for runs reported with `canStop: true`, and shows
+   * the run as stopping until a report drops its `canStop` or ends it. Once the
+   * stop is under way, report the run without `canStop`. If the run still has
+   * `canStop` 5 seconds after the press, Desktop says it did not stop and
+   * offers Stop again. Returns a function that stops the callbacks. Absent on
+   * Desktop builds before it.
    */
   onStopRequested?(callback: (runId: string) => void): () => void
 }
