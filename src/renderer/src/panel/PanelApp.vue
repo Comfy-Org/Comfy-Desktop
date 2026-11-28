@@ -315,8 +315,10 @@ const selectedWorkflow = ref<CatalogWorkflow | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
 let stayOnAppsAfterClose = false
+const draftsOpenedFromDevelopment = new Set<string>()
 
 function homePageOf(app: AppCard): AppHomePage {
+  if (draftsOpenedFromDevelopment.has(app.id)) return 'staff-apps'
   if (listedApps.value?.some((listed) => listed.id === app.id)) return 'apps'
   return liveStaffApps.value.some((staffApp) => staffApp.id === app.id) ? 'staff-apps' : 'apps'
 }
@@ -409,14 +411,17 @@ async function confirmLeavingRuns(): Promise<boolean> {
 
 async function openStaffDraft(app: HiddenAppCard): Promise<void> {
   const request = await window.api.openHiddenAppDraft(app.id).catch(() => null)
-  if (request) await answerDraftApp(request)
+  if (request) await answerDraftApp(request, 'staff-apps')
 }
 
 function openStaffHubPage(app: HiddenAppCard): void {
   void window.api.openHiddenAppHubPage(app.id).catch(() => false)
 }
 
-async function answerDraftApp(request: DraftAppRequest): Promise<void> {
+async function answerDraftApp(
+  request: DraftAppRequest,
+  openedFrom: AppHomePage = 'apps'
+): Promise<void> {
   if (request.kind === 'refused') {
     await dialogs.alert({ title: request.title, message: request.message })
     return
@@ -429,10 +434,12 @@ async function answerDraftApp(request: DraftAppRequest): Promise<void> {
       cancelLabel: 'Cancel'
     })
     const accepted = choice === 'primary' ? await window.api.acceptDraftApp(request.token) : null
-    if (accepted) await answerDraftApp(accepted)
+    if (accepted) await answerDraftApp(accepted, openedFrom)
     return
   }
   if (!(await switchStillWanted(request.card))) return
+  if (openedFrom === 'staff-apps') draftsOpenedFromDevelopment.add(request.card.id)
+  else draftsOpenedFromDevelopment.delete(request.card.id)
   if (activePanel.value !== 'chooser') await switchPanel('chooser', 'install')
   closeBuildDetails()
   assetsFocusName.value = null

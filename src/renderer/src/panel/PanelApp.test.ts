@@ -2009,6 +2009,61 @@ describe('PanelApp', () => {
     wrapper.unmount()
   })
 
+  it('keeps Development selected while a draft opened from it is open, and goes back to Development', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, page: 'missing', opens: 'draft' }]
+    })
+    vi.mocked(window.api.openHiddenAppDraft).mockResolvedValue({
+      kind: 'ask',
+      appId: 'draft-pr445-relight-0a1b2c3d',
+      token: 'question-7',
+      title: 'Open a draft app from comfy-website-preview-pr-445.vercel.app?',
+      message: '"Relight". It is not published, and it runs with your Comfy Cloud account.'
+    })
+    vi.mocked(window.api.acceptDraftApp).mockResolvedValue({
+      kind: 'open',
+      card: { id: 'draft-pr445-relight-0a1b2c3d', title: 'Relight', description: '', covers: [] }
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    const open = await vi.waitFor(() => {
+      const action = document.querySelector<HTMLElement>(
+        '[role="alertdialog"] [data-testid="base-alert-action"]'
+      )
+      if (!action) throw new Error('The draft app question is not open yet')
+      return action
+    })
+    open.click()
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-staff-apps"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(
+      wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')
+    ).toBeUndefined()
+
+    await goBackToAllAppsFromThePage()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-staff-apps"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    wrapper.unmount()
+  })
+
   it('shows why when Desktop refuses to open the draft, and opens nothing', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listHiddenApps).mockResolvedValue({
