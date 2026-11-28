@@ -381,6 +381,8 @@
     "buildDidntStart": "Didn't start",
     "buildCrashed": "Crashed",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
+    "exampleWorkflows": "Example workflows",
+    "carouselTabs": "Browse featured content",
     "seeAllApps": "See all apps",
     "seeAllWorkflows": "See all workflows",
     "showWorkflow": "Show {title}",
