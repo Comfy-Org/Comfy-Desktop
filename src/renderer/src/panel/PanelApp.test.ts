@@ -2351,6 +2351,128 @@ describe('PanelApp', () => {
     wrapper.unmount()
   })
 
+  const SKETCH_STAFF_APP = {
+    id: 'sketch',
+    title: 'Sketch',
+    description: 'Turn a photo into a drawing.',
+    covers: [],
+    reasons: ['off' as const],
+    page: 'missing' as const,
+    opens: 'draft' as const
+  }
+
+  const RELIGHT_DRAFT_QUESTION = {
+    kind: 'ask' as const,
+    appId: 'draft-pr445-relight-0a1b2c3d',
+    token: 'question-7',
+    title: 'Open a draft app from comfy-website-preview-pr-445.vercel.app?',
+    message: '"Relight". It is not published, and it runs with your Comfy Cloud account.'
+  }
+
+  function holdTheRelightDraftLookup(): (request: typeof RELIGHT_DRAFT_QUESTION) => void {
+    let finishRelightLookup!: (request: typeof RELIGHT_DRAFT_QUESTION) => void
+    const relightLookup = new Promise<typeof RELIGHT_DRAFT_QUESTION>((resolve) => {
+      finishRelightLookup = resolve
+    })
+    vi.mocked(window.api.openHiddenAppDraft).mockImplementation(async (id: string) => {
+      if (id === 'relight') return relightLookup
+      return {
+        kind: 'ask',
+        appId: 'draft-pr450-sketch-4e5f6a7b',
+        token: 'question-8',
+        title: 'Open a draft app from comfy-website-preview-pr-450.vercel.app?',
+        message: '"Sketch". It is not published, and it runs with your Comfy Cloud account.'
+      }
+    })
+    return finishRelightLookup
+  }
+
+  it('keeps the newer draft question when an older draft lookup finishes late', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, page: 'missing', opens: 'draft' }, SKETCH_STAFF_APP]
+    })
+    const finishRelightLookup = holdTheRelightDraftLookup()
+    vi.mocked(window.api.acceptDraftApp).mockResolvedValue({
+      kind: 'open',
+      card: { id: 'draft-pr450-sketch-4e5f6a7b', title: 'Sketch', description: '', covers: [] }
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    await wrapper.get('[data-testid="staff-app-card-sketch"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+        'comfy-website-preview-pr-450.vercel.app'
+      )
+    )
+    finishRelightLookup(RELIGHT_DRAFT_QUESTION)
+    await flushPromises()
+
+    expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1)
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'comfy-website-preview-pr-450.vercel.app'
+    )
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).not.toContain(
+      'comfy-website-preview-pr-445.vercel.app'
+    )
+    document
+      .querySelector<HTMLElement>('[role="alertdialog"] [data-testid="base-alert-action"]')!
+      .click()
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Sketch')
+    )
+    expect(window.api.acceptDraftApp).toHaveBeenCalledExactlyOnceWith('question-8')
+    wrapper.unmount()
+  })
+
+  it('keeps a draft link question when a staff draft lookup started before it finishes late', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, page: 'missing', opens: 'draft' }]
+    })
+    const finishRelightLookup = holdTheRelightDraftLookup()
+    const wrapper = mountPanel()
+    await flushPromises()
+    const ask = vi.mocked(window.api.onOpenDraftApp).mock.calls[0]?.[0]
+    expect(ask).toBeDefined()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    ask!({
+      kind: 'ask',
+      appId: 'draft-pr683-depth-swap-0a1b2c3d',
+      token: 'question-1',
+      title: 'Open a draft app from pr-683.drafts.comfy.org?',
+      message: '"Depth Swap". It is not published, and it runs with your Comfy Cloud account.'
+    })
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+        'pr-683.drafts.comfy.org'
+      )
+    )
+    finishRelightLookup(RELIGHT_DRAFT_QUESTION)
+    await flushPromises()
+
+    expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1)
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'pr-683.drafts.comfy.org'
+    )
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).not.toContain(
+      'comfy-website-preview-pr-445.vercel.app'
+    )
+    document
+      .querySelector<HTMLElement>('[role="alertdialog"] [data-testid="base-alert-action"]')!
+      .click()
+    await flushPromises()
+    expect(window.api.acceptDraftApp).toHaveBeenCalledExactlyOnceWith('question-1')
+    wrapper.unmount()
+  })
+
   async function openRelightFromDevelopment(): Promise<ReturnType<typeof mountPanel>> {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listHiddenApps).mockResolvedValue({ apps: [RELIGHT_STAFF_APP] })

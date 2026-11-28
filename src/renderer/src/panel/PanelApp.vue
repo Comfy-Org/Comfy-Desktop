@@ -416,9 +416,12 @@ async function confirmLeavingRuns(): Promise<boolean> {
   return choice === 'primary'
 }
 
+let draftRequests = 0
+
 async function openStaffDraft(app: HiddenAppCard): Promise<void> {
+  const draftRequest = ++draftRequests
   const request = await window.api.openHiddenAppDraft(app.id).catch(() => null)
-  if (request) await answerDraftApp(request, 'staff-apps')
+  if (request && draftRequest === draftRequests) await answerDraftApp(request, 'staff-apps')
 }
 
 async function openStaffHubPage(app: HiddenAppCard): Promise<void> {
@@ -708,7 +711,10 @@ onMounted(async () => {
     appInProgress.value = null
   })
 
-  unsubOpenDraftApp = window.api.onOpenDraftApp((request) => void answerDraftApp(request))
+  unsubOpenDraftApp = window.api.onOpenDraftApp((request) => {
+    draftRequests += 1
+    void answerDraftApp(request)
+  })
 
   try {
     const shouldOpenFirstUse =
