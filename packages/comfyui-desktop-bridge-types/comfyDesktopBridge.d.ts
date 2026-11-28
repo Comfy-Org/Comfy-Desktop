@@ -408,7 +408,7 @@ export interface ComfyDesktopRun {
   step?: string
   /** The step's number, from 1, while `running`. */
   stepIndex?: number
-  /** How many steps the run has, while `running`. */
+  /** How many steps the run has, while `running`. Send it with `stepIndex`; Desktop ignores one without the other. */
   stepCount?: number
   /** From 0 to 1, while `running`. */
   progress?: number
@@ -429,7 +429,8 @@ export interface ComfyDesktopRunState {
    * Each run the page has, newest first: the ones going and the ones that
    * ended and are still on the page. Desktop keeps the first 20. Desktop
    * builds that predate the run overview ignore it. Once a page has sent
-   * `runs`, a report without it clears the page's list.
+   * `runs`, a report without it clears the page's list. Send plain data
+   * only: a list Desktop cannot copy counts as an empty one.
    */
   runs?: ComfyDesktopRun[]
 }

@@ -1,3 +1,5 @@
+import { MAX_REPORTED_RUNS } from '../shared/reportedRuns'
+
 export const RUN_TOAST_SELECTOR = '.cs-toasts .cs-toast'
 
 export function watchAppRun(page: Document, report: (running: boolean) => void): () => void {
@@ -12,6 +14,14 @@ export function watchAppRun(page: Document, report: (running: boolean) => void):
   observer.observe(page.documentElement, { childList: true, subtree: true })
   check()
   return () => observer.disconnect()
+}
+
+function sendRunList(sendRuns: (runs: unknown[]) => void, runs: unknown[]): void {
+  try {
+    sendRuns(runs)
+  } catch {
+    sendRuns([])
+  }
 }
 
 export interface RunReporter {
@@ -43,7 +53,7 @@ export function createRunReporter(
           ? state.runs
           : null
       if (runs) pageListsRuns = true
-      if (pageListsRuns) sendRuns(runs ?? [])
+      if (pageListsRuns) sendRunList(sendRuns, runs?.slice(0, MAX_REPORTED_RUNS) ?? [])
     }
   }
 }
