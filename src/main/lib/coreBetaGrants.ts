@@ -37,6 +37,7 @@ export type CoreCommitRange = readonly [lower: string, upper: string | null]
 
 export type CoreBetaCommitGrant = CoreBetaGrantBase & {
   readonly commitRanges: readonly CoreCommitRange[]
+  readonly releaseFloor?: string
 }
 
 export type CoreBetaGrant = CoreBetaVersionGrant | CoreBetaCommitGrant
@@ -137,9 +138,18 @@ export function parseCoreBetaGrants(
       if ('min_core_version' in candidate || 'max_core_version' in candidate) continue
       const commitRanges = parseCommitRanges(candidate.commit_ranges)
       if (commitRanges === null) continue
+      const openRanges = commitRanges.every(([, upper]) => upper === null)
+      const releaseFloor = openRanges
+        ? parseCoreVersion((candidate as { release_floor?: unknown }).release_floor)
+        : null
+      if (releaseFloor === null && 'release_floor' in candidate) {
+        const why = openRanges ? 'not a version' : 'a commit range has an upper bound'
+        console.warn(`[core-beta] ${candidate.arg} release_floor ignored: ${why}`)
+      }
       flags.push({
         arg: candidate.arg,
         commitRanges,
+        ...(releaseFloor === null ? {} : { releaseFloor }),
         ...(notice === undefined ? {} : { notice })
       })
       continue
@@ -220,6 +230,11 @@ function commitRangeMatches(
   return upper === null || ancestry.get(upper) === false
 }
 
+const releaseAtFloor = (
+  { semver: version, verified, current }: CoreVersionState,
+  floor: string
+): boolean => version !== null && verified && current && semver.gte(version, floor)
+
 function formatCommitRange([lower, upper]: CoreCommitRange): string {
   return `${lower.slice(0, 12)}..${upper === null ? '' : upper.slice(0, 12)}`
 }
@@ -237,8 +252,7 @@ function rangeShortfall(
     : `upper ${upper!.slice(0, 12)} unresolved`
 }
 
-function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): string | null {
-  if (flag.commitRanges.some((range) => commitRangeMatches(range, commits.ancestry))) return null
+function rangesShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): string {
   if (commits.head === null) return 'no readable git HEAD to measure'
   return flag.commitRanges
     .map(
@@ -246,6 +260,17 @@ function commitShortfall(flag: CoreBetaCommitGrant, commits: CoreCommitState): s
         `commit range ${formatCommitRange(range)}: ${rangeShortfall(range, commits.ancestry)}`
     )
     .join(' | ')
+}
+
+function commitShortfall(
+  flag: CoreBetaCommitGrant,
+  commits: CoreCommitState,
+  core: CoreVersionState
+): string | null {
+  const floor = flag.releaseFloor
+  if (floor === undefined) return rangesShortfall(flag, commits)
+  if (releaseAtFloor(core, floor)) return null
+  return `${rangesShortfall(flag, commits)} | core ${core.semver ?? 'unknown'} is not a verified current v${floor}+ release`
 }
 
 function versionGateOpen(
@@ -292,10 +317,14 @@ export function selectCoreBetaGrantArgs(
     if (isCommitGrant(flag)) {
       const ranges = flag.commitRanges.map(formatCommitRange).join(' | ')
       const head = commits.head === null ? 'none' : commits.head.slice(0, 12)
-      shortfall = commitShortfall(flag, commits)
-      trace(
-        `[core-beta] commits ${arg}: ${ranges} head=${head} in-range=${shortfall === null ? 'yes' : 'no'}`
-      )
+      const matched = flag.commitRanges.some((range) => commitRangeMatches(range, commits.ancestry))
+      shortfall = matched ? null : commitShortfall(flag, commits, core)
+      const inRange = matched
+        ? 'yes'
+        : shortfall === null
+          ? `release v${version} >= v${flag.releaseFloor}`
+          : 'no'
+      trace(`[core-beta] commits ${arg}: ${ranges} head=${head} in-range=${inRange}`)
     } else {
       if (versionOpen && version !== null) {
         const { minCoreVersion, maxCoreVersion } = flag
@@ -388,9 +417,6 @@ export interface CoreBetaPlan {
 
 const FORCED_OFF = 'forced off remotely'
 
-const releaseAtAssetsFloor = ({ semver: version, verified, current }: CoreVersionState): boolean =>
-  version !== null && verified && current && semver.gte(version, ASSETS_MIN_CORE_VERSION)
-
 function assetsDecided(
   grants: readonly CoreBetaGrant[],
   userArgs: readonly string[],
@@ -410,7 +436,9 @@ export function assetsFloorShas(
   schema: ComfyArgsSchema,
   core: CoreVersionState
 ): string[] {
-  const needed = assetsDecided(grants, userArgs, schema) === null && !releaseAtAssetsFloor(core)
+  const needed =
+    assetsDecided(grants, userArgs, schema) === null &&
+    !releaseAtFloor(core, ASSETS_MIN_CORE_VERSION)
   return needed ? [ASSETS_MIN_CORE_COMMIT] : []
 }
 
@@ -419,7 +447,7 @@ function assetsDecision(facts: CoreBetaFacts): Pick<CoreBetaPlan, 'assetsArgs' |
   let withheld = assetsDecided(grants, userArgs, schema)
   if (
     withheld === null &&
-    !releaseAtAssetsFloor(core) &&
+    !releaseAtFloor(core, ASSETS_MIN_CORE_VERSION) &&
     !commitRangeMatches([ASSETS_MIN_CORE_COMMIT, null], commits.ancestry)
   ) {
     const where = `core ${commits.head?.slice(0, 12) ?? core.semver ?? 'unknown'}`

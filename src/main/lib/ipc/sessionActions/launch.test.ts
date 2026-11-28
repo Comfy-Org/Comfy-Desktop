@@ -1305,6 +1305,45 @@ describe('buildLaunchArgs core beta injection', () => {
     ])
   })
 
+  it.each([
+    [
+      'its commit range',
+      { ancestry: [true], verified: false, head: 'e'.repeat(40) },
+      'eeeeeeeeeeee'
+    ],
+    [
+      'its release floor with a readable HEAD',
+      { ancestry: [], verified: true, head: 'e'.repeat(40) },
+      'eeeeeeeeeeee'
+    ],
+    ['its release floor with no git HEAD', { ancestry: [], verified: true, head: null }, '0.3.81']
+  ])(
+    'names the release floor in the record of a floor grant applied through %s',
+    (_l, at, core) => {
+      const lower = 'a'.repeat(40)
+      const floorGrant: CoreBetaGrant = {
+        arg: '--enable-assets',
+        commitRanges: [[lower, null]],
+        releaseFloor: '0.3.80'
+      }
+      const built = build({
+        schema: schemaOf('enable-assets'),
+        betaFlags: [floorGrant],
+        coreVersionVerified: at.verified,
+        coreCommits: {
+          head: at.head,
+          ancestry: new Map(at.ancestry.map((has) => [lower, has] as const))
+        }
+      })
+
+      expect(built.beta.applied).toEqual([floorGrant])
+      expect(built.beta.logRecords).toEqual([
+        `[assets] --enable-assets withheld: core ${core} proves neither 7897b4ee3527 nor a verified v0.38.0+ release\n`,
+        `[core-beta] --enable-assets (core ${core} in a granted commit range or a v0.3.80+ release, opted in)\n`
+      ])
+    }
+  )
+
   it('reports the core version the grants were matched against', () => {
     expect(build({ schema: schemaOf('enable-assets') }).beta.coreVersion).toBe('0.3.81')
   })
