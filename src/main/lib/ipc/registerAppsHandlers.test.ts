@@ -583,7 +583,7 @@ describe('runs of apps kept open', () => {
             { ...CLOUD_RUN, ...app, buildId: null, buildName: null },
             { ...LOCAL_RUN, ...app, buildId: 'build-1', buildName: 'My ComfyUI' }
           ],
-          apps: []
+          apps: [{ ...HDR, picture: null, state: 'running' }]
         },
         { x: 812, y: 36 }
       )
@@ -599,6 +599,7 @@ describe('runs of apps kept open', () => {
 
       await vi.waitFor(() => expect(mocks.openRunsPopup).toHaveBeenCalledTimes(1))
       expect(mocks.openRunsPopup.mock.lastCall?.[1].apps).toEqual([
+        { ...HDR, picture: null, state: 'running' },
         { ...UPSCALE, picture: null, state: 'running' },
         { ...RELIGHT, picture: null, state: 'ready' }
       ])

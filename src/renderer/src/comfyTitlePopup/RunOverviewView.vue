@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AppWindow,
@@ -56,6 +56,14 @@ const finished = computed(() =>
 )
 
 const showFinished = ref(false)
+const finishedList = useTemplateRef<HTMLElement>('finishedList')
+
+async function toggleFinished(): Promise<void> {
+  showFinished.value = !showFinished.value
+  if (!showFinished.value) return
+  await nextTick()
+  finishedList.value?.scrollIntoView({ block: 'nearest' })
+}
 
 const now = ref(Date.now())
 let ticker: ReturnType<typeof setInterval> | null = null
@@ -222,7 +230,7 @@ function progressWidth(run: TitleBarRun): string {
           class="w-full justify-between px-1 text-[12px] font-medium"
           :aria-expanded="showFinished"
           data-testid="run-overview-finished-toggle"
-          @click="showFinished = !showFinished"
+          @click="toggleFinished"
         >
           {{ t('runOverview.finished', { count: finished.length }) }}
           <ChevronRight
@@ -234,6 +242,7 @@ function progressWidth(run: TitleBarRun): string {
         </Button>
         <ol
           v-if="showFinished"
+          ref="finishedList"
           class="m-0 flex list-none flex-col overflow-hidden rounded-xl bg-card p-0"
         >
           <li

@@ -105,7 +105,7 @@ function openApps(windowKey: number): TitleBarOpenApp[] {
 
 function runOverview(windowKey: number, buildNames: Map<string, string>): TitleBarRunOverview {
   const pages = reportedRunPages(windowKey)
-  const reporting = new Set(pages.map(({ appId }) => appId))
+  const listing = new Set(pages.filter(({ runs }) => runs.length > 0).map(({ appId }) => appId))
   const runs = pages.flatMap(({ appId, title, page, runs }) => {
     const pageBuild = pageBuildId(page)
     return runs.map((run) => {
@@ -120,7 +120,7 @@ function runOverview(windowKey: number, buildNames: Map<string, string>): TitleB
       }
     })
   })
-  const apps = openApps(windowKey).filter(({ id }) => !reporting.has(id))
+  const apps = openApps(windowKey).filter(({ id }) => !listing.has(id))
   return { runs, apps }
 }
 
