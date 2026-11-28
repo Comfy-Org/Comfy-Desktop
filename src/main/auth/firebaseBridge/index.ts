@@ -94,7 +94,7 @@ export async function handleFirebasePopup(
       injectFirebaseSession(sessionInjection, startOrigin, user, apiKey),
       signal
     )
-    if (!injected) return
+    if (injected !== 'injected') return
     if (signal.aborted || !isActiveBridgeFlow(flow)) return
     bindSignedInUser(user, comfyContents)
     restoreParentWindow(opts.parentWindow)

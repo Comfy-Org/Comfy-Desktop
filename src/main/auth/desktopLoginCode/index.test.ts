@@ -97,6 +97,7 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
     isDestroyed: vi.fn(() => false),
     getURL: vi.fn(() => url),
     executeJavaScript: vi.fn(() => Promise.resolve()),
+    session: {},
     mainFrame
   } as unknown as WebContents & {
     executeJavaScript: ReturnType<typeof vi.fn>

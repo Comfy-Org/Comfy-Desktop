@@ -9,6 +9,7 @@ import {
   releaseFirebaseSessionInjection,
   WEB_SESSION_CREATE_TIMEOUT_MS
 } from './inject'
+import { runOnPartition, trackPartitionCleanup } from './partitionCoordinator'
 
 const ORIGIN = 'https://cloud.comfy.org'
 const OWNER = 'owner-token'
@@ -104,29 +105,119 @@ describe('buildIndexedDbInjectScript', () => {
   })
 })
 
+function fakeContents() {
+  const frame = {
+    executeJavaScript: vi.fn((script: string): Promise<unknown> =>
+      Promise.resolve(script.includes('location.reload()') ? true : undefined)
+    ),
+    isDestroyed: vi.fn(() => false)
+  }
+  const contents = {
+    getURL: vi.fn(() => `${ORIGIN}/workspaces/test`),
+    isDestroyed: vi.fn(() => false),
+    executeJavaScript: vi.fn(() => Promise.resolve(true)),
+    session: {},
+    mainFrame: frame
+  }
+  return { frame, contents, electron: contents as unknown as Electron.WebContents }
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => {}
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 describe('injectFirebaseSession', () => {
   it('executes on the captured main frame and invalidates it when superseded', async () => {
-    const executeJavaScript = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValue(undefined)
-    const frame = {
-      executeJavaScript,
-      isDestroyed: vi.fn(() => false)
-    }
-    const contents = {
-      getURL: vi.fn(() => `${ORIGIN}/workspaces/test`),
-      isDestroyed: vi.fn(() => false),
-      mainFrame: frame
-    } as unknown as Electron.WebContents
+    const { frame, electron } = fakeContents()
 
-    const first = beginFirebaseSessionInjection(contents)
-    await expect(injectFirebaseSession(first, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(true)
+    const first = beginFirebaseSessionInjection(electron)
+    await expect(injectFirebaseSession(first, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(
+      'injected'
+    )
 
-    const second = beginFirebaseSessionInjection(contents)
-    expect(executeJavaScript).toHaveBeenLastCalledWith(expect.stringContaining('= null'))
+    const second = beginFirebaseSessionInjection(electron)
+    expect(frame.executeJavaScript).toHaveBeenLastCalledWith(expect.stringContaining('= null'))
 
     releaseFirebaseSessionInjection(second)
+  })
+
+  it('reports a marker that could not be saved apart from a view that kept its own session', async () => {
+    const { frame, electron } = fakeContents()
+    frame.executeJavaScript.mockImplementation((script: string) =>
+      Promise.resolve(script.includes('location.reload()') ? 'marker_unsaved' : undefined)
+    )
+    const injection = beginFirebaseSessionInjection(electron)
+
+    await expect(
+      injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST', { onlyIfSignedOut: true })
+    ).resolves.toBe('marker_unsaved')
+
+    releaseFirebaseSessionInjection(injection)
+  })
+
+  it("cancels a Desktop sign-out cleanup on the same partition and waits for it to settle before the person's sign-in writes", async () => {
+    const cleanupView = fakeContents()
+    const signInView = fakeContents()
+    signInView.contents.session = cleanupView.contents.session
+    const untrack = trackPartitionCleanup(cleanupView.electron, 'cleanup-token')
+    const cleanup = deferred()
+    const cleanupRun = runOnPartition(cleanupView.electron, () => cleanup.promise)
+
+    const injection = beginFirebaseSessionInjection(signInView.electron)
+    const injecting = injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST')
+
+    expect(cleanupView.contents.executeJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('"cleanup-token"')
+    )
+    await Promise.resolve()
+    expect(signInView.frame.executeJavaScript).not.toHaveBeenCalled()
+
+    untrack()
+    cleanup.resolve()
+    await cleanupRun
+    await expect(injecting).resolves.toBe('injected')
+    expect(signInView.frame.executeJavaScript).toHaveBeenCalled()
+
+    releaseFirebaseSessionInjection(injection)
+  })
+
+  it("lets Desktop's own sign-in wait for a cleanup without cancelling it", async () => {
+    const { contents, electron } = fakeContents()
+    const untrack = trackPartitionCleanup(electron, 'cleanup-token')
+    const cleanup = deferred()
+    const cleanupRun = runOnPartition(electron, () => cleanup.promise)
+
+    const injection = beginFirebaseSessionInjection(electron)
+    const injecting = injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST', {
+      onlyIfSignedOut: true
+    })
+
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+
+    untrack()
+    cleanup.resolve()
+    await cleanupRun
+    await expect(injecting).resolves.toBe('injected')
+
+    releaseFirebaseSessionInjection(injection)
+  })
+
+  it('keeps separate partitions independent', async () => {
+    const busy = fakeContents()
+    const other = fakeContents()
+    const cleanup = deferred()
+    void runOnPartition(busy.electron, () => cleanup.promise)
+
+    const injection = beginFirebaseSessionInjection(other.electron)
+    await expect(injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(
+      'injected'
+    )
+
+    cleanup.resolve()
+    releaseFirebaseSessionInjection(injection)
   })
 })

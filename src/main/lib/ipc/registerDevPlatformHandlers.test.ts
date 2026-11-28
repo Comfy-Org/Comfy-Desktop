@@ -51,7 +51,12 @@ const mocks = vi.hoisted(() => ({
   endViewGrants: vi.fn(),
   allowDesktopWorkspace: vi.fn(),
   creditBalanceAuthChanged: vi.fn(),
-  cloudAuthChanged: vi.fn()
+  cloudAuthChanged: vi.fn(),
+  reconcileCloudViewSession: vi.fn(async () => {})
+}))
+
+vi.mock('../../auth/cloudViewSession', () => ({
+  reconcileCloudViewSession: mocks.reconcileCloudViewSession
 }))
 
 vi.mock('../cloudAuthEvents', () => ({
@@ -171,13 +176,27 @@ function handler(channel: string): IpcHandler {
   return call![1] as IpcHandler
 }
 
+function hostedView(destroyed = false) {
+  return { webContents: { isDestroyed: () => destroyed } }
+}
+
 function registerHostWithPanel(key: number, opts: { destroyed?: boolean; none?: boolean } = {}) {
   const send = vi.fn()
   const panelView = opts.none
     ? null
     : { webContents: { isDestroyed: () => opts.destroyed ?? false, send } }
-  comfyWindows.set(key, { panelView } as unknown as ComfyWindowEntry)
+  comfyWindows.set(key, { panelView, comfyView: hostedView() } as unknown as ComfyWindowEntry)
   return send
+}
+
+function registerHostWithView(key: number, sourceCategory: string | null, destroyed = false) {
+  const comfyView = hostedView(destroyed)
+  comfyWindows.set(key, {
+    panelView: null,
+    comfyView,
+    sourceCategory
+  } as unknown as ComfyWindowEntry)
+  return comfyView.webContents
 }
 
 describe('registerDevPlatformHandlers', () => {
@@ -407,12 +426,24 @@ describe('registerDevPlatformHandlers', () => {
     })
   })
 
+  it('syncs the Cloud sign-in of every hosted view when Desktop signs out, whatever source the view came from', async () => {
+    const cloud = registerHostWithView(1, 'cloud')
+    const remote = registerHostWithView(2, 'remote')
+    const local = registerHostWithView(3, 'local')
+    registerHostWithView(4, 'cloud', true)
+
+    await handler('comfybuilder:signOut')({})
+
+    expect(mocks.reconcileCloudViewSession.mock.calls).toEqual([[cloud], [remote], [local]])
+  })
+
   it('keeps the session and installation running when sign-out is cancelled', async () => {
     const abort = new AbortController()
     const sender = {}
     const parent = { isDestroyed: () => false }
     comfyWindows.set(1, {
       panelView: { webContents: sender },
+      comfyView: hostedView(),
       window: parent
     } as unknown as ComfyWindowEntry)
     mocks.operationAborts.set('install-1', abort)
@@ -441,6 +472,7 @@ describe('registerDevPlatformHandlers', () => {
     const sender = { isDestroyed: () => false, send: vi.fn() }
     comfyWindows.set(1, {
       panelView: { webContents: sender },
+      comfyView: hostedView(),
       window: { isDestroyed: () => false },
       lastTheme: { bg: '#171718', text: '#fff' }
     } as unknown as ComfyWindowEntry)
@@ -465,6 +497,7 @@ describe('registerDevPlatformHandlers', () => {
     const sender = { isDestroyed: () => false, send: vi.fn() }
     comfyWindows.set(1, {
       panelView: { webContents: sender },
+      comfyView: hostedView(),
       window: { isDestroyed: () => false },
       lastTheme: { bg: '#171718', text: '#fff' }
     } as unknown as ComfyWindowEntry)
