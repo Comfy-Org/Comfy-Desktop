@@ -324,7 +324,7 @@ describe('registerDevPlatformHandlers', () => {
     await handler('comfybuilder:openBuildsPage')({}, 'w1')
 
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds?workspace=w1'
+      'https://platform.comfy.org/profile/builds?workspace=w1&utm_source=comfy_desktop&utm_medium=product&utm_campaign=install_wizard_builds'
     )
   })
 
@@ -332,14 +332,23 @@ describe('registerDevPlatformHandlers', () => {
     await handler('comfybuilder:openBuildsPage')({}, 'w2')
 
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds?workspace=w2'
+      'https://platform.comfy.org/profile/builds?workspace=w2&utm_source=comfy_desktop&utm_medium=product&utm_campaign=install_wizard_builds'
     )
   })
 
   it.each([
-    ['general', 'https://platform.comfy.org/settings/general?workspace=w1'],
-    ['people', 'https://platform.comfy.org/settings/people?workspace=w1'],
-    ['billing', 'https://platform.comfy.org/settings/billing?workspace=w1']
+    [
+      'general',
+      'https://platform.comfy.org/settings/general?workspace=w1&utm_source=comfy_desktop&utm_medium=product&utm_campaign=sidebar_workspace_settings'
+    ],
+    [
+      'people',
+      'https://platform.comfy.org/settings/people?workspace=w1&utm_source=comfy_desktop&utm_medium=product&utm_campaign=sidebar_workspace_settings'
+    ],
+    [
+      'billing',
+      'https://platform.comfy.org/settings/billing?workspace=w1&utm_source=comfy_desktop&utm_medium=product&utm_campaign=sidebar_workspace_settings'
+    ]
   ])('opens the Platform %s settings page for the workspace', async (page, url) => {
     await handler('comfybuilder:openSettingsPage')({}, page, 'w1')
 
@@ -1097,7 +1106,7 @@ describe('registerDevPlatformHandlers', () => {
       type: 'comfyui-desktop-2-snapshot'
     })
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds/build-1/draft?workspace=w1'
+      'https://platform.comfy.org/profile/builds/build-1/draft?workspace=w1&utm_source=comfy_desktop&utm_medium=product&utm_campaign=promote_to_workspace'
     )
   })
 
@@ -1225,7 +1234,7 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.allowDesktopWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/profile/builds/build-2/draft?workspace=w2'
+      'https://platform.comfy.org/profile/builds/build-2/draft?workspace=w2&utm_source=comfy_desktop&utm_medium=product&utm_campaign=promote_to_workspace'
     )
   })
 

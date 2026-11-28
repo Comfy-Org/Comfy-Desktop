@@ -64,3 +64,22 @@ Run the focused tests with:
 ```sh
 pnpm exec vitest run scripts/eslint/no-comments.test.ts
 ```
+
+# Product links carry UTM parameters
+
+The local ESLint rule `desktop/product-link-utm` rejects a string, template
+literal or Vue attribute value in `src/` that holds a link to `comfy.org`,
+`www.comfy.org`, `docs.comfy.org`, `blog.comfy.org` or `registry.comfy.org`,
+unless it is the first argument of `productLink` from
+`src/shared/productLink.ts`. It also rejects a literal campaign that is not
+snake_case. Tests and preview fixtures are outside the rule. A comfy.org URL
+that is not a link a person follows (an API or asset origin, a page loaded as
+the app) takes an `eslint-disable-next-line desktop/product-link-utm`
+directive. The convention is
+https://github.com/Comfy-Org/ComfyUI_frontend/blob/main/docs/guidance/product-links.md
+
+Run the focused tests with:
+
+```sh
+pnpm exec vitest run scripts/eslint/product-link-utm.test.ts
+```

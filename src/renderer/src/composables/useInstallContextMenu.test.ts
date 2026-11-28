@@ -610,7 +610,8 @@ describe('useInstallContextMenu - promote to workspace', () => {
     expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
       label: 'Upload build',
       hint: 'Upload this build to Comfy Developer Platform.',
-      hintUrl: 'https://platform.comfy.org/profile/deploy',
+      hintUrl:
+        'https://platform.comfy.org/profile/deploy?utm_source=comfy_desktop&utm_medium=product&utm_campaign=promote_to_workspace_hint',
       hintLinkLabel: 'Read more'
     })
 
