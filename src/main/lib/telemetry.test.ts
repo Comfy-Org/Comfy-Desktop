@@ -2783,6 +2783,50 @@ describe('telemetry.forwardToRenderer + telemetry-relay registry', () => {
     expect(forwardedContext).not.toHaveProperty('error_message')
   })
 
+  it('forwards short snake_case code and outcome tokens so rejected edits can be told apart', () => {
+    const target = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(target.wc)
+
+    telemetry.forwardExceptionToRenderer(
+      {
+        origin: 'renderer',
+        error_type: 'error_applying_agent_widget_edit',
+        code: 'opaque_widgets',
+        outcome: 'host_rejected'
+      },
+      new Error('error_applying_agent_widget_edit')
+    )
+
+    expect(target.sends[0]).toMatchObject({
+      channel: 'dd-error',
+      data: {
+        context: {
+          error_type: 'error_applying_agent_widget_edit',
+          code: 'opaque_widgets',
+          outcome: 'host_rejected'
+        }
+      }
+    })
+  })
+
+  it.each([
+    ['free text', 'Widget seed on node 12 was rejected'],
+    ['a path', '/home/someone/ComfyUI/models'],
+    ['an over-long token', 'a'.repeat(65)],
+    ['a number', 404]
+  ])('drops a code that is %s', (_label, code) => {
+    const target = makeStubWebContents()
+    telemetry.registerTelemetryRelayTarget(target.wc)
+
+    telemetry.forwardExceptionToRenderer({ origin: 'renderer', code, outcome: 'Host Rejected' })
+
+    const forwardedContext = (target.sends[0]!.data as Record<string, unknown>)[
+      'context'
+    ] as Record<string, unknown>
+    expect(forwardedContext).not.toHaveProperty('code')
+    expect(forwardedContext).not.toHaveProperty('outcome')
+  })
+
   it('suppresses the PostHog exception copy unless the product-scoped flag opts in', () => {
     delete process.env['COMFY_DESKTOP_POSTHOG_EXCEPTIONS']
     const target = makeStubWebContents()
