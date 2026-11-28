@@ -84,10 +84,14 @@ const checkedText = computed(() =>
     : ''
 )
 
+const installing = computed(() => installation.status === 'installing')
 const switchHeadline = computed(() =>
-  t('channelCards.switchTo', { channel: channel.value?.label ?? '' })
+  installing.value
+    ? t('buildOverview.installing')
+    : t('channelCards.switchTo', { channel: channel.value?.label ?? '' })
 )
 const statusHeadline = computed(() => {
+  if (installing.value) return t('buildOverview.installing')
   if (channel.value?.updateAvailable) {
     return t('buildOverview.available', { version: channel.value.latestVersion ?? '' })
   }

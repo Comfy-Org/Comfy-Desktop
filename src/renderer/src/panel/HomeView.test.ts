@@ -625,6 +625,35 @@ describe('Home builds', () => {
     expect(wrapper.find('[data-testid="build-update-note"]').exists()).toBe(false)
   })
 
+  it('hides Update available while the build is still installing', async () => {
+    Object.assign(window.api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      onComfyOutput: vi.fn(() => () => {})
+    })
+    getInstallations.mockResolvedValue([
+      {
+        ...NEWEST,
+        status: 'installing',
+        version: 'v0.42.1',
+        statusTag: { style: 'update', label: 'Update available: v0.46.3' }
+      }
+    ])
+    const wrapper = await openHome()
+
+    useProgressStore().startOperation({
+      installationId: NEWEST.id,
+      title: 'Installing',
+      opKind: 'install',
+      apiCall: () => new Promise(() => {})
+    })
+    await flushPromises()
+
+    const card = wrapper.get(`[data-testid="home-build-installing"][data-build-id="${NEWEST.id}"]`)
+    expect(card.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.1')
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="build-update-note"]').exists()).toBe(false)
+  })
+
   it('keeps only the latest build and Cloud when the window is narrow', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
     const wrapper = await openHome()

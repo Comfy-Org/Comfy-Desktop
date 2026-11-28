@@ -126,6 +126,17 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(update).toContain('Checked 5m ago')
   })
 
+  it('says a build that is still installing is installing, not up to date or updatable', () => {
+    const w = mountOverview({
+      installation: { ...INSTALL, status: 'installing' },
+      model: model({ channels: [channel({ latestVersion: 'v0.46.3', updateAvailable: false })] })
+    })
+    const update = w.get('[data-testid="build-overview-update"]').text()
+    expect(update).toContain('Installing…')
+    expect(update).not.toContain('Up to date')
+    expect(update).not.toContain('v0.46.3 available')
+  })
+
   it('says a build checked moments ago was checked just now, in sentence case', () => {
     const w = mountOverview({
       model: model({ channels: [channel({ lastCheckedAt: Date.now() })] })
@@ -214,6 +225,30 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(w.get('[data-testid="build-overview-update"]').text()).toContain('Switch to Latest')
     await w.get('[data-testid="update-action-switch-channel"]').trigger('click')
     expect(w.emitted('action')).toEqual([[switchChannel]])
+  })
+
+  it('keeps saying Installing… when another channel is picked during an install, with its switch still there', async () => {
+    const w = mountOverview({
+      installation: { ...INSTALL, status: 'installing' },
+      model: model({
+        channels: [
+          channel({}),
+          channel({
+            value: 'latest',
+            label: 'Latest',
+            description: 'Every commit',
+            actions: [switchChannel]
+          })
+        ]
+      })
+    })
+    await openMenu(w, 'build-overview-channel')
+    await select('build-overview-channel-latest')
+
+    const update = w.get('[data-testid="build-overview-update"]').text()
+    expect(update).toContain('Installing…')
+    expect(update).not.toContain('Switch to Latest')
+    expect(w.find('[data-testid="update-action-switch-channel"]').exists()).toBe(true)
   })
 
   it('says a picked channel has no version info yet when it has nothing to run', async () => {

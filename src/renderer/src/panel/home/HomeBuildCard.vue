@@ -55,6 +55,7 @@ const sessionStore = useSessionStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const installing = computed(() => install.progress.value?.kind === 'install')
 const updating = computed(() => install.progress.value?.kind === 'update')
 const working = computed(() => install.progress.value?.kind === 'working')
 const startingUp = computed(() => starting.value || (!busy.value && status === 'starting'))
@@ -128,6 +129,7 @@ const resting = computed(() => status === 'ready' || status === 'update')
 const showsUpdateNote = computed(
   () =>
     !uninstalling.value &&
+    !installing.value &&
     !changesInPlace.value &&
     status !== 'updating' &&
     build.statusTag?.style === 'update'

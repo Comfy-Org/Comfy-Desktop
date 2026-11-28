@@ -465,7 +465,7 @@ export const comfybuilder: SourcePlugin = {
   getStatusTag(installation: InstallationRecord): StatusTag | undefined {
     const buildId = installation.distributionId as string | undefined
     const currentVersion = (installation.version as string | undefined) ?? ''
-    if (!buildId) return undefined
+    if (!buildId || installation.status === 'installing') return undefined
     const latest = getAvailableUpdate(buildId, currentVersion)
     if (latest === undefined) return undefined
     const version = `v${latest}`

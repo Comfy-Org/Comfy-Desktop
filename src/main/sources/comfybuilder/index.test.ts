@@ -778,6 +778,11 @@ describe('comfybuilder update status', () => {
       .flatMap((section) => (section.actions as Array<{ id: string }> | undefined) ?? [])
     expect(actions?.some((action) => action.id === 'update-comfyui')).toBe(true)
   })
+
+  it('shows no update tag while the build is still installing', () => {
+    setCachedVersions('d1', [9, 1])
+    expect(comfybuilder.getStatusTag?.(record({ status: 'installing' }))).toBeUndefined()
+  })
 })
 
 describe('comfybuilder update-comfyui', () => {

@@ -947,6 +947,7 @@
     "computingCommitsAhead": "Computing commits ahead…"
   },
   "buildOverview": {
+    "installing": "Installing…",
     "notChecked": "Not checked yet",
     "comfyui": "ComfyUI",
     "pytorch": "PyTorch",
@@ -1083,7 +1084,7 @@
     "checkingForUpdates": "Checking…",
     "telemetry": "Telemetry",
     "telemetryEnabled": "Share anonymous usage telemetry",
-    "betaFeaturesEnabled": "Opt in to beta features",
+    "betaFeaturesEnabled": "Opt-in to beta features",
     "models": "Shared models",
     "modelDirectories": "Model directories",
     "modelStorage": "Models",
@@ -1208,7 +1209,7 @@
     "consentTosHintSuffix": ".",
     "consentTelemetryTitle": "Help improve Comfy",
     "consentTelemetryHint": "Help improve Comfy by sharing anonymous usage data.",
-    "consentBetaHint": "Opt in to beta features and help test what ships next",
+    "consentBetaHint": "Opt-in to beta features and help test what ships next",
     "consentGetStarted": "Get started",
     "expressInstallLabel": "Express install",
     "expressInstallHint": "Use recommended settings and skip optional setup steps.",

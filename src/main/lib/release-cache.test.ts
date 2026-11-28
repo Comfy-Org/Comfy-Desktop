@@ -33,6 +33,20 @@ import * as gitMock from './git'
 import * as releasesMock from './comfyui-releases'
 
 describe('isUpdateAvailable', () => {
+  it('reports no update while the first install is still running', () => {
+    const info: ReleaseCacheEntry = {
+      latestTag: 'v0.46.3',
+      releaseName: 'v0.46.3',
+      installedTag: 'v0.42.1'
+    }
+    expect(isUpdateAvailable({ version: 'v0.42.1', status: 'installing' }, 'stable', info)).toBe(
+      false
+    )
+    expect(isUpdateAvailable({ version: 'v0.42.1', status: 'installed' }, 'stable', info)).toBe(
+      true
+    )
+  })
+
   it('returns false when lastRollback channel matches and installedTag matches latestTag', () => {
     const installation = {
       version: 'v1.0.0',
