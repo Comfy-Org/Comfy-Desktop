@@ -544,7 +544,7 @@ const linkSays = computed(() => {
             <Select v-model="templateStyle.id" :options="TEMPLATE_STYLES" class="w-full" />
           </Row>
           <Row :show="shows('tplDetails')" label="Template details">
-            <Seg v-model="tplDetails.id" label="Template details" :options="TPL_DETAILS" />
+            <Select v-model="tplDetails.id" :options="TPL_DETAILS" class="w-full" />
           </Row>
           <Row :show="shows('tplFeed')" label="Template feed">
             <Seg v-model="tplFeed.id" label="Template feed" :options="TPL_FEEDS" />

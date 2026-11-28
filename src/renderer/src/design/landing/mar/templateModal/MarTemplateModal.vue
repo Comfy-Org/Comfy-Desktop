@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { onClickOutside, useElementSize } from '@vueuse/core'
+import { createReusableTemplate, onClickOutside, useElementSize } from '@vueuse/core'
 import {
   ArrowDownToLine,
   ArrowLeftRight,
@@ -9,6 +9,9 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  CircleCheck,
+  CircleX,
+  Clock,
   Coins,
   Copy,
   Cpu,
@@ -97,7 +100,7 @@ import {
 import { creditsState } from '../credits'
 import { tplPick } from './tplPick'
 import { START_COPY } from '../build/comfyStart'
-import { tplDetails } from './tplDetails'
+import { LAYERED_DETAILS, tplDetails } from './tplDetails'
 import { tplFeed } from './tplFeed'
 import {
   FEED_SORTS,
@@ -310,6 +313,7 @@ const WARNING_NOTES: Target['state'][] = [
 ]
 const footLine = computed(() => {
   const s = shown.value
+  if (layered.value) return ''
   if (!compact.value || !s) return line.value
   if (s.state === 'download' && keptGb.value) return line.value
   return WARNING_NOTES.includes(s.state) ? line.value : ''
@@ -368,6 +372,215 @@ const DOWNLOAD_NEEDS: Record<string, string> = {
   failed: 'Download failed',
   done: 'Installed'
 }
+const layered = computed(() => LAYERED_DETAILS.includes(tplDetails.id) && !saved.value)
+const checklist = computed(() => layered.value && tplDetails.id === 'checklist')
+const tabbed = computed(() => layered.value && tplDetails.id === 'tabs')
+const metaHead = computed(() => compact.value || (layered.value && !tabbed.value))
+const leanInputs = computed(() => compact.value || layered.value)
+type PanelTab = 'about' | 'run'
+const PANEL_TABS: { value: PanelTab; label: string }[] = [
+  { value: 'about', label: 'About' },
+  { value: 'run', label: 'Run' }
+]
+const RUNS_AS_IS: Target['state'][] = ['running', 'ready', 'cloud']
+const panelTab = ref<PanelTab>('about')
+function defaultTab(): PanelTab {
+  const s = targets.value.find((x) => x.inst.id === selectedId.value) ?? targets.value[0]
+  return s && RUNS_AS_IS.includes(s.state) && !bgDownload.value ? 'about' : 'run'
+}
+watch(
+  () => tplDetails.id,
+  () => (panelTab.value = defaultTab())
+)
+const showAbout = computed(() => !tabbed.value || panelTab.value === 'about')
+
+type IssueTone = 'ok' | 'info' | 'warn' | 'block'
+type IssueFix = 'retry' | 'cloud' | 'pick'
+type IssueAt = 'build' | 'models'
+interface RunIssue {
+  at: IssueAt
+  tone: IssueTone
+  text: string
+  hint?: string
+  fix?: IssueFix
+}
+const ISSUE_ICONS: Record<IssueTone, typeof Coins> = {
+  ok: CircleCheck,
+  info: Clock,
+  warn: TriangleAlert,
+  block: CircleX
+}
+const FIX_LABEL: Record<IssueFix, string> = {
+  retry: 'Try again',
+  cloud: 'Use Comfy Cloud',
+  pick: 'Pick another build'
+}
+const cloudAlt = (s: Target): boolean => {
+  const c = cloudTarget.value
+  return Boolean(c && c !== s && !c.disabled && c.state !== 'blocked')
+}
+const otherFix = (s: Target): IssueFix | undefined =>
+  cloudAlt(s) ? 'cloud' : targets.value.some((x) => x !== s && !x.disabled) ? 'pick' : undefined
+const firstSentence = (text: string): string => text.split(/(?<=\.) /)[0] ?? ''
+function withPacks(lead: string): string {
+  const n = missingCount.value
+  if (!n) return lead
+  const packs = `${missingPacks(n)}. ${managerHint(n)} once it opens.`
+  return lead ? `${lead} ${packs.charAt(0).toUpperCase()}${packs.slice(1)}` : packs
+}
+const runIssue = computed<RunIssue | undefined>(() => {
+  const s = shown.value
+  const t = template.value
+  if (!s || !t) return undefined
+  const what = line.value || s.note
+  switch (s.state) {
+    case 'offline':
+      return s.inst.kind === 'cloud'
+        ? {
+            at: 'build',
+            tone: 'block',
+            text: 'You’re offline. Comfy Cloud needs a connection.',
+            fix: 'retry'
+          }
+        : {
+            at: 'models',
+            tone: 'block',
+            text: `You’re offline, so its ${fmtGb(total.value)} of models can’t download. Connect, then try again.`,
+            hint: 'Connect, then try again.',
+            fix: 'retry'
+          }
+    case 'disk':
+      return { at: 'models', tone: 'block', text: s.note, fix: otherFix(s) }
+    case 'blocked':
+    case 'platform':
+      return {
+        at: 'build',
+        tone: 'block',
+        text: `${s.status.replace(' · ', ', ')}.`,
+        fix: otherFix(s)
+      }
+    case 'gated':
+      return { at: 'models', tone: 'warn', text: s.note }
+    case 'memory':
+      return {
+        at: 'build',
+        tone: 'warn',
+        text: `${s.status}. ${s.note}`,
+        fix: cloudAlt(s) ? 'cloud' : undefined
+      }
+    case 'credits':
+      return { at: 'build', tone: 'warn', text: `Out of credits. ${s.note}` }
+    case 'plan':
+      return {
+        at: 'build',
+        tone: 'warn',
+        text: 'Your free plan can’t run workflows. Subscribe to run it on Comfy Cloud.'
+      }
+    case 'repair':
+      return { at: 'build', tone: 'warn', text: `Didn’t start last time. ${s.note}` }
+    case 'login':
+    case 'media':
+      return { at: 'build', tone: 'warn', text: s.note }
+    case 'download':
+      return {
+        at: 'models',
+        tone: 'info',
+        text: what,
+        hint: what.replace(
+          /^Downloads [\d.]+ GB once \(about (\d+) min\), then /,
+          'Once, about $1 min, then '
+        )
+      }
+    case 'nodes':
+    case 'update':
+      return {
+        at: 'build',
+        tone: 'info',
+        text: withPacks(s.state === 'nodes' && !s.fetch ? '' : what),
+        hint: withPacks(
+          s.state === 'update'
+            ? `Updates ${s.inst.name} to ComfyUI ${versionShort(t, s.inst)} first.`
+            : ''
+        )
+      }
+    case 'new':
+      return { at: 'build', tone: 'info', text: what }
+    default:
+      return {
+        at: 'build',
+        tone: 'ok',
+        text: what || firstSentence(reasonFor(s, targets.value, t))
+      }
+  }
+})
+const primaryFix = computed<IssueFix | undefined>(() =>
+  layered.value && (!selected.value || selected.value.disabled) ? runIssue.value?.fix : undefined
+)
+const cardFix = computed<IssueFix | undefined>(() =>
+  primaryFix.value ? undefined : runIssue.value?.fix
+)
+function runFix(f: IssueFix): void {
+  if (f === 'retry') toast('Still offline')
+  else if (f === 'cloud' && cloudTarget.value) pickBuild(cloudTarget.value)
+  else buildMenu.value = true
+}
+function primaryRun(): void {
+  if (primaryFix.value) runFix(primaryFix.value)
+  else confirm()
+}
+const buildSub = computed(() => {
+  const i = shown.value?.inst
+  if (!i) return ''
+  if (i.id === 'new-build') return 'Sets up on this Mac'
+  if (i.kind !== 'cloud') return 'This Mac'
+  if (!i.deployment) return 'Cloud GPUs'
+  return i.state === 'running' ? (i.gpu ?? 'Running') : 'Asleep'
+})
+const cardNeedsLine = computed(() =>
+  needs.value.length || template.value?.runs !== 'cloud' ? needsLine.value : 'Partner model API'
+)
+const modelsLine = computed(() => {
+  const n = needs.value.length
+  return n ? `${n} ${n === 1 ? 'model' : 'models'} · ${fmtGb(total.value)}` : cardNeedsLine.value
+})
+const cardCost = (x: Target): string => (x.cost.includes('credits') ? x.cost : '')
+const modelsGet = computed(
+  () =>
+    modelState.value === 'get' || shown.value?.state === 'offline' || shown.value?.state === 'disk'
+)
+const modelsRow = computed<{ title: string; word: string; tone: IssueTone }>(() => {
+  const d = bgDownload.value
+  const s = shown.value?.state
+  const title =
+    needs.value.length &&
+    modelsGet.value &&
+    shown.value?.inst.kind !== 'cloud' &&
+    shown.value?.state !== 'offline' &&
+    shown.value?.state !== 'disk'
+      ? `Downloads ${modelsLine.value}`
+      : modelsLine.value
+  if (d) {
+    const word = d.status === 'done' ? 'installed' : ''
+    const tone = d.status === 'done' ? 'ok' : d.status === 'failed' ? 'warn' : 'info'
+    return { title, word, tone }
+  }
+  if (s === 'offline' && shown.value?.inst.kind !== 'cloud')
+    return { title, word: 'needs a connection', tone: 'block' }
+  if (s === 'disk') return { title, word: 'not enough space', tone: 'block' }
+  if (s === 'gated') return { title, word: 'licence first', tone: 'warn' }
+  if (!needs.value.length) return { title, word: '', tone: 'ok' }
+  if (modelState.value === 'here') return { title, word: 'installed', tone: 'ok' }
+  if (modelState.value === 'cloud') return { title, word: 'ready on Cloud', tone: 'ok' }
+  if (modelState.value === 'get') return { title, word: '', tone: 'info' }
+  return { title, word: '', tone: 'info' }
+})
+const buildTone = computed<IssueTone>(() =>
+  runIssue.value?.at === 'build' ? runIssue.value.tone : 'ok'
+)
+const etaTitle = computed(() => firstResultShort.value || 'First result once it can run')
+const [DefineBuildMenu, BuildMenu] = createReusableTemplate<{ up?: boolean }>()
+const [DefineNeedsList, NeedsList] = createReusableTemplate()
+const [DefineRunCard, RunCard] = createReusableTemplate()
 const view = ref<'result' | 'graph'>('result')
 const phase = ref<'idle' | 'busy'>('idle')
 const progress = ref(0)
@@ -393,6 +606,7 @@ watch(
     exampleAt.value = 0
     feedPick.value = undefined
     feedSort.value = 'recent'
+    panelTab.value = defaultTab()
     buildMenu.value = false
     ratio.value = 16 / 9
     stop()
@@ -621,7 +835,7 @@ function onKey(e: KeyboardEvent): void {
   const el = e.target as HTMLElement
   if (!el.closest('button, a, input, textarea, [role="tab"]')) {
     e.preventDefault()
-    confirm()
+    primaryRun()
   }
 }
 
@@ -762,6 +976,287 @@ const full = computed(() => can.value.onboarding)
         @escape-key-down="onEscape"
         @keydown="onKey"
       >
+        <DefineBuildMenu v-slot="{ up }">
+          <div class="mad-menu mar-tpl-builds" :class="up ? 'is-up' : 'is-down'" role="menu">
+            <button
+              v-for="x in targets"
+              :key="x.inst.id"
+              type="button"
+              role="menuitemradio"
+              :aria-checked="x.inst.id === selectedId"
+              :class="x.inst.id === selectedId && 'is-on'"
+              :disabled="x.disabled"
+              :data-s="x.state"
+              @click="pickBuild(x)"
+            >
+              <LocationIcon :kind="x.inst.kind === 'cloud' ? 'cloud' : 'local'" :size="15" />
+              <span class="mar-tpl-row-text">
+                <span class="mar-tpl-row-name">{{ x.inst.name }}</span>
+                <span class="mar-tpl-row-status">{{ x.status }}</span>
+              </span>
+              <span class="mar-tpl-cost" :data-s="tone(x)">{{ x.cost }}</span>
+            </button>
+          </div>
+        </DefineBuildMenu>
+        <DefineNeedsList>
+          <ul class="mar-tpl-needs">
+            <li v-for="m in needs" :key="m.name">
+              <ComfyModel :size="14" />
+              <span class="mar-tpl-file">{{ m.name.replace('.safetensors', '') }}</span>
+              <span class="mar-tpl-size">{{ m.size }}</span>
+              <span
+                class="mar-tpl-mark"
+                :data-m="modelState"
+                :title="
+                  modelState === 'here'
+                    ? 'Installed'
+                    : modelState === 'get'
+                      ? 'Downloads first'
+                      : modelState === 'cloud'
+                        ? 'Ready on Cloud'
+                        : ''
+                "
+              >
+                <Check v-if="modelState === 'here' || modelState === 'cloud'" :size="12" />
+                <ArrowDownToLine v-else-if="modelState === 'get'" :size="12" />
+              </span>
+            </li>
+            <li v-for="p in packs" :key="p">
+              <Puzzle :size="14" />
+              <span class="mar-tpl-file">{{ p }}</span>
+              <span class="mar-tpl-size">{{
+                packMark(p) === 'get' ? 'Missing' : 'Node pack'
+              }}</span>
+              <span class="mar-tpl-mark" :data-m="packMark(p)" :title="PACK_TITLE[packMark(p)]">
+                <Check v-if="packMark(p) === 'here'" :size="12" />
+                <TriangleAlert v-else :size="11" />
+              </span>
+            </li>
+            <li v-if="minComfy">
+              <RefreshCw :size="14" />
+              <span class="mar-tpl-file">ComfyUI {{ minComfy }} or newer</span>
+              <span class="mar-tpl-size">{{
+                comfyMark === 'get' ? `has ${selected?.inst.version}` : ''
+              }}</span>
+              <span
+                class="mar-tpl-mark"
+                :data-m="comfyMark"
+                :title="comfyMark === 'here' ? 'Up to date' : 'Updates first'"
+              >
+                <Check v-if="comfyMark === 'here'" :size="12" />
+                <ArrowDownToLine v-else :size="12" />
+              </span>
+            </li>
+            <li v-for="r in caseRows" :key="r.kind" :data-need="r.kind">
+              <component :is="NEED_ICONS[r.kind]" :size="14" />
+              <span class="mar-tpl-file is-ui">{{ r.label }}</span>
+              <span class="mar-tpl-size">{{ r.size }}</span>
+              <span class="mar-tpl-mark" :data-m="r.mark" :title="r.title">
+                <Check v-if="r.mark === 'here'" :size="12" />
+                <TriangleAlert v-else-if="r.mark === 'warn'" :size="11" />
+                <ArrowDownToLine v-else :size="12" />
+              </span>
+            </li>
+            <li v-if="template.runs === 'cloud'">
+              <Plug :size="14" />
+              <span class="mar-tpl-file">Partner model API</span>
+              <span class="mar-tpl-size">Comfy Cloud</span>
+              <span class="mar-tpl-mark" />
+            </li>
+            <li v-if="info.vramGb">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect
+                  x="2.5"
+                  y="4"
+                  width="11"
+                  height="8"
+                  rx="1.5"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                />
+                <path
+                  d="M5 4V2.5M8 4V2.5M11 4V2.5M5 13.5V12M8 13.5V12M11 13.5V12"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span class="mar-tpl-file is-ui">GPU memory</span>
+              <span class="mar-tpl-size">{{ info.vramGb }} GB</span>
+              <span class="mar-tpl-mark" :data-m="memoryOk ? 'here' : 'warn'">
+                <Check v-if="memoryOk" :size="12" />
+                <TriangleAlert v-else :size="11" />
+              </span>
+            </li>
+          </ul>
+        </DefineNeedsList>
+        <DefineRunCard>
+          <div
+            v-if="checklist"
+            class="mar-tpl-runcard mar-tpl-check"
+            :data-busy="Boolean(bgDownload) || undefined"
+            data-tpl-runcard
+          >
+            <div class="mar-tpl-check-row" :data-tone="buildTone" data-tpl-check="build">
+              <component :is="ISSUE_ICONS[buildTone]" :size="15" class="mar-tpl-check-icon" />
+              <span class="mar-tpl-check-text">
+                <span class="mar-tpl-check-title"
+                  >Runs on
+                  <span v-if="shown" ref="buildBox" class="mad-pick mar-tpl-check-pick">
+                    <button
+                      type="button"
+                      class="mar-tpl-check-build"
+                      :aria-label="`Runs on ${shown.inst.name}. Change build`"
+                      aria-haspopup="menu"
+                      :aria-expanded="buildMenu"
+                      :disabled="
+                        phase === 'busy' || (downloadBusy && !failedDownload) || targets.length < 2
+                      "
+                      @click="buildMenu = !buildMenu"
+                    >
+                      <LocationIcon
+                        :kind="shown.inst.kind === 'cloud' ? 'cloud' : 'local'"
+                        :size="13"
+                      />{{ shown.inst.name
+                      }}<ChevronDown v-if="targets.length > 1" :size="13" class="mar-tpl-chev" />
+                    </button>
+                    <BuildMenu v-if="buildMenu" :up="true" />
+                  </span>
+                  <span v-if="cardCost(shown!)" class="mar-tpl-check-cost">{{
+                    cardCost(shown!)
+                  }}</span>
+                </span>
+                <span
+                  v-if="runIssue?.at === 'build' && !bgDownload"
+                  class="mar-tpl-check-sub"
+                  data-tpl-status
+                  >{{ runIssue.hint ?? runIssue.text }}</span
+                >
+              </span>
+              <button
+                v-if="cardFix && runIssue?.at === 'build' && !bgDownload"
+                type="button"
+                class="mar-tpl-fix"
+                data-tpl-fix
+                @click="runFix(cardFix)"
+              >
+                {{ FIX_LABEL[cardFix] }}
+              </button>
+            </div>
+            <details
+              class="mar-tpl-check-row is-fold"
+              :data-tone="modelsRow.tone"
+              data-tpl-check="models"
+            >
+              <summary>
+                <component
+                  :is="ISSUE_ICONS[modelsRow.tone]"
+                  :size="15"
+                  class="mar-tpl-check-icon"
+                />
+                <span class="mar-tpl-check-text">
+                  <span class="mar-tpl-check-title"
+                    ><span class="mar-tpl-total">{{ modelsRow.title }}</span
+                    ><span v-if="modelsRow.word" class="mar-tpl-check-word"
+                      >· {{ modelsRow.word }}</span
+                    ></span
+                  >
+                  <span
+                    v-if="runIssue?.at === 'models' && !bgDownload"
+                    class="mar-tpl-check-sub"
+                    data-tpl-status
+                    >{{ runIssue.hint ?? runIssue.text }}</span
+                  >
+                </span>
+                <button
+                  v-if="cardFix && runIssue?.at === 'models' && !bgDownload"
+                  type="button"
+                  class="mar-tpl-fix"
+                  data-tpl-fix
+                  @click.prevent="runFix(cardFix)"
+                >
+                  {{ FIX_LABEL[cardFix] }}
+                </button>
+                <ChevronDown :size="14" class="mar-tpl-fold" />
+              </summary>
+              <NeedsList />
+            </details>
+            <div class="mar-tpl-check-row" data-tone="info" data-tpl-check="eta">
+              <Clock :size="15" class="mar-tpl-check-icon" />
+              <span class="mar-tpl-check-text">
+                <span class="mar-tpl-check-title">{{ etaTitle }}</span>
+                <span v-if="firstResultParts" class="mar-tpl-check-sub">{{
+                  firstResultParts
+                }}</span>
+              </span>
+            </div>
+          </div>
+          <div v-else class="mar-tpl-runcard" data-tpl-runcard>
+            <div v-if="shown" ref="buildBox" class="mad-pick">
+              <button
+                type="button"
+                class="mar-tpl-on"
+                :data-s="shown.state"
+                :aria-label="`Open in ${shown.inst.name}. Change build`"
+                aria-haspopup="menu"
+                :aria-expanded="buildMenu"
+                :disabled="
+                  phase === 'busy' || (downloadBusy && !failedDownload) || targets.length < 2
+                "
+                @click="buildMenu = !buildMenu"
+              >
+                <span class="mar-tpl-glyph">
+                  <LocationIcon
+                    :kind="shown.inst.kind === 'cloud' ? 'cloud' : 'local'"
+                    :size="18"
+                  />
+                  <i v-if="shown.inst.state === 'running' && !shown.disabled" />
+                </span>
+                <span class="mar-tpl-row-text">
+                  <span class="mar-tpl-row-name">{{ shown.inst.name }}</span>
+                  <span class="mar-tpl-row-status">{{ buildSub }}</span>
+                </span>
+                <span v-if="cardCost(shown)" class="mar-tpl-cost">{{ cardCost(shown) }}</span>
+                <ChevronDown v-if="targets.length > 1" :size="14" class="mar-tpl-chev" />
+              </button>
+              <BuildMenu v-if="buildMenu" :up="!tabbed" />
+            </div>
+            <details class="mar-tpl-runcard-needs">
+              <summary>
+                <ComfyModel :size="14" class="mar-tpl-runcard-icon" />
+                <span class="mar-tpl-total">{{ cardNeedsLine }}</span>
+                <span class="mar-tpl-runs-end">
+                  <Tooltip v-if="firstResult" :content="firstResultParts">
+                    <span class="mar-tpl-runs-eta" data-tpl-eta
+                      ><Timer :size="12" />{{ firstResultShort }}</span
+                    >
+                  </Tooltip>
+                  <ChevronDown :size="14" class="mar-tpl-fold" />
+                </span>
+              </summary>
+              <NeedsList />
+            </details>
+            <div
+              v-if="runIssue && !bgDownload"
+              class="mar-tpl-status"
+              :data-tone="runIssue.tone"
+              role="status"
+              data-tpl-status
+            >
+              <component :is="ISSUE_ICONS[runIssue.tone]" :size="14" class="mar-tpl-status-icon" />
+              <span class="mar-tpl-status-text">{{ runIssue.text }}</span>
+              <button
+                v-if="cardFix"
+                type="button"
+                class="mar-tpl-fix"
+                data-tpl-fix
+                @click="runFix(cardFix)"
+              >
+                {{ FIX_LABEL[cardFix] }}
+              </button>
+            </div>
+          </div>
+        </DefineRunCard>
         <section class="mad-stage" @pointerdown.self="open = false">
           <header class="mad-bar">
             <MarSeg v-model="view" :options="VIEWS" label="Preview" class="mar-tpl-views" />
@@ -943,7 +1438,7 @@ const full = computed(() => can.value.onboarding)
                     savedIn?.name ?? (saved.source === 'cloud' ? 'Comfy Cloud' : 'This computer')
                   }}<i />Edited {{ saved.modified }}
                 </DialogDescription>
-                <DialogDescription v-else-if="compact" class="mar-tpl-by mar-tpl-meta">
+                <DialogDescription v-else-if="metaHead" class="mar-tpl-by mar-tpl-meta">
                   <span class="mar-tpl-meta-item"
                     ><span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>ComfyUI</span
                   >
@@ -982,6 +1477,9 @@ const full = computed(() => can.value.onboarding)
                 ><X :size="16"
               /></DialogClose>
             </header>
+            <div v-if="tabbed" class="mar-tpl-tabs">
+              <MarSeg v-model="panelTab" :options="PANEL_TABS" label="Details" />
+            </div>
 
             <section v-if="feedPick" class="mad-sec" data-tpl-feed-pick>
               <div class="mar-tpl-feed-pick-head">
@@ -1034,9 +1532,9 @@ const full = computed(() => can.value.onboarding)
             </section>
 
             <!-- What it does, short: the first paragraph. -->
-            <section v-if="!saved" class="mad-sec">
+            <section v-if="!saved && showAbout" class="mad-sec">
               <!-- Four lines at most; More opens the rest in place. -->
-              <div class="mar-tpl-about">
+              <div class="mar-tpl-about" :class="layered && 'is-plain'">
                 <p ref="aboutEl" :class="!aboutOpen && 'is-clamped'">
                   {{ aboutFor(template)[0] }}
                 </p>
@@ -1050,7 +1548,11 @@ const full = computed(() => can.value.onboarding)
                   {{ aboutOpen ? 'Less' : 'More' }}
                 </button>
               </div>
-              <div v-if="compact && inputs.length" class="mad-tags mar-tpl-gives" data-tpl-inputs>
+              <div
+                v-if="leanInputs && inputs.length"
+                class="mad-tags mar-tpl-gives"
+                data-tpl-inputs
+              >
                 <span class="mar-tpl-gives-lead">Needs</span>
                 <span v-for="x in inputs" :key="x.label" class="mad-tag" :title="x.label">
                   <component :is="INPUT_ICONS[x.kind]" :size="12" />
@@ -1063,7 +1565,7 @@ const full = computed(() => can.value.onboarding)
                  the picker (the other builds open under it), then why in
                  one line. What blocks it is one line and one action at the
                  bottom, in place of the primary. -->
-            <section v-if="inputs.length && !compact" class="mad-sec" data-tpl-inputs>
+            <section v-if="inputs.length && !leanInputs" class="mad-sec" data-tpl-inputs>
               <h3 class="mad-label">What you give it</h3>
               <ul class="mar-tpl-inputs">
                 <li v-for="x in inputs" :key="x.label">
@@ -1074,7 +1576,11 @@ const full = computed(() => can.value.onboarding)
               </ul>
             </section>
 
-            <section class="mad-sec" :class="compact && 'mar-tpl-runs-top'">
+            <section v-if="tabbed && panelTab === 'run'" class="mad-sec" data-tpl-run-tab>
+              <RunCard />
+            </section>
+
+            <section v-if="!layered" class="mad-sec" :class="compact && 'mar-tpl-runs-top'">
               <h3 class="mad-label">{{ compact ? 'Runs on' : 'Open in' }}</h3>
               <div v-if="shown" ref="buildBox" class="mad-pick">
                 <button
@@ -1105,33 +1611,14 @@ const full = computed(() => can.value.onboarding)
                   }}</span>
                   <ChevronDown v-if="targets.length > 1" :size="14" class="mar-tpl-chev" />
                 </button>
-                <div v-if="buildMenu" class="mad-menu is-down mar-tpl-builds" role="menu">
-                  <button
-                    v-for="x in targets"
-                    :key="x.inst.id"
-                    type="button"
-                    role="menuitemradio"
-                    :aria-checked="x.inst.id === selectedId"
-                    :class="x.inst.id === selectedId && 'is-on'"
-                    :disabled="x.disabled"
-                    :data-s="x.state"
-                    @click="pickBuild(x)"
-                  >
-                    <LocationIcon :kind="x.inst.kind === 'cloud' ? 'cloud' : 'local'" :size="15" />
-                    <span class="mar-tpl-row-text">
-                      <span class="mar-tpl-row-name">{{ x.inst.name }}</span>
-                      <span class="mar-tpl-row-status">{{ x.status }}</span>
-                    </span>
-                    <span class="mar-tpl-cost" :data-s="tone(x)">{{ x.cost }}</span>
-                  </button>
-                </div>
+                <BuildMenu v-if="buildMenu" />
               </div>
               <p v-if="fit && !compact" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
             </section>
 
             <!-- What it needs, on the build picked above: one box like Open
                  in's, its line folding the files open inside it. -->
-            <section class="mad-sec" :class="compact && 'mar-tpl-runs-bottom'">
+            <section v-if="!layered" class="mad-sec" :class="compact && 'mar-tpl-runs-bottom'">
               <h3 v-if="!compact" class="mad-label">What it needs</h3>
               <details
                 class="mar-tpl-needs-box"
@@ -1167,100 +1654,7 @@ const full = computed(() => can.value.onboarding)
                   }}</span>
                   <ChevronDown :size="14" class="mar-tpl-fold" />
                 </summary>
-                <ul class="mar-tpl-needs">
-                  <li v-for="m in needs" :key="m.name">
-                    <ComfyModel :size="14" />
-                    <span class="mar-tpl-file">{{ m.name.replace('.safetensors', '') }}</span>
-                    <span class="mar-tpl-size">{{ m.size }}</span>
-                    <span
-                      class="mar-tpl-mark"
-                      :data-m="modelState"
-                      :title="
-                        modelState === 'here'
-                          ? 'Installed'
-                          : modelState === 'get'
-                            ? 'Downloads first'
-                            : modelState === 'cloud'
-                              ? 'Ready on Cloud'
-                              : ''
-                      "
-                    >
-                      <Check v-if="modelState === 'here' || modelState === 'cloud'" :size="12" />
-                      <ArrowDownToLine v-else-if="modelState === 'get'" :size="12" />
-                    </span>
-                  </li>
-                  <li v-for="p in packs" :key="p">
-                    <Puzzle :size="14" />
-                    <span class="mar-tpl-file">{{ p }}</span>
-                    <span class="mar-tpl-size">{{
-                      packMark(p) === 'get' ? 'Missing' : 'Node pack'
-                    }}</span>
-                    <span
-                      class="mar-tpl-mark"
-                      :data-m="packMark(p)"
-                      :title="PACK_TITLE[packMark(p)]"
-                    >
-                      <Check v-if="packMark(p) === 'here'" :size="12" />
-                      <TriangleAlert v-else :size="11" />
-                    </span>
-                  </li>
-                  <li v-if="minComfy">
-                    <RefreshCw :size="14" />
-                    <span class="mar-tpl-file">ComfyUI {{ minComfy }} or newer</span>
-                    <span class="mar-tpl-size">{{
-                      comfyMark === 'get' ? `has ${selected?.inst.version}` : ''
-                    }}</span>
-                    <span
-                      class="mar-tpl-mark"
-                      :data-m="comfyMark"
-                      :title="comfyMark === 'here' ? 'Up to date' : 'Updates first'"
-                    >
-                      <Check v-if="comfyMark === 'here'" :size="12" />
-                      <ArrowDownToLine v-else :size="12" />
-                    </span>
-                  </li>
-                  <li v-for="r in caseRows" :key="r.kind" :data-need="r.kind">
-                    <component :is="NEED_ICONS[r.kind]" :size="14" />
-                    <span class="mar-tpl-file is-ui">{{ r.label }}</span>
-                    <span class="mar-tpl-size">{{ r.size }}</span>
-                    <span class="mar-tpl-mark" :data-m="r.mark" :title="r.title">
-                      <Check v-if="r.mark === 'here'" :size="12" />
-                      <TriangleAlert v-else-if="r.mark === 'warn'" :size="11" />
-                      <ArrowDownToLine v-else :size="12" />
-                    </span>
-                  </li>
-                  <li v-if="template.runs === 'cloud'">
-                    <Plug :size="14" />
-                    <span class="mar-tpl-file">Partner model API</span>
-                    <span class="mar-tpl-size">Comfy Cloud</span>
-                    <span class="mar-tpl-mark" />
-                  </li>
-                  <li v-if="info.vramGb">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <rect
-                        x="2.5"
-                        y="4"
-                        width="11"
-                        height="8"
-                        rx="1.5"
-                        stroke="currentColor"
-                        stroke-width="1.3"
-                      />
-                      <path
-                        d="M5 4V2.5M8 4V2.5M11 4V2.5M5 13.5V12M8 13.5V12M11 13.5V12"
-                        stroke="currentColor"
-                        stroke-width="1.3"
-                        stroke-linecap="round"
-                      />
-                    </svg>
-                    <span class="mar-tpl-file is-ui">GPU memory</span>
-                    <span class="mar-tpl-size">{{ info.vramGb }} GB</span>
-                    <span class="mar-tpl-mark" :data-m="memoryOk ? 'here' : 'warn'">
-                      <Check v-if="memoryOk" :size="12" />
-                      <TriangleAlert v-else :size="11" />
-                    </span>
-                  </li>
-                </ul>
+                <NeedsList />
               </details>
               <p v-if="fit && compact" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
               <p v-if="missingCount" class="mar-tpl-fit" data-tpl-packs>
@@ -1296,7 +1690,10 @@ const full = computed(() => can.value.onboarding)
                 </div>
               </dl>
             </section>
-            <section v-else-if="!compact" class="mad-sec">
+            <section
+              v-else-if="!compact && (!layered || (tabbed && panelTab === 'about'))"
+              class="mad-sec"
+            >
               <h3 class="mad-label">Details</h3>
               <dl class="mad-rows">
                 <div>
@@ -1334,6 +1731,7 @@ const full = computed(() => can.value.onboarding)
 
           <!-- At the bottom: what happens, then the one action. -->
           <footer v-if="bgDownload" class="mad-actions">
+            <RunCard v-if="layered && !tabbed" />
             <TplDiskFull
               v-if="diskStuck"
               :download="bgDownload"
@@ -1375,6 +1773,7 @@ const full = computed(() => can.value.onboarding)
             </button>
           </footer>
           <footer v-else class="mad-actions">
+            <RunCard v-if="layered && !tabbed" />
             <p v-if="footLine" class="mar-tpl-note">{{ footLine }}</p>
             <button
               v-if="cloudOffer"
@@ -1395,19 +1794,24 @@ const full = computed(() => can.value.onboarding)
               type="button"
               class="mad-btn is-primary mar-tpl-go"
               data-tpl-primary
-              :disabled="!selected || selected.disabled"
+              :disabled="!primaryFix && (!selected || selected.disabled)"
               :data-s="shown?.state"
+              :data-fix="primaryFix"
               :style="{ '--p': progress }"
-              @click="confirm"
+              @click="primaryRun"
             >
               <span>{{
-                phase === 'busy'
-                  ? busyLabel
-                  : browserSignIn.pending && shown?.state === 'login'
-                    ? SIGN_IN_COPY.waiting
-                    : primaryLabel
+                primaryFix
+                  ? FIX_LABEL[primaryFix]
+                  : phase === 'busy'
+                    ? busyLabel
+                    : browserSignIn.pending && shown?.state === 'login'
+                      ? SIGN_IN_COPY.waiting
+                      : primaryLabel
               }}</span>
-              <kbd v-if="phase === 'idle' && selected && !selected.disabled">↵</kbd>
+              <kbd v-if="phase === 'idle' && (primaryFix || (selected && !selected.disabled))"
+                >↵</kbd
+              >
             </button>
           </footer>
         </aside>

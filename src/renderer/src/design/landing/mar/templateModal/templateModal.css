@@ -1262,3 +1262,260 @@
     animation: none;
   }
 }
+
+.mar-tpl {
+  --tpl-danger: var(--color-status-danger, oklch(0.68 0.19 25));
+}
+.mar-tpl-about.is-plain {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.mar-tpl-tabs {
+  display: flex;
+  padding: 4px 20px 2px;
+}
+.mar-tpl .mad-actions > .mar-tpl-runcard {
+  order: -4;
+}
+.mar-tpl-runcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--mad-fill);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-runcard .mar-tpl-on {
+  grid-template-columns: 32px minmax(0, 1fr);
+  grid-auto-columns: auto;
+  grid-auto-flow: column;
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+  background: transparent;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-runcard .mar-tpl-on:not(:disabled):hover,
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-runcard .mar-tpl-on[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+.mar-tpl-runcard-needs > summary {
+  display: grid;
+  min-height: 34px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 2px 8px;
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  cursor: default;
+  list-style: none;
+}
+.mar-tpl-runcard-needs > summary::-webkit-details-marker {
+  display: none;
+}
+.mar-tpl-runcard-needs > summary:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+.mar-tpl-runcard-needs > summary:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.mar-tpl-runcard-icon {
+  justify-self: center;
+  color: var(--color-muted-foreground);
+}
+.mar-tpl-runcard-needs[open] .mar-tpl-fold,
+.mar-tpl-check-row[open] .mar-tpl-fold {
+  transform: rotate(180deg);
+}
+.mar-tpl-runcard .mar-tpl-needs {
+  max-height: 140px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 12px 8px;
+  scrollbar-width: thin;
+}
+.mar-tpl-status {
+  --tone: var(--color-muted-foreground);
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  margin: 2px 6px 6px;
+  padding: 8px 8px 8px 2px;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+}
+.mar-tpl-status[data-tone='ok'] {
+  --tone: var(--tpl-ok);
+}
+.mar-tpl-status[data-tone='warn'],
+.mar-tpl-status[data-tone='block'] {
+  color: var(--color-base-foreground);
+  background: color-mix(in oklch, var(--tone) 12%, transparent);
+}
+.mar-tpl-status[data-tone='warn'] {
+  --tone: var(--tpl-warn);
+}
+.mar-tpl-status[data-tone='block'] {
+  --tone: var(--tpl-danger);
+}
+.mar-tpl-status-icon {
+  justify-self: center;
+  margin-top: 2px;
+  color: var(--tone);
+}
+.mar-tpl-status-text {
+  min-width: 0;
+  text-wrap: pretty;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-fix {
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-fix:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 13%, transparent);
+}
+.mar-tpl-fix:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+.mar-tpl-check {
+  padding: 4px 0;
+}
+.mar-tpl-check-row {
+  --tone: var(--color-muted-foreground);
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 12px;
+}
+.mar-tpl-check-row[data-tone='ok'] {
+  --tone: var(--tpl-ok);
+}
+.mar-tpl-check-row[data-tone='warn'] {
+  --tone: var(--tpl-warn);
+}
+.mar-tpl-check-row[data-tone='block'] {
+  --tone: var(--tpl-danger);
+}
+.mar-tpl-check-row.is-fold {
+  display: block;
+  padding: 0;
+}
+.mar-tpl-check-row.is-fold > summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: default;
+  list-style: none;
+}
+.mar-tpl-check-row.is-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.mar-tpl-check-row.is-fold > summary:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+.mar-tpl-check-row.is-fold > summary:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.mar-tpl-check-row .mar-tpl-fold {
+  margin-top: 2px;
+}
+.mar-tpl-check-icon {
+  margin-top: 1px;
+  color: var(--tone);
+}
+.mar-tpl-check-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.mar-tpl-check-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-tpl-check-word {
+  white-space: nowrap;
+  color: var(--tone);
+}
+.mar-tpl-check-row[data-tone='info'] .mar-tpl-check-word {
+  color: var(--color-muted-foreground);
+}
+.mar-tpl-check-sub {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.mad-pick.mar-tpl-check-pick {
+  position: static;
+  display: inline-flex;
+  min-width: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-check-build {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  height: 22px;
+  align-items: center;
+  gap: 5px;
+  margin: -2px 0;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-check-build:not(:disabled):hover,
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-check-build[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-check-build:disabled {
+  cursor: default;
+}
+.mar-tpl-check-build:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+.mar-tpl-check-build[aria-expanded='true'] .mar-tpl-chev {
+  rotate: 180deg;
+}
+.mar-tpl-check-cost {
+  margin-left: auto;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-status > .mar-tpl-fix,
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-check-row > .mar-tpl-fix,
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-check-row > summary > .mar-tpl-fix {
+  grid-row: 2;
+  grid-column: 2;
+  justify-self: start;
+  margin-top: 4px;
+}
