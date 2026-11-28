@@ -81,6 +81,7 @@ const workflowSort = computed<WorkflowSort>({
   }
 })
 const searchField = ref<HTMLElement | null>(null)
+const scroller = ref<HTMLElement | null>(null)
 const searchShortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ /' : 'Ctrl /'
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -329,7 +330,8 @@ onBeforeUnmount(() => {
   <div class="relative flex min-h-0 w-full flex-auto flex-col">
     <div
       v-show="!openApp"
-      class="@container/apps flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
+      ref="scroller"
+      class="@container/apps scroll-visible flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
       :class="PAGE_SPOTLIGHT_CLASS"
       :data-testid="`${tab}-view`"
     >
@@ -383,6 +385,7 @@ onBeforeUnmount(() => {
           :filters="filters"
           :sort="workflowSort"
           :size="cardSize"
+          :scroll-element="scroller"
           @loaded="listedWorkflows = $event"
           @clear-filters="filters = { ...NO_FILTERS }"
           @open-workflow="emit('open-workflow', $event)"

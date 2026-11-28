@@ -34,7 +34,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import ContextMenu from '../components/ContextMenu.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
-import AssetsPagination from './AssetsPagination.vue'
+import BasePagination from '../components/ui/BasePagination.vue'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
@@ -1694,13 +1694,15 @@ function extensionOf(name: string): string {
       >
         {{ t('assets.cloudScanLimit', { limit: cloudScanLimit }) }}
       </p>
-      <AssetsPagination
+      <BasePagination
         v-if="showPagination"
         v-model:page="currentPage"
         v-model:page-size="pageSize"
         :total="assetTotal"
         :total-is-lower-bound="cloudTotalIsLowerBound"
         :page-sizes="CLOUD_PAGE_SIZES"
+        :page-size-label="t('assets.perPage')"
+        test-id-prefix="assets"
       />
     </div>
 

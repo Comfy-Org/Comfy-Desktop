@@ -11,12 +11,20 @@ import {
 } from 'reka-ui'
 import { ChevronLeft, ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
-import BaseSelect from '../components/ui/BaseSelect.vue'
+import BaseSelect from './BaseSelect.vue'
 
-const { total, totalIsLowerBound, pageSizes } = defineProps<{
+const {
+  total,
+  totalIsLowerBound = false,
+  pageSizes,
+  pageSizeLabel,
+  testIdPrefix
+} = defineProps<{
   total: number
-  totalIsLowerBound: boolean
+  totalIsLowerBound?: boolean
   pageSizes: readonly number[]
+  pageSizeLabel: string
+  testIdPrefix: string
 }>()
 const page = defineModel<number>('page', { required: true })
 const pageSize = defineModel<number>('pageSize', { required: true })
@@ -24,7 +32,7 @@ const pageSize = defineModel<number>('pageSize', { required: true })
 const { t } = useI18n()
 
 const range = computed(() =>
-  t(totalIsLowerBound ? 'assets.pagination.rangeLowerBound' : 'assets.pagination.range', {
+  t(totalIsLowerBound ? 'common.pagination.rangeLowerBound' : 'common.pagination.range', {
     first: (page.value - 1) * pageSize.value + 1,
     last: Math.min(page.value * pageSize.value, total),
     total
@@ -37,14 +45,17 @@ const pageSizeOptions = computed(() =>
 </script>
 
 <template>
-  <div class="flex items-center justify-between gap-4 pt-8" data-testid="assets-pagination">
+  <div
+    class="flex items-center justify-between gap-4 pt-8"
+    :data-testid="`${testIdPrefix}-pagination`"
+  >
     <PaginationRoot
       v-model:page="page"
       :total="total"
       :items-per-page="pageSize"
       :sibling-count="1"
       show-edges
-      :aria-label="t('assets.pagination.label')"
+      :aria-label="t('common.pagination.label')"
       class="flex min-w-0 items-center gap-3"
     >
       <PaginationList v-slot="{ items }" class="flex items-center gap-1">
@@ -53,8 +64,8 @@ const pageSizeOptions = computed(() =>
             type="button"
             variant="muted-textonly"
             size="icon"
-            :aria-label="t('assets.pagination.previous')"
-            :title="t('assets.pagination.previous')"
+            :aria-label="t('common.pagination.previous')"
+            :title="t('common.pagination.previous')"
           >
             <ChevronLeft :size="15" aria-hidden="true" />
           </Button>
@@ -66,8 +77,8 @@ const pageSizeOptions = computed(() =>
               :variant="item.value === page ? 'secondary' : 'muted-textonly'"
               size="icon"
               class="text-ui tabular-nums"
-              :aria-label="t('assets.pagination.page', { page: item.value })"
-              :data-testid="`assets-page-${item.value}`"
+              :aria-label="t('common.pagination.page', { page: item.value })"
+              :data-testid="`${testIdPrefix}-page-${item.value}`"
             >
               {{ item.value }}
             </Button>
@@ -85,8 +96,8 @@ const pageSizeOptions = computed(() =>
             type="button"
             variant="muted-textonly"
             size="icon"
-            :aria-label="t('assets.pagination.next')"
-            :title="t('assets.pagination.next')"
+            :aria-label="t('common.pagination.next')"
+            :title="t('common.pagination.next')"
           >
             <ChevronRight :size="15" aria-hidden="true" />
           </Button>
@@ -99,11 +110,11 @@ const pageSizeOptions = computed(() =>
     <BaseSelect
       :model-value="String(pageSize)"
       :options="pageSizeOptions"
-      :aria-label="t('assets.pagination.pageSize')"
-      :title="t('assets.pagination.pageSize')"
+      :aria-label="pageSizeLabel"
+      :title="pageSizeLabel"
       compact
       class="w-20 shrink-0"
-      data-testid="assets-page-size"
+      :data-testid="`${testIdPrefix}-page-size`"
       @update:model-value="pageSize = Number($event)"
     />
   </div>
