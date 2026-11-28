@@ -60,7 +60,7 @@ const titleKey = computed(() => {
       </div>
     </template>
     <div
-      class="terms-body select-text text-[13px] leading-[1.6] text-muted-foreground focus:outline-none [&_strong]:font-semibold [&_strong]:text-neutral-100"
+      class="terms-body select-text text-[13px] leading-[1.6] text-muted-foreground focus:outline-none [&_code]:rounded-[4px] [&_code]:bg-white/6 [&_code]:px-1 [&_code]:py-px [&_code]:font-mono [&_code]:text-xs [&_code]:text-neutral-100 [&_strong]:font-semibold [&_strong]:text-neutral-100"
       tabindex="0"
     >
       <template v-for="(block, i) in policy.blocks" :key="`${doc}-${i}`">
@@ -81,7 +81,7 @@ const titleKey = computed(() => {
         </p>
         <ul
           v-else-if="block.kind === 'ul' && block.items"
-          class="terms-ul mt-0 mr-0 mb-2.5 ml-0 pl-5 [&>li]:mb-1.5"
+          class="terms-ul mt-0 mr-0 mb-2.5 ml-0 list-disc pl-5 marker:text-subtle-foreground [&>li]:mb-1.5 [&>li]:pl-1"
         >
           <li v-for="(item, k) in block.items" :key="k">
             <InlineRichText :text="item" />
