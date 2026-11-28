@@ -957,7 +957,9 @@ describe("an app's page_test in the list Desktop reads", () => {
     ],
     ['a page on another site', comfyHalf({ page: 'https://evil.example/apps/x.html' })],
     ['a page outside the apps scope', comfyHalf({ page: '/blog/desktop.html' })],
-    ['the list file as a page', comfyHalf({ page: '/apps/apps.json' })]
+    ['the list file as a page', comfyHalf({ page: '/apps/apps.json' })],
+    ['the list file with a query as a page', comfyHalf({ page: '/apps/apps.json?v=2#top' })],
+    ['the list page as a page', comfyHalf({ page: '/apps/#/' })]
   ])('is dropped whole for %s, and the app still opens its own page', async (_case, pageTest) => {
     expect(await groupListed(pageTest)).toBeNull()
     expect(pageUrlForListedApp('remove-background')).toBe(OWN_PAGE)

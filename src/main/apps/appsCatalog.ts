@@ -92,6 +92,16 @@ function pageUrlFor(id: string, page: unknown, location: AppsLocation): string |
   return url.href
 }
 
+function isListFile(url: string, location: AppsLocation): boolean {
+  const { origin, pathname } = new URL(url)
+  return `${origin}${pathname}` === appsListUrl(location)
+}
+
+function variantPageUrlFor(id: string, page: string, location: AppsLocation): string | null {
+  const url = pageUrlFor(id, page, location)
+  return url && !isListFile(url, location) ? url : null
+}
+
 function textWithin(value: unknown, maxLength: number): string | null {
   const words = text(value)
   return words && words.length <= maxLength ? words : null
@@ -142,7 +152,7 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
   if (!pageUrl) return null
   const badges = badgesFrom(record.badges)
   const coverPlayback = record.cover_playback === 'always' ? 'always' : null
-  const pageTest = parsePageTest(record.page_test, (page) => pageUrlFor(id, page, location))
+  const pageTest = parsePageTest(record.page_test, (page) => variantPageUrlFor(id, page, location))
   return {
     pageUrl,
     ...(pageTest && { pageTest }),
