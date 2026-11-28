@@ -170,6 +170,68 @@ describe('piiScrub', () => {
 
     it.each([
       [
+        'C:\\\\work\\\\temp;\\\\home\\Users\\alice\\x',
+        'C:\\\\work\\\\temp;\\\\home\\[REDACTED]\\[REDACTED]\\x'
+      ],
+      [
+        'C:\\\\work\\\\temp|\\\\HOME\\USERS\\alice\\x',
+        'C:\\\\work\\\\temp|\\\\HOME\\[REDACTED]\\[REDACTED]\\x'
+      ]
+    ])(
+      'redacts a share path whose server name an earlier match took as a folder: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
+    it.each([
+      ['C:\\Users/\\alice\\x', 'C:\\Users/\\[REDACTED]\\x'],
+      ['C:\\Users\\\\/alice\\x', 'C:\\Users\\\\/[REDACTED]\\x'],
+      ['C:\\Users\\\\\\alice\\x', 'C:\\Users\\\\\\[REDACTED]\\x'],
+      ['\\\\server\\Users/\\alice\\x', '\\\\server\\Users/\\[REDACTED]\\x'],
+      ['/home/\\alice/x', '/home/\\[REDACTED]/x']
+    ])('redacts a username after a mixed run of separators: %s', (input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('redacts a nested Users folder that directly follows a redacted username', () => {
+      expect(scrubPII('C:\\Users\\alice\\Users\\bob\\x')).toBe(
+        'C:\\Users\\[REDACTED]\\Users\\[REDACTED]\\x'
+      )
+    })
+
+    it.each([
+      ['C:\\Users/home\\Users\\bob\\x', 'C:\\Users/[REDACTED]\\[REDACTED]\\[REDACTED]\\x'],
+      [
+        'C:\\Users/\\Device\\vol\\Users\\alice\\Users\\bob\\x',
+        'C:\\Users/\\[REDACTED]\\vol\\Users\\[REDACTED]\\Users\\[REDACTED]\\x'
+      ]
+    ])(
+      'keeps hiding a nested Users folder when another match covers the folder before it: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
+    it('hides the whole escaped name when a shorter match starts inside it', () => {
+      expect(scrubPII('C:/Users/home\\u00e9secret\\u00e9more/z')).toBe('C:/Users/[REDACTED]/z')
+    })
+
+    it.each(['n', 'r', 't'])(
+      'also hides the folder after a nested Users folder under a folder named exactly %s, as the cost of reading it as an escape',
+      (folder) => {
+        expect(scrubPII(`C:\\project\\${folder}\\Users\\fixture.json`)).toBe(
+          `C:\\project\\${folder}\\Users\\[REDACTED]`
+        )
+      }
+    )
+
+    it('also hides the folder after a username that is literally home, as the cost of matching from every start', () => {
+      expect(scrubPII('/Users/home/docs/x')).toBe('/Users/[REDACTED]/[REDACTED]/x')
+    })
+
+    it.each([
+      [
         'File "\\\\tsclient\\C\\Users\\alice\\x.py"',
         'File "\\\\tsclient\\C\\Users\\[REDACTED]\\x.py"'
       ],
@@ -234,7 +296,9 @@ describe('piiScrub', () => {
     it.each([
       'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json',
       'C:\\ComfyUI\\custom_nodes\\x\\Users\\config.json',
-      'C:\\work\\cache$\\Users\\config.json'
+      'C:\\work\\cache$\\Users\\config.json',
+      'C:\\ComfyUI\\custom_nodes\\comfyui-manager\\Users\\config.json',
+      'C:\\ComfyUI\\custom_nodes\\N\\Users\\config.json'
     ])('leaves the nested project folder in %s alone', (input) => {
       expect(scrubPII(input)).toBe(input)
     })
@@ -256,6 +320,34 @@ describe('piiScrub', () => {
       ['doubled root-relative', '"\\\\Users\\\\alice\\\\x"', '"\\\\Users\\\\[REDACTED]\\\\x"']
     ])('redacts a backslash-rooted %s Users path', (_label, input, expected) => {
       expect(scrubPII(input)).toBe(expected)
+    })
+
+    it.each([
+      ['Traceback\\n\\Users\\alice\\x', 'Traceback\\n\\Users\\[REDACTED]\\x'],
+      ['Traceback\\r\\n\\Users\\alice\\x', 'Traceback\\r\\n\\Users\\[REDACTED]\\x'],
+      ['x\\t\\Users\\alice\\x', 'x\\t\\Users\\[REDACTED]\\x'],
+      ['x\\r\\Users\\alice\\x', 'x\\r\\Users\\[REDACTED]\\x'],
+      [
+        JSON.stringify({ log: 'error\n\\Users\\alice\\x' }),
+        JSON.stringify({ log: 'error\n\\Users\\[REDACTED]\\x' })
+      ]
+    ])(
+      'redacts a root-relative Users path after an escaped line break or tab: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
+    it('ends a username the wider matching finds before a URL scheme inside it', () => {
+      expect(scrubPII('Traceback\\n\\Users\\alice see https://h/view?q=1')).toBe(
+        'Traceback\\n\\Users\\[REDACTED]https://h/view?q=1'
+      )
+    })
+
+    it('still hides a username when a URL appears later on the same line', () => {
+      expect(scrubPII('Traceback\\n\\Users\\alice\\x see https://docs')).toBe(
+        'Traceback\\n\\Users\\[REDACTED]\\x see https://docs'
+      )
     })
 
     it('redacts the segment after a /users/ URL path', () => {
