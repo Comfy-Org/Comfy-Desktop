@@ -64,14 +64,22 @@ const showFinished = ref(false)
 
 const runKey = (run: TitleBarRun): string => `${run.appId}:${run.id}`
 const STOP_ANSWER_MS = 5000
-const stopping = ref(new Map<string, ReturnType<typeof setTimeout>>())
-const stopFailed = ref(new Map<string, string>())
-const reportOf = (run: TitleBarRun): string => JSON.stringify(run)
+const stopping = ref(new Map<string, ReturnType<typeof setTimeout> | null>())
+const stopFailed = ref(new Set<string>())
+
+function goingRun(key: string): TitleBarRun | undefined {
+  return props.overview.runs.find((run) => runKey(run) === key && isGoing(run))
+}
+
+function setStopping(key: string, timer: ReturnType<typeof setTimeout> | null): void {
+  const current = stopping.value.get(key)
+  if (current) clearTimeout(current)
+  stopping.value = new Map(stopping.value).set(key, timer)
+}
 
 function endStopping(key: string): void {
-  const timer = stopping.value.get(key)
-  if (timer === undefined) return
-  clearTimeout(timer)
+  const current = stopping.value.get(key)
+  if (current) clearTimeout(current)
   const next = new Map(stopping.value)
   next.delete(key)
   stopping.value = next
@@ -79,36 +87,44 @@ function endStopping(key: string): void {
 
 function markStopFailed(key: string): void {
   endStopping(key)
-  const run = props.overview.runs.find((candidate) => runKey(candidate) === key)
-  if (run?.canStop) stopFailed.value = new Map(stopFailed.value).set(key, reportOf(run))
+  stopFailed.value = new Set(stopFailed.value).add(key)
+}
+
+function answerStop(key: string): void {
+  const run = goingRun(key)
+  if (!run) endStopping(key)
+  else if (run.canStop) markStopFailed(key)
+  else setStopping(key, null)
 }
 
 watch(
   () => props.overview.runs,
-  (runs) => {
-    const stoppable = new Map(runs.filter((run) => run.canStop).map((run) => [runKey(run), run]))
-    for (const key of stopping.value.keys()) if (!stoppable.has(key)) endStopping(key)
-    stopFailed.value = new Map(
-      [...stopFailed.value].filter(([key, report]) => {
-        const run = stoppable.get(key)
-        return run !== undefined && reportOf(run) === report
-      })
-    )
+  () => {
+    for (const [key, timer] of stopping.value) {
+      const run = goingRun(key)
+      if (!run) endStopping(key)
+      else if (!run.canStop && timer) setStopping(key, null)
+      else if (run.canStop && !timer) markStopFailed(key)
+    }
+    stopFailed.value = new Set([...stopFailed.value].filter((key) => goingRun(key)?.canStop))
   }
 )
 
 function stop(run: TitleBarRun): void {
   const key = runKey(run)
   if (stopping.value.has(key)) return
-  const failed = new Map(stopFailed.value)
+  const failed = new Set(stopFailed.value)
   failed.delete(key)
   stopFailed.value = failed
-  const timer = setTimeout(() => markStopFailed(key), STOP_ANSWER_MS)
-  stopping.value = new Map(stopping.value).set(key, timer)
+  setStopping(
+    key,
+    setTimeout(() => answerStop(key), STOP_ANSWER_MS)
+  )
   emit('stop', run.appId, run.id)
 }
 
 const isStopping = (run: TitleBarRun): boolean => stopping.value.has(runKey(run))
+const didNotStop = (run: TitleBarRun): boolean => stopFailed.value.has(runKey(run))
 const reserveStopSpace = computed(() =>
   places.value.some(({ runs }) => runs.some((run) => run.canStop))
 )
@@ -152,13 +168,13 @@ onMounted(() => {
 })
 onUnmounted(() => {
   stopTicker()
-  for (const timer of stopping.value.values()) clearTimeout(timer)
+  for (const timer of stopping.value.values()) if (timer) clearTimeout(timer)
   resizeObserver?.disconnect()
 })
 
 function statusLine(run: TitleBarRun): string {
   if (isStopping(run)) return t('runOverview.stopping')
-  if (stopFailed.value.has(runKey(run))) return t('runOverview.stopFailed')
+  if (didNotStop(run)) return t('runOverview.stopFailed')
   if (run.state === 'queued') {
     if (run.ahead === undefined) return t('runOverview.waiting')
     return run.ahead === 0 ? t('runOverview.next') : t('runOverview.ahead', run.ahead)
@@ -169,7 +185,7 @@ function statusLine(run: TitleBarRun): string {
 }
 
 function stepCountOf(run: TitleBarRun): string | null {
-  if (isStopping(run) || stopFailed.value.has(runKey(run))) return null
+  if (isStopping(run) || didNotStop(run)) return null
   if (run.state !== 'running' || run.stepIndex === undefined || run.stepCount === undefined) {
     return null
   }
@@ -224,7 +240,15 @@ function progressWidth(run: TitleBarRun): string {
               data-testid="run-overview-run"
               @open="emit('open', run.appId)"
             >
-              <template v-if="run.state === 'running'" #icon>
+              <template v-if="didNotStop(run)" #icon>
+                <CircleAlert
+                  :size="12"
+                  class="shrink-0 text-destructive"
+                  aria-hidden="true"
+                  data-testid="run-overview-stop-failed-icon"
+                />
+              </template>
+              <template v-else-if="run.state === 'running'" #icon>
                 <LoaderCircle
                   :size="12"
                   class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
