@@ -315,10 +315,10 @@ const selectedWorkflow = ref<CatalogWorkflow | null>(null)
 const appInProgress = ref<AppCard | null>(null)
 const listedApps = ref<AppCard[] | null>(null)
 let stayOnAppsAfterClose = false
-const draftsOpenedFromDevelopment = new Set<string>()
+let openingFromDevelopment: string | null = null
 
 function homePageOf(app: AppCard): AppHomePage {
-  if (draftsOpenedFromDevelopment.has(app.id)) return 'staff-apps'
+  if (app.id === openingFromDevelopment) return 'staff-apps'
   if (listedApps.value?.some((listed) => listed.id === app.id)) return 'apps'
   return liveStaffApps.value.some((staffApp) => staffApp.id === app.id) ? 'staff-apps' : 'apps'
 }
@@ -328,7 +328,8 @@ const appHome = computed<AppHomePage>(() => (staffApps.shown.value ? openedAppHo
 
 const confirmAppSwitch = useAppSwitchConfirm()
 
-function showApp(app: AppCard): void {
+function showApp(app: AppCard, openedFrom: AppHomePage = 'apps'): void {
+  openingFromDevelopment = openedFrom === 'staff-apps' ? app.id : null
   stayOnAppsAfterClose = false
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
@@ -336,7 +337,13 @@ function showApp(app: AppCard): void {
 
 function noteCurrentApp(app: AppCard | null): void {
   appInProgress.value = app
-  if (app) openedAppHome.value = homePageOf(app)
+  if (!app) return
+  openedAppHome.value = homePageOf(app)
+  openingFromDevelopment = null
+}
+
+function returnPageOf(app: AppCard): AppHomePage {
+  return app.id === appInProgress.value?.id ? openedAppHome.value : 'apps'
 }
 
 function noteAppOpen(open: boolean): void {
@@ -358,8 +365,8 @@ async function switchStillWanted(app: AppCard): Promise<boolean> {
   return confirmed && stillCurrent()
 }
 
-async function openAppFromHome(app: AppCard): Promise<void> {
-  if (await switchStillWanted(app)) showApp(app)
+async function openAppFromHome(app: AppCard, openedFrom: AppHomePage = 'apps'): Promise<void> {
+  if (await switchStillWanted(app)) showApp(app, openedFrom)
 }
 
 watch(staffApps.shown, (shown) => {
@@ -390,7 +397,7 @@ async function openRunningApp(appId: string): Promise<void> {
   }
   closeBuildDetails()
   assetsFocusName.value = null
-  showApp(app)
+  showApp(app, returnPageOf(app))
 }
 
 async function confirmLeavingRuns(): Promise<boolean> {
@@ -439,12 +446,10 @@ async function answerDraftApp(
     return
   }
   if (!(await switchStillWanted(request.card))) return
-  if (openedFrom === 'staff-apps') draftsOpenedFromDevelopment.add(request.card.id)
-  else draftsOpenedFromDevelopment.delete(request.card.id)
   if (activePanel.value !== 'chooser') await switchPanel('chooser', 'install')
   closeBuildDetails()
   assetsFocusName.value = null
-  showApp(request.card)
+  showApp(request.card, openedFrom)
 }
 
 const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
@@ -465,7 +470,7 @@ function returnToApp(app: AppCard): void {
   })
   closeBuildDetails()
   assetsFocusName.value = null
-  void openAppFromHome(app)
+  void openAppFromHome(app, returnPageOf(app))
 }
 
 function viewInAssets(name: string): void {

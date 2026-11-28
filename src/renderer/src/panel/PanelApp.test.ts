@@ -2064,6 +2064,121 @@ describe('PanelApp', () => {
     wrapper.unmount()
   })
 
+  const RELIGHT_DRAFT_CARD = {
+    id: 'draft-pr445-relight-0a1b2c3d',
+    title: 'Relight',
+    description: '',
+    covers: []
+  }
+
+  async function openTheRelightDraftFromDevelopment(): Promise<ReturnType<typeof mountPanel>> {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.listApps).mockResolvedValue([RELIGHT_DRAFT_CARD])
+    vi.mocked(window.api.listHiddenApps).mockResolvedValue({
+      apps: [{ ...RELIGHT_STAFF_APP, page: 'missing', opens: 'draft' }]
+    })
+    vi.mocked(window.api.openHiddenAppDraft).mockResolvedValue({
+      kind: 'ask',
+      appId: RELIGHT_DRAFT_CARD.id,
+      token: 'question-7',
+      title: 'Open a draft app from comfy-website-preview-pr-445.vercel.app?',
+      message: '"Relight". It is not published, and it runs with your Comfy Cloud account.'
+    })
+    vi.mocked(window.api.acceptDraftApp).mockResolvedValue({
+      kind: 'open',
+      card: { ...RELIGHT_DRAFT_CARD }
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-staff-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="staff-app-card-relight"]').trigger('click')
+    const open = await vi.waitFor(() => {
+      const action = document.querySelector<HTMLElement>(
+        '[role="alertdialog"] [data-testid="base-alert-action"]'
+      )
+      if (!action) throw new Error('The draft app question is not open yet')
+      return action
+    })
+    open.click()
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+    await flushPromises()
+    return wrapper
+  }
+
+  function expectAppsSelected(wrapper: ReturnType<typeof mountPanel>): void {
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(
+      wrapper.get('[data-testid="app-sidebar-staff-apps"]').attributes('aria-current')
+    ).toBeUndefined()
+  }
+
+  async function expectBackGoesToApps(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
+    await goBackToAllAppsFromThePage()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(false)
+    expectAppsSelected(wrapper)
+  }
+
+  it('goes back to Apps when a draft opened from Development is opened again from Home', async () => {
+    const wrapper = await openTheRelightDraftFromDevelopment()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+    await flushPromises()
+
+    expectAppsSelected(wrapper)
+    await expectBackGoesToApps(wrapper)
+    wrapper.unmount()
+  })
+
+  it('goes back to Apps when a draft opened from Development is opened again from Apps', async () => {
+    const wrapper = await openTheRelightDraftFromDevelopment()
+    await goBackToAllAppsFromThePage()
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get(`[data-testid="app-card-${RELIGHT_DRAFT_CARD.id}"]`).trigger('click')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+    await flushPromises()
+
+    expectAppsSelected(wrapper)
+    await expectBackGoesToApps(wrapper)
+    wrapper.unmount()
+  })
+
+  it('keeps Development when the person returns to a draft opened from it from the sidebar', async () => {
+    const wrapper = await openTheRelightDraftFromDevelopment()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-app-in-progress"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Relight')
+    )
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-staff-apps"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    await goBackToAllAppsFromThePage()
+    expect(wrapper.find('[data-testid="staff-apps-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows why when Desktop refuses to open the draft, and opens nothing', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.listHiddenApps).mockResolvedValue({
