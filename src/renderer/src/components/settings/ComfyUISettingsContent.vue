@@ -1401,7 +1401,7 @@ defineExpose({
               type="button"
               class="gap-1.5 px-3 text-[13px]/5"
               :disabled="deployToCloudEntry.disabled === true || opBlocksFooter"
-              :title="deployToCloudEntry.title"
+              :title="deployToCloudEntry.title ?? deployToCloudEntry.hint"
               data-testid="build-page-deploy-to-cloud"
               @click="handleDeployToCloud"
             >

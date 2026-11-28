@@ -170,6 +170,46 @@ describe('Deploy to Cloud dialog', () => {
     expect(deployToCloudTarget.value).toEqual(BUILD)
   })
 
+  it('names the copy, not the agent, when the clipboard refuses', async () => {
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'))
+    mountDialog()
+    openDeployToCloud(BUILD)
+
+    await openAgentMenu()
+    ;(await shown('deploy-to-cloud-agent-copy')).click()
+
+    await vi.waitFor(() =>
+      expect(modalMock.alert).toHaveBeenCalledExactlyOnceWith({
+        title: 'Could not copy the prompt',
+        message: 'Try again, or set up manually.'
+      })
+    )
+  })
+
+  it('does not say Copied when the dialog was closed and opened again meanwhile', async () => {
+    let finishCopy: () => void = () => {}
+    vi.spyOn(navigator.clipboard, 'writeText').mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishCopy = resolve
+      })
+    )
+    mountDialog()
+    openDeployToCloud(BUILD)
+
+    await openAgentMenu()
+    ;(await shown('deploy-to-cloud-agent-copy')).click()
+    await flushPromises()
+    closeDeployToCloud()
+    await flushPromises()
+    openDeployToCloud(BUILD)
+    await flushPromises()
+    finishCopy()
+    await flushPromises()
+
+    expect(byTestId('deploy-to-cloud-agent')!.textContent).not.toContain('Copied')
+    expect(modalMock.alert).not.toHaveBeenCalled()
+  })
+
   it('opens the docs in the browser', async () => {
     mountDialog()
     openDeployToCloud(BUILD)

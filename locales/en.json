@@ -1945,7 +1945,8 @@
       "copied": "Copied",
       "agentFailedTitle": "Could not open your agent",
       "agentFailedMessage": "Copy the prompt instead, and paste it into your coding agent.",
-      "copyFailedMessage": "Could not copy the prompt.",
+      "copyFailedTitle": "Could not copy the prompt",
+      "copyFailedMessage": "Try again, or set up manually.",
       "play": "Play",
       "pause": "Pause"
     }

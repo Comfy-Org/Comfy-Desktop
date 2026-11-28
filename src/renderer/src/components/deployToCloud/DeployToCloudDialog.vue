@@ -12,7 +12,7 @@ import AgentMarks from './AgentMarks.vue'
 import { MODAL_TITLE_CLASS } from '../../lib/modalTitle'
 import { useDeployToCloud } from '../../composables/useDeployToCloud'
 import { useModal } from '../../composables/useModal'
-import type { AgentApp } from '../../types/ipc'
+import type { AgentApp, Installation } from '../../types/ipc'
 
 const MEDIA_BASE = 'https://media.comfy.org/website/cloud-deploy'
 const VIDEO_SOURCES = [
@@ -40,7 +40,16 @@ function clearCopied(): void {
   copied.value = false
 }
 
-watch(target, clearCopied)
+let opening = 0
+
+watch(target, () => {
+  opening += 1
+  clearCopied()
+})
+
+function stillShowing(inst: Installation, openedAt: number): boolean {
+  return opening === openedAt && target.value === inst
+}
 onBeforeUnmount(clearCopied)
 
 function openDocs(): void {
@@ -57,10 +66,10 @@ function pickSetUpManually(): void {
 async function pickAgent(app: AgentApp): Promise<void> {
   const inst = target.value
   if (!inst) return
-  if (await openAgent(app, inst)) {
-    if (target.value === inst) close()
-    return
-  }
+  const openedAt = opening
+  const opened = await openAgent(app, inst)
+  if (!stillShowing(inst, openedAt)) return
+  if (opened) return close()
   await modal.alert({
     title: t('devPlatform.deployToCloud.agentFailedTitle'),
     message: t('devPlatform.deployToCloud.agentFailedMessage')
@@ -70,9 +79,12 @@ async function pickAgent(app: AgentApp): Promise<void> {
 async function pickCopyPrompt(): Promise<void> {
   const inst = target.value
   if (!inst) return
-  if (!(await copyPrompt(inst))) {
+  const openedAt = opening
+  const copiedPrompt = await copyPrompt(inst)
+  if (!stillShowing(inst, openedAt)) return
+  if (!copiedPrompt) {
     await modal.alert({
-      title: t('devPlatform.deployToCloud.agentFailedTitle'),
+      title: t('devPlatform.deployToCloud.copyFailedTitle'),
       message: t('devPlatform.deployToCloud.copyFailedMessage')
     })
     return

@@ -239,6 +239,12 @@ describe('starting an agent app from a prompt Desktop wrote', () => {
     expect(handedToTheOs()).toEqual(['codex://new?prompt=name%20%EF%BF%BD%20end'])
   })
 
+  it('refuses a prompt whose link the OS could cut short', async () => {
+    await expect(openAgentApp('claude', '名'.repeat(300))).rejects.toThrow(RangeError)
+
+    expect(handedToTheOs()).toEqual([])
+  })
+
   it.each([
     ['claude', true],
     ['codex', true],

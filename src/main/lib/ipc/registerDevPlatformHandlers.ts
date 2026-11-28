@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 
-import { comfyWindows } from '../../host/registry'
+import { comfyWindows, isPanelSender } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
 import { cloudAuthEvents } from '../cloudAuthEvents'
@@ -69,8 +69,6 @@ export const DEVPLATFORM_CHANNELS = {
   promoteLocalInstance: 'comfybuilder:promoteLocalInstance',
   openAgentApp: 'comfybuilder:openAgentApp'
 } as const
-
-const LONGEST_AGENT_PROMPT = 16_000
 
 const SIGNED_OUT: AuthStatus = { signedIn: false }
 
@@ -271,15 +269,15 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.openAgentApp,
-    async (_event, app: unknown, prompt: unknown): Promise<boolean> => {
+    async (event, app: unknown, prompt: unknown): Promise<boolean> => {
+      if (!isPanelSender(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
       if (!isAgentApp(app)) return false
       if (typeof prompt !== 'string' || prompt.length === 0) return false
-      if (prompt.length > LONGEST_AGENT_PROMPT) return false
       try {
         await openAgentApp(app, prompt)
         return true
       } catch (err) {
-        console.warn('[dev-platform] Could not open the agent app:', (err as Error)?.message)
+        console.warn(`[dev-platform] Could not open ${app}:`, (err as Error)?.name ?? 'Error')
         return false
       }
     }
