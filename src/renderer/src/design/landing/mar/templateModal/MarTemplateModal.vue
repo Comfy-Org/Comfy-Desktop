@@ -1623,9 +1623,8 @@ const full = computed(() => can.value.onboarding)
                 </Tooltip>
               </div>
               <p class="mar-tpl-by mar-tpl-feed-credit">
-                <Avatar size="sm">{{ initialOf(feedPick.creator) }}</Avatar><span
-                  class="mar-tpl-feed-credit-name"
-                  >by @{{ feedPick.creator.handle }}</span
+                <Avatar size="sm">{{ initialOf(feedPick.creator) }}</Avatar
+                ><span class="mar-tpl-feed-credit-name">by @{{ feedPick.creator.handle }}</span
                 ><i />{{ fmtAgo(feedPick.minutesAgo) }}<i />{{ feedReused }}
               </p>
               <div class="mad-prompt">

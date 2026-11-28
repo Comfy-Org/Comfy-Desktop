@@ -805,7 +805,15 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
 }
 
 export type NeedKind =
-  'disk' | 'gpu' | 'licence' | 'input' | 'account' | 'credits' | 'plan' | 'repair' | 'network'
+  | 'disk'
+  | 'gpu'
+  | 'licence'
+  | 'input'
+  | 'account'
+  | 'credits'
+  | 'plan'
+  | 'repair'
+  | 'network'
 
 export interface CaseNeed {
   kind: NeedKind

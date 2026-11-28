@@ -14,8 +14,8 @@ type Sort = 'for-you' | 'popular' | 'newest'
 
 const KINDS = computed<{ value: FeedKind; label: string }[]>(() =>
   [
-    { value: 'apps' as const, label: 'Apps' },
-    { value: 'workflows' as const, label: 'Workflows' }
+    { value: 'workflows' as const, label: 'Workflows' },
+    { value: 'apps' as const, label: 'Apps' }
   ].filter((k) => k.value === 'apps' || can.value.explore)
 )
 const SORTS: { value: Sort; label: string }[] = [
@@ -27,7 +27,7 @@ const PAGE_MAX = 12
 const DEFAULT_RATIO = 4 / 5
 const TITLE_ROOM = 0.22
 
-const kind = ref<FeedKind>('apps')
+const kind = ref<FeedKind>(can.value.explore ? 'workflows' : 'apps')
 const sort = ref<Sort>('for-you')
 const query = ref('')
 const pages = ref(2)

@@ -127,7 +127,8 @@ const logLines = computed(() =>
       <pre
         v-if="logLines"
         class="m-0 mt-1 max-h-36 w-full overflow-auto rounded-control bg-secondary-background p-3 text-left font-mono text-[11px] leading-[1.5] whitespace-pre-wrap text-muted-foreground"
-        >{{ logLines }}</pre>
+        >{{ logLines }}</pre
+      >
       <div v-if="again" class="mt-2 flex flex-col items-center gap-2" data-start-again>
         <div class="flex items-center gap-2">
           <Button variant="secondary" size="md" @click="restartAfterFailure(inst)">

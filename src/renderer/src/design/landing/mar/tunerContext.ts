@@ -58,11 +58,9 @@ import { buildStart } from './build/comfyStart'
 import { edgeCase } from './edge/edgeStore'
 import { dlFooter } from './downloads/dlFooter'
 import { homeLayout, homeVersion } from './home/homeLayout'
-import { homeIdea } from './home/homeIdeas'
 import { buildsAt } from './home/buildsAt'
 import { tplDetails } from './templateModal/tplDetails'
 import { tplFeed } from './templateModal/tplFeed'
-import { exploreSwitch } from './home/exploreSwitch'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -110,9 +108,6 @@ export const when = {
   homeLayout: computed(
     () => onHome.value && can.value.exploreApps && (!onFirstRun.value || firstRun.id === 'original')
   ),
-  exploreSwitch: computed(
-    () => onHome.value && can.value.explore && !onFirstRun.value && homeArcMix.id === 'tabs'
-  ),
   sidebarMotion: computed(() => sidebarShown.value && marPanelsOn.value),
   buildsAt: computed(
     () =>
@@ -121,9 +116,6 @@ export const when = {
       can.value.exploreApps &&
       !onFirstRun.value &&
       homeLayout.id === 'recents'
-  ),
-  homeIdeas: computed(
-    () => onHome.value && can.value.exploreApps && !onFirstRun.value && homeLayout.id === 'recents'
   ),
   // The node editor's way in, under the examples of the Original first run.
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
@@ -319,9 +311,6 @@ export const TWEAKS = {
   tplDetails: one(tplDetails, 'current'),
   tplFeed: one(tplFeed, 'off'),
   sidebarMotion: one(sidebarMotion, 'desktop'),
-  exploreSwitch: one(exploreSwitch, 'seg'),
-  homeIdeaCompactRecents: one(homeIdea('compactRecents').store, 'off'),
-  homeIdeaSmallGreeting: one(homeIdea('smallGreeting').store, 'off'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   // The milestone picks the cover (cover.ts): the canvas, then the image.
