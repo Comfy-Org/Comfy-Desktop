@@ -138,6 +138,19 @@ describe('Home carousel tabs', () => {
     )
   })
 
+  it('names the content under the switch after the picked tab and announces it when the tab changes', async () => {
+    const wrapper = await openHome()
+    const panel = () => wrapper.get('[data-testid="home-featured-panel"]')
+
+    expect(panel().attributes('role')).toBe('region')
+    expect(panel().attributes('aria-live')).toBe('polite')
+    expect(panel().attributes('aria-label')).toBe('Example workflows')
+
+    await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
+
+    expect(panel().attributes('aria-label')).toBe('Apps')
+  })
+
   it('loads both lists when Home opens, so switching tabs shows the apps at once', async () => {
     const wrapper = await openHome()
     expect(listHomeWorkflows).toHaveBeenCalledOnce()

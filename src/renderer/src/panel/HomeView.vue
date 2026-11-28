@@ -169,7 +169,13 @@ onMounted(() => {
         <div class="mb-5 flex justify-center">
           <SegmentedControl v-model="tab" :options="tabs" :label="t('home.carouselTabs')" />
         </div>
-        <div data-home-tour="apps-carousel">
+        <div
+          role="region"
+          :aria-label="showWorkflows ? t('home.exampleWorkflows') : t('sidebar.apps')"
+          aria-live="polite"
+          data-home-tour="apps-carousel"
+          data-testid="home-featured-panel"
+        >
           <template v-if="showWorkflows">
             <div
               v-if="workflowsLoading"
