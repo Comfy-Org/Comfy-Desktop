@@ -1116,11 +1116,9 @@ describe('Explore Workflows', () => {
     window.localStorage.clear()
     listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW, VIDEO_WORKFLOW])
     const wrapper = await mountWorkflows()
-    const columns = () =>
-      getComputedStyle(
-        wrapper.get('[data-testid="workflows-grid"]').element
-      ).gridTemplateColumns.split(' ').length
-    const mediumColumns = columns()
+    const cardWidth = () =>
+      wrapper.get('[data-testid="workflows-grid"] > li').element.getBoundingClientRect().width
+    const mediumWidth = cardWidth()
 
     await userEvent.click(wrapper.get('[data-testid="explore-layout"]').element)
     await userEvent.click(onMenu('explore-size-large'))
@@ -1129,7 +1127,7 @@ describe('Explore Workflows', () => {
     await flushPromises()
 
     expect(cardIds(wrapper)).toEqual(['ltx-video', 'upscale-workflow'])
-    expect(columns()).toBeLessThan(mediumColumns)
+    await expect.poll(cardWidth).toBeGreaterThan(mediumWidth)
     wrapper.unmount()
 
     const again = await mountWorkflows()
@@ -1175,6 +1173,143 @@ describe('Explore Workflows', () => {
     expect(wrapper.findAll(APP_CARDS).filter((card) => card.isVisible())).toEqual([])
     expect(wrapper.find('[data-testid="explore-apps-tab"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="explore-workflows-tab"]').exists()).toBe(false)
+  })
+
+  describe('a catalog longer than a page', () => {
+    const CATALOG_SIZE = 250
+    const HIDDEN_GEM_INDEX = 230
+
+    function longCatalog(): CatalogWorkflow[] {
+      return Array.from({ length: CATALOG_SIZE }, (_, index) =>
+        catalogWorkflow({
+          id: `workflow-${index}`,
+          title: index === HIDDEN_GEM_INDEX ? 'Hidden gem' : `Workflow ${index}`,
+          description: index % 2 === 0 ? 'Turn a sketch into a picture.' : ''
+        })
+      )
+    }
+
+    async function mountLongCatalog() {
+      window.localStorage.clear()
+      listCatalogWorkflows.mockResolvedValue(longCatalog())
+      const wrapper = await mountWorkflows()
+      await expect.poll(() => cardIds(wrapper).length).toBeGreaterThan(0)
+      return wrapper
+    }
+
+    function scroller(wrapper: Awaited<ReturnType<typeof mountApps>>): HTMLElement {
+      return wrapper.get<HTMLElement>('[data-testid="workflows-view"]').element
+    }
+
+    function pagerText(wrapper: Awaited<ReturnType<typeof mountApps>>): string {
+      return wrapper.get('[data-testid="workflows-pagination"]').text()
+    }
+
+    it('shows the first page, with only the cards near the window on the page', async () => {
+      const wrapper = await mountLongCatalog()
+
+      expect(pagerText(wrapper)).toContain('1–100 of 250')
+      expect(wrapper.find('[data-testid="workflows-page-3"]').exists()).toBe(true)
+      const ids = cardIds(wrapper)
+      expect(ids[0]).toBe('workflow-0')
+      expect(ids.length, 'cards on the page').toBeLessThan(40)
+      expect(ids).not.toContain('workflow-99')
+      wrapper.unmount()
+    })
+
+    it('lines the cards up in rows when some have no description', async () => {
+      const wrapper = await mountLongCatalog()
+
+      const firstRow = wrapper
+        .findAll('[data-testid="workflows-grid"] > li')
+        .slice(0, 4)
+        .map((card) => card.element.getBoundingClientRect())
+      expect(new Set(firstRow.map((box) => Math.round(box.top))).size).toBe(1)
+      expect(new Set(firstRow.map((box) => Math.round(box.height))).size).toBe(1)
+      expect(new Set(firstRow.map((box) => Math.round(box.left))).size).toBe(4)
+      wrapper.unmount()
+    })
+
+    it('puts the later cards of the page on as the list scrolls down', async () => {
+      const wrapper = await mountLongCatalog()
+      const view = scroller(wrapper)
+
+      view.scrollTop = view.scrollHeight
+      await expect.poll(() => cardIds(wrapper)).toContain('workflow-99')
+
+      expect(cardIds(wrapper)).not.toContain('workflow-0')
+      expect(cardIds(wrapper)).not.toContain('workflow-100')
+      wrapper.unmount()
+    })
+
+    it('turns to the next page from the page buttons and starts it at the top', async () => {
+      const wrapper = await mountLongCatalog()
+      const view = scroller(wrapper)
+      view.scrollTop = view.scrollHeight
+      await expect.poll(() => cardIds(wrapper)).toContain('workflow-99')
+
+      await wrapper.get('[data-testid="workflows-page-2"]').trigger('click')
+
+      await expect.poll(() => cardIds(wrapper)[0]).toBe('workflow-100')
+      expect(view.scrollTop).toBe(0)
+      expect(pagerText(wrapper)).toContain('101–200 of 250')
+      wrapper.unmount()
+    })
+
+    it('finds a workflow from a later page when searching', async () => {
+      const wrapper = await mountLongCatalog()
+      expect(cardIds(wrapper)).not.toContain(`workflow-${HIDDEN_GEM_INDEX}`)
+
+      await wrapper.get('input').setValue('gem')
+      await flushPromises()
+
+      await expect.poll(() => cardIds(wrapper)).toEqual([`workflow-${HIDDEN_GEM_INDEX}`])
+      expect(pagerText(wrapper)).toContain('1–1 of 1')
+      wrapper.unmount()
+    })
+
+    it('goes back to the first page, at the top, when the search changes', async () => {
+      const wrapper = await mountLongCatalog()
+      const view = scroller(wrapper)
+      await wrapper.get('[data-testid="workflows-page-2"]').trigger('click')
+      await expect.poll(() => cardIds(wrapper)[0]).toBe('workflow-100')
+      view.scrollTop = view.scrollHeight
+      await expect.poll(() => cardIds(wrapper)).toContain('workflow-199')
+
+      await wrapper.get('input').setValue('workflow')
+      await flushPromises()
+
+      await expect.poll(() => cardIds(wrapper)[0]).toBe('workflow-0')
+      expect(view.scrollTop).toBe(0)
+      expect(pagerText(wrapper)).toContain('1–100 of 249')
+      wrapper.unmount()
+    })
+
+    it('still shows the cards after the window changes size while Apps is showing', async () => {
+      const wrapper = await mountLongCatalog()
+
+      await wrapper.setProps({ tab: 'apps' })
+      page.style.width = `${MEDIUM_PAGE_WIDTH}px`
+      await expect.poll(() => cardIds(wrapper).length).toBe(0)
+      await wrapper.setProps({ tab: 'workflows' })
+
+      await expect.poll(() => cardIds(wrapper)[0]).toBe('workflow-0')
+      wrapper.unmount()
+    })
+  })
+
+  it.each(['workflows', 'apps'] as const)('shows a scrollbar beside the %s list', async (tab) => {
+    listCatalogWorkflows.mockResolvedValue(
+      Array.from({ length: 40 }, (_, index) =>
+        catalogWorkflow({ id: `workflow-${index}`, title: `Workflow ${index}` })
+      )
+    )
+    const wrapper = await mountApps(manyApps(30), { tab })
+    const view = wrapper.get<HTMLElement>(`[data-testid="${tab}-view"]`).element
+
+    expect(view.scrollHeight).toBeGreaterThan(view.clientHeight)
+    expect(view.offsetWidth - view.clientWidth, 'scrollbar width').toBeGreaterThan(0)
+    wrapper.unmount()
   })
 
   it('offers a retry on Workflows when the catalog fails', async () => {

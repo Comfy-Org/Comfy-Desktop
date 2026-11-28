@@ -10,21 +10,26 @@ import { useResizeObserver } from '@vueuse/core'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { VirtualItem } from '@tanstack/vue-virtual'
 
-export interface VirtualMasonryOptions {
+interface VirtualMasonryLayout {
   scroller: Readonly<Ref<HTMLElement | null>>
   gallery: Readonly<Ref<HTMLElement | null>>
   count: MaybeRefOrGetter<number>
   itemKey: (index: number) => string
   estimateHeight: (index: number, columnWidth: number) => number
-  minColumnWidth: number
   gap: MaybeRefOrGetter<number>
   relayoutWhen: WatchSource
 }
 
+type VirtualMasonryColumns =
+  | { minColumnWidth: number; lanes?: never }
+  | { lanes: MaybeRefOrGetter<number>; minColumnWidth?: never }
+
+export type VirtualMasonryOptions = VirtualMasonryLayout & VirtualMasonryColumns
+
 const OVERSCAN_ROWS = 2
 
 export function useVirtualMasonry(options: VirtualMasonryOptions) {
-  const { scroller, gallery, minColumnWidth } = options
+  const { scroller, gallery } = options
   const galleryWidth = shallowRef(0)
   const galleryTop = shallowRef(0)
 
@@ -37,11 +42,13 @@ export function useVirtualMasonry(options: VirtualMasonryOptions) {
       list.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop
   }
   useResizeObserver(scroller, measureGallery)
+  useResizeObserver(gallery, measureGallery)
   watch(gallery, measureGallery, { flush: 'post' })
 
   const lanes = computed(() => {
+    if (options.lanes !== undefined) return Math.max(1, Math.floor(toValue(options.lanes)))
     const gap = toValue(options.gap)
-    return Math.max(1, Math.floor((galleryWidth.value + gap) / (minColumnWidth + gap)))
+    return Math.max(1, Math.floor((galleryWidth.value + gap) / (options.minColumnWidth + gap)))
   })
 
   const virtualizer = useVirtualizer(
