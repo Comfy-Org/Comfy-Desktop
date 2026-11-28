@@ -684,6 +684,44 @@ describe('agentTap product events', () => {
     })
   })
 
+  it('uses one stable PostHog UUID for duplicate deliveries of a product event', () => {
+    const tap = createAgentTap(baseOpts)
+    tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stdout')
+    tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
+    tap.ingest(relayed(PRODUCT_FIXTURE[2]!), 'stderr')
+
+    const uuids = vi.mocked(telemetry.capture).mock.calls.map((call) => call[2])
+    expect(uuids).toHaveLength(3)
+    expect(uuids[0]).toMatch(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/)
+    expect(uuids[1]).toBe(uuids[0])
+    expect(uuids[2]).not.toBe(uuids[0])
+  })
+
+  it('distinguishes original and resumed session starts without splitting duplicate delivery', () => {
+    const tap = createAgentTap(baseOpts)
+    const original = relayed(
+      `[agent-event] agent_session_started thread_id=${THREAD} is_resume=false occurred_at=2026-10-09T12:00:00Z`
+    )
+    const resumed = relayed(
+      `[agent-event] agent_session_started thread_id=${THREAD} is_resume=true occurred_at=2026-10-10T12:00:00Z`
+    )
+    tap.ingest(original, 'stdout')
+    tap.ingest(resumed, 'stdout')
+    tap.ingest(resumed, 'stderr')
+
+    const calls = vi.mocked(telemetry.capture).mock.calls
+    expect(calls[0]?.[2]).not.toBe(calls[1]?.[2])
+    expect(calls[1]?.[2]).toBe(calls[2]?.[2])
+  })
+
+  it('passes the product event source time to telemetry delivery', () => {
+    ingest(turnStarted(' occurred_at=2026-10-09T23:59:59Z'))
+
+    expect(vi.mocked(telemetry.capture).mock.calls[0]?.[3]).toEqual(
+      new Date('2026-10-09T23:59:59Z')
+    )
+  })
+
   it('forwards the send id on agent_turn_started so a message joins its turn', () => {
     const clientMessageId = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
     ingest(turnStarted(` client_message_id=${clientMessageId}`))
