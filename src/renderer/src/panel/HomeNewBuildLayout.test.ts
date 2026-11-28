@@ -253,11 +253,19 @@ describe('New build next to All builds', () => {
 })
 
 const QUIET_CONTROLS = [
-  ['the Builds title', 'home-all-builds', 'Builds'],
-  ['the +', 'home-new-build-button', 'New build'],
-  ['See all workflows', 'home-see-all-workflows', 'See all workflows'],
-  ['See all apps', 'home-see-all-apps', 'See all apps']
+  ['the Builds title', 'home-all-builds', 'Builds', null],
+  ['the +', 'home-new-build-button', 'New build', null],
+  ['See all workflows', 'home-see-all-workflows', 'See all workflows', null],
+  ['See all apps', 'home-see-all-apps', 'See all apps', 'home-apps-tab']
 ] as const
+
+async function quietControl(testId: string, tabTestId: string | null): Promise<HTMLElement> {
+  if (tabTestId) {
+    host.querySelector<HTMLElement>(`[data-testid="${tabTestId}"]`)!.click()
+    await flushPromises()
+  }
+  return host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!
+}
 
 function hoverFillClasses(el: HTMLElement): string[] {
   return [...el.classList].filter(
@@ -268,9 +276,9 @@ function hoverFillClasses(el: HTMLElement): string[] {
 describe('Home section links brighten on hover without a fill', () => {
   it.each(QUIET_CONTROLS)(
     '%s keeps its button role and name and has no hover fill class',
-    async (_control, testId, name) => {
+    async (_control, testId, name, tabTestId) => {
       const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
-      const control = host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!
+      const control = await quietControl(testId, tabTestId)
 
       expect(hoverFillClasses(control), 'hover fill classes').toEqual([])
       expect(control.classList.contains('hover:bg-transparent')).toBe(true)
@@ -281,9 +289,9 @@ describe('Home section links brighten on hover without a fill', () => {
 
   it.each(QUIET_CONTROLS)(
     '%s shows no background and turns the foreground color on hover',
-    async (_control, testId) => {
+    async (_control, testId, _name, tabTestId) => {
       const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, FULL_ROW)
-      const control = host.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!
+      const control = await quietControl(testId, tabTestId)
       const probe = document.createElement('span')
       probe.className = 'text-foreground'
       host.appendChild(probe)

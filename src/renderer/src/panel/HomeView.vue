@@ -9,6 +9,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useOpenComfyUI } from './home/useOpenComfyUI'
@@ -28,6 +29,7 @@ import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 type WorkflowState = 'idle' | 'loading' | 'ready' | 'unavailable'
+type HomeTab = 'workflows' | 'apps'
 
 const HOME_BUILD_LIMIT = 3
 const BRIGHTEN_ON_HOVER_CLASS =
@@ -107,6 +109,12 @@ function openBuild(build: Installation): void {
 }
 
 const { state: appsState, apps, loadApps } = useHomeApps()
+const tab = ref<HomeTab>('workflows')
+const tabs = computed(() => [
+  { value: 'workflows' as const, label: t('sidebar.workflows'), testId: 'home-workflows-tab' },
+  { value: 'apps' as const, label: t('sidebar.apps'), testId: 'home-apps-tab' }
+])
+const showWorkflows = computed(() => tab.value === 'workflows')
 const workflowState = ref<WorkflowState>('idle')
 const workflows = ref<CatalogWorkflow[]>([])
 const workflowsLoading = computed(
@@ -153,108 +161,99 @@ onMounted(() => {
         {{ t('home.title') }}
       </h1>
 
-      <section class="mt-[74px]" aria-labelledby="home-workflows" data-testid="home-workflows">
-        <div class="mb-5 flex h-6 items-center justify-between">
-          <h2 id="home-workflows" class="m-0" :class="SECTION_TITLE_CLASS">
-            {{ t('sidebar.workflows') }}
-          </h2>
+      <section
+        class="mt-[74px]"
+        :aria-label="showWorkflows ? t('home.exampleWorkflows') : t('sidebar.apps')"
+        data-testid="home-featured"
+      >
+        <div class="mb-5 flex justify-center">
+          <SegmentedControl v-model="tab" :options="tabs" :label="t('home.carouselTabs')" />
+        </div>
+        <div data-home-tour="apps-carousel">
+          <template v-if="showWorkflows">
+            <div
+              v-if="workflowsLoading"
+              class="flex h-75 items-center justify-center gap-2.5"
+              aria-busy="true"
+              data-testid="home-workflows-loading"
+            >
+              <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+              <Skeleton class="h-75 w-64 rounded-[18px]" />
+              <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+            </div>
+            <HomeCarousel
+              v-else-if="workflowState === 'ready'"
+              kind="workflows"
+              :cards="workflows"
+              :pictures-of="thumbnailOf"
+              @open="emit('open-workflow', $event)"
+            />
+            <div
+              v-else
+              class="flex h-75 flex-col items-center justify-center gap-3"
+              data-testid="home-workflows-unavailable"
+            >
+              <p class="m-0 text-[13px]/5 text-muted-foreground">
+                {{ t('home.workflowsUnavailable') }}
+              </p>
+              <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
+                {{ t('home.retry') }}
+              </Button>
+            </div>
+          </template>
+          <template v-else>
+            <div
+              v-if="appsState === 'loading'"
+              class="flex h-75 items-center justify-center gap-2.5"
+              aria-busy="true"
+              data-testid="home-apps-loading"
+            >
+              <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+              <Skeleton class="h-75 w-64 rounded-[18px]" />
+              <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+            </div>
+            <HomeCarousel
+              v-else-if="appsState === 'ready'"
+              kind="apps"
+              :cards="apps"
+              :pictures-of="coversOf"
+              @open="emit('open-app', $event)"
+            />
+            <div
+              v-else-if="appsState === 'failed'"
+              class="flex h-75 flex-col items-center justify-center gap-3"
+              data-testid="home-apps-failed"
+            >
+              <p class="m-0 text-[13px]/5 text-muted-foreground">
+                {{ t('home.appsUnavailable') }}
+              </p>
+              <Button type="button" variant="secondary" size="md" @click="loadApps">
+                {{ t('home.retry') }}
+              </Button>
+            </div>
+            <EmptyState
+              v-else
+              class="h-75 justify-center"
+              data-testid="home-apps-empty"
+              :icon="AppWindow"
+              :title="t('apps.emptyTitle')"
+              :text="t('apps.emptyBody')"
+            />
+          </template>
+        </div>
+        <div class="mt-[30px] flex justify-center">
           <Button
             type="button"
             variant="muted-textonly"
             size="unset"
-            :class="[TEXT_LINK_CLASS, BRIGHTEN_ON_HOVER_CLASS, '-mr-3']"
-            data-testid="home-see-all-workflows"
-            @click="emit('show-workflows')"
+            :class="[TEXT_LINK_CLASS, BRIGHTEN_ON_HOVER_CLASS]"
+            :data-testid="showWorkflows ? 'home-see-all-workflows' : 'home-see-all-apps'"
+            @click="showWorkflows ? emit('show-workflows') : emit('show-apps')"
           >
-            {{ t('home.seeAllWorkflows') }}
+            {{ showWorkflows ? t('home.seeAllWorkflows') : t('home.seeAllApps') }}
             <ArrowRight :size="14" aria-hidden="true" />
           </Button>
         </div>
-        <div
-          v-if="workflowsLoading"
-          class="flex h-75 items-center justify-center gap-2.5"
-          aria-busy="true"
-          data-testid="home-workflows-loading"
-        >
-          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
-          <Skeleton class="h-75 w-64 rounded-[18px]" />
-          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
-        </div>
-        <HomeCarousel
-          v-else-if="workflowState === 'ready'"
-          kind="workflows"
-          :cards="workflows"
-          :pictures-of="thumbnailOf"
-          @open="emit('open-workflow', $event)"
-        />
-        <div
-          v-else
-          class="flex h-75 flex-col items-center justify-center gap-3"
-          data-testid="home-workflows-unavailable"
-        >
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('home.workflowsUnavailable') }}
-          </p>
-          <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
-            {{ t('home.retry') }}
-          </Button>
-        </div>
-      </section>
-
-      <section class="mt-[50px]" aria-labelledby="home-apps" data-testid="home-apps">
-        <div class="mb-5 flex h-6 items-center justify-between">
-          <h2 id="home-apps" class="m-0" :class="SECTION_TITLE_CLASS">
-            {{ t('sidebar.apps') }}
-          </h2>
-          <Button
-            type="button"
-            variant="muted-textonly"
-            size="unset"
-            :class="[TEXT_LINK_CLASS, BRIGHTEN_ON_HOVER_CLASS, '-mr-3']"
-            data-testid="home-see-all-apps"
-            @click="emit('show-apps')"
-          >
-            {{ t('home.seeAllApps') }}
-            <ArrowRight :size="14" aria-hidden="true" />
-          </Button>
-        </div>
-        <div
-          v-if="appsState === 'loading'"
-          class="flex h-75 items-center justify-center gap-2.5"
-          aria-busy="true"
-          data-testid="home-apps-loading"
-        >
-          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
-          <Skeleton class="h-75 w-64 rounded-[18px]" />
-          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
-        </div>
-        <HomeCarousel
-          v-else-if="appsState === 'ready'"
-          kind="apps"
-          :cards="apps"
-          :pictures-of="coversOf"
-          @open="emit('open-app', $event)"
-        />
-        <div
-          v-else-if="appsState === 'failed'"
-          class="flex h-75 flex-col items-center justify-center gap-3"
-          data-testid="home-apps-failed"
-        >
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('home.appsUnavailable') }}
-          </p>
-          <Button type="button" variant="secondary" size="md" @click="loadApps">
-            {{ t('home.retry') }}
-          </Button>
-        </div>
-        <EmptyState
-          v-else
-          class="h-75 justify-center"
-          data-testid="home-apps-empty"
-          :icon="AppWindow"
-          :title="t('apps.emptyTitle')"
-          :text="t('apps.emptyBody')"
-        />
       </section>
 
       <section

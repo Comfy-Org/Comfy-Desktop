@@ -386,6 +386,8 @@
     "buildClickToOpen": "点击打开",
     "buildClickToViewLogs": "点击查看日志",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
+    "exampleWorkflows": "示例工作流",
+    "carouselTabs": "浏览精选内容",
     "seeAllApps": "查看全部应用",
     "seeAllWorkflows": "查看全部工作流",
     "showWorkflow": "显示 {title}",

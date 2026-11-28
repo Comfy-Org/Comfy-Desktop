@@ -104,6 +104,13 @@ async function openHome() {
   return wrapper
 }
 
+async function openAppsTab() {
+  const wrapper = await openHome()
+  await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
+  await flushPromises()
+  return wrapper
+}
+
 function arc(wrapper: VueWrapper): string[] {
   return wrapper
     .findAll('[data-testid="home-carousel-card"]:not([aria-hidden="true"])')
@@ -128,14 +135,14 @@ function pressCarouselAt(wrapper: VueWrapper, clientX: number): void {
 describe('Home carousel', () => {
   it('puts the first app in front with its neighbours on either side', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     expect(arc(wrapper)).toEqual(['-2:App 5', '-1:App 6', '0:App 0', '1:App 1', '2:App 2'])
   })
 
   it('brings a side card to the front when it is clicked, without opening it', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     await cardAt(wrapper, 1).trigger('click')
 
@@ -145,7 +152,7 @@ describe('Home carousel', () => {
 
   it('slides a card two places away to the front as the same card, with the next ones already waiting off stage', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     const twoAway = cardAt(wrapper, 2).element
     const waitingOffStage = cardAt(wrapper, 3)
     expect(waitingOffStage.text()).toBe('App 3')
@@ -161,7 +168,7 @@ describe('Home carousel', () => {
 
   it('keeps cards that are off stage out of reach of the keyboard and screen readers', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     const offStage = wrapper.findAll('[data-testid="home-carousel-card"][aria-hidden="true"]')
 
@@ -173,7 +180,7 @@ describe('Home carousel', () => {
     listApps.mockResolvedValue(
       SEVEN_APPS.map((entry) => pictured(entry, `https://comfy.org/apps-media/${entry.id}/v1`))
     )
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     const pictures = wrapper.findAll('[data-testid="home-carousel-card"] img')
 
     expect(pictures).toHaveLength(7)
@@ -187,7 +194,7 @@ describe('Home carousel', () => {
 
   it('opens the app in front when it is clicked', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     await cardAt(wrapper, -1).trigger('click')
 
     await cardAt(wrapper, 0).trigger('click')
@@ -197,7 +204,7 @@ describe('Home carousel', () => {
 
   it('turns the carousel with the arrow keys', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     const carousel = wrapper.get('[data-testid="home-carousel"]')
 
     await carousel.trigger('keydown', { key: 'ArrowRight' })
@@ -210,7 +217,7 @@ describe('Home carousel', () => {
 
   it('turns the carousel with the previous and next arrows', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     const next = wrapper.get('[data-testid="home-carousel-next"]')
     const previous = wrapper.get('[data-testid="home-carousel-previous"]')
 
@@ -227,7 +234,7 @@ describe('Home carousel', () => {
 
   it('stops the arrows at the ends of a short list and leaves them out for a single card', async () => {
     listApps.mockResolvedValue([UPSCALE, TALK])
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     const next = wrapper.get('[data-testid="home-carousel-next"]')
     const previous = wrapper.get('[data-testid="home-carousel-previous"]')
 
@@ -240,14 +247,14 @@ describe('Home carousel', () => {
     expect(previous.attributes('disabled')).toBeUndefined()
 
     listApps.mockResolvedValue([UPSCALE])
-    const single = await openHome()
+    const single = await openAppsTab()
     expect(single.find('[data-testid="home-carousel-next"]').exists()).toBe(false)
     expect(single.find('[data-testid="home-carousel-previous"]').exists()).toBe(false)
   })
 
   it('keeps keyboard focus on an arrow when the one in use reaches the end of a short list', async () => {
     listApps.mockResolvedValue([UPSCALE, TALK])
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     const next = wrapper.get<HTMLButtonElement>('[data-testid="home-carousel-next"]')
     const previous = wrapper.get<HTMLButtonElement>('[data-testid="home-carousel-previous"]')
 
@@ -261,7 +268,7 @@ describe('Home carousel', () => {
 
   it('turns with the arrow keys from an arrow button and moves card focus to the new front card', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     const next = wrapper.get('[data-testid="home-carousel-next"]')
     await next.trigger('keydown', { key: 'ArrowRight' })
@@ -278,7 +285,7 @@ describe('Home carousel', () => {
 
   it('shows the open arrow on hover of the front card only, and opens that app from it', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
     const front = cardAt(wrapper, 0).get('[data-testid="home-carousel-cta"]')
     const side = cardAt(wrapper, 1).get('[data-testid="home-carousel-cta"]')
 
@@ -293,7 +300,7 @@ describe('Home carousel', () => {
 
   it('turns the carousel when it is dragged, and does not open the card the drag ends on', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     pressCarouselAt(wrapper, 600)
     window.dispatchEvent(new PointerEvent('pointermove', { clientX: 290 }))
@@ -314,7 +321,7 @@ describe('Home carousel', () => {
 
   it('drags back the other way to earlier cards', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     pressCarouselAt(wrapper, 600)
     window.dispatchEvent(new PointerEvent('pointermove', { clientX: 760 }))
@@ -326,7 +333,7 @@ describe('Home carousel', () => {
 
   it('still opens the front card after a press that does not move', async () => {
     listApps.mockResolvedValue(SEVEN_APPS)
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     pressCarouselAt(wrapper, 600)
     window.dispatchEvent(new PointerEvent('pointerup', { clientX: 601 }))
@@ -337,7 +344,7 @@ describe('Home carousel', () => {
 
   it('shows a short list once, without repeating cards around the arc', async () => {
     listApps.mockResolvedValue([UPSCALE, TALK])
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     expect(arc(wrapper)).toEqual([
       '0:Upscale and restore detailEnlarge an image and restore fine detail.',
@@ -357,14 +364,14 @@ describe('Home carousel', () => {
       removeEventListener: () => {}
     }))
     listApps.mockResolvedValue([UPSCALE])
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE_PICTURE)
   })
 
   it('shows the picture on a card and a plain card when there is none', async () => {
     listApps.mockResolvedValue([UPSCALE, TALK])
-    const wrapper = await openHome()
+    const wrapper = await openAppsTab()
 
     expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE_PICTURE)
     expect(cardAt(wrapper, 1).find('img').exists()).toBe(false)
