@@ -179,7 +179,6 @@ onMounted(() => {
           role="region"
           :aria-label="showWorkflows ? t('home.exampleWorkflows') : t('sidebar.apps')"
           aria-live="polite"
-          data-home-tour="apps-carousel"
           data-testid="home-featured-panel"
         >
           <template v-if="showWorkflows">

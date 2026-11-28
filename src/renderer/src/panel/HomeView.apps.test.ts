@@ -222,17 +222,24 @@ describe('Home carousel tabs', () => {
     expect(wrapper.emitted('open-app')).toBeUndefined()
   })
 
-  it('marks the one carousel for the Home tour on either tab', async () => {
+  it('marks the apps carousel for the Home tour only once apps are showing, so the step skips loading, errors and Workflows', async () => {
     const wrapper = await openHome()
     const anchor = () => wrapper.findAll('[data-home-tour="apps-carousel"]')
 
-    expect(anchor()).toHaveLength(1)
-    expect(anchor()[0]!.find('[data-testid="home-carousel"]').exists()).toBe(true)
+    expect(anchor()).toHaveLength(0)
 
     await wrapper.get('[data-testid="home-apps-tab"]').trigger('click')
 
     expect(anchor()).toHaveLength(1)
-    expect(anchor()[0]!.find('[data-testid="home-carousel"]').exists()).toBe(true)
+    expect(anchor()[0]!.attributes('data-testid')).toBe('home-carousel')
+  })
+
+  it('leaves the Home tour nothing to point at while the apps failed to load', async () => {
+    listApps.mockRejectedValue(new Error('offline'))
+    const wrapper = await openAppsTab()
+
+    expect(wrapper.find('[data-testid="home-apps-failed"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-home-tour="apps-carousel"]')).toHaveLength(0)
   })
 })
 
