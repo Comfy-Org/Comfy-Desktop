@@ -4,6 +4,8 @@ import type * as IpcModule from '../lib/ipc'
 import type * as SettingsModule from '../settings'
 
 const mocks = vi.hoisted(() => ({
+  noteCanvasRendered: vi.fn(),
+  noteCloudEntered: vi.fn(),
   stopRunning: vi.fn(async (_id?: string) => {}),
   keepComfyRunning: undefined as boolean | undefined
 }))
@@ -36,11 +38,14 @@ vi.mock('../settings', async (importOriginal) => {
 })
 vi.mock('../lib/firebaseAuthIdentity', () => ({
   activateFirebaseAuthReporter: () => {},
-  deactivateFirebaseAuthReporter: () => {}
+  deactivateFirebaseAuthReporter: () => {},
+  getFirebaseIdentityConsensus: async () => null
 }))
 vi.mock('../lib/comfyDownloadManager', () => ({
   attachSessionDownloadHandler: () => {}
 }))
+vi.mock('../lib/canvasEntry', () => ({ noteCanvasRendered: mocks.noteCanvasRendered }))
+vi.mock('../lib/cloudEntry', () => ({ noteCloudEntered: mocks.noteCloudEntered }))
 
 import type { InstallationRecord } from '../installations'
 import {
@@ -268,4 +273,49 @@ describe('a build page waiting on the user', () => {
 
     expect(flashFrame.mock.calls).toEqual([[true], [false], [true]])
   })
+})
+
+describe('a build page that finished loading', () => {
+  function openWindowAt(url: string): {
+    entry: ComfyWindowEntry
+    emitContents: (event: string) => void
+  } {
+    const entry = openWindow()
+    const listeners: Array<[string, () => void]> = []
+    Object.assign(entry.comfyView.webContents, {
+      on: (event: string, listener: () => void) => listeners.push([event, listener]),
+      getURL: () => url,
+      executeJavaScript: async () => undefined
+    })
+    Object.assign(entry.window, { on: () => {}, removeListener: () => {} })
+    return {
+      entry,
+      emitContents: (event) => {
+        for (const [name, listener] of listeners) if (name === event) listener()
+      }
+    }
+  }
+
+  beforeEach(() => {
+    mocks.noteCanvasRendered.mockClear()
+    mocks.noteCloudEntered.mockClear()
+  })
+
+  it.for([
+    { isLocal: true, url: 'http://127.0.0.1:8188/', counted: [[STUDIO]], cloud: 0 },
+    { isLocal: true, url: 'about:blank', counted: [], cloud: 0 },
+    { isLocal: false, url: 'https://cloud.comfy.org/', counted: [], cloud: 1 },
+    { isLocal: false, url: 'about:blank', counted: [], cloud: 0 }
+  ])(
+    'records the canvas or Cloud entry only for a real page (local $isLocal, $url)',
+    ({ isLocal, url, counted, cloud }) => {
+      const { entry, emitContents } = openWindowAt(url)
+      showBuild(entry, isLocal)
+
+      emitContents('dom-ready')
+
+      expect(mocks.noteCanvasRendered.mock.calls).toEqual(counted)
+      expect(mocks.noteCloudEntered).toHaveBeenCalledTimes(cloud)
+    }
+  )
 })

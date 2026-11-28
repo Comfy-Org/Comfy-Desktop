@@ -198,6 +198,7 @@ import {
   consultPanelRendererClose,
   detachOrphanedInstallHosts,
   preClearedClose,
+  returnPanelHostToDashboard,
   returnToDashboard
 } from './host/detach'
 import { closeBuildWindow } from './host/closeBuildWindow'
@@ -858,13 +859,12 @@ ipcMain.handle('close-host-window', (event) => {
   return false
 })
 
-ipcMain.handle('return-to-dashboard', (event) => {
+ipcMain.handle('return-to-dashboard', async (event) => {
   for (const [, entry] of comfyWindows) {
     if (entry.window.isDestroyed()) continue
     if (!isInstallHost(entry)) continue
     if (entry.panelView?.webContents !== event.sender) continue
-    entry.detachInstall()
-    return true
+    return returnPanelHostToDashboard(entry)
   }
   return false
 })

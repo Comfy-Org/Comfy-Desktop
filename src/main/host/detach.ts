@@ -18,6 +18,7 @@ import {
 } from './registry'
 import type { ComfyWindowEntry } from './registry'
 import { navigatorFor } from './buildNavigator'
+import { leavesWithoutVeto } from './unloadVeto'
 import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
@@ -132,9 +133,43 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
   const cleared = panelAlive
     ? await consultPanelRendererReturnToDashboard(entry.panelView)
     : await confirmReturnToDashboardViaSystemModal(entry)
-  if (!cleared) return
+  if (!cleared || !(await leavesPageOrDiscardsUnsavedWork(entry))) return
   if (entry.window.isDestroyed()) return
   entry.detachInstall()
+}
+
+export async function returnPanelHostToDashboard(entry: ComfyWindowEntry): Promise<boolean> {
+  if (!(await leavesPageOrDiscardsUnsavedWork(entry)) || entry.window.isDestroyed()) return false
+  entry.detachInstall()
+  return true
+}
+
+const pendingLeaves = new WeakMap<ComfyWindowEntry, Promise<boolean>>()
+
+function leavesPageOrDiscardsUnsavedWork(entry: ComfyWindowEntry): Promise<boolean> {
+  const pending = pendingLeaves.get(entry)
+  if (pending) return pending
+  const leaving = askToLeave(entry).finally(() => pendingLeaves.delete(entry))
+  pendingLeaves.set(entry, leaving)
+  return leaving
+}
+
+async function askToLeave(entry: ComfyWindowEntry): Promise<boolean> {
+  const contents = entry.comfyView.webContents
+  if (contents.isDestroyed()) return true
+  if (await leavesWithoutVeto(contents, () => navigatorFor(entry).blank())) return true
+  if (entry.window.isDestroyed()) return false
+  return openSystemModalAsync({
+    parent: entry.window,
+    spec: {
+      title: i18n.t('dashboard.discardUnsaved.title'),
+      message: i18n.t('dashboard.discardUnsaved.message'),
+      confirmLabel: i18n.t('dashboard.discardUnsaved.confirmLabel'),
+      cancelLabel: i18n.t('common.cancel'),
+      confirmStyle: 'danger',
+      theme: entry.lastTheme
+    }
+  })
 }
 
 async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {
