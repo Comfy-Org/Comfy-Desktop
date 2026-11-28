@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import en from '@locales/en.json'
@@ -181,6 +181,132 @@ describe('RunOverviewView', () => {
     await nextFrames()
 
     expect(lastHeight()).toBeLessThan(openedHeight ?? 0)
+  })
+
+  it('shows Stop only for runs the page can stop, and says Stopping… until the run ends', async () => {
+    const stoppable: TitleBarRun = { ...SWAP, ...CLOUD, id: 's1', state: 'running', canStop: true }
+    const view = mountOverview([stoppable, { ...CUTOUT, ...MY_COMFY, id: 'c1', state: 'queued' }])
+    const stops = view.findAll('[data-testid="run-overview-stop"]')
+    const status = (): string => statusOf(view.findAll('[data-testid="run-overview-run"]')[0]!)
+
+    expect(stops).toHaveLength(1)
+    expect(stops[0]?.attributes('aria-label')).toBe('Stop the Character Swap run')
+
+    await stops[0]?.trigger('click')
+    await stops[0]?.trigger('click')
+
+    expect(view.emitted('stop')).toEqual([[SWAP.appId, 's1']])
+    expect(view.emitted('open')).toBeUndefined()
+    expect(stops[0]?.attributes('disabled')).toBeDefined()
+    expect(status()).toBe('Stopping…')
+
+    await view.setProps({ overview: { runs: [{ ...stoppable, canStop: false }], apps: [] } })
+
+    expect(view.findAll('[data-testid="run-overview-stop"]')).toHaveLength(0)
+    expect(status()).toBe('Stopping…')
+
+    await view.setProps({
+      overview: { runs: [{ ...stoppable, canStop: false, state: 'failed', endedAt: 3 }], apps: [] }
+    })
+    await view.setProps({ overview: { runs: [{ ...stoppable }], apps: [] } })
+
+    expect(status()).toBe('Running')
+  })
+
+  it('offers Stop again and says it did not stop when the page keeps the run stoppable', async () => {
+    vi.useFakeTimers()
+    try {
+      const stoppable: TitleBarRun = { ...SWAP, ...CLOUD, id: 's1', state: 'queued', canStop: true }
+      const view = mountOverview([stoppable])
+      const row = () => view.get('[data-testid="run-overview-run"]')
+      await view.get('[data-testid="run-overview-stop"]').trigger('click')
+
+      await vi.advanceTimersByTimeAsync(4900)
+      expect(view.get('[data-testid="run-overview-stop"]').attributes('disabled')).toBeDefined()
+
+      await vi.advanceTimersByTimeAsync(100)
+      expect(view.get('[data-testid="run-overview-stop"]').attributes('disabled')).toBeUndefined()
+      expect(statusOf(row())).toBe("Didn't stop. Try again.")
+
+      await view.setProps({
+        overview: {
+          runs: [{ ...stoppable, state: 'running', step: 'Swapping', progress: 0.7 }],
+          apps: []
+        }
+      })
+      expect(statusOf(row())).toBe("Didn't stop. Try again.")
+      expect(row().find('[data-testid="run-overview-stop-failed-icon"]').exists()).toBe(true)
+      expect(row().find('.animate-spin').exists()).toBe(false)
+
+      await view.get('[data-testid="run-overview-stop"]').trigger('click')
+      expect(view.emitted('stop')).toHaveLength(2)
+      expect(statusOf(row())).toBe('Stopping…')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says it did not stop when the page gives the run its Stop back', async () => {
+    const stoppable: TitleBarRun = { ...SWAP, ...CLOUD, id: 's1', state: 'running', canStop: true }
+    const view = mountOverview([stoppable])
+    const status = (): string => statusOf(view.get('[data-testid="run-overview-run"]'))
+    await view.get('[data-testid="run-overview-stop"]').trigger('click')
+
+    await view.setProps({ overview: { runs: [{ ...stoppable, canStop: false }], apps: [] } })
+    expect(status()).toBe('Stopping…')
+
+    await view.setProps({ overview: { runs: [stoppable], apps: [] } })
+    expect(status()).toBe("Didn't stop. Try again.")
+  })
+
+  it('drops the did-not-stop note once the run ends or the page takes Stop away', async () => {
+    vi.useFakeTimers()
+    try {
+      const stoppable: TitleBarRun = {
+        ...SWAP,
+        ...CLOUD,
+        id: 's1',
+        state: 'running',
+        canStop: true
+      }
+      const view = mountOverview([stoppable])
+      const status = (): string => statusOf(view.get('[data-testid="run-overview-run"]'))
+      await view.get('[data-testid="run-overview-stop"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(status()).toBe("Didn't stop. Try again.")
+
+      await view.setProps({ overview: { runs: [{ ...stoppable, canStop: false }], apps: [] } })
+      expect(status()).toBe('Running')
+
+      await view.setProps({ overview: { runs: [stoppable], apps: [] } })
+      await view.get('[data-testid="run-overview-stop"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(status()).toBe("Didn't stop. Try again.")
+
+      await view.setProps({
+        overview: { runs: [{ ...stoppable, state: 'done', endedAt: 3 }], apps: [] }
+      })
+      await view.setProps({ overview: { runs: [stoppable], apps: [] } })
+      expect(status()).toBe('Running')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the time of rows without Stop in line with rows that have it', () => {
+    const view = mountOverview([
+      { ...SWAP, ...CLOUD, id: 's1', state: 'running', canStop: true, startedAt: 1 },
+      { ...CUTOUT, ...MY_COMFY, id: 'c1', state: 'running', startedAt: 1 }
+    ])
+
+    expect(view.findAll('[data-testid="run-overview-stop"]')).toHaveLength(1)
+    expect(view.findAll('[data-testid="run-overview-stop-space"]')).toHaveLength(1)
+  })
+
+  it('leaves no Stop space when no run can stop', () => {
+    const view = mountOverview()
+
+    expect(view.findAll('[data-testid="run-overview-stop-space"]')).toHaveLength(0)
   })
 
   it('speaks Chinese when Desktop does', () => {

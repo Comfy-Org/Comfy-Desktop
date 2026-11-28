@@ -100,7 +100,14 @@ const runReporter = createRunReporter(
 )
 
 const runs: ComfyDesktopHostedRunsBridge = {
-  reportRun: (state) => runReporter.reportRun(state)
+  reportRun: (state) => runReporter.reportRun(state),
+  onStopRequested: (callback) => {
+    const handler = (_event: IpcRendererEvent, runId: unknown): void => {
+      if (typeof runId === 'string') callback(runId)
+    }
+    ipcRenderer.on('apps-page:stop-run', handler)
+    return () => ipcRenderer.removeListener('apps-page:stop-run', handler)
+  }
 }
 
 contextBridge.exposeInMainWorld('comfyDesktopRuns', runs)

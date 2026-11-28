@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   ready: [] as { id: string; title: string }[],
   noteAppPageRunning: vi.fn(),
   noteAppPageRuns: vi.fn(),
+  askPageToStopRun: vi.fn(),
+  runsPopupWindowKey: null as number | null,
   reportedRunPages: [] as { appId: string; title: string; page: unknown; runs: unknown[] }[],
   reportedRunsListeners: [] as ((windowKey: number) => void)[],
   pageBuildId: vi.fn((_page: unknown): string | null => 'build-1'),
@@ -58,6 +60,7 @@ vi.mock('../../apps/appPageView', () => ({
   hideAppPage: vi.fn(),
   noteAppPageRunning: mocks.noteAppPageRunning,
   noteAppPageRuns: mocks.noteAppPageRuns,
+  askPageToStopRun: mocks.askPageToStopRun,
   onReportedRunsChanged: (listener: (windowKey: number) => void) => {
     mocks.reportedRunsListeners.push(listener)
     return () => {}
@@ -92,7 +95,8 @@ vi.mock('../../popups/titlePopup', () => ({
   isRunsPopupOpen: () => mocks.runsPopupOpen,
   openRunningAppsMenu: mocks.openRunningAppsMenu,
   openRunsPopup: mocks.openRunsPopup,
-  refreshRunsPopup: mocks.refreshRunsPopup
+  refreshRunsPopup: mocks.refreshRunsPopup,
+  runsPopupWindowKey: () => mocks.runsPopupWindowKey
 }))
 vi.mock('../../apps/draftApps', () => ({
   currentDrafts: mocks.currentDrafts,
@@ -432,6 +436,7 @@ describe('runs of apps kept open', () => {
     mocks.reportedRunPages = []
     mocks.reportedRunsListeners = []
     mocks.runsPopupOpen = false
+    mocks.runsPopupWindowKey = null
     mocks.titleBarEntry = {
       id: 7,
       entry: {
@@ -537,6 +542,16 @@ describe('runs of apps kept open', () => {
       { ...REMOVE_BACKGROUND, picture: 'https://comfy.org/rb.webp', state: 'running' },
       { ...HDR, picture: null, state: 'ready' }
     ])
+  })
+
+  it('passes Stop on to the app page only from an open run overview', () => {
+    listener('comfy-titlepopup:stop-run')({ sender: {} }, REMOVE_BACKGROUND.id, 'r1')
+    expect(mocks.askPageToStopRun).not.toHaveBeenCalled()
+
+    mocks.runsPopupWindowKey = 7
+    listener('comfy-titlepopup:stop-run')({ sender: {} }, REMOVE_BACKGROUND.id, 'r1')
+
+    expect(mocks.askPageToStopRun).toHaveBeenCalledExactlyOnceWith(7, REMOVE_BACKGROUND.id, 'r1')
   })
 
   it('takes a run list only from an app page', () => {

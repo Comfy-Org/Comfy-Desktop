@@ -580,6 +580,9 @@
     "failed": "Failed",
     "otherApps": "Other apps",
     "finished": "Finished · {count}",
+    "stopRun": "Stop the {app} run",
+    "stopping": "Stopping…",
+    "stopFailed": "Didn't stop. Try again.",
     "openApp": "Open {app}"
   },
   "comfyUISettings": {

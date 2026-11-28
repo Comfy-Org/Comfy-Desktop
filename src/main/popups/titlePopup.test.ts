@@ -44,6 +44,7 @@ import {
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
+  runsPopupWindowKey,
   syncTitlePopupConfig,
   type InstancePickerInstall,
   type TitlePopupEntry,
@@ -1206,6 +1207,46 @@ describe('isGlobalSettingsSender', () => {
 
   it('turns away a page that is not a popup', () => {
     expect(isGlobalSettingsSender(sender())).toBe(false)
+  })
+})
+
+describe('runsPopupWindowKey', () => {
+  const POPUP_WEB_CONTENTS_ID = 410
+  const WINDOW_KEY = 12
+
+  afterEach(() => {
+    _test_deleteTitlePopupEntry(POPUP_WEB_CONTENTS_ID)
+  })
+
+  function sender(): Electron.WebContents {
+    return { id: POPUP_WEB_CONTENTS_ID } as Electron.WebContents
+  }
+
+  function setPopup(kind: string, isOpen: boolean): void {
+    _test_setTitlePopupEntry(POPUP_WEB_CONTENTS_ID, {
+      kind,
+      parentEntryId: WINDOW_KEY,
+      view: { isOpen }
+    } as unknown as TitlePopupEntry)
+  }
+
+  it('gives the window of an open run overview', () => {
+    setPopup('runs', true)
+    expect(runsPopupWindowKey(sender())).toBe(WINDOW_KEY)
+  })
+
+  it('turns away a run overview that is hidden', () => {
+    setPopup('runs', false)
+    expect(runsPopupWindowKey(sender())).toBeNull()
+  })
+
+  it.each(['menu', 'downloads', 'global-settings'])('turns away an open %s popup', (kind) => {
+    setPopup(kind, true)
+    expect(runsPopupWindowKey(sender())).toBeNull()
+  })
+
+  it('turns away a page that is not a popup', () => {
+    expect(runsPopupWindowKey(sender())).toBeNull()
   })
 })
 

@@ -148,6 +148,7 @@ export type PopupSettingsTab = 'comfy' | 'directories' | 'downloads' | 'global' 
 export interface ComfyTitlePopupBridge {
   platform: NodeJS.Platform
   activate(id: string): void
+  stopRun(appId: string, runId: string): void
   close(): void
   ready(): void
   notifyRendered(): void
@@ -422,6 +423,9 @@ const bridge: ComfyTitlePopupBridge = {
   platform: process.platform,
   activate: (id) => {
     ipcRenderer.send('comfy-titlepopup:item-activated', { id })
+  },
+  stopRun: (appId, runId) => {
+    ipcRenderer.send('comfy-titlepopup:stop-run', appId, runId)
   },
   close: () => {
     ipcRenderer.send('comfy-titlepopup:close')

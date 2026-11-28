@@ -4,6 +4,7 @@ import type { IpcMainEvent } from 'electron'
 import {
   appRuns,
   appSwitchStopsRun,
+  askPageToStopRun,
   captureAppPage,
   closeAppPage,
   closeDraftPages,
@@ -41,7 +42,8 @@ import {
   isRunsPopupOpen,
   openRunningAppsMenu,
   openRunsPopup,
-  refreshRunsPopup
+  refreshRunsPopup,
+  runsPopupWindowKey
 } from '../../popups/titlePopup'
 import { OPEN_RUNNING_APP_CHANNEL } from '../../../types/ipc'
 import type { RunningApp, TitleBarOpenApp, TitleBarRunOverview } from '../../../types/ipc'
@@ -211,6 +213,11 @@ export function registerAppsHandlers(): void {
   })
 
   onReportedRunsChanged(refreshOpenRunsPopup)
+
+  ipcMain.on('comfy-titlepopup:stop-run', (event, appId: unknown, runId: unknown) => {
+    const windowKey = runsPopupWindowKey(event.sender)
+    if (windowKey !== null) askPageToStopRun(windowKey, appId, runId)
+  })
 
   ipcMain.on('comfy-titlebar:click-running-apps', (event, payload: { anchor?: MenuAnchor }) =>
     openRunningApps(event, payload?.anchor)

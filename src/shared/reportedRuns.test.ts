@@ -69,6 +69,20 @@ describe('readReportedRuns', () => {
     expect(run).toEqual({ id: 'a', where: 'cloud', state: 'running', progress: 1 })
   })
 
+  it('keeps canStop only as true, and only for runs still going', () => {
+    const runs = readReportedRuns([
+      { id: 'a', where: 'cloud', state: 'running', canStop: true },
+      { id: 'b', where: 'cloud', state: 'queued', canStop: 'yes' },
+      { id: 'c', where: 'cloud', state: 'done', canStop: true }
+    ])
+
+    expect(runs).toEqual([
+      { id: 'a', where: 'cloud', state: 'running', canStop: true },
+      { id: 'b', where: 'cloud', state: 'queued' },
+      { id: 'c', where: 'cloud', state: 'done' }
+    ])
+  })
+
   it('drops a step number past the step count', () => {
     const [run] =
       readReportedRuns([

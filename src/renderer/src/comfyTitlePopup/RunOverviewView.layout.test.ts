@@ -9,6 +9,8 @@ import type { TitleBarRun } from '../types/ipc'
 
 const CLOUD = { where: 'cloud' as const, buildId: null, buildName: null }
 const SWAP = { appId: 'character-swap', appTitle: 'Character Swap', picture: null }
+const CUTOUT = { appId: 'remove-background', appTitle: 'Remove Background', picture: null }
+const MY_COMFY = { where: 'local' as const, buildId: 'b1', buildName: 'My ComfyUI' }
 
 const runs: TitleBarRun[] = [
   ...Array.from({ length: 4 }, (_, i) => ({
@@ -52,5 +54,28 @@ describe('RunOverviewView layout', () => {
     expect(list?.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       scroller.getBoundingClientRect().bottom + 1
     )
+  })
+
+  it('lines up the time of a Cloud run with Stop and a run on this computer without it', () => {
+    const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } })
+    wrapper = mount(RunOverviewView, {
+      props: {
+        overview: {
+          runs: [
+            { ...SWAP, ...CLOUD, id: 's1', state: 'running', canStop: true, startedAt: 1 },
+            { ...CUTOUT, ...MY_COMFY, id: 'c1', state: 'running', startedAt: 1 }
+          ],
+          apps: []
+        }
+      },
+      attachTo: document.body,
+      global: { plugins: [i18n] }
+    })
+    const timeRights = wrapper
+      .findAll('[data-testid="run-overview-run"]')
+      .map((row) => row.get('.tabular-nums').element.getBoundingClientRect().right)
+
+    expect(timeRights).toHaveLength(2)
+    expect(Math.abs((timeRights[0] ?? 0) - (timeRights[1] ?? 0))).toBeLessThan(1)
   })
 })

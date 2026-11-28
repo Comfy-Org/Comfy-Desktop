@@ -421,6 +421,11 @@ export interface ComfyDesktopRun {
   startedAt?: number
   /** When it ended, in milliseconds since the epoch, once `done` or `failed`. */
   endedAt?: number
+  /**
+   * True while the page can stop it, `queued` or `running`. Desktop shows Stop
+   * for it in the run overview and calls the page's `onStopRequested` callback.
+   */
+  canStop?: boolean
 }
 /** Whether a Comfy page hosted in Desktop's Apps view has a run going. */
 export interface ComfyDesktopRunState {
@@ -454,6 +459,17 @@ export interface ComfyDesktopHostedRunsBridge {
    * step or progress changes, so the run overview stays current.
    */
   reportRun(state: ComfyDesktopRunState): void
+  /**
+   * Calls back with a run's `id` when the person presses Stop for it in
+   * Desktop's run overview. Stop it as the page's own Stop does, then report
+   * again. Desktop asks only for runs reported with `canStop: true`, and shows
+   * the run as stopping until it ends or leaves the list. Once the stop is
+   * under way, report the run without `canStop`. If the run still has
+   * `canStop` 5 seconds after the press, or gets it back later, Desktop says
+   * it did not stop and offers Stop again. Returns a function that stops the
+   * callbacks. Absent on Desktop builds before it.
+   */
+  onStopRequested?(callback: (runId: string) => void): () => void
 }
 /**
  * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop

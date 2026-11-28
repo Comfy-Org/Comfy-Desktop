@@ -51,6 +51,12 @@ account session, `window.comfyDesktopLocal`, a ComfyUI on this computer,
 `reportRun({ running, runs })` can also list the page's runs, with where each
 runs, its state and its step, for Desktop's run overview. Desktop builds
 before the run overview ignore `runs`.
+A run reported with `canStop: true` gets a Stop button there, and
+`onStopRequested(callback)` tells the page which run to stop. Desktop shows
+the run as stopping until it ends or leaves the list. Once the stop is under
+way, report that run without `canStop`. If it still has `canStop` 5 seconds
+after the press, or gets it back later, Desktop says it did not stop and
+offers Stop again.
 
 ```ts
 import type {

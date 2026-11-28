@@ -775,6 +775,11 @@ function openRunsPopupEntry(windowKey: number): TitlePopupEntry | null {
   return entry?.kind === POPUP_KIND.runs && entry.view.isOpen ? entry : null
 }
 
+export function runsPopupWindowKey(sender: Electron.WebContents): number | null {
+  const entry = titlePopupsByWebContents.get(sender.id)
+  return entry?.kind === POPUP_KIND.runs && entry.view.isOpen ? entry.parentEntryId : null
+}
+
 export function isRunsPopupOpen(windowKey: number): boolean {
   return openRunsPopupEntry(windowKey) !== null
 }

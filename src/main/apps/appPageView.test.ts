@@ -130,6 +130,7 @@ import {
   TITLE_BAR_APPS_CHANNEL,
   _resetForTest,
   appSwitchStopsRun,
+  askPageToStopRun,
   captureAppPage,
   closeAppPage,
   closeDraftPages,
@@ -1562,6 +1563,25 @@ describe('keeping apps running in the background', () => {
     cutout.webContents.emit('render-process-gone', {}, { reason: 'crashed' })
 
     expect(reportedRunPages(WINDOW_KEY)).toEqual([])
+  })
+
+  it('asks a page to stop only a run it said it can stop', async () => {
+    const cutout = await runInBackground(CUTOUT)
+    await openAndLoad(HDR)
+    noteAppPageRuns(cutout.webContents as unknown as WebContents, [
+      { id: 'r1', where: 'cloud', state: 'running', canStop: true },
+      { id: 'r2', where: 'cloud', state: 'queued' }
+    ])
+    const stopsSent = (): unknown[] =>
+      cutout.webContents.send.mock.calls.filter(([channel]) => channel === 'apps-page:stop-run')
+
+    askPageToStopRun(WINDOW_KEY, CUTOUT, 'r2')
+    askPageToStopRun(WINDOW_KEY, HDR, 'r1')
+    askPageToStopRun(WINDOW_KEY + 1, CUTOUT, 'r1')
+    expect(stopsSent()).toEqual([])
+
+    askPageToStopRun(WINDOW_KEY, CUTOUT, 'r1')
+    expect(stopsSent()).toEqual([['apps-page:stop-run', 'r1']])
   })
 
   it('ignores a run list from a page with no app loaded', async () => {

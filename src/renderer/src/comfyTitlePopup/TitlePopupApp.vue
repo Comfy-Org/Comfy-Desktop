@@ -133,6 +133,7 @@ type PopupConfig =
 
 interface Bridge {
   activate(id: string): void
+  stopRun(appId: string, runId: string): void
   close(): void
   ready(): void
   notifyRendered(): void
@@ -206,6 +207,10 @@ function handleActivate(id: string): void {
 
 function openRunApp(appId: string): void {
   bridge?.activate(`${RUNNING_APP_ITEM}${appId}`)
+}
+
+function stopRun(appId: string, runId: string): void {
+  bridge?.stopRun(appId, runId)
 }
 
 const { state: modalState } = useModal()
@@ -367,6 +372,7 @@ onUnmounted(() => {
       v-else-if="kind === 'runs'"
       :overview="runOverview"
       @open="openRunApp"
+      @stop="stopRun"
       @resize="requestRunOverviewSize"
     />
     <GlobalSettingsView v-else :snapshot="globalSettingsSnapshot" />
