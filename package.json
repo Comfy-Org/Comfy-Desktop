@@ -85,7 +85,7 @@
     "image-size": "^2.1.0",
     "music-metadata": "^12.5.0",
     "node-pty": "^1.1.0",
-    "posthog-node": "^5.73.1",
+    "posthog-node": "^6.0.5",
     "semver": "^7.8.6",
     "smol-toml": "^1.9.1",
     "systeminformation": "^5.33.22",
