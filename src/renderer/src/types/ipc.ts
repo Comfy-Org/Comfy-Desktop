@@ -38,6 +38,7 @@ export type {
   BetaArgView,
   CoreBetaArgs,
   HomeTourReplayState,
+  AgentApp,
   Installation,
   RunningInstance,
   PerformanceTestBenchmark,

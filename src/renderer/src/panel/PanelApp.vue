@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
+import DeployToCloudDialog from '../components/deployToCloud/DeployToCloudDialog.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildProgressDialog from './BuildProgressDialog.vue'
@@ -905,6 +906,7 @@ onUnmounted(() => {
     />
     <HomeTour :active="homeTourCanShow" :interrupted="homeTourInterrupted" />
 
+    <DeployToCloudDialog />
     <ModalDialog />
     <DialogHost />
     <MigrateConfirmTakeover ref="migrateTakeoverRef" />

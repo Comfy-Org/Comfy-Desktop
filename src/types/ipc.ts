@@ -87,6 +87,8 @@ export interface InstallBuildRequest {
   installRoot?: string
 }
 
+export type AgentApp = 'claude' | 'codex'
+
 export interface PromoteLocalInstanceResult {
   ok: boolean
   message?: string
@@ -1566,6 +1568,7 @@ export interface ElectronApi {
     openSettingsPage(page: PlatformSettingsPage, workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
+    openAgentApp(app: AgentApp, prompt: string): Promise<boolean>
   }
 
   checkForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>

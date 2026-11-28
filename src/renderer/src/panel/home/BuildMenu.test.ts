@@ -10,6 +10,7 @@ import ChooserInstallTile from '../../views/chooser/ChooserInstallTile.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import DialogHost from '../../components/DialogHost.vue'
 import ModalDialog from '../../components/ModalDialog.vue'
+import DeployToCloudDialog from '../../components/deployToCloud/DeployToCloudDialog.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
 import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
@@ -206,6 +207,14 @@ function mountDialogs(): void {
   mounted.push(mount(DialogHost, { attachTo: document.body }))
 }
 
+async function setUpManuallyFromTheDialog(): Promise<void> {
+  mounted.push(mount(DeployToCloudDialog, { attachTo: document.body }))
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="deploy-to-cloud-manual"]')).not.toBeNull()
+  )
+  document.querySelector<HTMLElement>('[data-testid="deploy-to-cloud-manual"]')!.click()
+}
+
 async function confirmBox(): Promise<HTMLElement> {
   await vi.waitFor(() =>
     expect(document.querySelector('[data-testid="base-alert-action"]')).not.toBeNull()
@@ -343,7 +352,7 @@ describe('Build menu', () => {
     expect(buttons).toEqual(['home-build-open', 'build-update-open', 'home-build-more'])
   })
 
-  it('shows upload progress on Home and holds the tile and menu launch actions until it finishes', async () => {
+  it('shows draft progress on Home after Set up manually and holds the tile and menu launch actions until it finishes', async () => {
     const signedIn = { signedIn: true, workspaceId: 'ws-1' }
     vi.mocked(window.api.comfybuilder.getAuthStatus).mockResolvedValue(signedIn)
     useAuthStore().status = signedIn
@@ -354,6 +363,7 @@ describe('Build menu', () => {
     await more.trigger('click')
     expect(await shownMenu()).toContain('promote-to-workspace')
     document.querySelector<HTMLElement>('[data-testid="build-menu-promote-to-workspace"]')!.click()
+    await setUpManuallyFromTheDialog()
 
     try {
       await flushPromises()
@@ -370,7 +380,7 @@ describe('Build menu', () => {
     expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(true)
   })
 
-  it('offers Upload build after Restore snapshot when signed in to a workspace, from the ⋯ and a right-click', async () => {
+  it('offers Deploy to Cloud after Restore snapshot when signed in to a workspace, from the ⋯ and a right-click', async () => {
     const signedIn = { signedIn: true, workspaceId: 'ws-1' }
     vi.mocked(window.api.comfybuilder.getAuthStatus).mockResolvedValue(signedIn)
     useAuthStore().status = signedIn
@@ -393,7 +403,7 @@ describe('Build menu', () => {
     expect(fromRightClick).toEqual(fromTile)
   })
 
-  it('leaves Upload build out when signed out', async () => {
+  it('leaves Deploy to Cloud out when signed out', async () => {
     const tile = await mountTile('ready')
     await tile.get('[data-testid="home-build-more"]').trigger('click')
 

@@ -1901,11 +1901,11 @@
       "instanceCountLabel": "INSTANCES",
       "loadError": "Couldn't load workspaces. Retry",
       "refresh": "Refresh workspaces",
-      "promoteToWorkspace": "Upload build",
-      "promoteToWorkspaceHint": "Upload this build to Comfy Developer Platform.",
+      "promoteToWorkspace": "Deploy to Cloud",
+      "promoteToWorkspaceHint": "Run this build on Comfy Cloud.",
       "readMore": "Read more",
       "promoting": "Creating…",
-      "promoteFailedTitle": "Could not upload build",
+      "promoteFailedTitle": "Could not deploy to Cloud",
       "promoteFailedMessage": "Could not create a draft in Comfy Developer Platform."
     },
     "workspaceMenu": {
@@ -1926,6 +1926,28 @@
     "build": {
       "version": "Build v{version}",
       "loadError": "Couldn't load builds. Retry"
+    },
+    "deployToCloud": {
+      "title": "Run this build on Comfy Cloud",
+      "body": "Deploy your local setup to Comfy Cloud with your custom nodes and models.",
+      "points": [
+        "Bring your custom nodes and models",
+        "Run on powerful cloud GPUs",
+        "Pay only while your GPU workers are up, plus storage"
+      ],
+      "note": "Your custom node and model names are shared with Comfy Cloud to set this up.",
+      "readDocs": "Read the docs",
+      "setUpManually": "Set up manually",
+      "useAgent": "Use your agent",
+      "openInClaude": "Open in Claude",
+      "openInCodex": "Open in Codex",
+      "copyPrompt": "Copy prompt",
+      "copied": "Copied",
+      "agentFailedTitle": "Could not open your agent",
+      "agentFailedMessage": "Copy the prompt instead, and paste it into your coding agent.",
+      "copyFailedMessage": "Could not copy the prompt.",
+      "play": "Play",
+      "pause": "Pause"
     }
   },
   "errors": {

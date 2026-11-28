@@ -1901,11 +1901,11 @@
       "instanceCountLabel": "构建",
       "loadError": "无法加载工作区，请重试",
       "refresh": "刷新工作区",
-      "promoteToWorkspace": "上传构建",
-      "promoteToWorkspaceHint": "将此构建上传到 Comfy Developer Platform。",
+      "promoteToWorkspace": "部署到云端",
+      "promoteToWorkspaceHint": "在 Comfy Cloud 上运行此构建。",
       "readMore": "了解更多",
       "promoting": "正在创建…",
-      "promoteFailedTitle": "无法上传构建",
+      "promoteFailedTitle": "无法部署到云端",
       "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
     },
     "workspaceMenu": {
@@ -1926,6 +1926,28 @@
     "build": {
       "version": "构建 v{version}",
       "loadError": "无法加载构建，请重试"
+    },
+    "deployToCloud": {
+      "title": "在 Comfy Cloud 上运行此构建",
+      "body": "将本地环境连同自定义节点和模型一起部署到 Comfy Cloud。",
+      "points": [
+        "带上你的自定义节点和模型",
+        "在强大的云端 GPU 上运行",
+        "仅在 GPU 工作节点运行期间付费，另加存储费用"
+      ],
+      "note": "为完成设置，你的自定义节点和模型名称会与 Comfy Cloud 共享。",
+      "readDocs": "阅读文档",
+      "setUpManually": "手动设置",
+      "useAgent": "使用你的智能体",
+      "openInClaude": "在 Claude 中打开",
+      "openInCodex": "在 Codex 中打开",
+      "copyPrompt": "复制提示词",
+      "copied": "已复制",
+      "agentFailedTitle": "无法打开你的智能体",
+      "agentFailedMessage": "请改为复制提示词，并粘贴到你的编程智能体中。",
+      "copyFailedMessage": "无法复制提示词。",
+      "play": "播放",
+      "pause": "暂停"
     }
   },
   "errors": {

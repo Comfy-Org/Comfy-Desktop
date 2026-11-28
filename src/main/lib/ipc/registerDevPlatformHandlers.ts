@@ -6,7 +6,7 @@ import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
 import { cloudAuthEvents } from '../cloudAuthEvents'
 import { creditBalanceAuthChanged } from './registerCreditBalanceHandlers'
 import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
-import { openExternalUrl } from '../openExternal'
+import { isAgentApp, openAgentApp, openExternalUrl } from '../openExternal'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_SETTINGS_PATHS, PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
@@ -66,8 +66,11 @@ export const DEVPLATFORM_CHANNELS = {
   openBuildsPage: 'comfybuilder:openBuildsPage',
   openSettingsPage: 'comfybuilder:openSettingsPage',
   installBuild: 'comfybuilder:installBuild',
-  promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
+  promoteLocalInstance: 'comfybuilder:promoteLocalInstance',
+  openAgentApp: 'comfybuilder:openAgentApp'
 } as const
+
+const LONGEST_AGENT_PROMPT = 16_000
 
 const SIGNED_OUT: AuthStatus = { signedIn: false }
 
@@ -263,6 +266,22 @@ export function registerDevPlatformHandlers(): void {
       )
       if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
       return status
+    }
+  )
+
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.openAgentApp,
+    async (_event, app: unknown, prompt: unknown): Promise<boolean> => {
+      if (!isAgentApp(app)) return false
+      if (typeof prompt !== 'string' || prompt.length === 0) return false
+      if (prompt.length > LONGEST_AGENT_PROMPT) return false
+      try {
+        await openAgentApp(app, prompt)
+        return true
+      } catch (err) {
+        console.warn('[dev-platform] Could not open the agent app:', (err as Error)?.message)
+        return false
+      }
     }
   )
 

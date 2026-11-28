@@ -351,6 +351,35 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['claude', 'claude://code/new?q=Deploy%20my%20build'],
+    ['codex', 'codex://new?prompt=Deploy%20my%20build']
+  ])('opens %s with the prompt Desktop wrote', async (app, url) => {
+    await expect(handler('comfybuilder:openAgentApp')({}, app, 'Deploy my build')).resolves.toBe(
+      true
+    )
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url)
+  })
+
+  it.each([
+    ['an app Desktop does not know', 'vscode', 'Deploy my build'],
+    ['an empty prompt', 'claude', ''],
+    ['a prompt that is not text', 'codex', { prompt: 'x' }],
+    ['a prompt too long for a link', 'claude', 'x'.repeat(16_001)]
+  ])('opens nothing for %s', async (_label, app, prompt) => {
+    await expect(handler('comfybuilder:openAgentApp')({}, app, prompt)).resolves.toBe(false)
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('reports an agent app the OS could not open', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.openExternal.mockRejectedValueOnce(new Error('no handler'))
+
+    await expect(handler('comfybuilder:openAgentApp')({}, 'claude', 'Deploy')).resolves.toBe(false)
+  })
+
   it('broadcasts when the builder API invalidates the active token', () => {
     mocks.getAllWindows.mockReturnValue([])
     const panel = registerHostWithPanel(1)

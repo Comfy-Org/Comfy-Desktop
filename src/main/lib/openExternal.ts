@@ -1,5 +1,6 @@
 import { app, shell } from 'electron'
 import { recordShellOpenExternal } from './e2eOverrides'
+import type { AgentApp } from '../../types/ipc'
 
 const OPENABLE_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 
@@ -13,6 +14,15 @@ const AGENT_APP_LINKS: ReadonlyMap<string, AgentAppLink> = new Map([
   ['claude:', { host: 'code', pathname: '/new', promptParam: 'q' }],
   ['codex:', { host: 'new', pathname: '', promptParam: 'prompt' }]
 ])
+
+const AGENT_APP_PROTOCOLS: Readonly<Record<AgentApp, string>> = {
+  claude: 'claude:',
+  codex: 'codex:'
+}
+
+export function isAgentApp(candidate: unknown): candidate is AgentApp {
+  return typeof candidate === 'string' && Object.hasOwn(AGENT_APP_PROTOCOLS, candidate)
+}
 
 const LONGEST_LOGGED_SCHEME = 16
 
@@ -84,5 +94,20 @@ export function tryOpenExternalUrlOrAgentApp(candidate: unknown): Promise<boolea
   return handToTheOs(href).then(
     () => true,
     () => false
+  )
+}
+
+const LONE_SURROGATES = /([\uD800-\uDBFF][\uDC00-\uDFFF])|[\uD800-\uDFFF]/g
+
+function wellFormed(text: string): string {
+  return text.replace(LONE_SURROGATES, (_, pair?: string) => pair ?? '\uFFFD')
+}
+
+export async function openAgentApp(app: AgentApp, prompt: string): Promise<void> {
+  const protocol = AGENT_APP_PROTOCOLS[app]
+  const link = AGENT_APP_LINKS.get(protocol)!
+  const encodedPrompt = encodeURIComponent(wellFormed(prompt))
+  await handToTheOs(
+    `${protocol}//${link.host}${link.pathname}?${link.promptParam}=${encodedPrompt}`
   )
 }

@@ -352,7 +352,8 @@ export function buildElectronApi(): ElectronApi {
         ipcRenderer.invoke('comfybuilder:openSettingsPage', page, workspaceId),
       installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
       promoteLocalInstance: (installationId) =>
-        ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)
+        ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId),
+      openAgentApp: (app, prompt) => ipcRenderer.invoke('comfybuilder:openAgentApp', app, prompt)
     },
 
     listModelDownloads: () => ipcRenderer.invoke('model-download-list'),

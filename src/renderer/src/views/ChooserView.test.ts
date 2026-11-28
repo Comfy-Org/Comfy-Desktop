@@ -8,6 +8,8 @@ import ChooserView from './ChooserView.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
+import DeployToCloudDialog from '../components/deployToCloud/DeployToCloudDialog.vue'
+import { closeDeployToCloud } from '../composables/useDeployToCloud'
 import { useSessionStore } from '../stores/sessionStore'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -169,7 +171,16 @@ function mountChooserInPanel() {
   return { wrapper: root.findComponent(ChooserView), host }
 }
 
+async function setUpManuallyFromTheDialog(): Promise<void> {
+  mountedRoots.add(mount(DeployToCloudDialog, { attachTo: document.body }))
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="deploy-to-cloud-manual"]')).not.toBeNull()
+  )
+  document.querySelector<HTMLElement>('[data-testid="deploy-to-cloud-manual"]')!.click()
+}
+
 afterEach(() => {
+  closeDeployToCloud()
   for (const root of mountedRoots) {
     if (!root.vm.$.isUnmounted) root.unmount()
   }
@@ -1041,7 +1052,7 @@ describe('ChooserView', () => {
     expect(toolbar.find('[data-testid="chooser-workspace-refresh"]').exists()).toBe(true)
   })
 
-  it('offers Upload Build for an instance owned by the selected workspace', async () => {
+  it('offers Deploy to Cloud for an instance owned by the selected workspace', async () => {
     installMockApiSignedIn(
       [
         makeInstall({
@@ -1063,11 +1074,11 @@ describe('ChooserView', () => {
 
     expect(await shownBuildMenu('local')).toContain('promote-to-workspace')
     const upload = buildMenuItem('local', 'promote-to-workspace')!
-    expect(upload.textContent?.trim()).toBe('Upload build')
+    expect(upload.textContent?.trim()).toBe('Deploy to Cloud')
     expect(upload.hasAttribute('data-disabled')).toBe(false)
   })
 
-  it('shows upload progress on the originating build and prevents it from starting', async () => {
+  it('shows draft progress on the originating build after Set up manually and prevents it from starting', async () => {
     const api = installMockApiSignedIn(
       [
         makeInstall({
@@ -1096,6 +1107,7 @@ describe('ChooserView', () => {
     await shownBuildMenu('local')
 
     buildMenuItem('local', 'promote-to-workspace')!.click()
+    await setUpManuallyFromTheDialog()
     try {
       await wrapper.vm.$nextTick()
       expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating…')
@@ -1125,7 +1137,7 @@ describe('ChooserView', () => {
       false
     ]
   ])(
-    'offers Upload Build for %s',
+    'offers Deploy to Cloud for %s',
     async (_label, installOverrides, activeWorkspaceId, useUnmanaged) => {
       installMockApiSignedIn(
         [

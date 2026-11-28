@@ -27,6 +27,7 @@ import {
   Server,
   Ellipsis,
   Download,
+  Rocket,
   SquareArrowOutUpRight
 } from '@lucide/vue'
 import type { Component } from 'vue'
@@ -667,6 +668,16 @@ const sharedMenu = isPage.value
   ? useBuildMenu(() => installation.value as Installation, { onPage: true })
   : null
 
+const DEPLOY_TO_CLOUD_ACTION_ID = 'promote-to-workspace'
+const deployToCloudEntry = computed<BuildMenuEntry | undefined>(() =>
+  installation.value
+    ? sharedMenu?.items.value.find((entry) => entry.id === DEPLOY_TO_CLOUD_ACTION_ID)
+    : undefined
+)
+function handleDeployToCloud(): void {
+  void sharedMenu?.run(DEPLOY_TO_CLOUD_ACTION_ID)
+}
+
 const freshPageActions = computed<ActionDef[]>(() =>
   sectionsFresh.value ? pinBottomActions.value : []
 )
@@ -733,7 +744,12 @@ const pageMenuActions = computed<MenuAction[]>(() => {
   const pageActions = pageActionById.value
   const sourceActions = sourceOnlyActions.value
   const hidesMigrate = sourceActions.some((action) => action.id === 'migrate-to-standalone')
-  const hidden = new Set(['rename', 'untrack', ...(hidesMigrate ? ['migrate'] : [])])
+  const hidden = new Set([
+    'rename',
+    'untrack',
+    DEPLOY_TO_CLOUD_ACTION_ID,
+    ...(hidesMigrate ? ['migrate'] : [])
+  ])
   let menu = withoutIds(sharedMenu.items.value.map(sharedMenuAction), hidden)
   const rename = pageActions.get('rename')
   const untrack = pageActions.get(PAGE_ACTION_FOR_SHARED_ID['untrack']!)
@@ -1378,6 +1394,20 @@ defineExpose({
             ref="ctaWrap"
             class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto] gap-2"
           >
+            <Button
+              v-if="deployToCloudEntry"
+              variant="secondary"
+              size="md"
+              type="button"
+              class="gap-1.5 px-3 text-[13px]/5"
+              :disabled="deployToCloudEntry.disabled === true || opBlocksFooter"
+              :title="deployToCloudEntry.title"
+              data-testid="build-page-deploy-to-cloud"
+              @click="handleDeployToCloud"
+            >
+              <Rocket :size="15" class="shrink-0 opacity-85" aria-hidden="true" />
+              <span>{{ deployToCloudEntry.label }}</span>
+            </Button>
             <Button
               v-if="showsOpenBesideRestart"
               variant="secondary"

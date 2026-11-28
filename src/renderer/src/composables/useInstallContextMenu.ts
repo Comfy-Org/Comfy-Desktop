@@ -3,7 +3,6 @@ import {
   ArrowRightLeft,
   ArrowUpCircle,
   CircleStop,
-  CloudUpload,
   Copy,
   Download,
   EyeOff,
@@ -12,6 +11,7 @@ import {
   Pencil,
   Power,
   PowerOff,
+  Rocket,
   Settings2,
   Trash2
 } from '@lucide/vue'
@@ -21,6 +21,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
 import { useStopAction } from './useStopAction'
+import { isPromotingToWorkspace, openDeployToCloud } from './useDeployToCloud'
 import type { AutoStartBuild } from './useAutoStartBuild'
 import { revealInFolderKey } from './usePlatform'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
@@ -50,11 +51,7 @@ export interface ManageOpenOptions {
   autoAction?: string | null
 }
 
-const promotingInstallationIds = ref<ReadonlySet<string>>(new Set())
-
-export function isPromotingToWorkspace(inst: Installation): boolean {
-  return promotingInstallationIds.value.has(inst.id)
-}
+export { isPromotingToWorkspace }
 
 export function useInstallContextMenu(
   opts: {
@@ -82,13 +79,6 @@ export function useInstallContextMenu(
     y: 0,
     inst: null as Installation | null
   })
-  function setPromotingToWorkspace(installationId: string, promoting: boolean): void {
-    const next = new Set(promotingInstallationIds.value)
-    if (promoting) next.add(installationId)
-    else next.delete(installationId)
-    promotingInstallationIds.value = next
-  }
-
   function isLocalLikeInstall(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
   }
@@ -218,7 +208,7 @@ export function useInstallContextMenu(
       const taskRunning = !promoting && progressStore.getProgressInfo(inst.id) !== null
       snapshotCluster.push({
         id: 'promote-to-workspace',
-        icon: CloudUpload,
+        icon: Rocket,
         label: promoting
           ? t('devPlatform.workspace.promoting')
           : t('devPlatform.workspace.promoteToWorkspace'),
@@ -360,20 +350,7 @@ export function useInstallContextMenu(
       }
     } else if (id === 'promote-to-workspace') {
       if (isPromotingToWorkspace(inst)) return
-      const title = t('devPlatform.workspace.promoteFailedTitle')
-      let failureMessage: string | null = null
-      setPromotingToWorkspace(inst.id, true)
-      try {
-        const result = await window.api.comfybuilder.promoteLocalInstance(inst.id)
-        if (!result.ok) {
-          failureMessage = result.message || t('devPlatform.workspace.promoteFailedMessage')
-        }
-      } catch (err) {
-        failureMessage = (err as Error)?.message || String(err)
-      } finally {
-        setPromotingToWorkspace(inst.id, false)
-      }
-      if (failureMessage) await modal.alert({ title, message: failureMessage })
+      openDeployToCloud(inst)
     } else if (id === 'auto-start') {
       await opts.autoStart?.setStartsOnOpen(inst.id, !opts.autoStart.startsOnOpen(inst.id))
     } else if (id === 'copy-install') {
